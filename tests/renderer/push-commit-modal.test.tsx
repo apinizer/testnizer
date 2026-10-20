@@ -74,7 +74,7 @@ describe('PushCommitModal', () => {
     fireEvent.change(input, { target: { value: '  feat: add login endpoint  ' } })
     fireEvent.click(screen.getByTestId('push-commit-confirm'))
     expect(onConfirm).toHaveBeenCalledTimes(1)
-    expect(onConfirm).toHaveBeenCalledWith('feat: add login endpoint')
+    expect(onConfirm).toHaveBeenCalledWith('feat: add login endpoint', { commitPending: true })
     expect(onCancel).not.toHaveBeenCalled()
   })
 
@@ -82,7 +82,7 @@ describe('PushCommitModal', () => {
     const { input, onConfirm } = renderModal()
     fireEvent.change(input, { target: { value: 'fix: typo in header' } })
     fireEvent.keyDown(input, { key: 'Enter' })
-    expect(onConfirm).toHaveBeenCalledWith('fix: typo in header')
+    expect(onConfirm).toHaveBeenCalledWith('fix: typo in header', { commitPending: true })
   })
 
   it('Enter while an IME composition is open does not confirm', () => {
@@ -206,7 +206,10 @@ describe('Push wiring (branch dropdown → store → bridge)', () => {
     fireEvent.click(screen.getByTestId('push-commit-confirm'))
 
     await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Pushed successfully'))
-    expect(push).toHaveBeenCalledWith('p1', { commitMessage: 'feat: add login endpoint' })
+    expect(push).toHaveBeenCalledWith('p1', {
+      commitMessage: 'feat: add login endpoint',
+      commitPending: true,
+    })
     expect(screen.queryByTestId('push-commit-modal')).toBeNull()
   })
 

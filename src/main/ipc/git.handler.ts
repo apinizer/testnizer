@@ -14,11 +14,12 @@ import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-con
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
 import { projectFileSlug, projectFileName, pickProjectFile } from '../lib/project-file'
 import { mergeProjectFiles } from '../lib/project-merge'
-import { diffProjectDocs, normaliseExportDoc } from '../lib/project-changes'
+import { applySelectedChanges, diffProjectDocs, normaliseExportDoc } from '../lib/project-changes'
 import { stripLocalSecrets } from '../lib/local-secrets'
 import {
   GIT_MERGE_IN_PROGRESS_ERROR,
   GIT_NOTHING_COMMITTED_ERROR,
+  withRequiredChanges,
   type GitChangesSummary,
   type GitCommitOutcome,
   type GitDiscardOutcome,
@@ -381,11 +382,28 @@ async function syncWorkingTreeFromDb(
   const slug = projectFileSlug(project.name as string | undefined)
   const displayName = ((project.display_name || project.name) as string) || 'project'
   const fileName = `${slug}.json`
-  const target = join(config.localPath, fileName)
 
   if (opts.skipIfEmpty && isEmptyExport(data)) {
     return { fileName, displayName, changed: false }
   }
+  return { fileName, displayName, ...(await writeProjectFile(git, config, projectId, data)) }
+}
+
+/**
+ * Write `data` (already stripped of secrets) into the checkout as the
+ * project's `<slug>.json`, stage it and retire the files an older name
+ * produced. The write half of `syncWorkingTreeFromDb`; a selective commit
+ * (issue #214) writes its partial file through here too.
+ */
+async function writeProjectFile(
+  git: SimpleGit,
+  config: ProjectGitConfig,
+  projectId: string,
+  data: Record<string, unknown>,
+): Promise<{ changed: boolean }> {
+  const project = (data.project ?? {}) as Record<string, unknown>
+  const fileName = `${projectFileSlug(project.name as string | undefined)}.json`
+  const target = join(config.localPath, fileName)
   if (existsSync(target) && sameExport(readFileSync(target, 'utf-8'), data)) {
     // Byte-identical apart from `exportedAt` — rewriting would only churn
     // the timestamp into a commit on every switch / pull. But "same content
@@ -396,9 +414,9 @@ async function syncWorkingTreeFromDb(
     // (issue #154). Decided from `status --porcelain` OUTPUT — empty means
     // tracked and identical to HEAD (see the simple-git "silent" gotcha).
     const pending = await git.raw(['status', '--porcelain', '--', fileName])
-    if (!pending.trim()) return { fileName, displayName, changed: false }
+    if (!pending.trim()) return { changed: false }
     await git.add([fileName])
-    return { fileName, displayName, changed: await hasStagedChanges(git) }
+    return { changed: await hasStagedChanges(git) }
   }
   writeFileSync(target, JSON.stringify(data, null, 2), 'utf-8')
 
@@ -414,7 +432,7 @@ async function syncWorkingTreeFromDb(
     }
   }
   await git.add([fileName])
-  return { fileName, displayName, changed: await hasStagedChanges(git) }
+  return { changed: await hasStagedChanges(git) }
 }
 
 /**
@@ -711,6 +729,53 @@ function liveExportForFile(projectId: string): Record<string, unknown> {
     string,
     unknown
   >
+}
+
+/** The renderer's `only` list, validated: an array of strings, or null for "everything". */
+function selectionOf(only: unknown): string[] | null {
+  if (!Array.isArray(only)) return null
+  return only.filter((k): k is string => typeof k === 'string' && k.length > 0 && k.length < 512)
+}
+
+/**
+ * Commit the project's pending changes (issues #207, #214). `only` null →
+ * everything: the DB → checkout sync Push always did. `only` given → those
+ * changes plus what they require (closed HERE, never trusted from the
+ * renderer); when that is every change it is the same full commit, otherwise
+ * HEAD's file with just those rows swapped in is committed and the rest stay
+ * uncommitted in the DB (`git:changes` keeps listing them).
+ */
+async function commitProject(
+  git: SimpleGit,
+  config: ProjectGitConfig,
+  projectId: string,
+  message: unknown,
+  only: string[] | null,
+): Promise<{ committed: boolean; partial: boolean; included?: number }> {
+  if (only) {
+    const head = await headProjectFile(git, projectId)
+    const headDoc = head ? parseDoc(head.content) : null
+    if (head && !headDoc) throw new Error(`${head.file} at HEAD is not a readable project file.`)
+    const live = liveExportForFile(projectId)
+    const items = diffProjectDocs(headDoc, live)
+    const chosen = withRequiredChanges(only, items)
+    if (chosen.size === 0) return { committed: false, partial: items.length > 0, included: 0 }
+    if (chosen.size < items.length) {
+      const doc = stripLocalSecrets(
+        applySelectedChanges(headDoc, live, chosen) as unknown as ProjectExport,
+      ) as unknown as Record<string, unknown>
+      const { changed } = await writeProjectFile(git, config, projectId, doc)
+      const header = (doc.project ?? {}) as Record<string, unknown>
+      const displayName = ((header.display_name || header.name) as string) || 'project'
+      if (changed) await git.commit(commitMessageOr(message, displayName))
+      return { committed: changed, partial: true, included: chosen.size }
+    }
+  }
+  const { displayName, changed } = await syncWorkingTreeFromDb(git, config, projectId, {
+    skipIfEmpty: false,
+  })
+  if (changed) await git.commit(commitMessageOr(message, displayName))
+  return { committed: changed, partial: false }
 }
 
 function parseDoc(content: string): Record<string, unknown> | null {
@@ -1120,7 +1185,10 @@ export function registerGitHandlers(): void {
   // `opts.commitMessage` is what the user typed in the Push dialog (issue
   // #136); blank / missing → the automatic "Update <name> — <date>". The
   // Clone wizard's first push passes no opts and keeps the automatic message.
-  type GitPushOpts = { commitMessage?: unknown }
+  // `opts.commitPending === false` (issue #214): push the existing commits
+  // only — after a selective commit the rest stays uncommitted instead of
+  // being swept in. `opts.only`: commit just those changes first.
+  type GitPushOpts = { commitMessage?: unknown; commitPending?: unknown; only?: unknown }
   ipcMain.handle('git:push', async (_event, projectId: string, opts?: GitPushOpts) => {
     let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
     try {
@@ -1140,11 +1208,14 @@ export function registerGitHandlers(): void {
       // Export project data into the checkout and commit it. Push is the one
       // path that writes even an EMPTY project: seeding a new remote with
       // the fresh project's file is exactly its job.
-      const { displayName, changed } = await syncWorkingTreeFromDb(git, config, projectId, {
-        skipIfEmpty: false,
-      })
-      if (changed) {
-        await git.commit(commitMessageOr(opts?.commitMessage, displayName))
+      let changed = false
+      if (opts?.commitPending !== false) {
+        if (await mergeInProgress(git, config.localPath)) {
+          return { success: false, error: GIT_MERGE_IN_PROGRESS_ERROR }
+        }
+        changed = (
+          await commitProject(git, config, projectId, opts?.commitMessage, selectionOf(opts?.only))
+        ).committed
       }
 
       // Push current branch
@@ -1198,30 +1269,37 @@ export function registerGitHandlers(): void {
   // The DB → checkout sync Push does, then a commit with the user's message
   // (blank → "Update <name> — <date>"). Local only: no token needed, the
   // remote is untouched until Push. Nothing new → `committed: false`.
-  ipcMain.handle('git:commit', async (_event, projectId: string, message?: unknown) => {
-    let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
-    try {
-      config = await getProjectGitConfig(projectId)
-      if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+  // `opts.only` (issue #214): commit just those changes (+ what they require).
+  ipcMain.handle(
+    'git:commit',
+    async (_event, projectId: string, message?: unknown, opts?: { only?: unknown }) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
+      try {
+        config = await getProjectGitConfig(projectId)
+        if (!config?.repoUrl || !config.localPath) {
+          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        }
+        const git = await ensureGitRepo(config)
+        if (await mergeInProgress(git, config.localPath)) {
+          return { success: false, error: GIT_MERGE_IN_PROGRESS_ERROR }
+        }
+        // Before the first commit: points an unborn HEAD at the configured
+        // branch, exactly as Push does, so the commit lands where Push pushes.
+        const branch = await getCurrentBranch(git, config.branch)
+        const outcome = await commitProject(
+          git,
+          config,
+          projectId,
+          message,
+          selectionOf(opts?.only),
+        )
+        const data: GitCommitOutcome = { ...outcome, sha: await headSha(git), branch }
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: describeGitError(e, config?.token) }
       }
-      const git = await ensureGitRepo(config)
-      if (await mergeInProgress(git, config.localPath)) {
-        return { success: false, error: GIT_MERGE_IN_PROGRESS_ERROR }
-      }
-      // Before the first commit: points an unborn HEAD at the configured
-      // branch, exactly as Push does, so the commit lands where Push pushes.
-      const branch = await getCurrentBranch(git, config.branch)
-      const { displayName, changed } = await syncWorkingTreeFromDb(git, config, projectId, {
-        skipIfEmpty: false,
-      })
-      if (changed) await git.commit(commitMessageOr(message, displayName))
-      const data: GitCommitOutcome = { committed: changed, sha: await headSha(git), branch }
-      return { success: true, data }
-    } catch (e) {
-      return { success: false, error: describeGitError(e, config?.token) }
-    }
-  })
+    },
+  )
 
   // ─── Discard all local changes (issue #207) ──────────────────
   // The DB goes back to the last commit: HEAD's project file is imported in

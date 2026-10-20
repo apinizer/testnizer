@@ -748,8 +748,9 @@ const api = {
     pull: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:pull', projectId),
     // Issue #207: local-only commit, discard and the pre-commit summary.
     changes: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:changes', projectId),
-    commit: (projectId: string, message?: string): Promise<unknown> =>
-      ipcRenderer.invoke('git:commit', projectId, message),
+    // Issue #214: `opts.only` commits just those changes (+ what they require).
+    commit: (projectId: string, message?: string, opts?: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:commit', projectId, message, opts),
     discard: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:discard', projectId),
     status: (projectId: string): Promise<unknown> => ipcRenderer.invoke('git:status', projectId),
     deleteBranch: (payload: unknown): Promise<unknown> =>

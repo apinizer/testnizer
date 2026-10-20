@@ -529,7 +529,13 @@ import type {
   AiTurn,
   AiTurnMetrics,
 } from '../shared/ai-chat-types'
-import type { GitChangesSummary, GitCommitOutcome, GitDiscardOutcome } from '../shared/git-changes'
+import type {
+  GitChangesSummary,
+  GitCommitOpts,
+  GitCommitOutcome,
+  GitDiscardOutcome,
+  GitPushOpts,
+} from '../shared/git-changes'
 type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
 
 interface ImportExportApi {
@@ -2037,13 +2043,24 @@ interface GitApi {
     branchName: string
   }): Promise<IpcResult<{ branch: string }>>
   merge(payload: { projectId: string; sourceBranch: string }): Promise<IpcResult<GitMergeResult>>
-  /** `commitMessage` blank / omitted → automatic "Update <name> — <date>". */
-  push(projectId: string, opts?: { commitMessage?: string }): Promise<IpcResult<GitPushOutcome>>
+  /**
+   * `commitMessage` blank / omitted → automatic "Update <name> — <date>".
+   * `commitPending: false` pushes the existing commits only; `only` commits
+   * just those changes first (issue #214).
+   */
+  push(projectId: string, opts?: GitPushOpts): Promise<IpcResult<GitPushOutcome>>
   pull(projectId: string): Promise<IpcResult<GitPullOutcome>>
   /** Row-level summary of what a commit would write + ahead/behind (local refs, no fetch). */
   changes(projectId: string): Promise<IpcResult<GitChangesSummary>>
-  /** Local commit, no push; blank message → "Update <name> — <date>". */
-  commit(projectId: string, message?: string): Promise<IpcResult<GitCommitOutcome>>
+  /**
+   * Local commit, no push; blank message → "Update <name> — <date>".
+   * `opts.only`: commit just those change keys plus what they require (issue #214).
+   */
+  commit(
+    projectId: string,
+    message?: string,
+    opts?: GitCommitOpts,
+  ): Promise<IpcResult<GitCommitOutcome>>
   /** Restore the project (DB + checkout file) to the last commit. */
   discard(projectId: string): Promise<IpcResult<GitDiscardOutcome>>
   status(projectId: string): Promise<IpcResult<GitStatusResult>>

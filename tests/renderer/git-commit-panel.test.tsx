@@ -96,9 +96,9 @@ describe('CommitChangesModal', () => {
       target: { value: '  feat: payments  ' },
     })
     fireEvent.click(screen.getByTestId('git-commit-confirm'))
-    expect(onCommit).toHaveBeenLastCalledWith('feat: payments', false)
+    expect(onCommit).toHaveBeenLastCalledWith('feat: payments', false, undefined)
     fireEvent.click(screen.getByTestId('git-commit-and-push'))
-    expect(onCommit).toHaveBeenLastCalledWith('feat: payments', true)
+    expect(onCommit).toHaveBeenLastCalledWith('feat: payments', true, undefined)
     fireEvent.click(screen.getByTestId('git-commit-discard'))
     expect(onDiscard).toHaveBeenCalledTimes(1)
   })

@@ -2539,6 +2539,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'push.messagePlaceholder': 'Describe your changes',
     'push.messageRequired': 'Commit message cannot be empty',
     'push.confirm': 'Commit & push',
+    'push.confirmPushOnly': 'Push commits',
+    'push.includePending': 'Commit the {count} uncommitted changes first',
+    'push.includePendingOne': 'Commit the 1 uncommitted change first',
+    'push.pendingStays': 'Only existing commits are pushed; the changes stay uncommitted.',
     // Local commit / discard / changes summary (issue #207)
     'gitCommit.menuCommit': 'Commit…',
     'gitCommit.menuDiscard': 'Discard all changes',
@@ -2551,8 +2555,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'gitCommit.loading': 'Loading changes…',
     'gitCommit.loadFailed': 'Could not load the changes',
     'gitCommit.noChanges': 'No changes since the last commit',
-    'gitCommit.singleFileNote':
-      'The project is stored as one file, so all of these changes are committed together.',
+    'gitCommit.selectionNote':
+      'Uncheck a change to leave it out of this commit. A change that needs another (a request in a new folder) brings it along.',
+    'gitCommit.partialNote':
+      'Unchecked changes stay uncommitted. Switching branch or merging commits them automatically; Push asks first.',
+    'gitCommit.changesHeadingSelected': 'Changes ({selected} of {count} selected)',
+    'gitCommit.selectAll': 'Select all changes',
+    'gitCommit.requires': 'Committed together with: {names}',
+    'gitCommit.committedPartial':
+      'Committed {included} of {count} changes locally — the rest stay uncommitted',
     'gitCommit.commit': 'Commit',
     'gitCommit.commitAndPush': 'Commit and push',
     'gitCommit.discardAll': 'Discard all changes',
@@ -5860,6 +5871,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'push.messagePlaceholder': 'Değişikliklerinizi açıklayın',
     'push.messageRequired': 'Commit mesajı boş olamaz',
     'push.confirm': 'Commit ve gönder',
+    'push.confirmPushOnly': "Commit'leri gönder",
+    'push.includePending': 'Önce commit edilmemiş {count} değişikliği commit et',
+    'push.includePendingOne': 'Önce commit edilmemiş 1 değişikliği commit et',
+    'push.pendingStays':
+      "Yalnız mevcut commit'ler gönderilir; değişiklikler commit edilmeden kalır.",
     // Yerel commit / değişiklikleri atma / değişiklik özeti (issue #207)
     'gitCommit.menuCommit': 'Commit et…',
     'gitCommit.menuDiscard': 'Tüm değişiklikleri at',
@@ -5873,8 +5889,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'gitCommit.loading': 'Değişiklikler yükleniyor…',
     'gitCommit.loadFailed': 'Değişiklikler yüklenemedi',
     'gitCommit.noChanges': "Son commit'ten bu yana değişiklik yok",
-    'gitCommit.singleFileNote':
-      'Proje tek bir dosyada saklandığı için bu değişikliklerin tümü birlikte commit edilir.',
+    'gitCommit.selectionNote':
+      'Bir değişikliği bu commit dışında bırakmak için işaretini kaldırın. Başka bir değişikliğe ihtiyaç duyan değişiklik (yeni klasördeki bir istek) onu da birlikte seçer.',
+    'gitCommit.partialNote':
+      'İşaretsiz değişiklikler commit edilmeden kalır. Branch değiştirmek ya da merge onları otomatik commit eder; Push önce sorar.',
+    'gitCommit.changesHeadingSelected': 'Değişiklikler ({count} değişiklikten {selected} seçili)',
+    'gitCommit.selectAll': 'Tüm değişiklikleri seç',
+    'gitCommit.requires': 'Birlikte commit edilir: {names}',
+    'gitCommit.committedPartial':
+      '{count} değişiklikten {included} tanesi yerel olarak commit edildi — kalanlar commit edilmeden kalır',
     'gitCommit.commit': 'Commit et',
     'gitCommit.commitAndPush': 'Commit et ve gönder',
     'gitCommit.discardAll': 'Tüm değişiklikleri at',

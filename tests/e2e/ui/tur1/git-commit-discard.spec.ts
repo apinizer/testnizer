@@ -10,6 +10,11 @@
  *   3. Another change → Commit and push: the remote ref moves to HEAD and
  *      the menu shows 0↓ 0↑.
  *
+ * Issue #214 (second test) — selective commit: two new endpoints, one
+ * unchecked → only the checked one is committed and the other stays
+ * pending; then Push with "Commit the 1 uncommitted change first" unchecked
+ * ships the commit without it.
+ *
  * Fixture model (as git-advanced): the git config is written over IPC and
  * the remote is a `git init --bare` folder under the OS temp dir. The remote
  * starts EMPTY and a baseline push seeds it with the project file, so the
@@ -176,6 +181,91 @@ async function endpointName(window: Page, id: string): Promise<string | null> {
   }, id)
 }
 
+type GitFixture = {
+  bare: { repoPath: string; repoUrl: string }
+  localPath: string
+  baselineRef: string
+}
+
+/**
+ * Point the project at an EMPTY bare remote, push a baseline, run `body`, and
+ * always put the project back in local mode (shared by both tests).
+ */
+async function withGitFixture(
+  window: Page,
+  projectId: string,
+  label: string,
+  createdIds: string[],
+  body: (fx: GitFixture) => Promise<void>,
+): Promise<void> {
+  const bare = createBareRepo(label)
+  const localPath = fs.mkdtempSync(path.join(os.tmpdir(), `testnizer-gitcommit-${label}-`))
+  const before = await window.evaluate(
+    async (pid) => (await (window as unknown as Win).api!.project!.get(pid)).data ?? null,
+    projectId,
+  )
+
+  try {
+    // ── Setup: git config over IPC (dummy token: a file:// remote never
+    // sends it, but Push / "Commit and push" require one), then a
+    // baseline push so HEAD, origin/main and the upstream all exist.
+    await window.evaluate(
+      async ({ pid, repoUrl, lp }) => {
+        const w = window as unknown as Win
+        const r = await w.api!.settings!.set('git', {
+          [pid]: { repoUrl, username: '', branch: 'main', token: 'e2e-local-token' },
+        })
+        if (!r.success) throw new Error(r.error)
+        const u = await w.api!.project!.update(pid, { local_path: lp, save_mode: 'git' })
+        if (!u.success) throw new Error(u.error)
+      },
+      { pid: projectId, repoUrl: bare.repoUrl, lp: localPath },
+    )
+    const baseline = await window.evaluate(
+      (pid) => (window as unknown as Win).api!.git!.push(pid, { commitMessage: 'e2e baseline' }),
+      projectId,
+    )
+    expect(baseline.success, JSON.stringify(baseline)).toBe(true)
+    const baselineRef = remoteRef(bare.repoPath)
+    expect(baselineRef).not.toBe('')
+    expect(localHead(localPath)).toBe(baselineRef)
+
+    await body({ bare, localPath, baselineRef })
+  } finally {
+    // Same cleanup as git-advanced: drop the git config, put the project
+    // back in local mode — then re-enter so the branch store forgets git.
+    await closeBranchMenu(window).catch(() => {})
+    await dismissOverlays(window).catch(() => {})
+    await window
+      .evaluate(
+        async ({ ids }) => {
+          const w = window as unknown as Win
+          for (const id of ids) await w.api?.endpoint?.delete(id)
+        },
+        { ids: createdIds },
+      )
+      .catch(() => {})
+    await window
+      .evaluate(
+        async ({ pid, lp, mode }) => {
+          const w = window as unknown as Win
+          await w.api?.settings?.set('git', {})
+          await w.api?.project?.update(pid, { local_path: lp, save_mode: mode })
+        },
+        {
+          pid: projectId,
+          lp: before?.local_path ?? null,
+          mode: before?.save_mode || 'local',
+        },
+      )
+      .catch(() => {})
+    await reenterProject(window).catch(() => {})
+    await treeClearSearch(window).catch(() => {})
+    fs.rmSync(localPath, { recursive: true, force: true })
+    fs.rmSync(bare.repoPath, { recursive: true, force: true })
+  }
+}
+
 // ─── Test ────────────────────────────────────────────────────────────────────
 
 uiTest.describe('Tur1 — Git commit / discard [issue #207]', () => {
@@ -195,182 +285,214 @@ uiTest.describe('Tur1 — Git commit / discard [issue #207]', () => {
       const pushedName = `${prefix}-pushed`
       const createdIds: string[] = []
 
-      const bare = createBareRepo(label)
-      const localPath = fs.mkdtempSync(path.join(os.tmpdir(), `testnizer-gitcommit-${label}-`))
-      const before = await window.evaluate(
-        async (pid) => (await (window as unknown as Win).api!.project!.get(pid)).data ?? null,
+      await withGitFixture(
+        window,
         projectId,
-      )
-
-      try {
-        // ── Setup: git config over IPC (dummy token: a file:// remote never
-        // sends it, but Push / "Commit and push" require one), then a
-        // baseline push so HEAD, origin/main and the upstream all exist.
-        await window.evaluate(
-          async ({ pid, repoUrl, lp }) => {
-            const w = window as unknown as Win
-            const r = await w.api!.settings!.set('git', {
-              [pid]: { repoUrl, username: '', branch: 'main', token: 'e2e-local-token' },
-            })
-            if (!r.success) throw new Error(r.error)
-            const u = await w.api!.project!.update(pid, { local_path: lp, save_mode: 'git' })
-            if (!u.success) throw new Error(u.error)
-          },
-          { pid: projectId, repoUrl: bare.repoUrl, lp: localPath },
-        )
-        const baseline = await window.evaluate(
-          (pid) =>
-            (window as unknown as Win).api!.git!.push(pid, { commitMessage: 'e2e baseline' }),
-          projectId,
-        )
-        expect(baseline.success, JSON.stringify(baseline)).toBe(true)
-        const baselineRef = remoteRef(bare.repoPath)
-        expect(baselineRef).not.toBe('')
-        expect(localHead(localPath)).toBe(baselineRef)
-
-        await reenterProject(window)
-        // Fully synced right after the baseline: nothing to commit.
-        await expectSyncCounts(window, '0↓ 0↑')
-        await expect(window.getByTestId('branch-commit')).toBeDisabled()
-        await closeBranchMenu(window)
-
-        // ── 1. New endpoint → Commit… → listed as added → Commit
-        await uiTest.step('commit locally: remote unchanged, menu shows 0↓ 1↑', async () => {
-          createdIds.push(await createEndpoint(window, projectId, original))
+        label,
+        createdIds,
+        async ({ bare, localPath, baselineRef }) => {
           await reenterProject(window)
+          // Fully synced right after the baseline: nothing to commit.
+          await expectSyncCounts(window, '0↓ 0↑')
+          await expect(window.getByTestId('branch-commit')).toBeDisabled()
+          await closeBranchMenu(window)
 
+          // ── 1. New endpoint → Commit… → listed as added → Commit
+          await uiTest.step('commit locally: remote unchanged, menu shows 0↓ 1↑', async () => {
+            createdIds.push(await createEndpoint(window, projectId, original))
+            await reenterProject(window)
+
+            await openBranchMenu(window)
+            await expect(window.getByTestId('branch-commit')).toBeEnabled({ timeout: 10_000 })
+            await window.getByTestId('branch-commit').click()
+
+            const modal = window.getByTestId('git-commit-modal')
+            await expect(modal).toBeVisible()
+            const items = modal.getByTestId('git-change-item')
+            await expect(modal.locator(ADDED_ROW).filter({ hasText: original })).toHaveCount(1, {
+              timeout: 10_000,
+            })
+            // The baseline was exported from this DB a moment ago: the new
+            // endpoint is the only pending change.
+            await expect(items).toHaveCount(1)
+
+            await modal.getByTestId('git-commit-message').fill('e2e local commit')
+            await modal.getByTestId('git-commit-confirm').click()
+            await expect(modal).toBeHidden({ timeout: 20_000 })
+
+            await expect
+              .poll(() => localSubject(localPath), { timeout: 15_000 })
+              .toBe('e2e local commit')
+            expect(remoteRef(bare.repoPath)).toBe(baselineRef)
+            await expectSyncCounts(window, '0↓ 1↑')
+            await closeBranchMenu(window)
+          })
+
+          // ── 2. Rename → Discard all changes → back to the committed state
+          await uiTest.step('discard all changes restores the committed endpoint', async () => {
+            const countBefore = (await listEndpointsByProject(window, projectId)).length
+            const headBefore = localHead(localPath)
+
+            await treeSearch(window, prefix)
+            await expect(window.getByTestId('tree-node').filter({ hasText: original })).toHaveCount(
+              1,
+              { timeout: 10_000 },
+            )
+            await treeRename(window, original, renamed)
+            await expect
+              .poll(() => endpointName(window, createdIds[0]), { timeout: 10_000 })
+              .toBe(renamed)
+            await expect(window.getByTestId('tree-node').filter({ hasText: renamed })).toHaveCount(
+              1,
+            )
+
+            await openBranchMenu(window)
+            await expect(window.getByTestId('branch-discard')).toBeEnabled({ timeout: 10_000 })
+            await window.getByTestId('branch-discard').click()
+            await expect(window.getByTestId('git-discard-dialog')).toBeVisible()
+            await window.getByTestId('git-discard-confirm').click()
+            await expect(window.getByTestId('git-discard-dialog')).toBeHidden({ timeout: 20_000 })
+
+            // DB first, then the tree the re-sync rebuilt.
+            await expect
+              .poll(() => endpointName(window, createdIds[0]), { timeout: 15_000 })
+              .toBe(original)
+            await treeSearch(window, prefix)
+            await expect(window.getByTestId('tree-node').filter({ hasText: original })).toHaveCount(
+              1,
+              { timeout: 15_000 },
+            )
+            await expect(window.getByTestId('tree-node').filter({ hasText: renamed })).toHaveCount(
+              0,
+            )
+
+            // A replace import from HEAD: no unrelated row may be dropped, and
+            // the local commit is untouched (still one ahead, nothing pending).
+            expect((await listEndpointsByProject(window, projectId)).length).toBe(countBefore)
+            expect(localHead(localPath)).toBe(headBefore)
+            expect(remoteRef(bare.repoPath)).toBe(baselineRef)
+            await expectSyncCounts(window, '0↓ 1↑')
+            await expect(window.getByTestId('branch-commit')).toBeDisabled()
+            await closeBranchMenu(window)
+          })
+
+          // ── 3. Another change → Commit and push → remote moves, 0↓ 0↑
+          await uiTest.step('commit and push moves the remote ref', async () => {
+            createdIds.push(await createEndpoint(window, projectId, pushedName))
+            await reenterProject(window)
+
+            await openBranchMenu(window)
+            await expect(window.getByTestId('branch-commit')).toBeEnabled({ timeout: 10_000 })
+            await window.getByTestId('branch-commit').click()
+            const modal = window.getByTestId('git-commit-modal')
+            await expect(modal).toBeVisible()
+            await expect(modal.locator(ADDED_ROW).filter({ hasText: pushedName })).toHaveCount(1, {
+              timeout: 10_000,
+            })
+
+            await modal.getByTestId('git-commit-message').fill('e2e commit and push')
+            await expect(modal.getByTestId('git-commit-and-push')).toBeEnabled()
+            await modal.getByTestId('git-commit-and-push').click()
+            await expect(modal).toBeHidden({ timeout: 30_000 })
+
+            await expect
+              .poll(() => remoteRef(bare.repoPath), { timeout: 20_000 })
+              .not.toBe(baselineRef)
+            expect(remoteRef(bare.repoPath)).toBe(localHead(localPath))
+            const subjects = remoteSubjects(bare.repoPath)
+            expect(subjects[0]).toBe('e2e commit and push')
+            expect(subjects).toContain('e2e local commit')
+            await expectSyncCounts(window, '0↓ 0↑')
+            await closeBranchMenu(window)
+          })
+        },
+      )
+    },
+  )
+  uiTest(
+    'selective commit: an unchecked change stays pending and Push can leave it out [issue #214]',
+    async ({ window }) => {
+      uiTest.setTimeout(180_000)
+      await dismissOverlays(window)
+      await ensureCanonicalProject(window)
+      await navigateSidebar(window, 'apis')
+
+      const projectId = await getActiveProjectId(window)
+      const label = uid()
+      const keepName = `gits-${label}-keep`
+      const laterName = `gits-${label}-later`
+      const createdIds: string[] = []
+
+      /** Endpoint names in the project file at `rev` (a local or bare ref). */
+      const namesAt = (gitDirArgs: string[], rev: string): string[] => {
+        const file = git([...gitDirArgs, 'ls-tree', '--name-only', rev])
+          .split('\n')
+          .find((f) => f.endsWith('.json'))
+        if (!file) return []
+        const doc = JSON.parse(git([...gitDirArgs, 'show', `${rev}:${file}`])) as {
+          endpoints?: { name: string }[]
+        }
+        return (doc.endpoints ?? []).map((e) => e.name)
+      }
+
+      await withGitFixture(window, projectId, label, createdIds, async ({ bare, localPath }) => {
+        createdIds.push(await createEndpoint(window, projectId, keepName))
+        createdIds.push(await createEndpoint(window, projectId, laterName))
+        await reenterProject(window)
+
+        await uiTest.step('uncheck one change → only the checked one is committed', async () => {
           await openBranchMenu(window)
           await expect(window.getByTestId('branch-commit')).toBeEnabled({ timeout: 10_000 })
           await window.getByTestId('branch-commit').click()
-
           const modal = window.getByTestId('git-commit-modal')
-          await expect(modal).toBeVisible()
-          const items = modal.getByTestId('git-change-item')
-          await expect(modal.locator(ADDED_ROW).filter({ hasText: original })).toHaveCount(1, {
-            timeout: 10_000,
-          })
-          // The baseline was exported from this DB a moment ago: the new
-          // endpoint is the only pending change.
-          await expect(items).toHaveCount(1)
+          await expect(modal.locator(ADDED_ROW)).toHaveCount(2, { timeout: 10_000 })
 
-          await modal.getByTestId('git-commit-message').fill('e2e local commit')
+          await modal.getByRole('checkbox', { name: laterName }).uncheck()
+          await expect(modal.getByTestId('git-changes-heading')).toHaveText(
+            'Changes (1 of 2 selected)',
+          )
+          await modal.getByTestId('git-commit-message').fill('e2e selective commit')
           await modal.getByTestId('git-commit-confirm').click()
           await expect(modal).toBeHidden({ timeout: 20_000 })
 
           await expect
             .poll(() => localSubject(localPath), { timeout: 15_000 })
-            .toBe('e2e local commit')
-          expect(remoteRef(bare.repoPath)).toBe(baselineRef)
-          await expectSyncCounts(window, '0↓ 1↑')
+            .toBe('e2e selective commit')
+          const committed = namesAt(['-C', localPath], 'HEAD')
+          expect(committed).toContain(keepName)
+          expect(committed).not.toContain(laterName)
+          // Still in the DB, and still listed as pending.
+          expect(await endpointName(window, createdIds[1])).toBe(laterName)
+          await openBranchMenu(window)
+          await expect(window.getByTestId('branch-commit')).toHaveText(/1/, { timeout: 10_000 })
           await closeBranchMenu(window)
         })
 
-        // ── 2. Rename → Discard all changes → back to the committed state
-        await uiTest.step('discard all changes restores the committed endpoint', async () => {
-          const countBefore = (await listEndpointsByProject(window, projectId)).length
-          const headBefore = localHead(localPath)
-
-          await treeSearch(window, prefix)
-          await expect(window.getByTestId('tree-node').filter({ hasText: original })).toHaveCount(
-            1,
-            { timeout: 10_000 },
-          )
-          await treeRename(window, original, renamed)
-          await expect
-            .poll(() => endpointName(window, createdIds[0]), { timeout: 10_000 })
-            .toBe(renamed)
-          await expect(window.getByTestId('tree-node').filter({ hasText: renamed })).toHaveCount(1)
-
+        await uiTest.step('Push without the pending change ships only the commit', async () => {
           await openBranchMenu(window)
-          await expect(window.getByTestId('branch-discard')).toBeEnabled({ timeout: 10_000 })
-          await window.getByTestId('branch-discard').click()
-          await expect(window.getByTestId('git-discard-dialog')).toBeVisible()
-          await window.getByTestId('git-discard-confirm').click()
-          await expect(window.getByTestId('git-discard-dialog')).toBeHidden({ timeout: 20_000 })
-
-          // DB first, then the tree the re-sync rebuilt.
-          await expect
-            .poll(() => endpointName(window, createdIds[0]), { timeout: 15_000 })
-            .toBe(original)
-          await treeSearch(window, prefix)
-          await expect(window.getByTestId('tree-node').filter({ hasText: original })).toHaveCount(
-            1,
-            { timeout: 15_000 },
-          )
-          await expect(window.getByTestId('tree-node').filter({ hasText: renamed })).toHaveCount(0)
-
-          // A replace import from HEAD: no unrelated row may be dropped, and
-          // the local commit is untouched (still one ahead, nothing pending).
-          expect((await listEndpointsByProject(window, projectId)).length).toBe(countBefore)
-          expect(localHead(localPath)).toBe(headBefore)
-          expect(remoteRef(bare.repoPath)).toBe(baselineRef)
-          await expectSyncCounts(window, '0↓ 1↑')
-          await expect(window.getByTestId('branch-commit')).toBeDisabled()
-          await closeBranchMenu(window)
-        })
-
-        // ── 3. Another change → Commit and push → remote moves, 0↓ 0↑
-        await uiTest.step('commit and push moves the remote ref', async () => {
-          createdIds.push(await createEndpoint(window, projectId, pushedName))
-          await reenterProject(window)
-
-          await openBranchMenu(window)
-          await expect(window.getByTestId('branch-commit')).toBeEnabled({ timeout: 10_000 })
-          await window.getByTestId('branch-commit').click()
-          const modal = window.getByTestId('git-commit-modal')
-          await expect(modal).toBeVisible()
-          await expect(modal.locator(ADDED_ROW).filter({ hasText: pushedName })).toHaveCount(1, {
-            timeout: 10_000,
-          })
-
-          await modal.getByTestId('git-commit-message').fill('e2e commit and push')
-          await expect(modal.getByTestId('git-commit-and-push')).toBeEnabled()
-          await modal.getByTestId('git-commit-and-push').click()
-          await expect(modal).toBeHidden({ timeout: 30_000 })
+          await window.getByTestId('branch-push').click()
+          const dialog = window.getByTestId('push-commit-modal')
+          await expect(dialog).toBeVisible()
+          const include = dialog.getByTestId('push-include-pending')
+          await expect(include).toBeChecked({ timeout: 10_000 })
+          await expect(dialog).toContainText('Commit the 1 uncommitted change first')
+          await include.uncheck()
+          await expect(dialog.getByTestId('push-commit-confirm')).toHaveText('Push commits')
+          await dialog.getByTestId('push-commit-confirm').click()
+          await expect(dialog).toBeHidden({ timeout: 20_000 })
 
           await expect
             .poll(() => remoteRef(bare.repoPath), { timeout: 20_000 })
-            .not.toBe(baselineRef)
-          expect(remoteRef(bare.repoPath)).toBe(localHead(localPath))
-          const subjects = remoteSubjects(bare.repoPath)
-          expect(subjects[0]).toBe('e2e commit and push')
-          expect(subjects).toContain('e2e local commit')
+            .toBe(localHead(localPath))
+          expect(remoteSubjects(bare.repoPath)[0]).toBe('e2e selective commit')
+          const pushed = namesAt(['--git-dir', bare.repoPath], 'refs/heads/main')
+          expect(pushed).toContain(keepName)
+          expect(pushed).not.toContain(laterName)
           await expectSyncCounts(window, '0↓ 0↑')
+          await expect(window.getByTestId('branch-commit')).toBeEnabled()
           await closeBranchMenu(window)
         })
-      } finally {
-        // Same cleanup as git-advanced: drop the git config, put the project
-        // back in local mode — then re-enter so the branch store forgets git.
-        await closeBranchMenu(window).catch(() => {})
-        await dismissOverlays(window).catch(() => {})
-        await window
-          .evaluate(
-            async ({ ids }) => {
-              const w = window as unknown as Win
-              for (const id of ids) await w.api?.endpoint?.delete(id)
-            },
-            { ids: createdIds },
-          )
-          .catch(() => {})
-        await window
-          .evaluate(
-            async ({ pid, lp, mode }) => {
-              const w = window as unknown as Win
-              await w.api?.settings?.set('git', {})
-              await w.api?.project?.update(pid, { local_path: lp, save_mode: mode })
-            },
-            {
-              pid: projectId,
-              lp: before?.local_path ?? null,
-              mode: before?.save_mode || 'local',
-            },
-          )
-          .catch(() => {})
-        await reenterProject(window).catch(() => {})
-        await treeClearSearch(window).catch(() => {})
-        fs.rmSync(localPath, { recursive: true, force: true })
-        fs.rmSync(bare.repoPath, { recursive: true, force: true })
-      }
+      })
     },
   )
 })

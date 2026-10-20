@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { GitCommitHorizontal } from 'lucide-react'
 import Modal from '../shared/Modal'
-import GitChangesList from '../sidebar/GitChangesList'
+import CommitChangesPicker from './CommitChangesPicker'
 import { useTranslation } from '../../lib/i18n'
-import type { GitChangesSummary } from '../../../shared/git-changes'
+import { allChangeKeys, selectionForCommit } from '../../lib/git-change-selection'
+import { gitChangeKey, type GitChangesSummary } from '../../../shared/git-changes'
 
 interface CommitChangesModalProps {
   open: boolean
@@ -16,8 +17,11 @@ interface CommitChangesModalProps {
   /** False without a Git token: Commit and push is disabled with a hint. */
   canPush: boolean
   busy: boolean
-  /** Receives the TRIMMED message; never blank (the buttons disable). */
-  onCommit: (message: string, andPush: boolean) => void
+  /**
+   * Receives the TRIMMED message; never blank (the buttons disable). `only`
+   * = the checked change keys, undefined when every change is checked.
+   */
+  onCommit: (message: string, andPush: boolean, only?: string[]) => void
   onDiscard: () => void
   onCancel: () => void
 }
@@ -25,8 +29,8 @@ interface CommitChangesModalProps {
 /**
  * "Commit changes" (issue #207, Insomnia parity): a message, the pre-commit
  * summary grouped by kind, and Commit / Commit and push / Discard all
- * changes. The project is one tracked file, so there is no per-row staging —
- * the list is exactly what the commit writes.
+ * changes. Issue #214: every change has a checkbox (all checked by default);
+ * only the checked ones are committed, the rest stay uncommitted.
  */
 export default function CommitChangesModal(props: CommitChangesModalProps) {
   const { t } = useTranslation()
@@ -58,10 +62,21 @@ function CommitForm({
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const trimmed = message.trim()
   const blank = trimmed.length === 0
-  const items = changes?.items ?? []
+  const items = useMemo(() => changes?.items ?? [], [changes])
   const hasChanges = items.length > 0
-  const canCommit = hasChanges && !blank && !busy
-  const canCommitAndPush = canPush && !blank && !busy && (hasChanges || (changes?.ahead ?? 0) > 0)
+  // null = "everything" — follows a list that (re)loads while the panel is open.
+  // Reset only when the SET of changes differs, not on every re-read.
+  const [picked, setPicked] = useState<{ listKey: string; keys: Set<string> } | null>(null)
+  const listKey = items.map(gitChangeKey).join('|')
+  const selected = useMemo(
+    () => (picked && picked.listKey === listKey ? picked.keys : allChangeKeys(items)),
+    [picked, listKey, items],
+  )
+  const only = selectionForCommit(selected, items)
+  const nothingPicked = hasChanges && only?.length === 0
+  const canCommit = hasChanges && !nothingPicked && !blank && !busy
+  const canCommitAndPush =
+    canPush && !blank && !busy && !nothingPicked && (hasChanges || (changes?.ahead ?? 0) > 0)
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -75,7 +90,7 @@ function CommitForm({
     // Cmd/Ctrl+Enter commits; a plain Enter is a new line of the message.
     if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.nativeEvent.isComposing) return
     e.preventDefault()
-    if (canCommit) onCommit(trimmed, false)
+    if (canCommit) onCommit(trimmed, false, only)
   }
 
   return (
@@ -117,30 +132,12 @@ function CommitForm({
           )}
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div
-            className="mb-1.5 text-[12px] font-medium text-[var(--muted)]"
-            data-testid="git-changes-heading"
-          >
-            {t('gitCommit.changesHeading').replace('{count}', String(items.length))}
-          </div>
-          <div className="min-h-[64px] flex-1 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface)] p-2">
-            {loading && !changes ? (
-              <p className="text-[13px] text-[var(--hint)]">{t('gitCommit.loading')}</p>
-            ) : !changes ? (
-              <p className="text-[13px] text-[var(--red)]">{t('gitCommit.loadFailed')}</p>
-            ) : hasChanges ? (
-              <GitChangesList items={items} />
-            ) : (
-              <p data-testid="git-changes-empty" className="text-[13px] text-[var(--hint)]">
-                {t('gitCommit.noChanges')}
-              </p>
-            )}
-          </div>
-          {hasChanges && (
-            <p className="mt-1.5 text-[12px] text-[var(--hint)]">{t('gitCommit.singleFileNote')}</p>
-          )}
-        </div>
+        <CommitChangesPicker
+          changes={changes}
+          loading={loading}
+          selected={selected}
+          onSelect={(keys) => setPicked({ listKey, keys })}
+        />
       </div>
 
       <div className="flex items-center gap-2 border-t border-[var(--border)] px-5 py-3">
@@ -164,7 +161,7 @@ function CommitForm({
         </button>
         <button
           type="button"
-          onClick={() => onCommit(trimmed, true)}
+          onClick={() => onCommit(trimmed, true, only)}
           disabled={!canCommitAndPush}
           title={canPush ? undefined : t('gitCommit.noToken')}
           data-testid="git-commit-and-push"
@@ -174,7 +171,7 @@ function CommitForm({
         </button>
         <button
           type="button"
-          onClick={() => onCommit(trimmed, false)}
+          onClick={() => onCommit(trimmed, false, only)}
           disabled={!canCommit}
           data-testid="git-commit-confirm"
           className="rounded-md bg-[var(--accent)] px-3.5 py-1.5 text-[13px] font-medium text-white enabled:cursor-pointer enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"

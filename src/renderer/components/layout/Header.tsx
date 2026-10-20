@@ -6,7 +6,7 @@ import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
 import UserMenu from './UserMenu'
-import PushCommitModal from '../modals/PushCommitModal'
+import PushCommitModal, { type PushChoice } from '../modals/PushCommitModal'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
 import { T } from '../../styles/tokens'
 
@@ -121,14 +121,17 @@ export default function Header() {
     setPushDraft(suggestedCommitMessage(activeProject.display_name || activeProject.name, locale))
   }
 
-  async function runPush(commitMessage: string) {
+  async function runPush(commitMessage: string, choice?: PushChoice) {
     setPushDraft(null)
     if (!activeProject) return
     setPushStatus('loading')
     setStatusMsg('')
     setGitLoading('Pushing to remote...')
     try {
-      const result = await window.api.git.push(activeProject.id, { commitMessage })
+      const result = await window.api.git.push(activeProject.id, {
+        commitMessage,
+        commitPending: choice?.commitPending !== false,
+      })
 
       if (result?.success) {
         const done = result.data?.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'
@@ -478,6 +481,7 @@ export default function Header() {
 
       <PushCommitModal
         open={pushDraft !== null}
+        projectId={activeProject?.id}
         defaultMessage={pushDraft ?? ''}
         onConfirm={runPush}
         onCancel={() => setPushDraft(null)}

@@ -64,26 +64,35 @@ export default function GitCommitFlow({
     await fetchChanges(id)
   }
 
-  async function runCommit(message: string, andPush: boolean): Promise<void> {
+  async function runCommit(message: string, andPush: boolean, only?: string[]): Promise<void> {
     if (!projectId || busy) return
     setBusy(true)
     setGitLoading(andPush ? t('gitCommit.pushing') : t('gitCommit.committing'))
     try {
       if (andPush) {
-        // The #136 path: commit with this message, then push.
-        const r = await pushBranch(projectId, message)
+        // The #136 path: commit with this message (only the checked changes,
+        // issue #214), then push.
+        const r = await pushBranch(projectId, message, only ? { only } : undefined)
         if (!r.success) {
           toast.error(gitError(r.error, 'toast.pushFailed'))
           return
         }
         toast.success(t(r.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'))
       } else {
-        const r = await commitChanges(projectId, message)
+        const r = await commitChanges(projectId, message, only)
         if (!r.success) {
           toast.error(gitError(r.error, 'gitCommit.commitFailed'))
           return
         }
-        toast.success(t(r.committed ? 'gitCommit.committed' : 'gitCommit.nothingToCommit'))
+        if (r.committed && r.partial) {
+          toast.success(
+            t('gitCommit.committedPartial')
+              .replace('{included}', String(r.included ?? only?.length ?? 0))
+              .replace('{count}', String(changes?.items.length ?? 0)),
+          )
+        } else {
+          toast.success(t(r.committed ? 'gitCommit.committed' : 'gitCommit.nothingToCommit'))
+        }
       }
       setMode(null)
       await refresh(projectId)
@@ -123,7 +132,7 @@ export default function GitCommitFlow({
         defaultMessage={defaultMessage}
         canPush={hasToken}
         busy={busy}
-        onCommit={(message, andPush) => void runCommit(message, andPush)}
+        onCommit={(message, andPush, only) => void runCommit(message, andPush, only)}
         onDiscard={() => setMode('discard')}
         onCancel={() => setMode(null)}
       />

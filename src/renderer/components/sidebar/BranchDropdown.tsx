@@ -6,7 +6,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
-import PushCommitModal from '../modals/PushCommitModal'
+import PushCommitModal, { type PushChoice } from '../modals/PushCommitModal'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
 import BranchGitActions from './BranchGitActions'
 import GitCommitFlow, { type GitFlowMode } from './GitCommitFlow'
@@ -157,12 +157,14 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setPushDraft(suggestedCommitMessage(activeProjectName || 'project', locale))
   }
 
-  async function runPush(commitMessage: string) {
+  async function runPush(commitMessage: string, choice?: PushChoice) {
     setPushDraft(null)
     if (!activeProjectId) return
     setBusy(true)
     setGitLoading('Pushing to remote...')
-    const result = await pushBranch(activeProjectId, commitMessage)
+    const result = await pushBranch(activeProjectId, commitMessage, {
+      commitPending: choice?.commitPending !== false,
+    })
     if (result.success) {
       toast.success(t(result.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'))
       void fetchChanges(activeProjectId)
@@ -502,6 +504,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
       <GitCommitFlow mode={gitFlow} setMode={setGitFlow} />
       <PushCommitModal
         open={pushDraft !== null}
+        projectId={activeProjectId}
         defaultMessage={pushDraft ?? ''}
         onConfirm={runPush}
         onCancel={() => setPushDraft(null)}

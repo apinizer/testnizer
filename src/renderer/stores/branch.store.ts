@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { SaveHistoryEntry } from '../types'
-import type { GitChangesSummary } from '../../shared/git-changes'
+import type { GitChangesSummary, GitPushOpts } from '../../shared/git-changes'
 
 interface GitBranch {
   /** DB row id (UUID) for legacy non-git branches. Absent for synthetic
@@ -79,14 +79,25 @@ interface BranchStore {
   pushBranch: (
     projectId: string,
     commitMessage?: string,
+    opts?: Omit<GitPushOpts, 'commitMessage'>,
   ) => Promise<{ success: boolean; error?: string; committed?: boolean }>
   pullBranch: (projectId: string) => Promise<Resolution>
   fetchChanges: (projectId: string) => Promise<GitChangesSummary | null>
-  /** Local commit, no push. `committed` false → nothing new to commit. */
+  /**
+   * Local commit, no push. `committed` false → nothing new to commit. `only`
+   * (issue #214): commit just these change keys; `partial` → some stayed.
+   */
   commitChanges: (
     projectId: string,
     message: string,
-  ) => Promise<{ success: boolean; error?: string; committed?: boolean }>
+    only?: string[],
+  ) => Promise<{
+    success: boolean
+    error?: string
+    committed?: boolean
+    partial?: boolean
+    included?: number
+  }>
   /** DB + checkout back to the last commit. */
   discardChanges: (projectId: string) => Promise<{ success: boolean; error?: string }>
   deleteBranch: (
@@ -297,9 +308,9 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     }
   },
 
-  pushBranch: async (projectId, commitMessage) => {
+  pushBranch: async (projectId, commitMessage, opts) => {
     try {
-      const result = await api().git.push(projectId, { commitMessage })
+      const result = await api().git.push(projectId, { ...opts, commitMessage })
       if (result?.success) {
         return { success: true, committed: result.data?.committed !== false }
       }
@@ -357,10 +368,19 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     }
   },
 
-  commitChanges: async (projectId, message) => {
+  commitChanges: async (projectId, message, only) => {
     try {
-      const result = await api().git.commit(projectId, message)
-      if (result?.success) return { success: true, committed: result.data?.committed !== false }
+      const result = only
+        ? await api().git.commit(projectId, message, { only })
+        : await api().git.commit(projectId, message)
+      if (result?.success) {
+        return {
+          success: true,
+          committed: result.data?.committed !== false,
+          partial: result.data?.partial === true,
+          included: result.data?.included,
+        }
+      }
       return { success: false, error: result?.error }
     } catch (e) {
       return { success: false, error: (e as Error).message }
