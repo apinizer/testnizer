@@ -1428,8 +1428,10 @@ function SuiteContentsTree({
         </div>
         {!collapsed && (
           <>
-            {childFolders.map((cf) => renderFolder(cf, depth + 1, nextSeen))}
+            {/* Same order the suite runs in (src/shared/suite-order.ts): a
+                folder's own requests, then its subfolders. */}
             {items.map((it) => renderItem(it, FOLDER_BASE + (depth + 1) * STEP + 6))}
+            {childFolders.map((cf) => renderFolder(cf, depth + 1, nextSeen))}
           </>
         )}
       </div>
@@ -1441,8 +1443,8 @@ function SuiteContentsTree({
 
   return (
     <>
-      {topFolders.map((folder) => renderFolder(folder, 0, new Set()))}
       {rootItems.map((it) => renderItem(it, 10))}
+      {topFolders.map((folder) => renderFolder(folder, 0, new Set()))}
       {settingsFolder && (
         <FolderSettingsModal
           open

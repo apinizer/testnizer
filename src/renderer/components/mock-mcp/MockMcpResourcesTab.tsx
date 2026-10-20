@@ -3,6 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import type { MockMcpDraftUpdater, MockMcpResource, MockMcpServerDraft } from '../../types/mock-mcp'
 import { Field, GhostButton, INPUT_CLS, SectionLabel, SELECT_CLS } from './ui'
+import { blankResource } from './mock-mcp-draft'
 import { ListItem } from './ui-display'
 
 function ResourceForm({
@@ -121,13 +122,7 @@ export default function MockMcpResourcesTab({
   const resource = index >= 0 ? draft.resources[index] : undefined
 
   const add = (): void => {
-    const n = draft.resources.length + 1
-    const res: MockMcpResource = {
-      uri: `mock://resource-${n}`,
-      name: `resource-${n}`,
-      mimeType: 'text/plain',
-      text: '',
-    }
+    const res = blankResource(draft.resources.length + 1)
     change((d) => ({ ...d, resources: [...d.resources, res] }))
     setSelected(draft.resources.length)
   }

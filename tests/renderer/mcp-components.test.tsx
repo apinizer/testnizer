@@ -120,7 +120,7 @@ describe('McpResultView — content types', () => {
     expect(within(binRes).getByTestId('mcp-resource-download')).toBeInTheDocument()
   })
 
-  it('isError → red border + label; the Raw toggle shows the exact JSON', () => {
+  it('isError → red border + label; JSON | Preview switches to the exact JSON and back', () => {
     render(
       <McpResultView
         result={{ content: [{ type: 'text', text: 'intentionally failed' }], isError: true }}
@@ -132,13 +132,31 @@ describe('McpResultView — content types', () => {
     expect(screen.getByTestId('mcp-result-error-label')).toBeInTheDocument()
     expect(screen.getByTestId('mcp-block-text')).toHaveTextContent('intentionally failed')
 
-    fireEvent.click(screen.getByTestId('mcp-result-raw-toggle'))
+    // Preview (the block view) is the default, as in Postman's MCP result.
+    expect(screen.getByTestId('mcp-result-view-preview')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('mcp-result-view-json')).toHaveTextContent('JSON')
+    fireEvent.click(screen.getByTestId('mcp-result-view-json'))
+    expect(screen.getByTestId('mcp-result-view-json')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('mcp-result-json')).toHaveTextContent('"isError": true')
+    expect(screen.queryByTestId('mcp-block-text')).toBeNull()
+    fireEvent.click(screen.getByTestId('mcp-result-view-preview'))
+    expect(screen.getByTestId('mcp-block-text')).toHaveTextContent('intentionally failed')
+    expect(screen.queryByTestId('mcp-result-json')).toBeNull()
   })
 
-  it('a non-CallToolResult value falls back to pretty JSON', () => {
+  it('a non-CallToolResult value falls back to pretty JSON; Preview is disabled', () => {
     render(<McpResultView result={{ toolResult: 42 }} />)
     expect(screen.getByTestId('mcp-result-json')).toHaveTextContent('"toolResult": 42')
+    expect(screen.getByTestId('mcp-result-view-json')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('mcp-result-view-preview')).toBeDisabled()
+  })
+
+  it('Turkish labels', () => {
+    useUIStore.setState({ locale: 'tr' })
+    render(<McpResultView result={{ content: [{ type: 'text', text: 'x' }] }} />)
+    expect(screen.getByTestId('mcp-result-view-preview')).toHaveTextContent('Önizleme')
+    expect(screen.getByRole('group', { name: 'Sonuç görünümü' })).toBeInTheDocument()
+    useUIStore.setState({ locale: 'en' })
   })
 })
 

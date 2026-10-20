@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { SaveHistoryEntry } from '../types'
+import type { GitChangesSummary, GitPushOpts } from '../../shared/git-changes'
 
 interface GitBranch {
   /** DB row id (UUID) for legacy non-git branches. Absent for synthetic
@@ -42,7 +43,8 @@ export interface ConflictContext {
 // on failure, narrow further via `'conflict' in r` vs `'error' in r` instead
 // of optional-chaining gymnastics.
 export type Resolution =
-  | { success: true }
+  /** `emptySecrets` (pull): secret values still empty on this machine. */
+  | { success: true; emptySecrets?: number }
   | { success: false; conflict: ConflictContext }
   | { success: false; error: string }
 
@@ -50,7 +52,15 @@ interface BranchStore {
   branches: GitBranch[]
   currentBranch: string
   hasGit: boolean
+  /** A remote credential is configured (Push / Commit and push need one). */
+  hasToken: boolean
   loading: boolean
+  /**
+   * What a commit would write + ahead/behind (issue #207). null = unknown
+   * (not fetched yet, or the call failed) — the menu then disables nothing.
+   */
+  changes: GitChangesSummary | null
+  changesLoading: boolean
 
   // Legacy compat
   activeBranchId: string | null
@@ -70,8 +80,27 @@ interface BranchStore {
   pushBranch: (
     projectId: string,
     commitMessage?: string,
+    opts?: Omit<GitPushOpts, 'commitMessage'>,
   ) => Promise<{ success: boolean; error?: string; committed?: boolean }>
   pullBranch: (projectId: string) => Promise<Resolution>
+  fetchChanges: (projectId: string) => Promise<GitChangesSummary | null>
+  /**
+   * Local commit, no push. `committed` false → nothing new to commit. `only`
+   * (issue #214): commit just these change keys; `partial` → some stayed.
+   */
+  commitChanges: (
+    projectId: string,
+    message: string,
+    only?: string[],
+  ) => Promise<{
+    success: boolean
+    error?: string
+    committed?: boolean
+    partial?: boolean
+    included?: number
+  }>
+  /** DB + checkout back to the last commit. */
+  discardChanges: (projectId: string) => Promise<{ success: boolean; error?: string }>
   deleteBranch: (
     projectId: string,
     branchName: string,
@@ -99,7 +128,10 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
   branches: [],
   currentBranch: 'main',
   hasGit: false,
+  hasToken: false,
   loading: false,
+  changes: null,
+  changesLoading: false,
   activeBranchId: null,
   saveHistory: [],
   pendingConflict: null,
@@ -108,8 +140,8 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     try {
       const result = await api().git.hasConfig(projectId)
       if (result?.success) {
-        const data = result.data as { hasGit: boolean }
-        set({ hasGit: data.hasGit })
+        const data = result.data as { hasGit: boolean; hasToken?: boolean }
+        set({ hasGit: data.hasGit, hasToken: !!data.hasToken })
       }
     } catch {
       set({ hasGit: false })
@@ -183,6 +215,8 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
   },
 
   ensureDefault: async (projectId) => {
+    // A new project: the previous one's summary must not drive the menu.
+    set({ changes: null })
     await get().checkGitConfig(projectId)
     // For non-git projects, seed the `main` row in the DB so older projects
     // that pre-date branch-seeding still show `main` in the Branches modal (B1).
@@ -275,9 +309,9 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     }
   },
 
-  pushBranch: async (projectId, commitMessage) => {
+  pushBranch: async (projectId, commitMessage, opts) => {
     try {
-      const result = await api().git.push(projectId, { commitMessage })
+      const result = await api().git.push(projectId, { ...opts, commitMessage })
       if (result?.success) {
         return { success: true, committed: result.data?.committed !== false }
       }
@@ -307,9 +341,61 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
           return { success: false, conflict }
         }
         await get().fetchBranches(projectId)
-        return { success: true }
+        return {
+          success: true,
+          emptySecrets: (result.data as { emptySecrets?: number }).emptySecrets,
+        }
       }
       return { success: false, error: result?.error || 'Pull failed' }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  },
+
+  fetchChanges: async (projectId) => {
+    // Older bridges (and tests that mock only part of `git`) have no
+    // `changes` — stay "unknown" so nothing gets disabled on a guess.
+    const changes = api()?.git?.changes
+    if (!changes) {
+      set({ changes: null })
+      return null
+    }
+    set({ changesLoading: true })
+    try {
+      const result = await changes(projectId)
+      const data = result?.success && result.data ? result.data : null
+      set({ changes: data, changesLoading: false })
+      return data
+    } catch {
+      set({ changes: null, changesLoading: false })
+      return null
+    }
+  },
+
+  commitChanges: async (projectId, message, only) => {
+    try {
+      const result = only
+        ? await api().git.commit(projectId, message, { only })
+        : await api().git.commit(projectId, message)
+      if (result?.success) {
+        return {
+          success: true,
+          committed: result.data?.committed !== false,
+          partial: result.data?.partial === true,
+          included: result.data?.included,
+        }
+      }
+      return { success: false, error: result?.error }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  },
+
+  discardChanges: async (projectId) => {
+    try {
+      const result = await api().git.discard(projectId)
+      if (result?.success) return { success: true }
+      return { success: false, error: result?.error }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

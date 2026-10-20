@@ -3,9 +3,21 @@ import type { KeyboardEvent } from 'react'
 import { ArrowUpCircle } from 'lucide-react'
 import Modal from '../shared/Modal'
 import { useTranslation } from '../../lib/i18n'
+import { useBranchStore } from '../../stores/branch.store'
+
+/** What the user chose about uncommitted changes (issue #214). */
+export interface PushChoice {
+  /** false = push the existing commits only; uncommitted changes stay. */
+  commitPending: boolean
+}
 
 interface PushCommitModalProps {
   open: boolean
+  /**
+   * The project being pushed: its uncommitted changes are counted on open
+   * (`git:changes`) so the dialog can say what the push would sweep in.
+   */
+  projectId?: string | null
   /** Prefilled, fully selected text — see `suggestedCommitMessage`. */
   defaultMessage: string
   /**
@@ -14,16 +26,22 @@ interface PushCommitModalProps {
    * instead of being silently swapped for the default, so the user always
    * sees exactly what gets committed.
    */
-  onConfirm: (message: string) => void
+  onConfirm: (message: string, choice: PushChoice) => void
   onCancel: () => void
 }
 
 /**
  * "Commit & push" dialog shared by the header Push button and the branch
  * dropdown's Push (issue #136). Enter confirms, Esc cancels.
+ *
+ * Issue #214: with uncommitted changes the dialog says how many and lets the
+ * user leave them out ("Commit the N uncommitted changes first", checked by
+ * default = the #136 behaviour). Unchecked, only the existing commits are
+ * pushed — after a selective commit the rest is not swept in.
  */
 export default function PushCommitModal({
   open,
+  projectId,
   defaultMessage,
   onConfirm,
   onCancel,
@@ -39,12 +57,18 @@ export default function PushCommitModal({
     >
       {/* Radix unmounts the content while closed, so the form (and its
           state) starts fresh from `defaultMessage` on every open. */}
-      <PushCommitForm defaultMessage={defaultMessage} onConfirm={onConfirm} onCancel={onCancel} />
+      <PushCommitForm
+        projectId={projectId}
+        defaultMessage={defaultMessage}
+        onConfirm={onConfirm}
+        onCancel={onCancel}
+      />
     </Modal>
   )
 }
 
 function PushCommitForm({
+  projectId,
   defaultMessage,
   onConfirm,
   onCancel,
@@ -52,8 +76,16 @@ function PushCommitForm({
   const { t } = useTranslation()
   const [message, setMessage] = useState(defaultMessage)
   const inputRef = useRef<HTMLInputElement>(null)
+  const pending = useBranchStore((s) => s.changes?.items.length ?? 0)
+  const fetchChanges = useBranchStore((s) => s.fetchChanges)
+  const [commitPending, setCommitPending] = useState(true)
   const trimmed = message.trim()
-  const blank = trimmed.length === 0
+  // Pushing commits only needs no message.
+  const blank = commitPending && trimmed.length === 0
+
+  useEffect(() => {
+    if (projectId) void fetchChanges(projectId)
+  }, [projectId, fetchChanges])
 
   // Focus + select after Radix's own mount auto-focus, so typing replaces
   // the suggestion while arrow keys keep it.
@@ -67,7 +99,7 @@ function PushCommitForm({
 
   function submit(): void {
     if (blank) return
-    onConfirm(trimmed)
+    onConfirm(trimmed, { commitPending: commitPending || pending === 0 })
   }
 
   function handleKeyDown(e: KeyboardEvent<HTMLInputElement>): void {
@@ -104,13 +136,34 @@ function PushCommitForm({
           onKeyDown={handleKeyDown}
           placeholder={t('push.messagePlaceholder')}
           aria-invalid={blank}
+          disabled={!commitPending}
           data-testid="push-commit-message"
-          className="w-full rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          className="w-full rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
         />
         {blank && (
           <p role="alert" className="mt-1.5 text-[12px] text-[var(--red)]">
             {t('push.messageRequired')}
           </p>
+        )}
+        {pending > 0 && (
+          <label className="mt-3 flex cursor-pointer items-start gap-2 text-[12px] text-[var(--text)]">
+            <input
+              type="checkbox"
+              checked={commitPending}
+              onChange={(e) => setCommitPending(e.target.checked)}
+              data-testid="push-include-pending"
+              className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--accent)]"
+            />
+            <span>
+              {t(pending === 1 ? 'push.includePendingOne' : 'push.includePending').replace(
+                '{count}',
+                String(pending),
+              )}
+              {!commitPending && (
+                <span className="block text-[var(--hint)]">{t('push.pendingStays')}</span>
+              )}
+            </span>
+          </label>
         )}
       </div>
 
@@ -130,7 +183,7 @@ function PushCommitForm({
           data-testid="push-commit-confirm"
           className="rounded-md bg-[var(--accent)] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors enabled:cursor-pointer enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {t('push.confirm')}
+          {t(commitPending || pending === 0 ? 'push.confirm' : 'push.confirmPushOnly')}
         </button>
       </div>
     </div>

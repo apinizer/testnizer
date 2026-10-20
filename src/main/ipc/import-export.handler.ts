@@ -6,6 +6,7 @@ import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protoc
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
 import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
+import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import {
   soapTransportFromMeta,
   withSoapTransportHeaders,
@@ -3230,24 +3231,35 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     | undefined
   if (!suite) throw new Error('Test suite not found')
 
-  const folders = db
-    .prepare(
-      `SELECT id, parent_id, name, auth, pre_script, post_script
-       FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC`,
-    )
-    .all(suiteId) as ExportFolderRow[]
-  const items = db
-    .prepare('SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order ASC')
-    .all(suiteId) as Array<{
-    id: string
-    folder_id: string | null
-    method: string | null
-    url: string | null
-    name: string
-    request_schema: string | null
-    assertions: string | null
-    protocol: string | null
-  }>
+  // Execution order (src/shared/suite-order.ts): folders in tree order, items
+  // depth-first. A suite-wide `ORDER BY sort_order` interleaved folders.
+  const folders = orderSuiteFolders(
+    db
+      .prepare(
+        `SELECT id, parent_id, name, sort_order, created_at, auth, pre_script, post_script
+         FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC, created_at ASC`,
+      )
+      .all(suiteId) as Array<ExportFolderRow & { sort_order: number; created_at: number }>,
+  )
+  const items = orderSuiteItems(
+    db
+      .prepare(
+        'SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order ASC, created_at ASC',
+      )
+      .all(suiteId) as Array<{
+      id: string
+      folder_id: string | null
+      method: string | null
+      url: string | null
+      name: string
+      request_schema: string | null
+      assertions: string | null
+      protocol: string | null
+      sort_order: number
+      created_at: number
+    }>,
+    folders,
+  )
   const endpoints: ExportEndpointRow[] = items.map((it) => ({
     id: it.id,
     folder_id: it.folder_id,
@@ -3270,6 +3282,15 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     rows,
     collectPostmanVariables(db, suite.project_id),
   )
+  // Postman runs a collection in array order. The builder lists a level's
+  // folders before its requests; a suite runs a level's own requests first,
+  // so reorder each level to match — the file then runs in Postman / Newman
+  // exactly as it does in Testnizer.
+  const requestsFirst = (list: PostmanItem[]): PostmanItem[] => {
+    for (const node of list) if (node.item) node.item = requestsFirst(node.item)
+    return [...list.filter((n) => !n.item), ...list.filter((n) => !!n.item)]
+  }
+  collection.item = requestsFirst(collection.item)
   return { content: JSON.stringify(collection, null, 2), skipped }
 }
 
@@ -4982,8 +5003,38 @@ function buildInsomniaResources(
   description: string | null,
   folders: ExportFolderRow[],
   endpoints: ExportEndpointRow[],
+  /**
+   * `executionOrder`: `endpoints` are already in run order (a suite) — stamp
+   * every folder and request with a `metaSortKey` so Insomnia, which orders
+   * siblings by that key and not by array position, runs them in that order:
+   * a level's own requests first, then its subfolders.
+   */
+  opts: { executionOrder?: boolean } = {},
 ): InsomniaResource[] {
   const resources: InsomniaResource[] = []
+  const sortKeys = new Map<string, number>()
+  if (opts.executionOrder) {
+    let next = 0
+    const folderIds = new Set(folders.map((f) => f.id))
+    const childFolders = new Map<string | null, ExportFolderRow[]>()
+    for (const f of folders) {
+      const key = f.parent_id && folderIds.has(f.parent_id) ? f.parent_id : null
+      childFolders.set(key, [...(childFolders.get(key) ?? []), f])
+    }
+    const walk = (folderId: string | null, seen: Set<string>): void => {
+      for (const ep of endpoints) {
+        const at = ep.folder_id && folderIds.has(ep.folder_id) ? ep.folder_id : null
+        if (at === folderId) sortKeys.set(`req_${ep.id}`, next++)
+      }
+      for (const f of childFolders.get(folderId) ?? []) {
+        if (seen.has(f.id)) continue
+        seen.add(f.id)
+        sortKeys.set(`fld_${f.id}`, next++)
+        walk(f.id, seen)
+      }
+    }
+    walk(null, new Set())
+  }
 
   // Workspace root resource
   resources.push({
@@ -4994,12 +5045,27 @@ function buildInsomniaResources(
   })
 
   for (const folder of folders) {
-    resources.push({
+    const group: InsomniaResource = {
       _id: `fld_${folder.id}`,
       _type: 'request_group',
       parentId: folder.parent_id ? `fld_${folder.parent_id}` : workspaceId,
       name: folder.name,
-    })
+    }
+    // Folder auth + scripts (suite folders carry them; the v4 importer reads
+    // these same fields back onto the folder).
+    if (folder.pre_script?.trim()) group.preRequestScript = folder.pre_script
+    if (folder.post_script?.trim()) group.afterResponseScript = folder.post_script
+    if (folder.auth) {
+      try {
+        const auth = authToInsomnia(JSON.parse(folder.auth) as UiRequestSchema['auth'])
+        if (auth) group.authentication = auth
+      } catch {
+        /* unparseable folder auth — leave it out rather than fail the export */
+      }
+    }
+    const key = sortKeys.get(group._id)
+    if (key !== undefined) group.metaSortKey = key
+    resources.push(group)
   }
 
   for (const ep of endpoints) {
@@ -5053,6 +5119,8 @@ function buildInsomniaResources(
     if (schema.preScript && schema.preScript.trim()) resource.preRequestScript = schema.preScript
     if (schema.postScript && schema.postScript.trim())
       resource.afterResponseScript = schema.postScript
+    const key = sortKeys.get(resource._id)
+    if (key !== undefined) resource.metaSortKey = key
 
     resources.push(resource)
   }
@@ -5115,22 +5183,33 @@ export function buildInsomniaSuiteExport(suiteId: string): CollectionExportResul
     | undefined
   if (!suite) throw new Error('Test suite not found')
 
-  const folders = db
-    .prepare(
-      'SELECT id, parent_id, name FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC',
-    )
-    .all(suiteId) as ExportFolderRow[]
-  const items = db
-    .prepare('SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order ASC')
-    .all(suiteId) as Array<{
-    id: string
-    folder_id: string | null
-    method: string | null
-    url: string | null
-    name: string
-    request_schema: string | null
-    protocol: string | null
-  }>
+  // Execution order + folder auth/scripts, as in the Postman suite export.
+  const folders = orderSuiteFolders(
+    db
+      .prepare(
+        `SELECT id, parent_id, name, sort_order, created_at, auth, pre_script, post_script
+         FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC, created_at ASC`,
+      )
+      .all(suiteId) as Array<ExportFolderRow & { sort_order: number; created_at: number }>,
+  )
+  const items = orderSuiteItems(
+    db
+      .prepare(
+        'SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order ASC, created_at ASC',
+      )
+      .all(suiteId) as Array<{
+      id: string
+      folder_id: string | null
+      method: string | null
+      url: string | null
+      name: string
+      request_schema: string | null
+      protocol: string | null
+      sort_order: number
+      created_at: number
+    }>,
+    folders,
+  )
   const { rows: endpoints, skipped } = partitionExportable(
     items.map((it) => ({
       id: it.id,
@@ -5150,6 +5229,7 @@ export function buildInsomniaSuiteExport(suiteId: string): CollectionExportResul
     suite.description ?? null,
     folders,
     endpoints,
+    { executionOrder: true },
   )
   return { content: JSON.stringify(wrapInsomniaExport(resources), null, 2), skipped }
 }

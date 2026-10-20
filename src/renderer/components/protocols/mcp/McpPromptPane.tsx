@@ -6,6 +6,7 @@ import McpContentBlockView from './McpContentBlockView'
 import McpDescription from './McpDescription'
 import McpRunButton from './McpRunButton'
 import McpCallHeader from './McpCallHeader'
+import McpCallSplit from './McpCallSplit'
 import McpCallNotes from './McpCallNotes'
 import McpHiddenArgsNote from './McpHiddenArgsNote'
 import McpResultTabs from './McpResultTabs'
@@ -35,14 +36,12 @@ export default function McpPromptPane() {
   const def = prompts.find((p) => p.name === selected)
   const args = def?.arguments ?? []
 
+  // Issue #155: same layout as McpToolPane — a scrolling header whose action row
+  // (Get) is sticky at the bottom; floored result.
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Issue #155: same layout as McpToolPane — a scrolling header whose action row
-          (Get) is sticky at the bottom; floored result. */}
-      <div
-        data-testid="mcp-prompt-header"
-        className="min-h-0 shrink overflow-y-auto border-b border-[var(--border)]"
-      >
+    <McpCallSplit
+      headerTestId="mcp-prompt-header"
+      header={
         <div className="flex flex-col gap-2 px-3.5 pt-2.5">
           <span className="font-semibold text-[var(--text)]">{def?.title || selected}</span>
           {def?.description && (
@@ -84,49 +83,51 @@ export default function McpPromptPane() {
             <McpCopyAsMenu capability="prompts" />
           </div>
         </div>
-      </div>
-      <div className="min-h-[5rem] flex-1 overflow-auto p-3.5">
-        <SectionLabel right={<McpCallHeader meta={meta} copyText={() => prettyJson(result)} />}>
-          {t('mcp.prompt.messages')}
-        </SectionLabel>
-        <McpCallNotes />
-        {error ? (
-          <ErrorLine testId="mcp-prompt-error">{error}</ErrorLine>
-        ) : meta?.status === 'cancelled' ? (
-          <div data-testid="mcp-call-cancelled" className="text-[12px] text-[var(--muted)]">
-            {t('mcp.call.cancelledBody')}
-          </div>
-        ) : result ? (
-          <McpResultTabs key={tabId ?? ''} tests={tests}>
-            <div className="flex flex-col gap-2" data-testid="mcp-prompt-result">
-              {result.description && (
-                <p className="m-0 text-[12px] text-[var(--muted)]">{result.description}</p>
-              )}
-              {result.messages.map((m, i) => (
-                <div
-                  key={i}
-                  data-testid="mcp-prompt-message"
-                  data-role={m.role}
-                  className="flex flex-col gap-1.5 rounded-lg border border-[var(--border)] p-2.5"
-                >
-                  <span
-                    className={`self-start rounded px-1.5 text-[10px] font-semibold uppercase ${
-                      m.role === 'user'
-                        ? 'bg-[var(--mb-get-bg)] text-[var(--mb-get-fg)]'
-                        : 'bg-[var(--mb-head-bg)] text-[var(--mb-head-fg)]'
-                    }`}
-                  >
-                    {m.role === 'user' ? t('mcp.prompt.roleUser') : t('mcp.prompt.roleAssistant')}
-                  </span>
-                  <McpContentBlockView block={m.content} />
-                </div>
-              ))}
+      }
+      result={
+        <>
+          <SectionLabel right={<McpCallHeader meta={meta} copyText={() => prettyJson(result)} />}>
+            {t('mcp.prompt.messages')}
+          </SectionLabel>
+          <McpCallNotes />
+          {error ? (
+            <ErrorLine testId="mcp-prompt-error">{error}</ErrorLine>
+          ) : meta?.status === 'cancelled' ? (
+            <div data-testid="mcp-call-cancelled" className="text-[12px] text-[var(--muted)]">
+              {t('mcp.call.cancelledBody')}
             </div>
-          </McpResultTabs>
-        ) : (
-          <EmptyState icon={Inbox} title={t('mcp.prompt.none')} variant="compact" size="sm" />
-        )}
-      </div>
-    </div>
+          ) : result ? (
+            <McpResultTabs key={tabId ?? ''} tests={tests}>
+              <div className="flex flex-col gap-2" data-testid="mcp-prompt-result">
+                {result.description && (
+                  <p className="m-0 text-[12px] text-[var(--muted)]">{result.description}</p>
+                )}
+                {result.messages.map((m, i) => (
+                  <div
+                    key={i}
+                    data-testid="mcp-prompt-message"
+                    data-role={m.role}
+                    className="flex flex-col gap-1.5 rounded-lg border border-[var(--border)] p-2.5"
+                  >
+                    <span
+                      className={`self-start rounded px-1.5 text-[10px] font-semibold uppercase ${
+                        m.role === 'user'
+                          ? 'bg-[var(--mb-get-bg)] text-[var(--mb-get-fg)]'
+                          : 'bg-[var(--mb-head-bg)] text-[var(--mb-head-fg)]'
+                      }`}
+                    >
+                      {m.role === 'user' ? t('mcp.prompt.roleUser') : t('mcp.prompt.roleAssistant')}
+                    </span>
+                    <McpContentBlockView block={m.content} />
+                  </div>
+                ))}
+              </div>
+            </McpResultTabs>
+          ) : (
+            <EmptyState icon={Inbox} title={t('mcp.prompt.none')} variant="compact" size="sm" />
+          )}
+        </>
+      }
+    />
   )
 }

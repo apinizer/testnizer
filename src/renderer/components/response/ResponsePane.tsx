@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, forwardRef } from 'react'
-import { createPortal } from 'react-dom'
+import { useState, useRef, useEffect } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { Loader2, Send, Globe, History as HistoryIcon, Code2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
@@ -16,187 +15,9 @@ import { useTabsStore } from '../../stores/tabs.store'
 import EmptyState from '../shared/EmptyState'
 import StatusBadge from '../shared/StatusBadge'
 import { useUIStore } from '../../stores/ui.store'
-import type { ApiResponse } from '../../types'
+import NetworkInfoPopover from './NetworkInfoPopover'
 
 type ResTabKey = 'body' | 'events' | 'cookies' | 'headers' | 'testResults' | 'wsse' | 'saved'
-
-/** Extract hostname from URL safely */
-function extractHost(url?: string): string {
-  if (!url) return '—'
-  try {
-    const u = new URL(url)
-    return u.host || '—'
-  } catch {
-    return '—'
-  }
-}
-
-/** Extract protocol (http/https) from URL */
-function extractProtocol(url?: string): string {
-  if (!url) return '—'
-  try {
-    const u = new URL(url)
-    return u.protocol.replace(':', '').toUpperCase()
-  } catch {
-    return '—'
-  }
-}
-
-/** Human format milliseconds for the timing table */
-function fmtMs(ms?: number): string {
-  if (ms == null) return '—'
-  if (ms < 1) return '<1 ms'
-  return `${Math.round(ms)} ms`
-}
-
-/**
- * Network info popover — rendered when the globe icon is clicked.
- *
- * Portaled to `document.body` and positioned with `fixed` so the overlay
- * can escape the response pane's `overflow-hidden` clipping rectangle and
- * the workbench's bottom Console panel. The previous absolute-positioned
- * version was clipped at the workbench bottom edge whenever the response
- * pane sat low in the layout (typical 50/50 split), hiding the Timings
- * rows from view.
- */
-const NetworkInfoPopover = forwardRef<
-  HTMLDivElement,
-  { response: ApiResponse; anchor: HTMLElement | null }
->(function NetworkInfoPopover({ response, anchor }, ref) {
-  const POPOVER_W = 320
-  const VIEWPORT_MARGIN = 8
-
-  const [pos, setPos] = useState<{ top: number; left: number; maxHeight: number } | null>(null)
-
-  // Recompute position on mount + when the viewport changes. The button is
-  // anchored at fixed coords from the workbench layout, so we read its
-  // rect on demand rather than tracking it continuously.
-  useLayoutEffect(() => {
-    if (!anchor) return
-    const measure = (): void => {
-      const rect = anchor.getBoundingClientRect()
-      const vh = window.innerHeight
-      const vw = window.innerWidth
-      const spaceBelow = vh - rect.bottom
-      const spaceAbove = rect.top
-      // Pick the side with more room. Threshold: 200px below — anything
-      // less and we flip upward. The popover renders both Network and
-      // Timings sections (~400px when fully populated).
-      const openUp = spaceBelow < 220 && spaceAbove > spaceBelow
-      const maxHeight = Math.max(180, (openUp ? spaceAbove : spaceBelow) - VIEWPORT_MARGIN)
-      const top = openUp
-        ? Math.max(VIEWPORT_MARGIN, rect.top - maxHeight - 4)
-        : Math.min(rect.bottom + 4, vh - maxHeight - VIEWPORT_MARGIN)
-      // Right-align with the button; clamp inside the viewport so the
-      // popover never spills off the left edge on a narrow window.
-      const left = Math.max(
-        VIEWPORT_MARGIN,
-        Math.min(rect.right - POPOVER_W, vw - POPOVER_W - VIEWPORT_MARGIN),
-      )
-      setPos({ top, left, maxHeight })
-    }
-    measure()
-    window.addEventListener('resize', measure)
-    window.addEventListener('scroll', measure, true)
-    return () => {
-      window.removeEventListener('resize', measure)
-      window.removeEventListener('scroll', measure, true)
-    }
-  }, [anchor])
-
-  if (!pos) return null
-
-  const url = response.actualRequest?.url
-  const host = extractHost(url)
-  const proto = extractProtocol(url)
-  const contentType =
-    response.headers?.['content-type'] || response.headers?.['Content-Type'] || '—'
-  const server = response.headers?.['server'] || response.headers?.['Server'] || '—'
-  const t = response.timing || { total: 0 }
-
-  const rows: Array<[string, string]> = [
-    ['Host', host],
-    ['Protocol', proto],
-    ['Method', response.actualRequest?.method || '—'],
-    [
-      'Status',
-      response.status != null ? `${response.status} ${response.statusText || ''}`.trim() : '—',
-    ],
-    ['Server', server],
-    ['Content-Type', contentType],
-  ]
-
-  const timings: Array<[string, string]> = [
-    ['DNS lookup', fmtMs(t.dns)],
-    ['TCP handshake', fmtMs(t.tcp)],
-    ['TLS handshake', fmtMs(t.tls)],
-    ['Time to first byte', fmtMs(t.ttfb)],
-    ['Download', fmtMs(t.download)],
-    ['Total', fmtMs(t.total)],
-  ]
-
-  return createPortal(
-    <div
-      ref={ref}
-      className="fixed z-[1000] overflow-auto rounded-md border border-[var(--border)] bg-[var(--white)] shadow-lg"
-      style={{
-        top: pos.top,
-        left: pos.left,
-        width: POPOVER_W,
-        maxHeight: pos.maxHeight,
-        boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
-        fontSize: 13,
-      }}
-    >
-      <div
-        className="px-3 py-2 font-semibold text-[var(--text)]"
-        style={{ borderBottom: '1px solid var(--border)' }}
-      >
-        Network
-      </div>
-      <div className="px-3 py-2">
-        <table className="w-full" style={{ fontSize: 13 }}>
-          <tbody>
-            {rows.map(([k, v]) => (
-              <tr key={k}>
-                <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 110 }}>
-                  {k}
-                </td>
-                <td
-                  className="py-1 font-mono text-[var(--text)]"
-                  style={{ wordBreak: 'break-all' }}
-                >
-                  {v}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div
-        className="px-3 py-2 font-semibold text-[var(--text)]"
-        style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}
-      >
-        Timings
-      </div>
-      <div className="px-3 py-2">
-        <table className="w-full" style={{ fontSize: 13 }}>
-          <tbody>
-            {timings.map(([k, v]) => (
-              <tr key={k}>
-                <td className="py-1 pr-3 text-[var(--muted)]" style={{ width: 160 }}>
-                  {k}
-                </td>
-                <td className="py-1 font-mono text-[var(--text)]">{v}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>,
-    document.body,
-  )
-})
 
 /**
  * Response panel — Postman-style layout:
@@ -352,12 +173,12 @@ export default function ResponsePane() {
     countColor?: string
     countBg?: string
   }> = [
-    { key: 'body', label: 'Body' },
+    { key: 'body', label: t('response.tab.body') },
     ...(eventCount > 0
       ? [
           {
             key: 'events' as ResTabKey,
-            label: 'Events',
+            label: t('response.tab.events'),
             count: eventCount,
             countBg: 'var(--accent-light)',
             countColor: 'var(--accent-text)',
@@ -366,7 +187,7 @@ export default function ResponsePane() {
       : []),
     {
       key: 'cookies',
-      label: 'Cookies',
+      label: t('response.tab.cookies'),
       count: cookieCount,
       countBg: 'var(--accent-light)',
       countColor: 'var(--accent-text)',
@@ -374,19 +195,19 @@ export default function ResponsePane() {
     // Green pill, matching the request Headers tab badge (issue #19).
     {
       key: 'headers',
-      label: 'Headers',
+      label: t('response.tab.headers'),
       count: headerCount,
       countBg: 'var(--green-bg)',
       countColor: 'var(--green)',
     },
     {
       key: 'testResults',
-      label: 'Test Results',
+      label: t('response.tab.testResults'),
       count: testTotal || undefined,
       countLabel: testTotal > 0 ? `${testPassed}/${testTotal}` : undefined,
       countColor: testTotal > 0 ? (testFailed > 0 ? 'var(--red)' : 'var(--green)') : undefined,
     },
-    ...(isSoapResponse ? [{ key: 'wsse' as ResTabKey, label: 'WS-Security' }] : []),
+    ...(isSoapResponse ? [{ key: 'wsse' as ResTabKey, label: t('response.tab.wsSecurity') }] : []),
     // Saved response examples (issue #125) — only for tabs backed by a row.
     ...(savedOwnerKey
       ? [
@@ -409,9 +230,21 @@ export default function ResponsePane() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
-      {/* ── Top bar: tabs (left) + meta (right) — Postman style ── */}
+      {/* ── Top bar: tabs (left) + meta (right) — Postman style ──
+          A size container (issue #213): the Turkish row (Gövde / Çerezler /
+          Başlıklar / Test Sonuçları + status + ms + KB + Yanıtı kaydet + Kod
+          + globe) is ~920px at the default 13px font, so a pane next to the
+          Variables panel scrolled the tab strip and cut Gövde off. Below
+          72em (≈936px) the Save response / Code buttons drop to icon-only
+          and the meta gap tightens; below 61em (≈793px) the tab padding
+          tightens too. `em` follows the Project Settings font size. The
+          horizontal scroll stays only as a last resort for very narrow panes.
+          `relative z-10`: a size container is a stacking context, so without
+          it the Save response popover (z-50, absolutely positioned below the
+          bar) would paint under the body area / Monaco that follows. */}
       <div
-        className="flex shrink-0 items-center gap-1 pl-2 pr-2"
+        data-testid="response-topbar"
+        className="@container relative z-10 flex shrink-0 items-center gap-1 pl-2 pr-2"
         style={{
           borderBottom: '1px solid var(--border)',
           background: 'var(--white)',
@@ -430,7 +263,7 @@ export default function ResponsePane() {
           onMouseLeave={(e) => {
             ;(e.currentTarget as HTMLElement).style.color = 'var(--muted)'
           }}
-          title="Response history"
+          title={t('response.historyButton')}
         >
           <HistoryIcon size={14} />
         </button>
@@ -449,7 +282,7 @@ export default function ResponsePane() {
                 type="button"
                 data-testid={`res-tab-${tab.key}`}
                 onClick={() => setActiveTab(tab.key)}
-                className="relative shrink-0 cursor-pointer whitespace-nowrap px-3 transition-colors"
+                className="relative shrink-0 cursor-pointer whitespace-nowrap px-3 transition-colors @max-[61em]:px-2"
                 style={{
                   height: 33,
                   background: 'transparent',
@@ -490,7 +323,7 @@ export default function ResponsePane() {
         </div>
 
         {/* Right: meta info (status • time • size • globe • more) */}
-        <div className="flex shrink-0 items-center gap-3 pl-2">
+        <div className="flex shrink-0 items-center gap-3 pl-2 @max-[72em]:gap-2">
           {response.status != null && (
             <span data-testid="response-status">
               <StatusBadge status={response.status} statusText={response.statusText} pill />
@@ -513,18 +346,21 @@ export default function ResponsePane() {
             type="button"
             data-testid="response-code-btn"
             title={t('response.code')}
+            aria-label={t('response.code')}
             onClick={() => setShowCodeGenerator(true)}
             className="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
             style={{ borderColor: 'var(--border)', background: 'transparent' }}
           >
             <Code2 size={11} />
-            {t('response.code')}
+            <span data-collapsible-label className="@max-[72em]:hidden">
+              {t('response.code')}
+            </span>
           </button>
           <div style={{ position: 'relative' }}>
             <button
               ref={networkBtnRef}
               type="button"
-              title="Network info"
+              title={t('response.networkInfo')}
               onClick={() => setShowNetworkInfo((v) => !v)}
               className="flex cursor-pointer items-center justify-center rounded p-1"
               style={{

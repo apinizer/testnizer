@@ -4,65 +4,37 @@
  *
  * Edits go into a draft held by the store (it survives tab switches, which
  * unmount this component); Save sends ONE `update` and the backend
- * hot-reloads a running server. Ctrl/Cmd+S inside the editor saves too; both
- * go through `saveMockMcpDraft`, the same path the Workbench's unsaved-changes
- * dialog uses (issue #154).
+ * hot-reloads a running server. Ctrl/Cmd+S saves too — inside the editor via
+ * its own keydown, with focus elsewhere via the global shortcut
+ * (`onMockMcpSaveRequest`). All of them go through `saveMockMcpDraft`, the
+ * same path the Workbench's unsaved-changes dialog uses (issue #154).
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMockMcpStore } from '../../stores/mock-mcp.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
+import { onMockMcpSaveRequest } from '../../lib/mock-mcp-save-request'
 import type { MockMcpDraftUpdater, MockMcpEditorTab } from '../../types/mock-mcp'
 import { serverToDraft } from './mock-mcp-draft'
 import { useMockMcpTabDirty } from './mock-mcp-tabs'
 import { isMockMcpSaving, saveMockMcpDraft, type MockMcpSaveResult } from './mock-mcp-save'
 import { isSaveChord } from './mock-mcp-format'
+import {
+  blankDefaultItems,
+  CLEAN_SECTIONS,
+  sectionDirty,
+  type MockMcpBlankItem,
+} from './mock-mcp-dirty'
 import MockMcpEditorHeader from './MockMcpEditorHeader'
+import MockMcpEditorTabs from './MockMcpEditorTabs'
+import MockMcpBlankItemsDialog from './MockMcpBlankItemsDialog'
 import MockMcpGeneralTab from './MockMcpGeneralTab'
 import MockMcpScenariosTab from './MockMcpScenariosTab'
 import MockMcpToolsTab from './MockMcpToolsTab'
 import MockMcpResourcesTab from './MockMcpResourcesTab'
 import MockMcpPromptsTab from './MockMcpPromptsTab'
 import MockMcpLogsTab from './MockMcpLogsTab'
-
-const TABS: readonly MockMcpEditorTab[] = [
-  'general',
-  'scenarios',
-  'tools',
-  'resources',
-  'prompts',
-  'logs',
-]
-
-function TabButton({
-  id,
-  active,
-  onClick,
-  children,
-}: {
-  id: MockMcpEditorTab
-  active: boolean
-  onClick: () => void
-  children: ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      data-testid={`mock-mcp-tab-${id}`}
-      onClick={onClick}
-      className={`cursor-pointer border-x-0 border-b-2 border-t-0 bg-transparent px-4 py-2 text-[12px] font-semibold ${
-        active
-          ? 'border-[var(--accent)] text-[var(--accent-text)]'
-          : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
-      }`}
-    >
-      {children}
-    </button>
-  )
-}
 
 export default function MockMcpServerEditor({ serverId }: { serverId: string }) {
   const { t } = useTranslation()
@@ -75,6 +47,8 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
   const [tab, setTab] = useState<MockMcpEditorTab>('general')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  /** Non-empty = the "items still at their defaults" warning is open (issue #210). */
+  const [blankItems, setBlankItems] = useState<MockMcpBlankItem[]>([])
   const triedLoad = useRef(false)
 
   // A tab restored at launch: the Mocks panel may not have loaded the list yet.
@@ -89,6 +63,11 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
   const draft = stored ?? baseDraft
   const dirty = stored !== undefined
   useMockMcpTabDirty(serverId, dirty)
+  // Which list tab holds the unsaved edits (issue #210).
+  const sections = useMemo(
+    () => (stored && baseDraft ? sectionDirty(stored, baseDraft) : CLEAN_SECTIONS),
+    [stored, baseDraft],
+  )
 
   const change = useCallback<MockMcpDraftUpdater>(
     (fn) => {
@@ -98,22 +77,57 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
     [serverId, baseDraft, setDraft],
   )
 
-  const save = useCallback(async (): Promise<void> => {
-    if (!useMockMcpStore.getState().drafts[serverId] || isMockMcpSaving(serverId)) return
-    setSaving(true)
-    let result: MockMcpSaveResult
-    try {
-      result = await saveMockMcpDraft(serverId)
-    } finally {
-      setSaving(false)
-    }
-    if (!result.ok) {
-      if (result.error) setSaveError(result.error)
-      return
-    }
-    setSaveError(null)
-    if (result.saved) toast.success(t('mockMcp.saved'))
-  }, [serverId, t])
+  /**
+   * Save every tab's edits. Unless `confirmed`, an item still at its "Add"
+   * default opens the warning first (issue #210); the save itself stays the
+   * single `saveMockMcpDraft` path.
+   */
+  const save = useCallback(
+    async (confirmed = false): Promise<void> => {
+      const st = useMockMcpStore.getState()
+      const current = st.drafts[serverId]
+      if (!current || isMockMcpSaving(serverId)) return
+      const saved = st.servers.find((x) => x.id === serverId)
+      if (!confirmed && saved) {
+        const blanks = blankDefaultItems(current, saved)
+        if (blanks.length > 0) {
+          setBlankItems(blanks)
+          return
+        }
+      }
+      setSaving(true)
+      let result: MockMcpSaveResult
+      try {
+        result = await saveMockMcpDraft(serverId)
+      } finally {
+        setSaving(false)
+      }
+      if (!result.ok) {
+        if (result.error) setSaveError(result.error)
+        return
+      }
+      setSaveError(null)
+      if (result.saved) toast.success(t('mockMcp.saved'))
+    },
+    [serverId, t],
+  )
+
+  // Ctrl+S with focus outside the editor arrives through the global shortcut
+  // (issue #210 follow-up). Refs keep the listener current without
+  // re-subscribing; an open warning dialog swallows the chord, as below.
+  const saveRef = useRef(save)
+  const warningOpenRef = useRef(false)
+  useEffect(() => {
+    saveRef.current = save
+    warningOpenRef.current = blankItems.length > 0
+  })
+  useEffect(
+    () =>
+      onMockMcpSaveRequest(serverId, () => {
+        if (!warningOpenRef.current) void saveRef.current()
+      }),
+    [serverId],
+  )
 
   if (!server || !draft) {
     return (
@@ -139,8 +153,11 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
       onKeyDown={(e) => {
         if (isSaveChord(e)) {
           e.preventDefault()
+          // Also keeps the global Ctrl+S (project save / "Request saved"
+          // toast) from firing on top of this one (issue #212).
           e.stopPropagation()
-          void save()
+          // Keydowns inside the warning dialog bubble here through the portal.
+          if (blankItems.length === 0) void save()
         }
       }}
     >
@@ -163,16 +180,15 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
           {saveError}
         </div>
       )}
-      <div
-        role="tablist"
-        className="flex shrink-0 border-b border-[var(--border)] bg-[var(--white)]"
-      >
-        {TABS.map((id) => (
-          <TabButton key={id} id={id} active={tab === id} onClick={() => setTab(id)}>
-            {labels[id]}
-          </TabButton>
-        ))}
-      </div>
+      <MockMcpEditorTabs tab={tab} onTab={setTab} labels={labels} dirty={sections} />
+      <MockMcpBlankItemsDialog
+        items={blankItems}
+        onGoBack={() => setBlankItems([])}
+        onSaveAnyway={() => {
+          setBlankItems([])
+          void save(true)
+        }}
+      />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {tab === 'general' && <MockMcpGeneralTab draft={draft} change={change} />}
         {tab === 'scenarios' && <MockMcpScenariosTab draft={draft} change={change} />}

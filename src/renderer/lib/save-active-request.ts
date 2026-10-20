@@ -24,6 +24,7 @@ import { normalizeMcpAuth } from '../stores/mcp-auth.slice'
 import { normalizeMcpProtocol } from './mcp-protocol'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
+import { autoRequestName } from './endpoint-name'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
@@ -611,6 +612,11 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   // Timeout / redirects / SSL (issue #185) — top-level keys, read back by the
   // tab-open paths and the Runner through `readRequestSettings`.
   const settings = requestSettingsFor(activeTab)
+  // Issue #201: an HTTP request still carrying a placeholder name ('New
+  // Endpoint' from the tree's Add Request, 'Yeni Uç Nokta', …) is saved under
+  // a name derived from its URL. A name the user typed is never replaced.
+  // Not applied to Test Suite items — the issue is about the APIs tree.
+  const renameTo = autoRequestName(protocol, activeTab.name, effectiveUrl)
 
   // ─── Test Suite item ─────────────────────────────────────────
   if (activeTab.testSuiteItemId) {
@@ -658,7 +664,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   // ─── Saved request (lives under APIs folders) ────────────────
   if (activeTab.savedRequestId) {
     const payload = {
-      name: activeTab.name,
+      name: renameTo ?? activeTab.name,
       method: effectiveMethod,
       url: effectiveUrl,
       protocol,
@@ -681,6 +687,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
         tabs.updateTab(activeTab.id, {
           method: effectiveMethod,
           url: effectiveUrl,
+          ...(renameTo ? { name: renameTo } : {}),
         })
         await refreshApisTree()
         return { success: true }
@@ -712,6 +719,9 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
     }
     try {
       const result = (await window.api?.endpoint?.update(activeTab.endpointId, {
+        // The name is sent only when it changes (issue #201), so an imported
+        // endpoint whose tab label differs from its row keeps its row name.
+        ...(renameTo ? { name: renameTo } : {}),
         method: effectiveMethod,
         path: effectiveUrl,
         request_schema: JSON.stringify(schema),
@@ -721,6 +731,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
         tabs.updateTab(activeTab.id, {
           method: effectiveMethod,
           url: effectiveUrl,
+          ...(renameTo ? { name: renameTo } : {}),
         })
         await refreshApisTree()
         return { success: true }

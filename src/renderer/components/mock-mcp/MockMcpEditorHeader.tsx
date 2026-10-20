@@ -148,7 +148,13 @@ export default function MockMcpEditorHeader({
             <Undo2 size={12} />
           </GhostButton>
         )}
-        <PrimaryButton data-testid="mock-mcp-save" onClick={onSave} disabled={!dirty || saving}>
+        {/* One Save for the whole draft — every tab (issue #210). */}
+        <PrimaryButton
+          data-testid="mock-mcp-save"
+          onClick={onSave}
+          disabled={!dirty || saving}
+          title={t('mockMcp.saveAllHint')}
+        >
           <Save size={12} />
           {saving ? t('mockMcp.saving') : t('mockMcp.save')}
         </PrimaryButton>

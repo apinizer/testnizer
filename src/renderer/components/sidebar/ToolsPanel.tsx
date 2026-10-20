@@ -3,6 +3,7 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 import { TOOLS_MENU } from '../../lib/tools-catalog'
 import { T } from '../../styles/tokens'
+import LeftPanelCollapseButton from '../layout/LeftPanelCollapseButton'
 
 export default function ToolsPanel() {
   const { t } = useTranslation()
@@ -31,7 +32,10 @@ export default function ToolsPanel() {
           flexShrink: 0,
         }}
       >
-        <span style={{ fontWeight: 700, fontSize: 15, color: T.text }}>{t('sidebar.tools')}</span>
+        <span style={{ fontWeight: 700, fontSize: 15, color: T.text, flex: 1 }}>
+          {t('sidebar.tools')}
+        </span>
+        <LeftPanelCollapseButton />
       </div>
 
       {/* Search */}

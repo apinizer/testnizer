@@ -13,6 +13,10 @@ import {
   keepLocalCertSecrets,
   localSecretsByKey,
   keepLocalSecretByKey,
+  keepLocalMockAuth,
+  keepLocalMaskedText,
+  isMockAuthSecretField,
+  mockAuthSecretValues,
 } from '../../src/main/lib/local-secrets'
 
 describe('stripMockAuthJson', () => {
@@ -187,5 +191,164 @@ describe('keep-local by variable key (Postman re-import, issue #177)', () => {
     expect(
       keepLocalSecretByKey({ key: 'plain', secret: true, value: '', initial_value: '' }, local),
     ).toEqual({ value: '', initial_value: '' })
+  })
+})
+
+// Issue #177 re-open: Auth Config is a free JSON textarea, so the strip works
+// by field name (shared `isCredentialArgName` rule + plurals + `value`), at
+// any depth, and survives a JSON string typed into the field.
+describe('mock auth: every shape the editor can store (issue #177 re-open)', () => {
+  const shapes: {
+    name: string
+    auth: Record<string, unknown>
+    stripped: Record<string, unknown>
+  }[] = [
+    {
+      name: 'canonical bearer',
+      auth: { type: 'bearer', tokens: ['t-one-111', 't-two-222'] },
+      stripped: { type: 'bearer', tokens: ['', ''] },
+    },
+    {
+      name: 'single bearer token',
+      auth: { type: 'bearer', token: 'single-tok-333' },
+      stripped: { type: 'bearer', token: '' },
+    },
+    {
+      name: 'nested bearer object',
+      auth: { type: 'bearer', bearer: { token: 'nested-tok-444', prefix: 'Bearer' } },
+      stripped: { type: 'bearer', bearer: { token: '', prefix: 'Bearer' } },
+    },
+    {
+      name: 'canonical basic',
+      auth: { type: 'basic', users: [{ username: 'alice', password: 'alice-pw-555' }] },
+      stripped: { type: 'basic', users: [{ username: 'alice', password: '' }] },
+    },
+    {
+      name: 'flat basic',
+      auth: { type: 'basic', username: 'qa', password: 'flat-pw-666' },
+      stripped: { type: 'basic', username: 'qa', password: '' },
+    },
+    {
+      name: 'canonical apiKey',
+      auth: { type: 'apiKey', in: 'header', name: 'X-API-Key', keys: ['key-777-aaa'] },
+      stripped: { type: 'apiKey', in: 'header', name: 'X-API-Key', keys: [''] },
+    },
+    {
+      name: 'apiKey as value',
+      auth: { type: 'apiKey', in: 'query', name: 'api_key', value: 'val-888-bbb' },
+      stripped: { type: 'apiKey', in: 'query', name: 'api_key', value: '' },
+    },
+    {
+      name: 'apiKey field',
+      auth: { type: 'apiKey', in: 'header', name: 'X-Key', apiKey: 'apikey-999-ccc' },
+      stripped: { type: 'apiKey', in: 'header', name: 'X-Key', apiKey: '' },
+    },
+    {
+      name: 'secrets list',
+      auth: { type: 'bearer', secrets: ['sec-000-ddd'] },
+      stripped: { type: 'bearer', secrets: [''] },
+    },
+  ]
+
+  for (const { name, auth, stripped } of shapes) {
+    it(`${name}: strip blanks the secret, keeps the structure, merge restores it`, () => {
+      const raw = JSON.stringify(auth)
+      const out = stripMockAuthJson(raw) as string
+      expect(JSON.parse(out)).toEqual(stripped)
+      for (const v of mockAuthSecretValues(raw)) expect(out).not.toContain(v)
+      // Idempotent.
+      expect(stripMockAuthJson(out)).toBe(out)
+      // Keep-local brings the exact original back.
+      expect(JSON.parse(mergeMockAuthJson(out, raw) as string)).toEqual(auth)
+    })
+  }
+
+  it('a JSON string typed into the field (stored double-encoded) is stripped and restored in that form', () => {
+    const raw = JSON.stringify(JSON.stringify({ type: 'bearer', tokens: ['dbl-tok-123456'] }))
+    const out = stripMockAuthJson(raw) as string
+    expect(out).not.toContain('dbl-tok-123456')
+    expect(JSON.parse(JSON.parse(out) as string)).toEqual({ type: 'bearer', tokens: [''] })
+    expect(mergeMockAuthJson(out, raw)).toBe(raw)
+  })
+
+  it('structural names never count as secrets; credential names and plurals do', () => {
+    for (const f of ['type', 'in', 'name', 'username', 'users', 'header', 'realm']) {
+      expect(isMockAuthSecretField(f), f).toBe(false)
+    }
+    for (const f of [
+      'token',
+      'tokens',
+      'keys',
+      'password',
+      'apiKey',
+      'secret',
+      'value',
+      'values',
+    ]) {
+      expect(isMockAuthSecretField(f), f).toBe(true)
+    }
+  })
+
+  it('stripLocalSecrets scrubs mock auth secrets out of server and endpoint descriptions', () => {
+    const out = stripLocalSecrets({
+      mockServers: [
+        {
+          id: 's',
+          description: 'Requests need "Authorization: Bearer mock_abcdef123456"',
+          auth_config: JSON.stringify({ type: 'bearer', tokens: ['mock_abcdef123456'] }),
+        },
+      ],
+      mockEndpoints: [
+        {
+          id: 'e',
+          description: 'basic pw is endpoint-pw-42 / bearer mock_abcdef123456',
+          auth_override: JSON.stringify({
+            type: 'basic',
+            users: [{ username: 'u', password: 'endpoint-pw-42' }],
+          }),
+        },
+      ],
+    })
+    expect(out.mockServers![0].description).toBe('Requests need "Authorization: Bearer ••••••"')
+    expect(out.mockEndpoints![0].description).toBe('basic pw is •••••• / bearer ••••••')
+  })
+
+  it('keep-local: a masked description keeps the local text only when it is the same text', () => {
+    const local = 'Requests need "Authorization: Bearer mock_abcdef123456"'
+    const masked = 'Requests need "Authorization: Bearer ••••••"'
+    expect(keepLocalMaskedText(masked, local)).toBe(local)
+    // The teammate rewrote the description: theirs wins.
+    expect(keepLocalMaskedText('New text ••••••', local)).toBe('New text ••••••')
+    // No mask → nothing to restore.
+    expect(keepLocalMaskedText('plain', local)).toBe('plain')
+
+    const rows = keepLocalMockAuth(
+      [
+        {
+          id: 's',
+          description: masked,
+          auth_config: JSON.stringify({ type: 'bearer', tokens: [''] }),
+        },
+      ],
+      'auth_config',
+      () => ({
+        description: local,
+        auth_config: JSON.stringify({ type: 'bearer', tokens: ['mock_abcdef123456'] }),
+      }),
+    )
+    expect(rows[0].description).toBe(local)
+    expect(JSON.parse(rows[0].auth_config as string)).toEqual({
+      type: 'bearer',
+      tokens: ['mock_abcdef123456'],
+    })
+  })
+
+  it('keep-local never adds a description key the incoming row did not have', () => {
+    const rows = keepLocalMockAuth(
+      [{ id: 's', auth_config: JSON.stringify({ type: 'bearer', tokens: [''] }) }],
+      'auth_config',
+      () => ({ description: 'x', auth_config: JSON.stringify({ type: 'bearer', tokens: ['t'] }) }),
+    )
+    expect('description' in rows[0]).toBe(false)
   })
 })

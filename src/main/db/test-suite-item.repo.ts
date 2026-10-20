@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { orderSuiteItems, type SuiteOrderFolder } from '../../shared/suite-order'
 
 export interface TestSuiteItemRow {
   id: string
@@ -52,13 +53,26 @@ export function getItemById(id: string): TestSuiteItemRow | undefined {
     | undefined
 }
 
+/**
+ * Every item of a suite in EXECUTION order — the suite tree walked depth-first
+ * (see `src/shared/suite-order.ts`). `sort_order` is a per-folder sibling index,
+ * so a plain `ORDER BY sort_order` interleaves folders: request 0 of every
+ * module, then request 1 of every module. Run, Quick Run, the Runner sequence
+ * and export all read this list, so this is where the order is decided.
+ */
 export function listItemsBySuite(suiteId: string): TestSuiteItemRow[] {
   const db = getDb()
-  return db
+  const items = db
     .prepare(
       'SELECT * FROM test_suite_items WHERE suite_id = ? ORDER BY sort_order ASC, created_at ASC',
     )
     .all(suiteId) as TestSuiteItemRow[]
+  const folders = db
+    .prepare(
+      'SELECT id, parent_id, sort_order, created_at FROM test_suite_folders WHERE suite_id = ?',
+    )
+    .all(suiteId) as SuiteOrderFolder[]
+  return orderSuiteItems(items, folders)
 }
 
 export function listItemsByFolder(folderId: string): TestSuiteItemRow[] {

@@ -3,12 +3,14 @@ import { Download, Link2 } from 'lucide-react'
 import type { McpResourceContents } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
 import { JsonPre } from './ui'
+import McpImage from './McpImage'
 import {
   base64ByteLength,
   base64ToBlob,
   canMakeObjectUrl,
   downloadBase64,
   fileNameFromUri,
+  imageFileName,
   isContentBlock,
   prettyIfJson,
 } from './mcp-content'
@@ -50,10 +52,12 @@ function EmbeddedResource({ resource }: { resource: McpResourceContents }) {
         ) : resource.blob !== undefined ? (
           <div className="flex flex-col gap-2">
             {mime.startsWith('image/') && (
-              <img
-                src={`data:${mime};base64,${resource.blob}`}
+              <McpImage
+                testId="mcp-resource-image"
+                data={resource.blob}
+                mimeType={mime}
                 alt={resource.uri}
-                className="max-h-80 max-w-full self-start rounded"
+                className="rounded"
               />
             )}
             <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
@@ -105,11 +109,13 @@ export default function McpContentBlockView({ block }: { block: unknown }) {
       )
     case 'image':
       return (
-        <img
-          data-testid="mcp-block-image"
-          src={`data:${block.mimeType};base64,${block.data}`}
+        <McpImage
+          testId="mcp-block-image"
+          data={block.data}
+          mimeType={block.mimeType}
           alt={block.mimeType}
-          className="max-h-80 max-w-full rounded"
+          className="rounded"
+          downloadName={imageFileName(block.mimeType)}
         />
       )
     case 'audio':

@@ -20,11 +20,14 @@ import ProfileModal from '../modals/ProfileModal'
 import EnterpriseModal from '../modals/EnterpriseModal'
 import MergeConflictModal from '../modals/MergeConflictModal'
 import ShortcutCheatsheetModal from '../modals/ShortcutCheatsheetModal'
+import ProjectExportModal from '../modals/ProjectExportModal'
+import { useProjectExportStore } from '../../stores/project-export.store'
 import CommandPalette from '../shared/CommandPalette'
 import ConsolePanel from './ConsolePanel'
 import LoginScreen from '../auth/LoginScreen'
 import QuickTestShell from './QuickTestShell'
 import { useUIStore } from '../../stores/ui.store'
+import { isLeftPanelCollapsible } from '../../lib/sidebar-pages'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -32,7 +35,8 @@ import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
 import { makeTabId } from '../../lib/utils'
 import { toast } from '../../lib/toast'
 import { closeTabSafely } from '../../lib/cleanup-tab-state'
-import { useTranslation } from '../../lib/i18n'
+import { useTranslation, t as translate } from '../../lib/i18n'
+import { projectDisplayName } from '../../lib/project-export'
 
 function GitLoadingOverlay() {
   const gitLoading = useUIStore((s) => s.gitLoading)
@@ -137,31 +141,15 @@ export default function AppShell() {
           break
         }
         case 'menu:openExport': {
-          // Previously dispatched `testnizer:openExport` to a custom event
-          // that had no listener anywhere — File → Export was a silent
-          // no-op (same dead-event class as menu:newTab/menu:closeTab,
-          // missed in the v1.4.4 menu pass). Drive the export IPC
-          // directly: the main-side `save:exportProject` handler opens
-          // a native save dialog and writes the JSON, so no modal is
-          // needed here. Surface the outcome via toast.
+          // File → Export opens the format picker (issue #208): Testnizer
+          // JSON · Postman v2.1 · OpenAPI 3 · Insomnia. The picker runs the
+          // shared `exportProjectAs` action (save dialog + toasts).
           const projectId = useWorkspaceStore.getState().activeProjectId
           if (!projectId) {
-            toast.error('No active project to export')
+            toast.error(translate('projectExport.noActiveProject'))
             break
           }
-          void window.api?.save
-            ?.exportProject(projectId)
-            .then((res) => {
-              const r = res as { success: boolean; error?: string; data?: { path?: string } }
-              if (r?.success) {
-                toast.success(r.data?.path ? `Exported to ${r.data.path}` : 'Exported')
-              } else if (r?.error) {
-                toast.error(`Export failed: ${r.error}`)
-              }
-            })
-            .catch((err: Error) => {
-              toast.error(`Export failed: ${err.message}`)
-            })
+          useProjectExportStore.getState().openPicker(projectId, projectDisplayName(projectId))
           break
         }
       }
@@ -256,6 +244,7 @@ export default function AppShell() {
         <ProfileModal />
         <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />
         <ShortcutCheatsheetModal />
+        <ProjectExportModal />
       </div>
     )
   }
@@ -290,9 +279,7 @@ export default function AppShell() {
         <IconSidebar />
 
         {/* Left Panel — collection tree or history */}
-        {(!isLeftPanelCollapsed ||
-          activeSidebarPage === 'history' ||
-          activeSidebarPage === 'tests') && (
+        {(!isLeftPanelCollapsed || !isLeftPanelCollapsible(activeSidebarPage)) && (
           <>
             <LeftPanel />
             {/* Drag divider between the APIs tree and the workbench (issue #15) */}
@@ -325,6 +312,7 @@ export default function AppShell() {
       <EnterpriseModal />
       <MergeConflictModal />
       <ShortcutCheatsheetModal />
+      <ProjectExportModal />
       <CommandPalette open={showCommandPalette} onOpenChange={setShowCommandPalette} />
 
       {/* Git loading overlay */}

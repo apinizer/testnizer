@@ -866,6 +866,13 @@ function runMigrations(database: Database.Database): void {
     // reusing it would let the added keystore option destroy a working file
     // setting the moment an alias is picked.
     `ALTER TABLE certificates ADD COLUMN keystore_key_password TEXT`,
+    // Project settings that travel with the project (auth, scripts, timeout,
+    // SSL / redirects / TLS) — JSON, NULL = never set. Before this they lived
+    // only in electron-store, so a teammate's Pull got requests that inherit
+    // a project auth / script it never received. Machine-local settings
+    // (proxy, working directory, UI) stay in electron-store
+    // (`lib/project-settings.ts` owns the split).
+    `ALTER TABLE projects ADD COLUMN shared_settings TEXT`,
   ]
   for (const sql of alters) {
     try {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { orderSuiteFolders } from '../../shared/suite-order'
 
 export interface TestSuiteFolderRow {
   id: string
@@ -25,13 +26,16 @@ export function getFolderById(id: string): TestSuiteFolderRow | undefined {
     | undefined
 }
 
+/** A suite's folders in tree order — every parent before its children. */
 export function listFoldersBySuite(suiteId: string): TestSuiteFolderRow[] {
   const db = getDb()
-  return db
-    .prepare(
-      'SELECT * FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC, created_at ASC',
-    )
-    .all(suiteId) as TestSuiteFolderRow[]
+  return orderSuiteFolders(
+    db
+      .prepare(
+        'SELECT * FROM test_suite_folders WHERE suite_id = ? ORDER BY sort_order ASC, created_at ASC',
+      )
+      .all(suiteId) as TestSuiteFolderRow[],
+  )
 }
 
 // ─── Create ──────────────────────────────────────────────────

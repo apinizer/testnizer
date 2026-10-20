@@ -12,6 +12,7 @@ import { useTranslation } from '../../lib/i18n'
 import MockMcpServersSection from '../mock-mcp/MockMcpServersSection'
 import MockHttpServersSection from './MockHttpServersSection'
 import NewMockServerModal from './NewMockServerModal'
+import LeftPanelCollapseButton from '../layout/LeftPanelCollapseButton'
 import type { MockKind } from './new-mock-server'
 
 export default function MockServersPanel() {
@@ -43,6 +44,7 @@ export default function MockServersPanel() {
         >
           <Plus size={15} strokeWidth={2.5} />
         </button>
+        <LeftPanelCollapseButton />
       </div>
 
       {/* Search — filters both groups */}

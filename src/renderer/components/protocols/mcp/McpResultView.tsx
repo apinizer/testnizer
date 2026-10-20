@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { AlertTriangle } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { AlertTriangle, Braces, Play } from 'lucide-react'
 import { useTranslation } from '../../../lib/i18n'
 import McpContentBlockView from './McpContentBlockView'
 import { asCallToolResult } from './mcp-content'
@@ -9,8 +9,9 @@ import { JsonPre, SectionLabel } from './ui'
  * Renders a raw `tools/call` result (CallToolResult) block by block — text,
  * image, audio, embedded resource, resource link — plus `structuredContent`
  * in its own section. `isError: true` gets a red border and label. Anything
- * not in CallToolResult shape falls back to pretty JSON. A "Raw" toggle
- * always shows the exact JSON the server returned.
+ * not in CallToolResult shape falls back to pretty JSON. A `JSON | Preview`
+ * switch (Postman's MCP result view) shows the exact JSON the server
+ * returned; Preview is the block view and the default.
  */
 export default function McpResultView({ result }: { result: unknown }) {
   const { t } = useTranslation()
@@ -36,19 +37,28 @@ export default function McpResultView({ result }: { result: unknown }) {
             {t('mcp.result.isError')}
           </span>
         )}
-        <button
-          type="button"
-          data-testid="mcp-result-raw-toggle"
-          aria-pressed={raw}
-          onClick={() => setRaw((v) => !v)}
-          className={`ml-auto cursor-pointer rounded border border-[var(--border)] px-2 py-0.5 text-[11px] ${
-            raw
-              ? 'bg-[var(--accent-light)] text-[var(--accent-text)]'
-              : 'bg-transparent text-[var(--muted)]'
-          }`}
+        <div
+          role="group"
+          aria-label={t('mcp.result.viewLabel')}
+          data-testid="mcp-result-view-switch"
+          className="ml-auto flex items-center gap-0.5 rounded-md border border-[var(--border)] p-0.5"
         >
-          {t('mcp.result.raw')}
-        </button>
+          <ViewButton
+            active={raw || !parsed}
+            onClick={() => setRaw(true)}
+            testId="mcp-result-view-json"
+            icon={<Braces size={12} aria-hidden="true" />}
+            label={t('mcp.result.viewJson')}
+          />
+          <ViewButton
+            active={!raw && !!parsed}
+            disabled={!parsed}
+            onClick={() => setRaw(false)}
+            testId="mcp-result-view-preview"
+            icon={<Play size={11} aria-hidden="true" />}
+            label={t('mcp.result.viewPreview')}
+          />
+        </div>
       </div>
       {raw || !parsed ? (
         <JsonPre value={result} testId="mcp-result-json" />
@@ -72,5 +82,39 @@ export default function McpResultView({ result }: { result: unknown }) {
         </>
       )}
     </div>
+  )
+}
+
+function ViewButton({
+  active,
+  disabled,
+  onClick,
+  testId,
+  icon,
+  label,
+}: {
+  active: boolean
+  disabled?: boolean
+  onClick: () => void
+  testId: string
+  icon: ReactNode
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      disabled={disabled}
+      onClick={onClick}
+      data-testid={testId}
+      className={`flex items-center gap-1 rounded px-2 py-0.5 text-[11px] enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+        active
+          ? 'bg-[var(--accent-light)] font-medium text-[var(--accent-text)]'
+          : 'bg-transparent text-[var(--muted)] enabled:hover:text-[var(--text)]'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   )
 }

@@ -3,6 +3,7 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 import { SECURITY_TOOLS } from '../../lib/tools-catalog'
 import { T } from '../../styles/tokens'
+import LeftPanelCollapseButton from '../layout/LeftPanelCollapseButton'
 
 /**
  * The Security left-panel — Testnizer's differentiator, grouping all
@@ -41,9 +42,10 @@ export default function SecurityPanel() {
           flexShrink: 0,
         }}
       >
-        <span style={{ fontWeight: 700, fontSize: 15, color: T.text }}>
+        <span style={{ fontWeight: 700, fontSize: 15, color: T.text, flex: 1 }}>
           {t('sidebar.security')}
         </span>
+        <LeftPanelCollapseButton />
       </div>
 
       {/* Search */}

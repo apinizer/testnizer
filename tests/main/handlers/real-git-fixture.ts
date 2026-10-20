@@ -61,6 +61,8 @@ export interface PullData {
   state: string
   branch: string
   fastForwarded: string[]
+  /** Secret values still empty on this machine after the pull. */
+  emptySecrets?: number
   conflicts?: { file: string }[]
 }
 
@@ -79,8 +81,11 @@ export function createRealGitFixture(deps: {
   harness: HandlerHarness
   setDb: (db: Database.Database) => void
   gitStore: Record<string, unknown>
+  /** Machine DB factory; default `createTestDb` (the hand-kept schema mirror). */
+  createDb?: () => Database.Database
 }): RealGitFixture {
   const { root, harness, setDb, gitStore } = deps
+  const newDb = deps.createDb ?? createTestDb
 
   const git = (cwd: string, ...args: string[]): string =>
     execFileSync('git', args, { cwd, encoding: 'utf-8' }).trim()
@@ -94,7 +99,7 @@ export function createRealGitFixture(deps: {
     },
     git,
     machine: (label, opts = {}) => {
-      const db = createTestDb()
+      const db = newDb()
       const workspaceId = seedWorkspace(db, `ws-${label}`)
       const projectId = randomUUID()
       const localPath = join(root, `checkout-${label}-${projectId.slice(0, 8)}`)

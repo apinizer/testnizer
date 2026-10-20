@@ -21,6 +21,8 @@ const CHIPS: Record<string, ProtocolChipInfo> = {
   socketio: { label: 'SIO', color: 'text-[var(--mb-query-fg)]', name: 'Socket.IO' },
   graphql: { label: 'GQL', color: 'text-[var(--mb-put-fg)]', name: 'GraphQL' },
   grpc: { label: 'gRPC', color: 'text-[var(--green)]', name: 'gRPC' },
+  // AI Chat requests are saved with a placeholder POST (issue #203).
+  ai: { label: 'AI', color: 'text-[var(--mb-patch-fg)]', name: 'AI Chat' },
 }
 
 export function protocolChip(protocol: string | undefined | null): ProtocolChipInfo | null {

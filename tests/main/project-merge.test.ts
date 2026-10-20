@@ -203,3 +203,29 @@ describe('mergeProjectFiles — text wrapper', () => {
     expect(mergeProjectFiles('', '{"foo":1}', ours)).toBeNull()
   })
 })
+
+describe('mergeProjectDocs — project header (git fidelity)', () => {
+  const doc = (project: Record<string, unknown>): Record<string, unknown> => ({
+    version: '1',
+    exportedAt: 1,
+    project: { id: 'p', name: 'Shared', ...project },
+    endpoints: [],
+  })
+
+  it('a header field only THEY changed (project auth / scripts) is taken from theirs', () => {
+    const base = doc({ shared_settings: '{"preScript":"a()"}' })
+    const ours = doc({ shared_settings: '{"preScript":"a()"}', description: 'ours' })
+    const theirs = doc({ shared_settings: '{"preScript":"b()"}' })
+    const out = mergeProjectDocs(base, ours, theirs).project as Record<string, unknown>
+    expect(out.shared_settings).toBe('{"preScript":"b()"}')
+    expect(out.description).toBe('ours')
+  })
+
+  it('both changed the same field → ours (as before)', () => {
+    const base = doc({ shared_settings: '{"preScript":"a()"}' })
+    const ours = doc({ shared_settings: '{"preScript":"o()"}' })
+    const theirs = doc({ shared_settings: '{"preScript":"t()"}' })
+    const out = mergeProjectDocs(base, ours, theirs).project as Record<string, unknown>
+    expect(out.shared_settings).toBe('{"preScript":"o()"}')
+  })
+})

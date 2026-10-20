@@ -1,13 +1,30 @@
 import { ipcMain } from 'electron'
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync as readDirSync } from 'fs'
-import { join } from 'path'
+import {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  readdirSync as readDirSync,
+  unlinkSync,
+} from 'fs'
+import { isAbsolute, join } from 'path'
 import { getDb } from '../db/database'
 import { exportProjectData, importProjectDataFromJson, type ProjectExport } from './save.handler'
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
-import { projectFileSlug, pickProjectFile } from '../lib/project-file'
-import { canonical, mergeProjectFiles } from '../lib/project-merge'
+import { projectFileSlug, projectFileName, pickProjectFile } from '../lib/project-file'
+import { mergeProjectFiles } from '../lib/project-merge'
+import { applySelectedChanges, diffProjectDocs, normaliseExportDoc } from '../lib/project-changes'
 import { stripLocalSecrets } from '../lib/local-secrets'
+import { readSharedProjectSettings } from '../lib/project-settings'
+import {
+  GIT_MERGE_IN_PROGRESS_ERROR,
+  GIT_NOTHING_COMMITTED_ERROR,
+  withRequiredChanges,
+  type GitChangesSummary,
+  type GitCommitOutcome,
+  type GitDiscardOutcome,
+} from '../../shared/git-changes'
 import {
   getProjectGitConfig,
   gitAuth,
@@ -311,30 +328,8 @@ export function sameExport(a: string, b: Record<string, unknown>): boolean {
   // teammate's next merge B switched to a stale `main`. A collection is a set
   // of rows (see `project-merge.ts`): each section compares as a sorted set
   // of key-order-insensitive rows. A `sort_order` edit is still a change.
-  const normalise = (doc: Record<string, unknown>): string => {
-    const header = (doc.project ?? {}) as Record<string, unknown>
-    const out: Record<string, unknown> = {
-      ...doc,
-      exportedAt: 0,
-      project: {
-        name: header.name ?? null,
-        display_name: header.display_name ?? null,
-        description: header.description ?? null,
-      },
-    }
-    for (const [k, v] of Object.entries(out)) {
-      if (Array.isArray(v)) {
-        out[k] = v
-          .map((row) => {
-            if (!row || typeof row !== 'object') return canonical(row)
-            const { project_id: _p, workspace_id: _w, ...rest } = row as Record<string, unknown>
-            return canonical(rest)
-          })
-          .sort()
-      }
-    }
-    return canonical(out)
-  }
+  // The normaliser itself lives in `project-changes.ts`, shared with the
+  // Commit panel's row diff (issue #207) so the two cannot drift.
   // Both sides go through the SAME JSON round trip: `a` is the parsed file,
   // `b` the live export object. Without it an `undefined` field (dropped by
   // JSON, `null` in `canonical`) or a `Date` / `Buffer` (an ISO string /
@@ -348,7 +343,7 @@ export function sameExport(a: string, b: Record<string, unknown>): boolean {
   // unequal once, gets rewritten without it, and is equal from then on.
   try {
     const live = JSON.parse(JSON.stringify(stripLocalSecrets(b))) as Record<string, unknown>
-    return normalise(JSON.parse(a) as Record<string, unknown>) === normalise(live)
+    return normaliseExportDoc(JSON.parse(a) as Record<string, unknown>) === normaliseExportDoc(live)
   } catch {
     return false
   }
@@ -388,11 +383,28 @@ async function syncWorkingTreeFromDb(
   const slug = projectFileSlug(project.name as string | undefined)
   const displayName = ((project.display_name || project.name) as string) || 'project'
   const fileName = `${slug}.json`
-  const target = join(config.localPath, fileName)
 
   if (opts.skipIfEmpty && isEmptyExport(data)) {
     return { fileName, displayName, changed: false }
   }
+  return { fileName, displayName, ...(await writeProjectFile(git, config, projectId, data)) }
+}
+
+/**
+ * Write `data` (already stripped of secrets) into the checkout as the
+ * project's `<slug>.json`, stage it and retire the files an older name
+ * produced. The write half of `syncWorkingTreeFromDb`; a selective commit
+ * (issue #214) writes its partial file through here too.
+ */
+async function writeProjectFile(
+  git: SimpleGit,
+  config: ProjectGitConfig,
+  projectId: string,
+  data: Record<string, unknown>,
+): Promise<{ changed: boolean }> {
+  const project = (data.project ?? {}) as Record<string, unknown>
+  const fileName = `${projectFileSlug(project.name as string | undefined)}.json`
+  const target = join(config.localPath, fileName)
   if (existsSync(target) && sameExport(readFileSync(target, 'utf-8'), data)) {
     // Byte-identical apart from `exportedAt` — rewriting would only churn
     // the timestamp into a commit on every switch / pull. But "same content
@@ -403,9 +415,9 @@ async function syncWorkingTreeFromDb(
     // (issue #154). Decided from `status --porcelain` OUTPUT — empty means
     // tracked and identical to HEAD (see the simple-git "silent" gotcha).
     const pending = await git.raw(['status', '--porcelain', '--', fileName])
-    if (!pending.trim()) return { fileName, displayName, changed: false }
+    if (!pending.trim()) return { changed: false }
     await git.add([fileName])
-    return { fileName, displayName, changed: await hasStagedChanges(git) }
+    return { changed: await hasStagedChanges(git) }
   }
   writeFileSync(target, JSON.stringify(data, null, 2), 'utf-8')
 
@@ -421,7 +433,7 @@ async function syncWorkingTreeFromDb(
     }
   }
   await git.add([fileName])
-  return { fileName, displayName, changed: await hasStagedChanges(git) }
+  return { changed: await hasStagedChanges(git) }
 }
 
 /**
@@ -598,6 +610,228 @@ async function autoResolveProjectConflicts(
   }
   await git.commit(message)
   return true
+}
+
+// ─── Local commit / discard / changes (issue #207) ───────────────
+
+/** The message a blank commit message falls back to (Push and Commit alike). */
+function commitMessageOr(typed: unknown, displayName: string): string {
+  const msg = typeof typed === 'string' ? typed.trim() : ''
+  return msg || `Update ${displayName} — ${new Date().toLocaleString()}`
+}
+
+/**
+ * HEAD's commit hash, or '' on an unborn branch. `rev-parse --verify --quiet`
+ * fails SILENTLY (see the simple-git gotcha above), so the answer is the
+ * OUTPUT: a hash, or nothing.
+ */
+async function headSha(git: SimpleGit): Promise<string> {
+  try {
+    return (await git.raw(['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'])).trim()
+  } catch {
+    return ''
+  }
+}
+
+/** The checked-out branch without side effects (unborn HEAD → the configured one). */
+async function branchName(git: SimpleGit, fallback: string): Promise<string> {
+  if (!(await headSha(git))) return fallback
+  try {
+    const name = (await git.raw(['symbolic-ref', '--short', '-q', 'HEAD'])).trim()
+    return name || fallback
+  } catch {
+    return fallback
+  }
+}
+
+/**
+ * The project's file as COMMITTED at HEAD, or null when HEAD has none (no
+ * commit yet, or nothing was ever pushed). Picked from HEAD's tree — not
+ * from the working tree's slug: after an uncommitted rename the DB's name
+ * points at a file HEAD does not have.
+ */
+async function headProjectFile(
+  git: SimpleGit,
+  projectId: string,
+): Promise<{ file: string; content: string } | null> {
+  if (!(await headSha(git))) return null
+  const listed = (await git.raw(['ls-tree', '--name-only', 'HEAD']))
+    .split('\n')
+    .map((f) => f.trim())
+    .filter((f) => f.endsWith('.json') && f !== 'package.json' && !f.startsWith('.'))
+  if (listed.length === 0) return null
+  let file: string
+  try {
+    file = pickProjectFile(listed, projectNameOf(projectId))
+  } catch (e) {
+    // Several exports, none named after this project: the one carrying our id.
+    for (const f of listed) {
+      try {
+        const doc = JSON.parse(await git.show([`HEAD:${f}`])) as { project?: { id?: unknown } }
+        if (doc.project?.id === projectId) return { file: f, content: JSON.stringify(doc) }
+      } catch {
+        /* not a project export */
+      }
+    }
+    throw e
+  }
+  return { file, content: await git.show([`HEAD:${file}`]) }
+}
+
+/**
+ * A merge (or a pull's merge) stopped half-way? Committing now would close
+ * that merge with a DB export, and discarding would throw away the user's
+ * conflict resolution. Decided from OUTPUT: the MERGE_HEAD file and the list
+ * of unmerged paths.
+ */
+async function mergeInProgress(git: SimpleGit, dir: string): Promise<boolean> {
+  const rel = (await git.raw(['rev-parse', '--git-path', 'MERGE_HEAD'])).trim()
+  if (rel && existsSync(isAbsolute(rel) ? rel : join(dir, rel))) return true
+  const unmerged = await git.raw(['diff', '--name-only', '--diff-filter=U'])
+  return unmerged.trim().length > 0
+}
+
+/**
+ * Ahead / behind against `origin/<branch>` from LOCAL refs only — the counts
+ * are as fresh as the last fetch (opening the branch menu lists branches,
+ * which fetches). No tracking ref: everything not on any `origin/*` ref is
+ * "ahead", so a branch whose first push never happened can still be pushed.
+ */
+async function aheadBehind(
+  git: SimpleGit,
+  branch: string,
+): Promise<{ ahead: number; behind: number; hasUpstream: boolean }> {
+  const hasUpstream = (await originBranches(git)).has(branch)
+  const count = (out: string): number => {
+    const n = parseInt(out.trim(), 10)
+    return Number.isFinite(n) && n > 0 ? n : 0
+  }
+  if (!(await headSha(git))) {
+    const behind = hasUpstream
+      ? count(await git.raw(['rev-list', '--count', `origin/${branch}`]))
+      : 0
+    return { ahead: 0, behind, hasUpstream }
+  }
+  if (!hasUpstream) {
+    const ahead = count(await git.raw(['rev-list', '--count', 'HEAD', '--not', '--remotes=origin']))
+    return { ahead, behind: 0, hasUpstream }
+  }
+  const [left = '0', right = '0'] = (
+    await git.raw(['rev-list', '--left-right', '--count', `origin/${branch}...HEAD`])
+  )
+    .trim()
+    .split(/\s+/)
+  return { behind: count(left), ahead: count(right), hasUpstream }
+}
+
+/** What a commit would write: the DB export, secrets blanked, JSON-round-tripped. */
+function liveExportForFile(projectId: string): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(stripLocalSecrets(exportProjectData(projectId)))) as Record<
+    string,
+    unknown
+  >
+}
+
+/** The renderer's `only` list, validated: an array of strings, or null for "everything". */
+function selectionOf(only: unknown): string[] | null {
+  if (!Array.isArray(only)) return null
+  return only.filter((k): k is string => typeof k === 'string' && k.length > 0 && k.length < 512)
+}
+
+/**
+ * Commit the project's pending changes (issues #207, #214). `only` null →
+ * everything: the DB → checkout sync Push always did. `only` given → those
+ * changes plus what they require (closed HERE, never trusted from the
+ * renderer); when that is every change it is the same full commit, otherwise
+ * HEAD's file with just those rows swapped in is committed and the rest stay
+ * uncommitted in the DB (`git:changes` keeps listing them).
+ */
+async function commitProject(
+  git: SimpleGit,
+  config: ProjectGitConfig,
+  projectId: string,
+  message: unknown,
+  only: string[] | null,
+): Promise<{ committed: boolean; partial: boolean; included?: number }> {
+  if (only) {
+    const head = await headProjectFile(git, projectId)
+    const headDoc = head ? parseDoc(head.content) : null
+    if (head && !headDoc) throw new Error(`${head.file} at HEAD is not a readable project file.`)
+    const live = liveExportForFile(projectId)
+    const items = diffProjectDocs(headDoc, live)
+    const chosen = withRequiredChanges(only, items)
+    if (chosen.size === 0) return { committed: false, partial: items.length > 0, included: 0 }
+    if (chosen.size < items.length) {
+      const doc = stripLocalSecrets(
+        applySelectedChanges(headDoc, live, chosen) as unknown as ProjectExport,
+      ) as unknown as Record<string, unknown>
+      const { changed } = await writeProjectFile(git, config, projectId, doc)
+      const header = (doc.project ?? {}) as Record<string, unknown>
+      const displayName = ((header.display_name || header.name) as string) || 'project'
+      if (changed) await git.commit(commitMessageOr(message, displayName))
+      return { committed: changed, partial: true, included: chosen.size }
+    }
+  }
+  const { displayName, changed } = await syncWorkingTreeFromDb(git, config, projectId, {
+    skipIfEmpty: false,
+  })
+  if (changed) await git.commit(commitMessageOr(message, displayName))
+  return { committed: changed, partial: false }
+}
+
+function parseDoc(content: string): Record<string, unknown> | null {
+  try {
+    const v = JSON.parse(content) as unknown
+    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Values that cannot travel and are still empty on THIS machine after a
+ * pull (issue #177 rule): secret environment / global variables with no
+ * value, and a project auth credential that arrived blanked. The pull
+ * reports the count so the teammate knows what to fill in — otherwise the
+ * first Send just fails with a 401.
+ */
+function countEmptyLocalSecrets(projectId: string): number {
+  const db = getDb()
+  const blank = "COALESCE(value, '') = '' AND COALESCE(initial_value, '') = ''"
+  const vars = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM environment_variables WHERE secret = 1 AND ${blank}
+         AND environment_id IN (SELECT id FROM environments WHERE project_id = ?)`,
+    )
+    .get(projectId) as { n: number }
+  const globals = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM global_variables WHERE secret = 1 AND ${blank} AND project_id = ?`,
+    )
+    .get(projectId) as { n: number }
+  const auth = (readSharedProjectSettings(projectId)?.auth ?? null) as Record<
+    string,
+    unknown
+  > | null
+  const credential =
+    auth?.type === 'bearer'
+      ? auth.bearerToken
+      : auth?.type === 'basic'
+        ? auth.basicPass
+        : auth?.type === 'api-key'
+          ? auth.apiKeyValue
+          : undefined
+  return vars.n + globals.n + (credential === '' ? 1 : 0)
+}
+
+/** True when `dir/file` is an export of `projectId` (safe to delete — the DB regenerates it). */
+function isOurExport(dir: string, file: string, projectId: string): boolean {
+  try {
+    const doc = parseDoc(readFileSync(join(dir, file), 'utf-8'))
+    return (doc?.project as { id?: unknown } | undefined)?.id === projectId
+  } catch {
+    return false
+  }
 }
 
 // ─── Register handlers ──────────────────────────────────────────
@@ -988,7 +1222,10 @@ export function registerGitHandlers(): void {
   // `opts.commitMessage` is what the user typed in the Push dialog (issue
   // #136); blank / missing → the automatic "Update <name> — <date>". The
   // Clone wizard's first push passes no opts and keeps the automatic message.
-  type GitPushOpts = { commitMessage?: unknown }
+  // `opts.commitPending === false` (issue #214): push the existing commits
+  // only — after a selective commit the rest stays uncommitted instead of
+  // being swept in. `opts.only`: commit just those changes first.
+  type GitPushOpts = { commitMessage?: unknown; commitPending?: unknown; only?: unknown }
   ipcMain.handle('git:push', async (_event, projectId: string, opts?: GitPushOpts) => {
     let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
     try {
@@ -1008,12 +1245,14 @@ export function registerGitHandlers(): void {
       // Export project data into the checkout and commit it. Push is the one
       // path that writes even an EMPTY project: seeding a new remote with
       // the fresh project's file is exactly its job.
-      const { displayName, changed } = await syncWorkingTreeFromDb(git, config, projectId, {
-        skipIfEmpty: false,
-      })
-      if (changed) {
-        const typed = typeof opts?.commitMessage === 'string' ? opts.commitMessage.trim() : ''
-        await git.commit(typed || `Update ${displayName} — ${new Date().toLocaleString()}`)
+      let changed = false
+      if (opts?.commitPending !== false) {
+        if (await mergeInProgress(git, config.localPath)) {
+          return { success: false, error: GIT_MERGE_IN_PROGRESS_ERROR }
+        }
+        changed = (
+          await commitProject(git, config, projectId, opts?.commitMessage, selectionOf(opts?.only))
+        ).committed
       }
 
       // Push current branch
@@ -1022,6 +1261,133 @@ export function registerGitHandlers(): void {
       // `committed: false` = nothing new since the last commit; the push
       // still ran (it may carry earlier unpushed commits).
       return { success: true, data: { branch: currentBranch, pushed: true, committed: changed } }
+    } catch (e) {
+      return { success: false, error: describeGitError(e, config?.token) }
+    }
+  })
+
+  // ─── Local changes: what a commit would write (issue #207) ─────
+  // Row-level diff of the DB (as a commit would export it) against the
+  // project file at HEAD, plus ahead / behind from local refs. Read-only and
+  // offline: never fetches, never writes the working tree.
+  ipcMain.handle('git:changes', async (_event, projectId: string) => {
+    try {
+      const config = await getProjectGitConfig(projectId)
+      if (!config?.repoUrl || !config.localPath) {
+        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+      }
+      const live = liveExportForFile(projectId)
+      if (!existsSync(join(config.localPath, '.git'))) {
+        // No checkout yet (opening one may clone over the network — not here).
+        const data: GitChangesSummary = {
+          items: diffProjectDocs(null, live),
+          ahead: 0,
+          behind: 0,
+          branch: config.branch,
+          hasUpstream: false,
+        }
+        return { success: true, data }
+      }
+      const git = await openRepo(config)
+      const head = await headProjectFile(git, projectId)
+      const branch = await branchName(git, config.branch)
+      const data: GitChangesSummary = {
+        items: diffProjectDocs(head ? parseDoc(head.content) : null, live),
+        ...(await aheadBehind(git, branch)),
+        branch,
+      }
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Commit locally, no push (issue #207) ────────────────────
+  // The DB → checkout sync Push does, then a commit with the user's message
+  // (blank → "Update <name> — <date>"). Local only: no token needed, the
+  // remote is untouched until Push. Nothing new → `committed: false`.
+  // `opts.only` (issue #214): commit just those changes (+ what they require).
+  ipcMain.handle(
+    'git:commit',
+    async (_event, projectId: string, message?: unknown, opts?: { only?: unknown }) => {
+      let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
+      try {
+        config = await getProjectGitConfig(projectId)
+        if (!config?.repoUrl || !config.localPath) {
+          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        }
+        const git = await ensureGitRepo(config)
+        if (await mergeInProgress(git, config.localPath)) {
+          return { success: false, error: GIT_MERGE_IN_PROGRESS_ERROR }
+        }
+        // Before the first commit: points an unborn HEAD at the configured
+        // branch, exactly as Push does, so the commit lands where Push pushes.
+        const branch = await getCurrentBranch(git, config.branch)
+        const outcome = await commitProject(
+          git,
+          config,
+          projectId,
+          message,
+          selectionOf(opts?.only),
+        )
+        const data: GitCommitOutcome = { ...outcome, sha: await headSha(git), branch }
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: describeGitError(e, config?.token) }
+      }
+    },
+  )
+
+  // ─── Discard all local changes (issue #207) ──────────────────
+  // The DB goes back to the last commit: HEAD's project file is imported in
+  // `replace` mode (rows the commit does not have are dropped; secret values
+  // survive through the importer's keep-local pass), then the checkout's
+  // project file is restored too. Imported from HEAD's CONTENT, not from the
+  // directory: after an uncommitted rename the directory's slug points at the
+  // uncommitted file. Refused mid-merge, and when nothing was ever committed
+  // (a replace import of "nothing" would empty the project).
+  ipcMain.handle('git:discard', async (_event, projectId: string) => {
+    let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
+    try {
+      config = await getProjectGitConfig(projectId)
+      if (!config?.repoUrl || !config.localPath) {
+        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+      }
+      const dir = config.localPath
+      if (!existsSync(join(dir, '.git'))) {
+        return { success: false, error: GIT_NOTHING_COMMITTED_ERROR }
+      }
+      const git = await openRepo(config)
+      if (await mergeInProgress(git, dir)) {
+        return { success: false, error: GIT_MERGE_IN_PROGRESS_ERROR }
+      }
+      const head = await headProjectFile(git, projectId)
+      if (!head || !parseDoc(head.content)) {
+        return { success: false, error: GIT_NOTHING_COMMITTED_ERROR }
+      }
+      // The file the DB's current name would write — differs from HEAD's
+      // after an uncommitted rename. Computed BEFORE the import adopts the
+      // committed name.
+      const liveFile = projectFileName(projectNameOf(projectId))
+
+      await importProjectDataFromJson(head.content, projectId, {
+        mode: 'replace',
+        adoptProjectHeader: true,
+      })
+
+      // Working tree + index back to HEAD for the project's file(s).
+      await git.raw(['checkout', 'HEAD', '--', head.file])
+      if (liveFile !== head.file) {
+        const atHead = (await git.raw(['ls-tree', '--name-only', 'HEAD', '--', liveFile])).trim()
+        if (atHead) {
+          await git.raw(['checkout', 'HEAD', '--', liveFile])
+        } else if (existsSync(join(dir, liveFile)) && isOurExport(dir, liveFile, projectId)) {
+          await git.raw(['rm', '--cached', '--ignore-unmatch', '--quiet', '--', liveFile])
+          unlinkSync(join(dir, liveFile))
+        }
+      }
+      const data: GitDiscardOutcome = { discarded: true, file: head.file }
+      return { success: true, data }
     } catch (e) {
       return { success: false, error: describeGitError(e, config?.token) }
     }
@@ -1131,6 +1497,7 @@ export function registerGitHandlers(): void {
           state: 'clean',
           branch: currentBranch,
           fastForwarded,
+          emptySecrets: countEmptyLocalSecrets(projectId),
         },
       }
     } catch (e) {

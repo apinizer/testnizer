@@ -66,12 +66,19 @@ uiTest.describe('Keyboard shortcuts', () => {
 
   uiTest('Cmd/Ctrl+B toggles left panel', async ({ window }) => {
     const leftPanel = window.getByTestId('left-panel')
-    const visibleBefore = await leftPanel.isVisible()
-    await pressModShortcut(window, 'b')
-    if (visibleBefore) {
+    // Start from a known state. A page icon also re-expands a collapsed panel
+    // (issue #202), and History/Tests keep their panel, so go to APIs first.
+    await window.getByTestId('nav-apis').click()
+    await expect(leftPanel).toBeVisible({ timeout: 3_000 })
+    try {
+      await pressModShortcut(window, 'b')
       await expect(leftPanel).toBeHidden({ timeout: 3_000 })
       await pressModShortcut(window, 'b')
       await expect(leftPanel).toBeVisible({ timeout: 3_000 })
+    } finally {
+      // The collapsed flag is persisted (`ui.leftPanelCollapsed`, #202) and the
+      // ui project shares one Electron instance — never leave it collapsed.
+      if (!(await leftPanel.isVisible())) await window.getByTestId('nav-apis').click()
     }
   })
 

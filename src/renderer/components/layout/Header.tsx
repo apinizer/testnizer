@@ -6,8 +6,10 @@ import { useTranslation } from '../../lib/i18n'
 import ProjectIcon from '../shared/ProjectIcon'
 import BranchDropdown from '../sidebar/BranchDropdown'
 import UserMenu from './UserMenu'
-import PushCommitModal from '../modals/PushCommitModal'
+import PushCommitModal, { type PushChoice } from '../modals/PushCommitModal'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
+import { emptySecretsMessage } from '../../lib/pull-messages'
+import { toast } from '../../lib/toast'
 import { T } from '../../styles/tokens'
 
 // SVG icons for git operations
@@ -121,14 +123,17 @@ export default function Header() {
     setPushDraft(suggestedCommitMessage(activeProject.display_name || activeProject.name, locale))
   }
 
-  async function runPush(commitMessage: string) {
+  async function runPush(commitMessage: string, choice?: PushChoice) {
     setPushDraft(null)
     if (!activeProject) return
     setPushStatus('loading')
     setStatusMsg('')
     setGitLoading('Pushing to remote...')
     try {
-      const result = await window.api.git.push(activeProject.id, { commitMessage })
+      const result = await window.api.git.push(activeProject.id, {
+        commitMessage,
+        commitPending: choice?.commitPending !== false,
+      })
 
       if (result?.success) {
         const done = result.data?.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'
@@ -181,6 +186,8 @@ export default function Header() {
         } else {
           setStatusMsg(`${t('toast.pulled')} (${branch})`)
           setPullStatus('success')
+          const empty = (result.data as { emptySecrets?: number } | undefined)?.emptySecrets
+          if (empty) toast.warning(emptySecretsMessage(t, empty))
         }
 
         // git:pull already re-imported the pulled project file into the DB;
@@ -478,6 +485,7 @@ export default function Header() {
 
       <PushCommitModal
         open={pushDraft !== null}
+        projectId={activeProject?.id}
         defaultMessage={pushDraft ?? ''}
         onConfirm={runPush}
         onCancel={() => setPushDraft(null)}

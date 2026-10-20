@@ -272,6 +272,10 @@ describe('issue #197 — Insomnia export carries saved requests', () => {
     expect(res.data).not.toContain('Ping MCP')
     expect(res.skipped).toEqual([MCP_SKIPPED])
 
+    // Issue #177 / #208 guard — the project's secret variable value never
+    // reaches the file (Insomnia export carries no environment today).
+    expect(res.data).not.toContain(SECRET)
+
     const target = newProject('Insomnia Target')
     await importVia('import:insomnia', target, res.data ?? '')
     expect(importedRows(target)).toContainEqual({
@@ -314,6 +318,9 @@ describe('issue #197 — OpenAPI export carries saved requests', () => {
 
     expect(res.data).not.toContain('Ping MCP')
     expect(res.skipped).toEqual([MCP_SKIPPED])
+
+    // Issue #177 / #208 guard — no secret variable value in the spec.
+    expect(res.data).not.toContain(SECRET)
 
     const target = newProject('OpenAPI Target')
     await importVia('import:openApi', target, res.data ?? '')

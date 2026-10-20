@@ -2,6 +2,12 @@ import { create } from 'zustand'
 import type { Tab, ToolProtocol } from '../types'
 import { loadJson, saveJson } from '../lib/persist-helpers'
 import { useMockMcpStore } from './mock-mcp.store'
+import { useTabSubTabStore } from './tab-subtab.store'
+
+/** Forget the remembered editor sub-tabs of tabs that no longer exist (#205). */
+function forgetSubTabs(tabIds: readonly string[]): void {
+  useTabSubTabStore.getState().clearTabs(tabIds)
+}
 
 interface TabsStore {
   tabs: Tab[]
@@ -194,6 +200,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
           ),
           activeTabId: tab.id,
         }))
+        if (existingPreview.id !== tab.id) forgetSubTabs([existingPreview.id])
       }
     } else {
       // Create a new preview tab
@@ -230,7 +237,8 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
       tabs: state.tabs.map((t) => (t.id === id ? { ...t, isPreview: false } : t)),
     })),
 
-  closeTab: (id) =>
+  closeTab: (id) => {
+    forgetSubTabs([id])
     set((state) => {
       const idx = state.tabs.findIndex((t) => t.id === id)
       const filtered = state.tabs.filter((t) => t.id !== id)
@@ -243,9 +251,13 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
         }
       }
       return { tabs: filtered, activeTabId: nextActive }
-    }),
+    })
+  },
 
-  closeAllTabs: () => set({ tabs: [], activeTabId: null }),
+  closeAllTabs: () => {
+    forgetSubTabs(get().tabs.map((t) => t.id))
+    set({ tabs: [], activeTabId: null })
+  },
 
   // Swap the entire open-tab set. Used by the workspace store to keep a
   // separate tab set per open project (#1): switching projects snapshots the

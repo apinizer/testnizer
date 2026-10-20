@@ -77,6 +77,15 @@ export interface MockState {
   } | null>
 }
 
+/**
+ * Bumped by every `loadServers` call: only the LATEST list may land — the
+ * same guard the Mock MCP store has. Without it, opening project B while A's
+ * list was still loading let A's answer arrive last and replace B's HTTP
+ * servers (issue #190 follow-up: the panel then showed the wrong project's
+ * servers, or none).
+ */
+let loadSeq = 0
+
 export const useMockStore = create<MockState>((set) => ({
   servers: [],
   endpointsByServer: {},
@@ -86,7 +95,9 @@ export const useMockStore = create<MockState>((set) => ({
   logsByServer: {},
 
   loadServers: async (projectId) => {
+    const seq = ++loadSeq
     const r = await api.server.list(projectId)
+    if (seq !== loadSeq) return // a newer load superseded this one
     if (r.success && r.data) set({ servers: r.data })
   },
 

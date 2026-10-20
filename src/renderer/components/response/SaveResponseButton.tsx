@@ -79,6 +79,7 @@ export default function SaveResponseButton({ onSaved }: { onSaved?: () => void }
         type="button"
         data-testid="response-save-btn"
         title={owner ? t('response.saveResponse') : t('response.saveResponseNeedsSavedRequest')}
+        aria-label={t('response.saveResponse')}
         onClick={start}
         className="flex cursor-pointer items-center gap-1 rounded border px-1.5 py-0.5 text-[var(--muted)] transition-colors hover:text-[var(--accent)]"
         style={{
@@ -88,7 +89,11 @@ export default function SaveResponseButton({ onSaved }: { onSaved?: () => void }
         }}
       >
         <Bookmark size={11} />
-        {t('response.saveResponse')}
+        {/* Icon-only when the response top bar is narrow (issue #213); the
+            accessible name stays on the button via aria-label. */}
+        <span data-collapsible-label className="@max-[72em]:hidden">
+          {t('response.saveResponse')}
+        </span>
       </button>
       {open && (
         <div

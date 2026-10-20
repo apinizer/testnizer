@@ -28,6 +28,7 @@ import {
   type EndpointCaseRow,
 } from '../db/endpoint.repo'
 import { readRequestSettingsJson } from '../../shared/request-settings'
+import { orderSuiteItems, type SuiteOrderFolder } from '../../shared/suite-order'
 import { removeByOwners, suiteFolderOwnerIds, suiteOwnerIds } from '../db/ai-conversation.repo'
 
 interface TestSuiteRow {
@@ -84,6 +85,10 @@ export interface SnapshotForSuite {
   source_endpoint_id: string
   /** Which APIs folder the source sat in, so the import can rebuild the tree. */
   source_folder_id: string | null
+  /** The source's sibling index in that folder — orders the import like the APIs Run. */
+  source_sort_order: number
+  /** The APIs tree lists a folder's endpoints before its saved requests. */
+  source_kind: 'endpoint' | 'saved'
 }
 
 /**
@@ -157,6 +162,8 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
       assertions: defaultCase?.assertions ?? null,
       source_endpoint_id: ep.id,
       source_folder_id: ep.folder_id ?? null,
+      source_sort_order: ep.sort_order ?? 0,
+      source_kind: 'endpoint',
     }
   }
   const sr = getSavedRequestById(endpointId)
@@ -188,6 +195,8 @@ export function snapshotEndpointForSuite(endpointId: string): SnapshotForSuite |
       assertions: sr.assertions ?? null,
       source_endpoint_id: sr.id,
       source_folder_id: sr.folder_id ?? null,
+      source_sort_order: sr.sort_order ?? 0,
+      source_kind: 'saved',
     }
   }
   return null
@@ -243,7 +252,17 @@ interface SourceFolderRow {
   id: string
   parent_id: string | null
   name: string
+  auth: string | null
+  pre_script: string | null
+  post_script: string | null
 }
+
+/** Folder auth / pre-request / post-response — what cascades onto a request at run time. */
+const hasFolderSettings = (f: {
+  auth: string | null
+  pre_script: string | null
+  post_script: string | null
+}): boolean => !!(f.auth || f.pre_script?.trim() || f.post_script?.trim())
 
 /** The chain of source folders above `folderId`, outermost first. */
 function sourceFolderChain(folderId: string | null, byId: Map<string, SourceFolderRow>): string[] {
@@ -305,10 +324,11 @@ function mirrorSourceFolders(opts: {
 
   const db = getDb()
   const byId = new Map<string, SourceFolderRow>(
-    (db.prepare('SELECT id, parent_id, name FROM folders').all() as SourceFolderRow[]).map((r) => [
-      r.id,
-      r,
-    ]),
+    (
+      db
+        .prepare('SELECT id, parent_id, name, auth, pre_script, post_script FROM folders')
+        .all() as SourceFolderRow[]
+    ).map((r) => [r.id, r]),
   )
 
   const chains = new Map<string, string[]>()
@@ -325,6 +345,25 @@ function mirrorSourceFolders(opts: {
     // would make the common prefix 0 and keep every folder — the right answer,
     // since there is no shared root to drop.
     trim = commonPrefixLength([...chains.values()])
+  }
+  /*
+   * A dropped ancestor that carries auth or scripts cannot simply vanish: its
+   * pre-request script is part of how every request below it runs (the
+   * tester's `01 Setup` / module scripts set `ApiProxyName` from `runId`), and
+   * a suite has no level of its own to hold it. Keep the chain from the
+   * outermost such folder down, so the suite runs with the same cascade the
+   * APIs folder Run does.
+   */
+  const sharedChain = [...chains.values()][0] ?? []
+  const rootChain = opts.rootSourceFolderId
+    ? sourceFolderChain(opts.rootSourceFolderId, byId)
+    : sharedChain
+  for (let i = 0; i < trim; i++) {
+    const row = byId.get(rootChain[i])
+    if (row && hasFolderSettings(row)) {
+      trim = i
+      break
+    }
   }
 
   // (parent id in the suite, folder name) → suite folder id. Seeded with what
@@ -343,10 +382,30 @@ function mirrorSourceFolders(opts: {
       const k = key(parent, row.name)
       const found = existing.get(k)
       if (found) {
+        // A folder an earlier import (or a pre-fix build) created without its
+        // settings picks them up now; one the user already configured is kept.
+        const current = getFolderById(found)
+        if (current && !hasFolderSettings(current) && hasFolderSettings(row)) {
+          updateFolderSettings(found, {
+            auth: row.auth,
+            pre_script: row.pre_script,
+            post_script: row.post_script,
+          })
+        }
         parent = found
         continue
       }
       const created = createFolder({ suite_id: opts.suiteId, parent_id: parent, name: row.name })
+      // Folder auth + scripts travel with the folder, exactly as the
+      // Postman / Insomnia suite import already did — the mirror used to copy
+      // the name only, so folder pre-request scripts silently stopped running.
+      if (hasFolderSettings(row)) {
+        updateFolderSettings(created.id, {
+          auth: row.auth,
+          pre_script: row.pre_script,
+          post_script: row.post_script,
+        })
+      }
       existing.set(k, created.id)
       parent = created.id
     }
@@ -497,16 +556,13 @@ export function registerTestSuiteHandlers(): void {
           now,
         )
 
-        // Copy folders first (depth-first by parent so child ids map onto
-        // freshly-minted parent ids). The mapping table is built as we go.
+        // Copy folders first. `listFoldersBySuite` returns them in tree order
+        // (every parent before its children), so a child's parent id is always
+        // in the map by the time it is copied. The old "roots first, then
+        // sort_order" sort handled two levels only: a grandchild met before its
+        // parent became a root folder and the copy came out flattened.
         const folderIdMap = new Map<string, string>()
-        const folders = listFoldersBySuite(id)
-        // Insert roots first, then nest as we encounter children.
-        const orderedFolders = [...folders].sort((a, b) => {
-          if (a.parent_id === null && b.parent_id !== null) return -1
-          if (b.parent_id === null && a.parent_id !== null) return 1
-          return a.sort_order - b.sort_order
-        })
+        const orderedFolders = listFoldersBySuite(id)
         const insertFolderStmt = db.prepare(
           `INSERT INTO test_suite_folders
              (id, suite_id, parent_id, name, sort_order, auth, pre_script, post_script, created_at)
@@ -667,7 +723,7 @@ export function registerTestSuiteHandlers(): void {
         if (!suite) return { success: false, error: 'Suite not found' }
 
         const folderId = payload.folder_id ?? null
-        const snapshots: Array<{ id: string; snap: SnapshotForSuite }> = []
+        const picked: Array<{ id: string; snap: SnapshotForSuite }> = []
         const rejected: string[] = []
         for (const eid of payload.endpoint_ids ?? []) {
           if (typeof eid !== 'string' || !eid) continue
@@ -676,7 +732,34 @@ export function registerTestSuiteHandlers(): void {
             rejected.push(eid)
             continue
           }
-          snapshots.push({ id: eid, snap })
+          picked.push({ id: eid, snap })
+        }
+        // Write the requests in the order the APIs tree runs them: items are
+        // appended per folder and folders are created on first sight, so this
+        // order becomes the suite's `sort_order`s and folder order. "Create
+        // suite from folder" already sends the tree order and is kept as is; a
+        // hand-picked selection (a set, in click order) is put into tree order
+        // — per folder, endpoints by sort_order, then saved requests, then
+        // subfolders, as `buildTreeFromDB` + the APIs folder Run do.
+        let snapshots = picked
+        if (!payload.source_folder_id) {
+          const sourceFolders = db
+            .prepare('SELECT id, parent_id, sort_order FROM folders WHERE project_id = ?')
+            .all(suite.project_id) as SuiteOrderFolder[]
+          const SAVED_AFTER_ENDPOINTS = 1_000_000_000
+          const rankOf = new Map(
+            orderSuiteItems(
+              picked.map((p) => ({
+                id: p.id,
+                folder_id: p.snap.source_folder_id,
+                sort_order:
+                  p.snap.source_sort_order +
+                  (p.snap.source_kind === 'saved' ? SAVED_AFTER_ENDPOINTS : 0),
+              })),
+              sourceFolders,
+            ).map((p, idx) => [p.id, idx]),
+          )
+          snapshots = [...picked].sort((a, b) => (rankOf.get(a.id) ?? 0) - (rankOf.get(b.id) ?? 0))
         }
 
         const placement = mirrorSourceFolders({
