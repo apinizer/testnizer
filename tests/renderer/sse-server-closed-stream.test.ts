@@ -21,6 +21,7 @@ type Payload = {
   data?: string
   httpStatus?: number
   closed?: 'ended' | 'failed'
+  streamEnded?: true
   eventType?: string
   id?: string
   timestamp: number
@@ -68,6 +69,7 @@ beforeEach(() => {
     events: [],
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
+    reconnecting: false,
   })
 })
 
@@ -168,5 +170,73 @@ describe('sse.store — the server closes the stream', () => {
     const s = useSseStore.getState()
     expect(s.connectionState).toBe('error')
     expect(s.errorMessage).toMatch(/HTTP 204/)
+  })
+})
+
+/**
+ * Issue #226: the real end of a finite stream, as main reports it. The
+ * server ends the response → `eventsource@3` reconnects (a message-less
+ * error, `streamEnded`) → ~3 s later the reconnect gets HTTP 204 (`closed`).
+ * During that gap the tab said "Connected" with no hint while the server was
+ * already done. Rule: the closed text only ever shows with the disconnected
+ * state; the gap is "Reconnecting…" (still connected, Disconnect stays), and
+ * an end of the response is not an error message.
+ * Fail-before: no `reconnecting` flag — the gap read as plain "Connected"
+ * and `errorMessage` held "SSE connection error".
+ */
+describe('sse.store — the gap between the end of the response and the 204', () => {
+  it('open → events → end of response (reconnecting) → 204 close', async () => {
+    await connectTab('tab-a')
+    emit({ connectionId: 'c1', type: 'event', data: 'one', id: '1' })
+    emit({ connectionId: 'c1', type: 'event', data: 'two', id: '2' })
+    emit({
+      connectionId: 'c1',
+      type: 'error',
+      data: 'The server ended the response; reconnecting',
+      streamEnded: true,
+    })
+    let s = useSseStore.getState()
+    expect(s.connectionState).toBe('connected')
+    expect(s.reconnecting).toBe(true)
+    // No message at all — neither the closed text nor a fake failure.
+    expect(s.errorMessage).toBeNull()
+    expect(s.events).toHaveLength(2)
+    expect(listeners).toHaveLength(1)
+
+    emit({
+      connectionId: 'c1',
+      type: 'error',
+      data: 'HTTP 204 Server sent HTTP 204, not reconnecting',
+      httpStatus: 204,
+      closed: 'ended',
+    })
+    s = useSseStore.getState()
+    expect(s.connectionState).toBe('disconnected')
+    expect(s.reconnecting).toBe(false)
+    expect(s.errorMessage).toBe('The server closed the stream (HTTP 204)')
+    expect(s.events).toHaveLength(2)
+  })
+
+  it('a transient network error also reads as reconnecting; the next open clears it', async () => {
+    await connectTab('tab-a')
+    emit({ connectionId: 'c1', type: 'error', data: 'Connection refused — ECONNREFUSED' })
+    expect(useSseStore.getState().reconnecting).toBe(true)
+    emit({ connectionId: 'c1', type: 'open' })
+    const s = useSseStore.getState()
+    expect(s.connectionState).toBe('connected')
+    expect(s.reconnecting).toBe(false)
+    expect(s.errorMessage).toBeNull()
+  })
+
+  it('the reconnecting flag follows the owner tab and a user Disconnect clears it', async () => {
+    await connectTab('tab-a')
+    useSseStore.getState().switchToTab('tab-b')
+    emit({ connectionId: 'c1', type: 'error', data: 'x', streamEnded: true })
+    expect(useSseStore.getState().reconnecting).toBe(false)
+    expect(useSseStore.getState()._tabStates.get('tab-a')?.reconnecting).toBe(true)
+    useSseStore.getState().switchToTab('tab-a')
+    expect(useSseStore.getState().reconnecting).toBe(true)
+    await useSseStore.getState().disconnect()
+    expect(useSseStore.getState().reconnecting).toBe(false)
   })
 })

@@ -33,11 +33,13 @@ import { bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
 import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
 import MockLlmOptions, { MockLlmBodyNotes } from './MockLlmOptions'
+import { OptionNumber } from './MockOptionFields'
 import { MockAiChatHeaderButton } from './MockOpenInAiChat'
 import { tickerResponse } from './mock-sse-presets'
 import { chatResponse } from './mock-ai-presets'
 import { buildMockCurl } from './mock-curl'
 import { uniqueName } from './mock-create-helpers'
+import { isOpenStreamEntry } from '../../lib/mock-log-streams'
 import {
   normalizeLlmConfig,
   normalizeStreamConfig,
@@ -559,24 +561,33 @@ function EndpointEditor({
           llm={llmProviderOf(responses)}
         />
 
-        <div className="mt-2 flex items-center gap-2 text-xs">
-          <label style={{ color: 'var(--muted)' }}>{t('mock.pathMode')}:</label>
-          <select
-            value={endpoint.pathMode}
-            onChange={(e) =>
-              updateEndpoint(endpoint.id, { pathMode: e.target.value as MockPathMode })
-            }
-            className="rounded border px-2 py-1"
-            style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
-          >
-            {PATH_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+        {/* Wraps in a narrow editor; no label breaks inside (issue #226). */}
+        <div
+          data-testid="mock-endpoint-options-row"
+          className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs"
+        >
           <label
-            className="ml-3 flex items-center gap-1.5 cursor-pointer"
+            className="flex items-center gap-1.5 whitespace-nowrap"
+            style={{ color: 'var(--muted)' }}
+          >
+            {t('mock.pathMode')}:
+            <select
+              value={endpoint.pathMode}
+              onChange={(e) =>
+                updateEndpoint(endpoint.id, { pathMode: e.target.value as MockPathMode })
+              }
+              className="rounded border px-2 py-1"
+              style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
+            >
+              {PATH_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label
+            className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap"
             style={{ color: 'var(--text)' }}
           >
             <input
@@ -586,20 +597,11 @@ function EndpointEditor({
             />
             {t('mock.enabled')}
           </label>
-          <label className="ml-3 flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
-            {t('mock.priority')}:
-            <input
-              type="number"
-              {...priorityDraft.inputProps}
-              className="rounded border px-2 py-1"
-              style={{
-                width: 60,
-                background: 'var(--white)',
-                borderColor: 'var(--border)',
-                color: 'var(--text)',
-              }}
-            />
-          </label>
+          <OptionNumber
+            label={t('mock.priority')}
+            testId="mock-endpoint-priority"
+            draft={priorityDraft}
+          />
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -730,87 +732,102 @@ function FullUrlBar({
     window.open(url, '_blank', 'noopener')
   }
 
+  // Narrow editor (issue #226): the URL box keeps a minimum width and
+  // truncates; the buttons are one group that wraps onto the next line as a
+  // whole, each label on one line.
   return (
     <div
-      className="mt-2 flex items-center gap-2 rounded border px-2 py-1.5"
+      data-testid="mock-endpoint-url-bar"
+      className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded border px-2 py-1.5"
       style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
     >
-      <span
-        className="text-[10px] font-semibold uppercase tracking-wide"
-        style={{ color: 'var(--muted)' }}
+      <div
+        data-testid="mock-endpoint-url-box"
+        className="flex min-w-[12rem] flex-1 items-center gap-2"
       >
-        URL
-      </span>
-      <code
-        className="flex-1 truncate font-mono text-xs"
-        style={{ color: 'var(--text)' }}
-        title={fullUrl}
-        data-testid="mock-endpoint-url"
-      >
-        {fullUrl}
-      </code>
-      {status !== 'running' && (
         <span
-          className="rounded px-1.5 py-0.5 text-[10px]"
-          style={{
-            background: 'var(--mb-delete-bg)',
-            color: 'var(--red)',
-            border: '1px solid var(--mb-delete-br)',
-          }}
-          title={t('mock.startServerToTest')}
+          className="text-[10px] font-semibold uppercase tracking-wide"
+          style={{ color: 'var(--muted)' }}
         >
-          {t('mock.notRunning')}
+          URL
         </span>
-      )}
-      <button
-        onClick={() => copy('url', fullUrl)}
-        className="rounded border px-2 py-0.5 text-[11px]"
-        style={{
-          borderColor: 'var(--border)',
-          color: copied === 'url' ? 'var(--green)' : 'var(--muted)',
-          background: 'var(--white)',
-        }}
-        title={t('mock.copyUrl')}
+        <code
+          className="min-w-0 flex-1 truncate font-mono text-xs"
+          style={{ color: 'var(--text)' }}
+          title={fullUrl}
+          data-testid="mock-endpoint-url"
+        >
+          {fullUrl}
+        </code>
+      </div>
+      <div
+        data-testid="mock-endpoint-url-actions"
+        className="flex max-w-full min-w-0 flex-wrap items-center gap-2"
       >
-        {copied === 'url' ? '✓' : '⧉'} {t('mock.copyUrl')}
-      </button>
-      <button
-        data-testid="mock-copy-curl"
-        onClick={() => copy('curl', curl)}
-        className="rounded border px-2 py-0.5 text-[11px]"
-        style={{
-          borderColor: 'var(--border)',
-          color: copied === 'curl' ? 'var(--green)' : 'var(--muted)',
-          background: 'var(--white)',
-        }}
-        title={t('mock.copyCurl')}
-      >
-        {copied === 'curl' ? '✓' : '⧉'} cURL
-      </button>
-      <button
-        onClick={open}
-        disabled={!canOpen}
-        className="rounded border px-2 py-0.5 text-[11px]"
-        style={{
-          borderColor: 'var(--border)',
-          color: canOpen ? 'var(--accent-text)' : 'var(--hint)',
-          background: 'var(--white)',
-          opacity: canOpen ? 1 : 0.5,
-          cursor: canOpen ? 'pointer' : 'not-allowed',
-        }}
-        title={
-          !canOpen
-            ? endpoint.pathMode !== 'exact'
-              ? t('mock.openHintPath')
-              : endpoint.method !== 'GET' && endpoint.method !== 'ANY'
-                ? t('mock.openHintMethod')
-                : t('mock.openHintRunning')
-            : t('mock.openInBrowser')
-        }
-      >
-        ↗ {t('mock.openInBrowser')}
-      </button>
-      {streams && <MockEndpointOpenInSse server={server} endpoint={endpoint} status={status} />}
+        {status !== 'running' && (
+          <span
+            data-testid="mock-endpoint-not-running"
+            className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px]"
+            style={{
+              background: 'var(--mb-delete-bg)',
+              color: 'var(--red)',
+              border: '1px solid var(--mb-delete-br)',
+            }}
+            title={t('mock.startServerToTest')}
+          >
+            {t('mock.notRunning')}
+          </span>
+        )}
+        <button
+          onClick={() => copy('url', fullUrl)}
+          className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
+          style={{
+            borderColor: 'var(--border)',
+            color: copied === 'url' ? 'var(--green)' : 'var(--muted)',
+            background: 'var(--white)',
+          }}
+          title={t('mock.copyUrl')}
+        >
+          {copied === 'url' ? '✓' : '⧉'} {t('mock.copyUrl')}
+        </button>
+        <button
+          data-testid="mock-copy-curl"
+          onClick={() => copy('curl', curl)}
+          className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
+          style={{
+            borderColor: 'var(--border)',
+            color: copied === 'curl' ? 'var(--green)' : 'var(--muted)',
+            background: 'var(--white)',
+          }}
+          title={t('mock.copyCurl')}
+        >
+          {copied === 'curl' ? '✓' : '⧉'} cURL
+        </button>
+        <button
+          onClick={open}
+          disabled={!canOpen}
+          className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
+          style={{
+            borderColor: 'var(--border)',
+            color: canOpen ? 'var(--accent-text)' : 'var(--hint)',
+            background: 'var(--white)',
+            opacity: canOpen ? 1 : 0.5,
+            cursor: canOpen ? 'pointer' : 'not-allowed',
+          }}
+          title={
+            !canOpen
+              ? endpoint.pathMode !== 'exact'
+                ? t('mock.openHintPath')
+                : endpoint.method !== 'GET' && endpoint.method !== 'ANY'
+                  ? t('mock.openHintMethod')
+                  : t('mock.openHintRunning')
+              : t('mock.openInBrowser')
+          }
+        >
+          ↗ {t('mock.openInBrowser')}
+        </button>
+        {streams && <MockEndpointOpenInSse server={server} endpoint={endpoint} status={status} />}
+      </div>
     </div>
   )
 }
@@ -887,12 +904,22 @@ function ResponseEditor({
       className="rounded border p-3"
       style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
     >
-      <div className="mb-2 grid grid-cols-[140px_1fr_140px_auto] gap-2">
+      {/*
+        Status / name / body type / delete. Every track has a fixed rem minimum
+        — a plain `1fr` track's minimum is `auto`, the input's intrinsic width,
+        which pushed the select and the delete button out of a narrow editor
+        (issue #226). At a normal width the tracks are 140 px / rest / 140 px
+        as before; in a narrow one all three shrink toward their minimums.
+      */}
+      <div
+        data-testid="mock-response-row"
+        className="mb-2 grid grid-cols-[minmax(4.5rem,140px)_minmax(6rem,1fr)_minmax(6rem,140px)_auto] gap-2"
+      >
         <input
           type="number"
           {...statusDraft.inputProps}
           data-testid="mock-response-status"
-          className="rounded border px-2 py-1 text-sm"
+          className="w-full min-w-0 rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         />
         <input
@@ -900,7 +927,8 @@ function ResponseEditor({
           value={response.name}
           onChange={(e) => updateResponse(response.id, { name: e.target.value })}
           placeholder={t('mock.responseName')}
-          className="rounded border px-2 py-1 text-sm"
+          data-testid="mock-response-name"
+          className="w-full min-w-0 rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         />
         <select
@@ -910,7 +938,7 @@ function ResponseEditor({
             updateResponse(response.id, { bodyType, streamConfig: freshStreamConfig(bodyType) })
           }}
           data-testid="mock-response-body-type"
-          className="rounded border px-2 py-1 text-xs"
+          className="w-full min-w-0 rounded border px-2 py-1 text-xs"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         >
           {bodyTypeOptions(kind, response.bodyType).map((b) => (
@@ -923,6 +951,9 @@ function ResponseEditor({
           onClick={() => {
             if (confirm(t('mock.confirmDeleteResponse'))) deleteResponse(endpointId, response.id)
           }}
+          data-testid="mock-response-delete"
+          title={t('mock.deleteResponse')}
+          aria-label={t('mock.deleteResponse')}
           className="rounded border px-2 py-1 text-xs"
           style={{ borderColor: 'var(--border)', color: 'var(--red)', background: 'var(--white)' }}
         >
@@ -930,18 +961,10 @@ function ResponseEditor({
         </button>
       </div>
 
-      <div className="mb-2 flex items-center gap-3 text-xs">
-        <label style={{ color: 'var(--muted)' }}>
-          {t('mock.delayMs')}:
-          <input
-            type="number"
-            {...delayDraft.inputProps}
-            className="ml-1 rounded border px-2 py-1"
-            style={{ width: 70, background: 'var(--white)', borderColor: 'var(--border)' }}
-          />
-        </label>
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+        <OptionNumber label={t('mock.delayMs')} testId="mock-response-delay" draft={delayDraft} />
         <label
-          className="flex cursor-pointer items-center gap-1.5"
+          className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap"
           style={{ color: 'var(--text)' }}
         >
           <input
@@ -1589,7 +1612,7 @@ function LogsTab({ serverId }: { serverId: string }) {
           className="flex items-center justify-between border-b px-3 py-2"
           style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
         >
-          <span className="text-xs" style={{ color: 'var(--muted)' }}>
+          <span data-testid="mock-log-count" className="text-xs" style={{ color: 'var(--muted)' }}>
             {logs.length} {t('mock.entries')}
           </span>
           <div className="flex gap-1">
@@ -1598,6 +1621,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               className="rounded border px-2 py-0.5 text-xs"
               style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
               title={t('mock.refresh')}
+              aria-label={t('mock.refresh')}
             >
               <RefreshCw size={11} />
             </button>
@@ -1662,6 +1686,9 @@ function LogsTab({ serverId }: { serverId: string }) {
                   .map((log) => (
                     <tr
                       key={log.id}
+                      data-testid="mock-log-row"
+                      // One row per stream: "open" until its closed entry replaces it (issue #226).
+                      data-streaming={isOpenStreamEntry(log) ? 'true' : 'false'}
                       onClick={() => setSelectedId(log.id)}
                       style={{
                         cursor: 'pointer',
@@ -1693,10 +1720,11 @@ function LogsTab({ serverId }: { serverId: string }) {
                         {log.statusCode}
                       </td>
                       <td
+                        data-testid="mock-log-latency"
                         className="border-b px-2 py-1 text-right"
                         style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                       >
-                        {log.latencyMs}ms
+                        <LogLatency log={log} />
                       </td>
                     </tr>
                   ))}
@@ -1755,7 +1783,7 @@ function LogsTab({ serverId }: { serverId: string }) {
                 {t('mock.response')}
               </div>
               <div className="font-mono text-xs">
-                {selected.statusCode} · {selected.latencyMs}ms
+                {selected.statusCode} · <LogLatency log={selected} />
               </div>
               <details>
                 <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
@@ -1784,6 +1812,21 @@ function LogsTab({ serverId }: { serverId: string }) {
         )}
       </div>
     </>
+  )
+}
+
+/** "142ms", or "streaming…" while a stream's closed entry has not arrived (issue #226). */
+function LogLatency({ log }: { log: MockLogEntry }) {
+  const { t } = useTranslation()
+  if (!isOpenStreamEntry(log)) return <>{log.latencyMs}ms</>
+  return (
+    <span
+      className="inline-flex items-center gap-1 whitespace-nowrap"
+      style={{ color: 'var(--green)' }}
+    >
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--green)]" />
+      {t('mock.logStreaming')}
+    </span>
   )
 }
 

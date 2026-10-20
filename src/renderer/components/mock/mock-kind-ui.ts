@@ -49,3 +49,21 @@ export const KIND_BADGE: Record<MockBadgeKind, string> = {
 export function serversOfKind(servers: MockServer[], kind: MockServerKind): MockServer[] {
   return servers.filter((s) => normalizeMockServerKind(s.kind) === kind)
 }
+
+/**
+ * Mocks-panel search (issue #226): every word of `query` must match the
+ * server's name (substring), its kind label (prefix — "s" / "sse", so one
+ * letter does not pull in every kind) or its port (substring). Case-insensitive;
+ * an empty query matches everything. The displayed address is not matched: a
+ * Mock MCP row shows `http://…`, and "http" must list the HTTP servers only.
+ */
+export function matchesMockQuery(
+  query: string,
+  server: { name: string; kind: MockBadgeKind; port: number },
+): boolean {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const name = server.name.toLowerCase()
+  const kind = KIND_BADGE[server.kind].toLowerCase()
+  const port = String(server.port)
+  return words.every((w) => name.includes(w) || kind.startsWith(w) || port.includes(w))
+}

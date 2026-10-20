@@ -12,7 +12,7 @@ import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type { MockServer } from '../../types'
 import type { MockServerKind } from '../../../shared/mock-kind'
-import { serversOfKind } from './mock-kind-ui'
+import { matchesMockQuery, serversOfKind } from './mock-kind-ui'
 import MockGroupHeader from './MockGroupHeader'
 import MockServerRow from './MockServerRow'
 import { closeMockServerTab, mockServerUrl, openMockServerTab } from './mock-http-tabs'
@@ -69,9 +69,8 @@ export default function MockKindServersSection({
   const [deleteTarget, setDeleteTarget] = useState<MockServer | null>(null)
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return q ? servers.filter((s) => s.name.toLowerCase().includes(q)) : servers
-  }, [servers, query])
+    return servers.filter((s) => matchesMockQuery(query, { name: s.name, kind, port: s.port }))
+  }, [servers, query, kind])
 
   async function start(id: string): Promise<void> {
     const err = await startServer(id)

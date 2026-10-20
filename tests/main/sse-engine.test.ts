@@ -265,6 +265,8 @@ describe('sse.engine — error path', () => {
     expect(typeof err.timestamp).toBe('number')
     // A dropped connection is transient — the client reconnects on its own.
     expect(err.closed).toBeUndefined()
+    // …and it is a real failure, not the server finishing (issue #226).
+    expect(err.streamEnded).toBeUndefined()
 
     disconnect(info.connectionId)
   })
@@ -301,6 +303,33 @@ describe('sse.engine — the server ends the stream for good', () => {
       expect(err.closed).toBe('ended')
       // Nothing left to disconnect — the engine dropped it.
       expect(getConnectionInfo(info.connectionId)).toBeNull()
+    } finally {
+      server.closeAllConnections?.()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  // Issue #226: the end of the response that PRECEDES the 204 is the server
+  // finishing, not a failure — marked `streamEnded` (not `closed`: the client
+  // does reconnect). Fail-before: "SSE connection error" with no marker, so
+  // the Console logged a normal end as an error.
+  it('the end of the response before the 204 is a non-terminal `streamEnded` reconnect', async () => {
+    const { server, url } = await startFiniteServer(204)
+    try {
+      const info = await connect({ url }, 1)
+      await waitFor(() => sseEvents().find((e) => e.type === 'error' && e.httpStatus === 204), 5000)
+      const errors = sseEvents().filter(
+        (e) => e.type === 'error' && e.connectionId === info.connectionId,
+      )
+      expect(errors).toHaveLength(2)
+      expect(errors[0]).toMatchObject({
+        streamEnded: true,
+        data: 'The server ended the response; reconnecting',
+      })
+      expect(errors[0].closed).toBeUndefined()
+      expect(errors[0].httpStatus).toBeUndefined()
+      expect(errors[1].closed).toBe('ended')
+      expect(errors[1].streamEnded).toBeUndefined()
     } finally {
       server.closeAllConnections?.()
       await new Promise<void>((resolve) => server.close(() => resolve()))

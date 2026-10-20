@@ -1149,6 +1149,8 @@ interface SseEventPayload {
   httpStatus?: number
   /** `error` only: terminal — nothing reconnects. `ended` = HTTP 204 / clean end of stream. */
   closed?: 'ended' | 'failed'
+  /** `error` only, never with `closed`: the server ended the response and the client reconnects — not a failure (issue #226). */
+  streamEnded?: true
   timestamp: number
 }
 

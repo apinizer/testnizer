@@ -20,6 +20,11 @@
  * no such shape, which is exactly what an unknown name rendered before.
  * Note: the env pre-pass runs first, so a project variable of the same name
  * (e.g. `model`) wins over the shortcut.
+ *
+ * `{{offeredTool 'echo'}}` (issue #226) is the name under which the request
+ * offers the MCP tool `echo` (`offeredToolName`): `echo` itself, or AI Chat's
+ * namespaced `<server>__echo` (`src/shared/ai-tool-names.ts`). A mock tool
+ * call must name exactly what was offered, or the client cannot route it.
  */
 
 import Handlebars from 'handlebars'
@@ -94,6 +99,38 @@ function toolResultOf(msg: Record<string, unknown>): string | null {
   return null
 }
 
+/** The request body as an object; a JSON body sent as text is parsed. */
+function llmRequestBody(body: unknown): Record<string, unknown> | null {
+  if (typeof body === 'string' && body.trimStart().startsWith('{')) {
+    try {
+      return asRecord(JSON.parse(body))
+    } catch {
+      return null
+    }
+  }
+  return asRecord(body)
+}
+
+/**
+ * The name under which an OpenAI (`tools[].function.name`) or Anthropic
+ * (`tools[].name`) request offers the tool `tool`: an exact `tool`, else the
+ * first name ending in `__<tool>` — AI Chat's `<server>__<tool>` wire name.
+ * Null when it is not offered. A wire name AI Chat had to hash-suffix (longer
+ * than 64 characters, or two servers with the same name) does not match.
+ */
+export function offeredToolName(body: unknown, tool: string): string | null {
+  if (tool === '') return null
+  const req = llmRequestBody(body)
+  const tools = req && Array.isArray(req.tools) ? req.tools : []
+  const names: string[] = []
+  for (const t of tools) {
+    const entry = asRecord(t)
+    const name = asRecord(entry?.function)?.name ?? entry?.name
+    if (typeof name === 'string') names.push(name)
+  }
+  return names.find((n) => n === tool) ?? names.find((n) => n.endsWith(`__${tool}`)) ?? null
+}
+
 /**
  * `lastUserMessage` / `lastToolResult` / `model` from an OpenAI chat
  * completions or Anthropic messages request body (`messages[]`, `model`).
@@ -103,16 +140,8 @@ function toolResultOf(msg: Record<string, unknown>): string | null {
  * here. Anything else gives empty strings.
  */
 export function llmRequestShortcuts(body: unknown): LlmRequestShortcuts {
-  let parsed = body
-  if (typeof body === 'string' && body.trimStart().startsWith('{')) {
-    try {
-      parsed = JSON.parse(body)
-    } catch {
-      parsed = null
-    }
-  }
   const out: LlmRequestShortcuts = { lastUserMessage: '', lastToolResult: '', model: '' }
-  const req = asRecord(parsed)
+  const req = llmRequestBody(body)
   if (!req) return out
   if (typeof req.model === 'string') out.model = req.model
   const messages = Array.isArray(req.messages) ? req.messages : []
@@ -148,6 +177,12 @@ hb.registerHelper('neq', (a, b) => a !== b)
 hb.registerHelper('upper', (s: unknown) => String(s ?? '').toUpperCase())
 hb.registerHelper('lower', (s: unknown) => String(s ?? '').toLowerCase())
 hb.registerHelper('default', (a: unknown, b: unknown) => ((a ?? '') === '' ? b : a))
+// `{{offeredTool 'echo'}}` — see the header comment. Not offered → the name as written.
+hb.registerHelper('offeredTool', function (tool: unknown, options?: Handlebars.HelperOptions) {
+  if (typeof tool !== 'string') return ''
+  const root = options?.data?.root as Partial<TemplateContext> | undefined
+  return offeredToolName(root?.request?.body ?? root?.request?.bodyText, tool) ?? tool
+})
 
 /** Render a template against a context. Errors return the literal source.
  *

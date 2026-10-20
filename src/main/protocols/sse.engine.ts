@@ -57,7 +57,35 @@ export interface SseEventPayload {
    *  - `'failed'` — anything else (non-200, wrong type, broken stream).
    */
   closed?: 'ended' | 'failed'
+  /**
+   * `error` only, never with `closed` (issue #226): the server ended the
+   * response normally and the client is reconnecting, as EventSource does
+   * after every response. Not a failure — a finite stream ends this way just
+   * before its reconnect gets HTTP 204. A transient network error (a message
+   * from the transport) is not marked.
+   */
+  streamEnded?: true
   timestamp: number
+}
+
+/** `data` of a `streamEnded` error. */
+export const SSE_STREAM_ENDED_MESSAGE = 'The server ended the response; reconnecting'
+
+/**
+ * Whether an `eventsource@3` error is the server ending the response (issue
+ * #226). The library reports a body that finished cleanly through its
+ * reconnect path with no message and no status; a broken stream or a refused
+ * reconnect carries a message (`flattenError`) or a status. Only meaningful
+ * once the connection had opened and while the library is reconnecting.
+ */
+export function isStreamEndReconnect(
+  err: { code?: unknown; message?: unknown },
+  readyState: number,
+  opened: boolean,
+): boolean {
+  if (!opened || readyState !== EventSource.CONNECTING) return false
+  if (err.code !== undefined && err.code !== null) return false
+  return typeof err.message !== 'string' || err.message.trim() === ''
 }
 
 // ─── Error message enrichment ───────────────────────────────
@@ -327,13 +355,16 @@ function connectEventSource(
           : httpStatus === 204
             ? ('ended' as const)
             : ('failed' as const)
+      const streamEnded =
+        !closed && isStreamEndReconnect(err, eventSource.readyState, connections.has(connectionId))
 
       sendEventToRenderer(windowId, {
         connectionId,
         type: 'error',
-        data: message,
+        data: streamEnded ? SSE_STREAM_ENDED_MESSAGE : message,
         httpStatus,
         ...(closed ? { closed } : {}),
+        ...(streamEnded ? { streamEnded: true as const } : {}),
         timestamp: Date.now(),
       })
 

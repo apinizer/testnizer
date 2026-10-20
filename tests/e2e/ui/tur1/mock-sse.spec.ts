@@ -247,8 +247,8 @@ uiTest.describe('Tur1 — SSE mock servers [issue #221]', () => {
       await expect(window.getByTestId('mock-kind-badge')).toHaveText('SSE', { timeout: 10_000 })
       await window.getByTestId('mock-tab-logs').click()
       // Status is the 4th cell (Time | Method | Path | Status | Latency); newest
-      // first. A stream logs twice — when it opens (200) and when it ends (200,
-      // with the frames it sent) — then the reconnect's 204.
+      // first. The stream is ONE row (its "closed" entry replaces the "open"
+      // one, issue #226), then the reconnect's 204.
       const statusCells = window
         .locator('tr')
         .filter({ hasText: '/events' })
@@ -257,7 +257,7 @@ uiTest.describe('Tur1 — SSE mock servers [issue #221]', () => {
         .poll(async () => (await statusCells.allTextContents()).map((s) => s.trim()), {
           timeout: 10_000,
         })
-        .toEqual(['204', '200', '200'])
+        .toEqual(['204', '200'])
       // The refused request is the client's resume after the last id.
       const refused = await window.evaluate(async (id) => {
         interface LogEntry {

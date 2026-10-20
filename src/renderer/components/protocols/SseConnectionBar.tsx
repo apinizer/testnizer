@@ -11,7 +11,9 @@ const METHODS: SseHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
  *  - error        → the failure (red box)
  *  - disconnected → why the stream ended, e.g. the server's HTTP 204 (neutral)
  * While connected, a transient error is not shown: the client is already
- * reconnecting on its own and the next `open` clears it.
+ * reconnecting on its own and the next `open` clears it. The pill says
+ * "Reconnecting…" meanwhile (issue #226) — the server may already have ended
+ * the stream, but "closed" is only said once the connection is really over.
  */
 const MESSAGE_TONE: Partial<Record<string, string>> = {
   error: 'border-[var(--mb-delete-br)] bg-[var(--mb-delete-bg)] text-[var(--red)]',
@@ -26,6 +28,7 @@ export default function SseConnectionBar() {
   const setMethod = useSseStore((s) => s.setMethod)
   const connectionState = useSseStore((s) => s.connectionState)
   const errorMessage = useSseStore((s) => s.errorMessage)
+  const reconnecting = useSseStore((s) => s.reconnecting)
   const connect = useSseStore((s) => s.connect)
   const disconnect = useSseStore((s) => s.disconnect)
   const reconnect = useSseStore((s) => s.reconnect)
@@ -34,11 +37,16 @@ export default function SseConnectionBar() {
   const isConnecting = connectionState === 'connecting'
   const busy = isConnected || isConnecting
   const messageTone = MESSAGE_TONE[connectionState]
+  const showReconnecting = isConnected && reconnecting
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <McpStatusPill state={connectionState} testId="sse-status" />
+        <McpStatusPill
+          state={showReconnecting ? 'connecting' : connectionState}
+          labelKey={showReconnecting ? 'sse.reconnecting' : undefined}
+          testId="sse-status"
+        />
 
         <select
           value={method}

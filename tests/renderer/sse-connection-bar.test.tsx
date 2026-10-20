@@ -12,7 +12,12 @@ import { useSseStore } from '../../src/renderer/stores/sse.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
 
 function show(patch: Partial<ReturnType<typeof useSseStore.getState>>): void {
-  useSseStore.setState({ url: 'http://127.0.0.1:3200/events', method: 'GET', ...patch })
+  useSseStore.setState({
+    url: 'http://127.0.0.1:3200/events',
+    method: 'GET',
+    reconnecting: false,
+    ...patch,
+  })
   render(React.createElement(SseConnectionBar))
 }
 
@@ -54,6 +59,19 @@ describe('SseConnectionBar', () => {
     expect(screen.getByTestId('sse-disconnect')).toHaveTextContent('Disconnect')
     expect(screen.getByTestId('sse-reconnect')).toHaveTextContent('Reconnect')
     expect(screen.getByTestId('sse-method')).toBeDisabled()
+    expect(screen.queryByTestId('sse-message')).toBeNull()
+  })
+
+  // Issue #226: between the end of the response and the server's 204 the
+  // client is reconnecting — say so, never show the closed text while the
+  // tab still holds the connection. Fail-before: plain green "Connected".
+  it('reconnecting: an orange "Reconnecting…" pill, Disconnect stays, no message', () => {
+    show({ connectionState: 'connected', reconnecting: true, errorMessage: null })
+    const status = screen.getByTestId('sse-status')
+    expect(status).toHaveTextContent('Reconnecting…')
+    expect(status).toHaveAttribute('data-state', 'connecting')
+    expect(status.className).toContain('text-[var(--orange)]')
+    expect(screen.getByTestId('sse-disconnect')).toHaveTextContent('Disconnect')
     expect(screen.queryByTestId('sse-message')).toBeNull()
   })
 

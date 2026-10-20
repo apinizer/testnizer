@@ -58,6 +58,17 @@ export const MOCK_LLM_MODEL = 'mock-model'
 
 const HELLO = 'Hello from the mock LLM. You said: {{lastUserMessage}}'
 
+/**
+ * "Tool-call API" (issue #226): the request offers the echo tool as `echo` (a
+ * plain SDK) or as AI Chat's namespaced `<server>__echo` — never matched by a
+ * plain `name == 'echo'`. The condition and the `offeredTool` template helper
+ * (main `mock/template.ts`) use the same rule, so the call names exactly the
+ * tool that was offered. The `@.function &&` guard keeps a tool without a
+ * `function` from failing the whole filter.
+ */
+const OFFERS_ECHO_PATH = '$.tools[?(@.function && /(^|__)echo$/.test(@.function.name))]'
+const ECHO_TOOL_NAME = "{{offeredTool 'echo'}}"
+
 /** Fresh `llm` settings — a new `toolCalls` array each time (the defaults are frozen). */
 export function llmConfig(over: Partial<MockLlmConfig> = {}): MockLlmConfig {
   return { ...LLM_CONFIG_DEFAULTS, toolCalls: [], ...over }
@@ -145,7 +156,7 @@ export function buildAiPreset(id: MockAiPresetId): HttpPreset {
         server: {
           kind: 'ai',
           description:
-            'POST /v1/chat/completions: a request that offers the echo tool gets an echo call; the turn that carries the tool result gets "Tool said: …". Pair it with the Mock MCP "Echo" server in the AI Chat Tools tab.',
+            'POST /v1/chat/completions: a request that offers an echo tool (echo, or AI Chat’s <server>__echo) gets a call to that exact name; the turn that carries the tool result gets "Tool said: …". Pair it with the Mock MCP "Echo" server in the AI Chat Tools tab.',
         },
         endpoints: [
           ep('POST', '/v1/chat/completions', 'Tool call round trip (OpenAI-compatible)', [
@@ -160,9 +171,13 @@ export function buildAiPreset(id: MockAiPresetId): HttpPreset {
               '',
               {
                 stopReason: 'tool_calls',
-                toolCalls: [{ name: 'echo', arguments: { text: 'hello from the mock LLM' } }],
+                // The name the client offered: AI Chat namespaces MCP tools as
+                // `<server>__echo` (`wireToolName`), a plain SDK sends `echo`.
+                toolCalls: [
+                  { name: ECHO_TOOL_NAME, arguments: { text: 'hello from the mock LLM' } },
+                ],
               },
-              { type: 'jsonPath', path: "$.tools[?(@.function.name=='echo')]", op: 'exists' },
+              { type: 'jsonPath', path: OFFERS_ECHO_PATH, op: 'exists' },
             ),
             llm('Plain answer', HELLO),
           ]),

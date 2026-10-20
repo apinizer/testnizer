@@ -28,6 +28,17 @@ import {
   MOCK_AI_PRESET_NAMES,
   type MockAiPresetId,
 } from '../../src/renderer/components/mock/mock-ai-presets'
+import { buildToolNameTable } from '../../src/shared/ai-tool-names'
+import { runAiTurn, type AiLoopDeps } from '../../src/main/protocols/ai-chat-loop'
+import {
+  mcpConnectionIds,
+  mcpDisconnect,
+  mcpOpenDetachedSession,
+  mcpSessionCallTool,
+} from '../../src/main/protocols/mcp.engine'
+import { mockMcpServerManager } from '../../src/main/mock-mcp/server'
+import type { MockMcpServerDef } from '../../src/main/mock-mcp/types'
+import { buildPresetInput } from '../../src/renderer/components/mock-mcp/mock-mcp-presets'
 import { freePort, serverDef, waitFor, type RouteSpec } from './mock-sse-fixtures'
 
 const ID = 'ai-preset'
@@ -224,6 +235,62 @@ describe('AI presets served ↔ the AI Chat engine', () => {
     expect(plain.end.toolCalls).toEqual([])
   })
 
+  // Issue #226 P1: AI Chat never offers a bare `echo` — every MCP tool goes out
+  // under its namespaced wire name (`wireToolName`: `<server>__<tool>`). The
+  // preset matched `function.name == 'echo'` and called `echo`, so it never
+  // fired from AI Chat. Fail-before: the first round was the plain answer.
+  it('tools: AI Chat’s namespaced wire name (buildToolNameTable) gets a call to that exact name', async () => {
+    const base = await serve('tools')
+    const url = `${base}/v1/chat/completions`
+    const table = buildToolNameTable([
+      { serverId: 'srv-weather', server: 'Weather', tool: 'forecast' },
+      { serverId: 'srv-echo', server: 'Echo tools', tool: 'echo' },
+    ])
+    const wire = [...table.keys()]
+    expect(wire).toEqual(['Weather__forecast', 'Echo_tools__echo'])
+    // A name that merely contains "echo" is not the echo tool.
+    const tools = [
+      ...wire.map((name) => ({ name, inputSchema: { type: 'object' } })),
+      { name: 'Other__echoes', inputSchema: { type: 'object' } },
+    ]
+    const first = await round({ ...custom(url, 'mock-model', 'use the tool'), tools })
+    expect(first.end.stopReason).toBe('tool_calls')
+    expect(first.end.toolCalls).toHaveLength(1)
+    const call = first.end.toolCalls[0]
+    expect(call.name).toBe('Echo_tools__echo')
+    expect(table.get(call.name)).toEqual({
+      serverId: 'srv-echo',
+      server: 'Echo tools',
+      tool: 'echo',
+    })
+    expect(JSON.parse(call.argsJson)).toEqual({ text: 'hello from the mock LLM' })
+
+    const second = await round({
+      provider: 'custom',
+      url,
+      model: 'mock-model',
+      messages: [
+        { role: 'user', content: 'use the tool' },
+        { role: 'assistant', content: '', toolCalls: [call] },
+        {
+          role: 'tool',
+          results: [{ id: call.id, content: 'hello from the mock LLM', isError: false }],
+        },
+      ],
+      tools,
+    })
+    expect(second.text).toBe('Tool said: hello from the mock LLM')
+    expect(second.end.stopReason).toBe('stop')
+
+    // Offered tools without any echo → the plain answer, not a call to a tool nobody offered.
+    const none = await round({
+      ...custom(url, 'mock-model', 'hi'),
+      tools: [{ name: 'Weather__forecast', inputSchema: { type: 'object' } }],
+    })
+    expect(none.end.toolCalls).toEqual([])
+    expect(none.text.length).toBeGreaterThan(0)
+  })
+
   it('errors: the model name picks 429 (+ retry-after), 500 or 401; any other model gets a reply', async () => {
     const base = await serve('errors')
     const url = `${base}/v1/chat/completions`
@@ -257,5 +324,111 @@ describe('AI presets served ↔ the AI Chat engine', () => {
     const ok = await round(custom(url, 'mock-model', 'hello'))
     expect(ok.text).toBe('Hello from the mock LLM. You said: hello')
     expect(ok.end.status).toBe(200)
+  })
+})
+
+/**
+ * The whole offline round trip the preset promises (issue #226 P1): AI Chat's
+ * real tool loop (`runAiTurn`) with the real model client (`streamChatRound`)
+ * against the "Tool-call API" mock, and the real MCP client against a running
+ * Mock MCP "Echo MCP" server built from its preset. Only the approval is
+ * automatic ("Run tools without asking").
+ * Fail-before: the model never asked for the tool — no MCP call, "Plain answer".
+ */
+describe('Tool-call API preset ↔ AI Chat tool loop ↔ Mock MCP Echo', () => {
+  const mcpIds: string[] = []
+  afterEach(async () => {
+    for (const id of mcpIds.splice(0)) await mockMcpServerManager.stop(id)
+  })
+
+  it('the model calls Echo MCP__echo, the MCP server answers, the model says "Tool said: …"', async () => {
+    const base = await serve('tools')
+    const preset = buildPresetInput('echo', { projectId: 'p', takenNames: [], takenPorts: [] })
+    const mcpDef: MockMcpServerDef = {
+      id: 'mcp-echo-roundtrip',
+      name: preset.name,
+      description: preset.description ?? '',
+      host: '127.0.0.1',
+      port: 0,
+      path: '/mcp',
+      legacySse: false,
+      authMode: 'none',
+      bearerToken: '',
+      latencyMs: 0,
+      errorMode: { kind: 'none' },
+      protocolPin: null,
+      legacyMode: 'stateless',
+      cacheTtlMs: 0,
+      tools: preset.tools ?? [],
+      resources: [],
+      prompts: [],
+    }
+    const started = await mockMcpServerManager.start(mcpDef)
+    if (!started.ok) throw new Error(started.error)
+    mcpIds.push(mcpDef.id)
+
+    const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+    const deps: AiLoopDeps = {
+      streamRound: streamChatRound,
+      openSession: (connect, signal, timeoutMs) =>
+        mcpOpenDetachedSession({
+          connect,
+          signal,
+          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+        }),
+      callTool: (id, name, args, opts) => {
+        calls.push({ name, args })
+        return mcpSessionCallTool(id, name, args, opts)
+      },
+      closeSession: (id) => mcpDisconnect(id),
+      isTrusted: async () => false,
+    }
+    let text = ''
+    const parts: Array<Record<string, unknown>> = []
+    const res = await runAiTurn(
+      {
+        stream: { provider: 'custom', url: `${base}/v1/chat/completions`, model: 'mock-model' },
+        messages: [{ role: 'user', content: 'use the tool' }],
+        tools: {
+          projectId: 'p',
+          servers: [
+            {
+              id: mcpDef.id,
+              name: mcpDef.name,
+              connect: {
+                transport: 'http',
+                url: started.state.url as string,
+                protocol: 'auto',
+              },
+              disabledTools: [],
+            },
+          ],
+          autoApprove: true,
+          allowedTools: [],
+        },
+      },
+      deps,
+      {
+        signal: new AbortController().signal,
+        onText: (d) => {
+          text += d
+        },
+        onTruncated: () => {},
+        onPart: (p) => parts.push(p as unknown as Record<string, unknown>),
+        onCall: () => {},
+        askApproval: async () => 'once',
+        askStdioTrust: async () => 'skip',
+      },
+    )
+    expect(res.outcome).toBe('done')
+    expect(res.rounds).toBe(2)
+    // The MCP client got the bare MCP name back from the wire name the model used.
+    expect(calls).toEqual([{ name: 'echo', args: { text: 'hello from the mock LLM' } }])
+    expect(parts.find((p) => p.type === 'tool_call')).toMatchObject({
+      server: 'Echo MCP',
+      tool: 'echo',
+    })
+    expect(text).toBe('Tool said: hello from the mock LLM')
+    expect(mcpConnectionIds()).toEqual([])
   })
 })

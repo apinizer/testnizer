@@ -138,13 +138,19 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
           }
         />
         {usage && (
-          <OptionNumber label={t('mockLlm.usageIn')} testId="mock-llm-usage-in" draft={inDraft} />
+          <OptionNumber
+            label={t('mockLlm.usageIn')}
+            testId="mock-llm-usage-in"
+            draft={inDraft}
+            wide
+          />
         )}
         {usage && (
           <OptionNumber
             label={t('mockLlm.usageOut')}
             testId="mock-llm-usage-out"
             draft={outDraft}
+            wide
           />
         )}
       </div>

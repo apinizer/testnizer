@@ -88,7 +88,7 @@ export default function MockSseOptions({ response }: { response: MockResponse })
           draft={heartbeatDraft}
         />
         <label
-          className="flex cursor-pointer items-center gap-1.5"
+          className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap"
           style={{ color: 'var(--text)' }}
         >
           <input
@@ -107,7 +107,7 @@ export default function MockSseOptions({ response }: { response: MockResponse })
           onChange={(onEnd) => void write({ onEnd })}
         />
         <label
-          className={`flex items-center gap-1.5 ${resumeOff ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+          className={`flex items-center gap-1.5 whitespace-nowrap ${resumeOff ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           style={{ color: 'var(--text)' }}
           title={resumeOff ?? undefined}
         >
