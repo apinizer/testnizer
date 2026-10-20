@@ -1147,6 +1147,8 @@ interface SseEventPayload {
   id?: string
   retry?: number
   httpStatus?: number
+  /** `error` only: terminal — nothing reconnects. `ended` = HTTP 204 / clean end of stream. */
+  closed?: 'ended' | 'failed'
   timestamp: number
 }
 

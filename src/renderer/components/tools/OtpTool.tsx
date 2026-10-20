@@ -161,9 +161,9 @@ export default function OtpTool() {
                     onClick={() => select(e.id)}
                     className="mb-1 flex cursor-pointer items-center justify-between rounded px-2 py-1.5"
                     style={{
-                      background: active ? 'var(--accentLight)' : 'var(--white)',
+                      background: active ? 'var(--accent-light)' : 'var(--white)',
                       border: '1px solid',
-                      borderColor: active ? 'var(--accentText)' : 'var(--border)',
+                      borderColor: active ? 'var(--accent-text)' : 'var(--border)',
                     }}
                   >
                     <div className="min-w-0">
@@ -180,7 +180,7 @@ export default function OtpTool() {
                     <div className="flex items-center gap-2">
                       <span
                         className="font-mono text-sm tabular-nums"
-                        style={{ color: 'var(--accentText)' }}
+                        style={{ color: 'var(--accent-text)' }}
                       >
                         {c?.code ?? '••••••'}
                       </span>

@@ -1010,7 +1010,7 @@ function SuiteNode({
         data-focused={focused ? 'true' : undefined}
         className="flex items-center gap-1.5 px-3 py-[6px]"
         style={{
-          // T.accentBg, not 'var(--accentLight)' — the theme defines
+          // T.accentBg, not 'var(--accent-light)' — the theme defines
           // `--accent-light`, so the camelCase name resolves to nothing.
           background: hovered ? 'var(--item-hover)' : focused ? T.accentBg : 'transparent',
           cursor: 'pointer',
@@ -1307,7 +1307,7 @@ function SuiteContentsTree({
               paddingLeft: FOLDER_BASE + depth * STEP,
               background:
                 folderDrop?.id === folder.id && folderDrop.pos === 'inside'
-                  ? 'var(--accentLight)'
+                  ? 'var(--accent-light)'
                   : undefined,
             }}
             onClick={() => setCollapsedFolders((s) => ({ ...s, [folder.id]: !collapsed }))}

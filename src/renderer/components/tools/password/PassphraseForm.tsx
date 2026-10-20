@@ -53,10 +53,10 @@ function Pills<T extends string>({
           aria-pressed={active === v}
           className="rounded px-3 py-1 text-xs font-semibold"
           style={{
-            background: active === v ? 'var(--accentLight)' : 'var(--white)',
-            color: active === v ? 'var(--accentText)' : 'var(--muted)',
+            background: active === v ? 'var(--accent-light)' : 'var(--white)',
+            color: active === v ? 'var(--accent-text)' : 'var(--muted)',
             border: '1px solid',
-            borderColor: active === v ? 'var(--accentText)' : 'var(--border)',
+            borderColor: active === v ? 'var(--accent-text)' : 'var(--border)',
           }}
         >
           {t(labelKey[v])}

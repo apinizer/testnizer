@@ -278,7 +278,7 @@ export default function ImportDialog({
           />
           <label
             className="inline-flex cursor-pointer items-center gap-2 text-[11px]"
-            style={{ color: 'var(--accentText)' }}
+            style={{ color: 'var(--accent-text)' }}
           >
             <span
               className="rounded border px-2.5 py-1"

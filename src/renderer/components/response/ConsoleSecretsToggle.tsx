@@ -35,7 +35,7 @@ export default function ConsoleSecretsToggle() {
         title={t('console.showSecretsHint')}
         className={`flex cursor-pointer items-center gap-1 rounded border border-[var(--border)] px-2 py-1 ${
           showSecrets
-            ? 'bg-[var(--accentLight)] text-[var(--accentText)]'
+            ? 'bg-[var(--accent-light)] text-[var(--accent-text)]'
             : 'bg-transparent text-[var(--muted)]'
         }`}
       >

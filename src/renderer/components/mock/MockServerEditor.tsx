@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, Play, Square, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, RefreshCw } from 'lucide-react'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
 import { useNumberDraft } from '../../lib/number-draft'
@@ -26,7 +26,9 @@ import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
 import JwksFillButton from './JwksFillButton'
 import { provisionJwksServe } from '../../lib/jwks-serve'
 import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mock-kind'
-import { MockKindBadge } from './MockServerRow'
+import MockEditorHeader, { MockStartStopButton, MockUrlLine } from './MockEditorHeader'
+import { MockEditorTabButton } from '../mock-mcp/MockMcpEditorTabs'
+import { mockServerUrl } from './mock-http-tabs'
 import { bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
 import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
@@ -45,6 +47,13 @@ const METHODS: MockMethod[] = [
   'ANY',
 ]
 const PATH_MODES: MockPathMode[] = ['exact', 'param', 'wildcard', 'regex']
+type EditorTab = 'endpoints' | 'settings' | 'logs'
+/** Tab ids + i18n keys (literal so the key-coverage test sees them). */
+const EDITOR_TABS: readonly { id: EditorTab; label: string }[] = [
+  { id: 'endpoints', label: 'mock.tabEndpoints' },
+  { id: 'settings', label: 'mock.tabSettings' },
+  { id: 'logs', label: 'mock.tabLogs' },
+]
 // Body types offered per server kind (json/xml/text/html, sse/json/text, …): `mock-kind-ui.ts`.
 
 // Stable empty references — used as Zustand selector fallbacks so we don't emit
@@ -61,7 +70,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
   const error = useMockStore((s) => s.errorByServer[serverId] ?? null)
   const startServer = useMockStore((s) => s.startServer)
   const stopServer = useMockStore((s) => s.stopServer)
-  const [tab, setTab] = useState<'endpoints' | 'settings' | 'logs'>('endpoints')
+  const [tab, setTab] = useState<EditorTab>('endpoints')
 
   if (!server) {
     return (
@@ -72,86 +81,56 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
   }
 
   const kind = normalizeMockServerKind(server.kind)
-  const dot =
-    status === 'running'
-      ? '#1a7a4a'
-      : status === 'starting'
-        ? '#b35a00'
-        : status === 'error'
-          ? '#cc2200'
-          : '#999'
+  const toggle = async (): Promise<void> => {
+    if (status === 'running') {
+      await stopServer(serverId)
+      return
+    }
+    const err = await startServer(serverId)
+    if (err) toast.error(err)
+  }
 
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"
       style={{ background: 'var(--bg)' }}
     >
-      <div
-        className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
-        style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
+      {/* Same header as Mock MCP (MockEditorHeader) — badge, name, status, base URL. */}
+      <MockEditorHeader
+        kind={kind}
+        name={server.name}
+        status={status}
+        testIdPrefix="mock"
+        errorMessage={error}
+        actions={
+          <>
+            <MockStartStopButton
+              status={status}
+              testIdPrefix="mock"
+              onToggle={() => void toggle()}
+            />
+            {kind === 'sse' && <MockSseHeaderButton server={server} status={status} />}
+          </>
+        }
       >
-        <MockKindBadge kind={kind} testId="mock-kind-badge" />
-        <h2 className="m-0 text-base font-semibold" style={{ color: 'var(--heading)' }}>
-          {server.name}
-        </h2>
-        <span
-          data-testid="mock-status"
-          className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs"
-          style={{ border: `1px solid ${dot}40`, background: `${dot}15`, color: dot }}
-        >
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />
-          {status}
-        </span>
-        <span className="text-xs" style={{ color: 'var(--muted)' }}>
-          {server.host}:{server.port}
-          {server.basePath ? ` · ${server.basePath}` : ''}
-        </span>
-        <div className="ml-auto flex gap-2">
-          {status === 'running' ? (
-            <button
-              onClick={() => stopServer(serverId)}
-              data-testid="mock-stop"
-              className="flex items-center gap-1 rounded border px-2 py-1 text-xs"
-              style={{ borderColor: 'var(--border)', color: '#cc2200', background: 'var(--white)' }}
-            >
-              <Square size={12} /> {t('mock.stop')}
-            </button>
-          ) : (
-            <button
-              onClick={() => startServer(serverId)}
-              data-testid="mock-start"
-              className="flex items-center gap-1 rounded border px-2 py-1 text-xs"
-              style={{ borderColor: 'var(--border)', color: '#1a7a4a', background: 'var(--white)' }}
-            >
-              <Play size={12} /> {t('mock.start')}
-            </button>
-          )}
-          {kind === 'sse' && <MockSseHeaderButton server={server} status={status} />}
-        </div>
-      </div>
+        <MockUrlLine label={t('mock.baseUrl')} url={mockServerUrl(server)} testId="mock-base-url" />
+      </MockEditorHeader>
 
-      {error && (
-        <div
-          className="shrink-0 px-4 py-1.5 text-xs"
-          style={{ background: '#cc220015', color: '#cc2200', borderBottom: '1px solid #cc220040' }}
-        >
-          {error}
-        </div>
-      )}
-
+      {/* Same tab strip as the Mock MCP editor (MockEditorTabButton). */}
       <div
-        className="flex shrink-0 border-b"
-        style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
+        role="tablist"
+        className="flex shrink-0 border-b border-[var(--border)] bg-[var(--white)]"
       >
-        <TabBtn active={tab === 'endpoints'} onClick={() => setTab('endpoints')}>
-          {t('mock.tabEndpoints')}
-        </TabBtn>
-        <TabBtn active={tab === 'settings'} onClick={() => setTab('settings')}>
-          {t('mock.tabSettings')}
-        </TabBtn>
-        <TabBtn active={tab === 'logs'} onClick={() => setTab('logs')}>
-          {t('mock.tabLogs')}
-        </TabBtn>
+        {EDITOR_TABS.map(({ id, label }) => (
+          <MockEditorTabButton
+            key={id}
+            testId={`mock-tab-${id}`}
+            active={tab === id}
+            onClick={() => setTab(id)}
+          >
+            {t(label)}
+          </MockEditorTabButton>
+        ))}
       </div>
 
       <div className="flex min-h-0 flex-1">
@@ -160,30 +139,6 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
         {tab === 'logs' && <LogsTab serverId={serverId} />}
       </div>
     </div>
-  )
-}
-
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="border-b-2 px-4 py-2 text-xs font-semibold"
-      style={{
-        borderColor: active ? 'var(--accent)' : 'transparent',
-        color: active ? 'var(--accentText)' : 'var(--muted)',
-        background: 'transparent',
-      }}
-    >
-      {children}
-    </button>
   )
 }
 
@@ -365,7 +320,7 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
             </div>
           )}
           {importStatus && (
-            <div className="text-[11px]" style={{ color: 'var(--accentText)' }}>
+            <div className="text-[11px]" style={{ color: 'var(--accent-text)' }}>
               {importStatus}
             </div>
           )}
@@ -383,7 +338,7 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
                 className="flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-xs"
                 style={{
                   borderColor: 'var(--border)',
-                  background: activeId === ep.id ? 'var(--accentLight)' : 'transparent',
+                  background: activeId === ep.id ? 'var(--accent-light)' : 'transparent',
                 }}
               >
                 <span
@@ -442,16 +397,18 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
   )
 }
 
+/** Method pill — the app-wide `--mb-*` method tokens, so dark mode follows. ANY → neutral. */
+const TOKEN_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'QUERY'])
 function methodStyle(method: string): React.CSSProperties {
-  const map: Record<string, { bg: string; color: string; border: string }> = {
-    GET: { bg: '#e8f4ff', color: '#0066cc', border: '#b3d4f5' },
-    POST: { bg: '#e8f9f1', color: '#1a7a4a', border: '#b3e5cc' },
-    PUT: { bg: '#fff4e0', color: '#b35a00', border: '#f5d4a0' },
-    PATCH: { bg: '#f0faf5', color: '#0a7a5a', border: '#a0e0c8' },
-    DELETE: { bg: '#fff0f0', color: '#cc2200', border: '#f5b3b3' },
+  if (!TOKEN_METHODS.has(method)) {
+    return { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }
   }
-  const m = map[method] ?? { bg: '#eee', color: '#333', border: '#ccc' }
-  return { background: m.bg, color: m.color, border: `1px solid ${m.border}` }
+  const m = method.toLowerCase()
+  return {
+    background: `var(--mb-${m}-bg)`,
+    color: `var(--mb-${m}-fg)`,
+    border: `1px solid var(--mb-${m}-br)`,
+  }
 }
 
 // ─── Endpoint editor ─────────────────────────────────────────────
@@ -644,8 +601,8 @@ function EndpointEditor({
                   className="rounded border px-2 py-0.5 text-xs"
                   style={{
                     borderColor: activeRespId === r.id ? 'var(--accent)' : 'var(--border)',
-                    background: activeRespId === r.id ? 'var(--accentLight)' : 'var(--white)',
-                    color: activeRespId === r.id ? 'var(--accentText)' : 'var(--text)',
+                    background: activeRespId === r.id ? 'var(--accent-light)' : 'var(--white)',
+                    color: activeRespId === r.id ? 'var(--accent-text)' : 'var(--text)',
                   }}
                 >
                   {r.name || `${r.statusCode}`} ({r.statusCode})
@@ -735,7 +692,11 @@ function FullUrlBar({
       {status !== 'running' && (
         <span
           className="rounded px-1.5 py-0.5 text-[10px]"
-          style={{ background: '#cc220015', color: '#cc2200', border: '1px solid #cc220040' }}
+          style={{
+            background: 'var(--mb-delete-bg)',
+            color: 'var(--red)',
+            border: '1px solid var(--mb-delete-br)',
+          }}
           title={t('mock.startServerToTest')}
         >
           {t('mock.notRunning')}
@@ -746,7 +707,7 @@ function FullUrlBar({
         className="rounded border px-2 py-0.5 text-[11px]"
         style={{
           borderColor: 'var(--border)',
-          color: copied === 'url' ? '#1a7a4a' : 'var(--muted)',
+          color: copied === 'url' ? 'var(--green)' : 'var(--muted)',
           background: 'var(--white)',
         }}
         title={t('mock.copyUrl')}
@@ -758,7 +719,7 @@ function FullUrlBar({
         className="rounded border px-2 py-0.5 text-[11px]"
         style={{
           borderColor: 'var(--border)',
-          color: copied === 'curl' ? '#1a7a4a' : 'var(--muted)',
+          color: copied === 'curl' ? 'var(--green)' : 'var(--muted)',
           background: 'var(--white)',
         }}
         title={t('mock.copyCurl')}
@@ -771,7 +732,7 @@ function FullUrlBar({
         className="rounded border px-2 py-0.5 text-[11px]"
         style={{
           borderColor: 'var(--border)',
-          color: canOpen ? 'var(--accentText)' : 'var(--hint)',
+          color: canOpen ? 'var(--accent-text)' : 'var(--hint)',
           background: 'var(--white)',
           opacity: canOpen ? 1 : 0.5,
           cursor: canOpen ? 'pointer' : 'not-allowed',
@@ -788,7 +749,7 @@ function FullUrlBar({
       >
         ↗ {t('mock.openInBrowser')}
       </button>
-      {streams && <MockEndpointOpenInSse server={server} endpoint={endpoint} />}
+      {streams && <MockEndpointOpenInSse server={server} endpoint={endpoint} status={status} />}
     </div>
   )
 }
@@ -895,7 +856,7 @@ function ResponseEditor({
             if (confirm(t('mock.confirmDeleteResponse'))) deleteResponse(endpointId, response.id)
           }}
           className="rounded border px-2 py-1 text-xs"
-          style={{ borderColor: 'var(--border)', color: '#cc2200', background: 'var(--white)' }}
+          style={{ borderColor: 'var(--border)', color: 'var(--red)', background: 'var(--white)' }}
         >
           <Trash2 size={12} />
         </button>
@@ -1015,7 +976,7 @@ function ResponseEditor({
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         />
         {condError && (
-          <div className="mt-1 text-xs" style={{ color: '#cc2200' }}>
+          <div className="mt-1 text-xs" style={{ color: 'var(--red)' }}>
             {condError}
           </div>
         )}
@@ -1077,7 +1038,7 @@ function SnippetPicker({
       style={{
         background: 'var(--white)',
         borderColor: 'var(--border)',
-        color: 'var(--accentText)',
+        color: 'var(--accent-text)',
         maxWidth: 220,
       }}
       title={label}
@@ -1099,6 +1060,7 @@ function HeadersTable({
   headers: { name: string; value: string }[]
   onChange: (h: { name: string; value: string }[]) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-1">
       {headers.map((h, i) => (
@@ -1109,7 +1071,7 @@ function HeadersTable({
             onChange={(e) =>
               onChange(headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
             }
-            placeholder="Name"
+            placeholder={t('mock.name')}
             className="rounded border px-2 py-1 text-xs"
             style={{ width: 200, background: 'var(--white)', borderColor: 'var(--border)' }}
           />
@@ -1119,7 +1081,7 @@ function HeadersTable({
             onChange={(e) =>
               onChange(headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))
             }
-            placeholder="Value"
+            placeholder={t('kv.value')}
             className="flex-1 rounded border px-2 py-1 text-xs"
             style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
           />
@@ -1137,11 +1099,11 @@ function HeadersTable({
         className="rounded border px-2 py-1 text-xs"
         style={{
           borderColor: 'var(--border)',
-          color: 'var(--accentText)',
+          color: 'var(--accent-text)',
           background: 'var(--white)',
         }}
       >
-        + Add header
+        {t('kv.addHeader')}
       </button>
     </div>
   )
@@ -1211,7 +1173,7 @@ function SettingsTab({ server }: { server: MockServer }) {
               <option value="0.0.0.0">0.0.0.0 ({t('mock.allInterfaces')})</option>
             </select>
             {draft.host === '0.0.0.0' && (
-              <div className="mt-1 text-xs" style={{ color: '#b35a00' }}>
+              <div className="mt-1 text-xs" style={{ color: 'var(--orange)' }}>
                 ⚠ {t('mock.publicWarning')}
               </div>
             )}
@@ -1491,7 +1453,7 @@ function JsonConfigField({
         style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
       />
       {error && (
-        <div className="mt-1 text-xs" style={{ color: '#cc2200' }}>
+        <div className="mt-1 text-xs" style={{ color: 'var(--red)' }}>
           {error}
         </div>
       )}
@@ -1560,7 +1522,11 @@ function LogsTab({ serverId }: { serverId: string }) {
             <button
               onClick={() => clearLogs(serverId)}
               className="rounded border px-2 py-0.5 text-xs"
-              style={{ borderColor: 'var(--border)', background: 'var(--white)', color: '#cc2200' }}
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--white)',
+                color: 'var(--red)',
+              }}
             >
               {t('mock.clear')}
             </button>
@@ -1579,31 +1545,31 @@ function LogsTab({ serverId }: { serverId: string }) {
                     className="border-b px-2 py-1 text-left"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Time
+                    {t('mock.logTime')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-left"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Method
+                    {t('mock.logMethod')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-left"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Path
+                    {t('mock.logPath')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-right"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Status
+                    {t('mock.logStatus')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-right"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Latency
+                    {t('mock.logLatency')}
                   </th>
                 </tr>
               </thead>
@@ -1617,7 +1583,7 @@ function LogsTab({ serverId }: { serverId: string }) {
                       onClick={() => setSelectedId(log.id)}
                       style={{
                         cursor: 'pointer',
-                        background: selectedId === log.id ? 'var(--accentLight)' : 'transparent',
+                        background: selectedId === log.id ? 'var(--accent-light)' : 'transparent',
                       }}
                     >
                       <td
@@ -1676,7 +1642,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               </div>
               <details>
                 <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                  Headers
+                  {t('mock.headers')}
                 </summary>
                 <pre
                   className="m-0 mt-1 rounded border p-2"
@@ -1688,7 +1654,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               {selected.request.body && (
                 <details>
                   <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                    Body
+                    {t('mock.body')}
                   </summary>
                   <pre
                     className="m-0 mt-1 rounded border p-2"
@@ -1711,7 +1677,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               </div>
               <details>
                 <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                  Headers
+                  {t('mock.headers')}
                 </summary>
                 <pre
                   className="m-0 mt-1 rounded border p-2"
@@ -1722,7 +1688,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               </details>
               <details open>
                 <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                  Body
+                  {t('mock.body')}
                 </summary>
                 <pre
                   className="m-0 mt-1 rounded border p-2 max-h-96 overflow-auto"
@@ -1741,8 +1707,8 @@ function LogsTab({ serverId }: { serverId: string }) {
 
 function statusColor(code: number): string {
   if (code >= 500) return '#7c1fa6'
-  if (code >= 400) return '#cc2200'
-  if (code >= 300) return '#b35a00'
-  if (code >= 200) return '#1a7a4a'
-  return '#0066cc'
+  if (code >= 400) return 'var(--red)'
+  if (code >= 300) return 'var(--orange)'
+  if (code >= 200) return 'var(--green)'
+  return 'var(--blue)'
 }

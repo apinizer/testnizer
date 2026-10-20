@@ -63,7 +63,7 @@ export function MockKindBadge({ kind, testId }: { kind: MockRowKind; testId?: st
 
 export interface MockServerRowProps {
   kind: MockRowKind
-  /** testid prefix: `mock-http` / `mock-sse` / `mock-ai` / `mock-mcp` → `<prefix>-row-<id>`, `<prefix>-start`, … */
+  /** testid prefix: `mock-http` / `mock-sse` / `mock-ai` / `mock-mcp` → `<prefix>-row-<id>`, `<prefix>-badge`, `<prefix>-start`, … */
   testIdPrefix: string
   id: string
   name: string
@@ -93,7 +93,7 @@ export default function MockServerRow(p: MockServerRowProps) {
       }}
       className="flex cursor-pointer items-center gap-2 border-b border-[var(--border)] px-3 py-2.5 hover:bg-[var(--surface)]"
     >
-      <MockKindBadge kind={p.kind} />
+      <MockKindBadge kind={p.kind} testId={`${p.testIdPrefix}-badge`} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[13px] font-semibold text-[var(--text)]">{p.name}</div>
         <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--muted)]">

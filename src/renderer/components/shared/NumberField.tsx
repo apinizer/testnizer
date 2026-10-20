@@ -55,7 +55,7 @@ export default function NumberField({
           style={{ color: 'var(--muted)' }}
         >
           {label}
-          {slider ? <span style={{ color: 'var(--accentText)' }}> — {value}</span> : null}
+          {slider ? <span style={{ color: 'var(--accent-text)' }}> — {value}</span> : null}
         </label>
       )}
       <div className="flex items-center gap-2">

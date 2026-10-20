@@ -91,10 +91,10 @@ export default function PasswordGeneratorTool() {
                   aria-pressed={mode === m}
                   className="rounded px-3 py-1 text-xs font-semibold"
                   style={{
-                    background: mode === m ? 'var(--accentLight)' : 'var(--white)',
-                    color: mode === m ? 'var(--accentText)' : 'var(--muted)',
+                    background: mode === m ? 'var(--accent-light)' : 'var(--white)',
+                    color: mode === m ? 'var(--accent-text)' : 'var(--muted)',
                     border: '1px solid',
-                    borderColor: mode === m ? 'var(--accentText)' : 'var(--border)',
+                    borderColor: mode === m ? 'var(--accent-text)' : 'var(--border)',
                   }}
                 >
                   {m === 'characters'
