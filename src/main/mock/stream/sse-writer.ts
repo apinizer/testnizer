@@ -30,7 +30,7 @@
 
 import type http from 'node:http'
 import type { MockSseStreamConfig } from '../../../shared/mock-stream'
-import type { SseBlock } from './sse-blocks'
+import type { SseBlock } from '../../../shared/mock-sse-blocks'
 
 /** A rendered frame larger than this ends the stream (it is never cut). */
 export const SSE_MAX_FRAME_BYTES = 64 * 1024

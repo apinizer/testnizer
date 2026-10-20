@@ -1,6 +1,6 @@
 /**
  * Naming / port helpers shared by the "New mock server" dialog for BOTH mock
- * kinds (HTTP and MCP, issue #140). One implementation, so a suggested port
+ * kinds (HTTP, MCP and SSE — issues #140, #221). One implementation, so a suggested port
  * never collides with a mock of the other kind in the same project.
  */
 
@@ -8,6 +8,8 @@
 export const HTTP_MOCK_PORT_START = 3001
 /** First port suggested for a new Mock MCP server. */
 export const MCP_MOCK_PORT_START = 3100
+/** First port suggested for a new SSE mock server (issue #221). */
+export const SSE_MOCK_PORT_START = 3200
 
 /** A name not already taken in the list: "Echo MCP", "Echo MCP 2", … */
 export function uniqueName(base: string, taken: Iterable<string>, sep = ' '): string {

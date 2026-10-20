@@ -23,7 +23,7 @@ import { rollFailure } from './failure'
 import { checkRateLimit, clearLimiter } from './rateLimit'
 import { validateBody } from './schemaValidator'
 import { buildEchoResponse, forwardRequest } from './proxy'
-import { splitSseBlocks, resumeCursor } from './stream/sse-blocks'
+import { splitSseBlocks, resumeCursor } from '../../shared/mock-sse-blocks'
 import {
   SSE_MAX_FRAME_BYTES,
   SSE_MAX_OPEN_STREAMS,

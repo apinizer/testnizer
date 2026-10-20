@@ -1,6 +1,7 @@
 /**
  * "New mock server" presets for HTTP mocks (issue #140) — the HTTP twin of
- * `mock-mcp/mock-mcp-presets.ts`. Pure factories plus one orchestrator
+ * `mock-mcp/mock-mcp-presets.ts`. The SSE presets (`mock-sse-presets.ts`,
+ * issue #221) reuse the same shapes, builders and orchestrator. Pure factories plus one orchestrator
  * (`createFromHttpPreset`) that replays a preset over the existing
  * `window.api.mock` IPC: server → (settings) → endpoints → responses.
  *
@@ -21,6 +22,8 @@ import type {
   MockResponseHeader,
   MockServer,
 } from '../../types'
+import type { MockServerKind } from '../../../shared/mock-kind'
+import type { MockSseStreamConfig } from '../../../shared/mock-stream'
 
 export type MockHttpPresetId = 'blank' | 'rest' | 'echo' | 'auth' | 'faults'
 
@@ -66,6 +69,8 @@ export interface HttpPresetResponse {
   body: string
   delayMs: number
   condition: MockCondition
+  /** Stream settings of an `sse` response (issue #221) — forwarded to `response.create`. */
+  streamConfig?: MockSseStreamConfig
 }
 
 export interface HttpPresetEndpoint {
@@ -81,6 +86,8 @@ export interface HttpPresetEndpoint {
 
 export interface HttpPresetServer {
   description: string
+  /** Server kind sent with `server.create` (issue #221); absent = `http`. */
+  kind?: MockServerKind
   /** Server settings `mock:server:create` does not take — applied with `server.update` right after. */
   authConfig?: MockAuthConfig
   failureConfig?: MockFailureConfig
@@ -93,11 +100,11 @@ export interface HttpPreset {
 
 const ALWAYS: MockCondition = { type: 'always' }
 
-function json(value: unknown): string {
+export function json(value: unknown): string {
   return JSON.stringify(value, null, 2)
 }
 
-function res(
+export function res(
   r: Partial<HttpPresetResponse> & Pick<HttpPresetResponse, 'name'>,
 ): HttpPresetResponse {
   return {
@@ -111,7 +118,7 @@ function res(
   }
 }
 
-function ep(
+export function ep(
   method: MockMethod,
   path: string,
   description: string,
@@ -277,6 +284,7 @@ export async function createFromHttpPreset(
     name,
     port,
     description: preset.server.description,
+    ...(preset.server.kind ? { kind: preset.server.kind } : {}),
   })
   if (!created.success || !created.data) return { error: created.error ?? 'Create failed' }
   let server = created.data

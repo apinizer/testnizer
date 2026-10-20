@@ -22,7 +22,8 @@
  * and a rendered value that itself contains a blank line splits the event on
  * the wire. JSON data should use `{{json …}}`, which escapes newlines.
  *
- * Pure: no node / electron imports.
+ * Pure and import-free (shared by the main engine and the renderer editor,
+ * which warns when a body has no events).
  */
 
 export interface SseBlock {

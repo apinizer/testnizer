@@ -2,6 +2,7 @@
 // Testnizer — TypeScript tip referansi
 
 import type { MockServerKind } from '../../shared/mock-kind'
+import type { MockSseStreamConfig } from '../../shared/mock-stream'
 
 export type { MockServerKind }
 
@@ -1329,8 +1330,13 @@ export interface MockResponse {
   script: string
   order: number
   enabled: boolean
-  /** Streaming knobs (issue #221) — parsed `stream_config` JSON, or null when unset. */
-  streamConfig: Record<string, unknown> | null
+  /**
+   * Stream settings of an `sse` response (issue #221) — the stored
+   * `stream_config` JSON as written, or null when unset. It may be partial
+   * (or carry keys from another build): read it through
+   * `normalizeStreamConfig`, and write a full normalized object back.
+   */
+  streamConfig: Partial<MockSseStreamConfig> | null
 }
 
 // ─── Test Suite (renderer-facing row shapes) ─────────────────

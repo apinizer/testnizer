@@ -1,6 +1,6 @@
 /**
- * One mock server in the Mocks panel — the SAME row for HTTP mocks and Mock
- * MCP servers (issue #140): kind badge, name, status dot + text, address with
+ * One mock server in the Mocks panel — the SAME row for HTTP, SSE and AI
+ * mocks and Mock MCP servers (issues #140, #221): kind badge, name, status dot + text, address with
  * a copy button, and Start/Stop + Delete on the right. Presentational only;
  * the group components wire it to their store.
  */
@@ -9,9 +9,10 @@ import { Play, Square, Trash2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import { CopyButton, StatusDot } from '../mock-mcp/ui-display'
 import { STATUS_KEYS } from '../mock-mcp/mock-mcp-format'
+import { KIND_BADGE, type MockBadgeKind } from './mock-kind-ui'
 
 export type MockRowStatus = 'stopped' | 'starting' | 'running' | 'error'
-export type MockRowKind = 'http' | 'mcp'
+export type MockRowKind = MockBadgeKind
 
 function RowIconButton({
   title,
@@ -47,21 +48,22 @@ function RowIconButton({
   )
 }
 
-export function MockKindBadge({ kind }: { kind: MockRowKind }) {
+export function MockKindBadge({ kind, testId }: { kind: MockRowKind; testId?: string }) {
   return (
     <span
+      data-testid={testId}
       className="inline-flex min-w-[42px] shrink-0 items-center justify-center whitespace-nowrap rounded border border-[var(--accent)] px-1 font-bold text-[var(--accent-text)]"
       // font-size set inline: globals.css `* { font-size: inherit }` is unlayered and beats text-* utilities
       style={{ fontSize: 9, lineHeight: '14px' }}
     >
-      {kind === 'http' ? 'HTTP' : 'MCP'}
+      {KIND_BADGE[kind]}
     </span>
   )
 }
 
 export interface MockServerRowProps {
   kind: MockRowKind
-  /** testid prefix: `mock-http` / `mock-mcp` → `<prefix>-row-<id>`, `<prefix>-start`, … */
+  /** testid prefix: `mock-http` / `mock-sse` / `mock-ai` / `mock-mcp` → `<prefix>-row-<id>`, `<prefix>-start`, … */
   testIdPrefix: string
   id: string
   name: string

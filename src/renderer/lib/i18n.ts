@@ -3240,6 +3240,59 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockHttp.preset.faults': 'Faults',
     'mockHttp.preset.faultsHint':
       'GET /slow answers after 1500 ms; failure injection fails ~1 in 3 requests with HTTP 500',
+    // ── Mock servers: SSE type (issue #221) ──
+    'mockNew.typeSseHint':
+      'A Server-Sent Events stream: timed events with ids, reconnect and heartbeat behaviour. Open it in the SSE tab or in a browser.',
+    'mockNew.addSse': 'New SSE mock server',
+    'mockNew.sseEmpty': 'No SSE mock servers yet',
+    'mockNew.sseItemType': 'SSE mock server',
+    'mockNew.addAi': 'New AI mock server',
+    'mockNew.aiEmpty': 'No AI mock servers yet',
+    'mockNew.aiItemType': 'AI mock server',
+    'mockSse.sectionTitle': 'SSE servers',
+    'mockAi.sectionTitle': 'AI servers',
+    'mockSse.preset.ticker': 'Ticker',
+    'mockSse.preset.tickerHint':
+      'GET /events: a "tick" event every second with a growing id, until the client leaves',
+    'mockSse.preset.replay': 'Finite replay',
+    'mockSse.preset.replayHint':
+      'GET /events: 5 fixed events (ids 1–5), then close; Last-Event-ID resumes after that id, the last id gets 204',
+    'mockSse.preset.notifications': 'Notifications feed',
+    'mockSse.preset.notificationsHint':
+      'GET /notifications: named events (order / message / alert) with JSON data every 2 s, plus GET /notifications/unread (JSON)',
+    'mockSse.preset.slow': 'Slow / heartbeat',
+    'mockSse.preset.slowHint':
+      'GET /events: first event after 1500 ms, then one every 10 s with ": keep-alive" every 5 s',
+    'mockSse.stream': 'Stream',
+    'mockSse.interval': 'Interval (ms)',
+    'mockSse.heartbeat': 'Heartbeat (ms)',
+    'mockSse.loop': 'Loop',
+    'mockSse.onEnd': 'When finished',
+    'mockSse.onEndClose': 'Close',
+    'mockSse.onEndKeepOpen': 'Keep open',
+    'mockSse.resume': 'Resume from Last-Event-ID',
+    'mockSse.resumeOffLoop':
+      'Resume is off while Loop is on: a looping stream has no "after the last event".',
+    'mockSse.resumeOffDynamicId':
+      'Resume is off: an id: line uses a template ({{…}}), so a reconnecting client’s Last-Event-ID cannot be found again.',
+    'mockSse.bodyHint':
+      'Lines: id: / event: / data: / retry:, a blank line ends an event. Templates run per event: {{stream.seq}}, {{stream.now}}, {{request.query.x}}. {{#if}} / {{#each}} cannot span a blank line; write JSON data with {{json …}}. HTTP Send waits until the stream closes — use Open in SSE tab for live events.',
+    'mockSse.noEvents': 'No events parsed (a blank line ends an event)',
+    'mockSse.err.object': 'Stream settings must be an object',
+    'mockSse.err.unknown': 'Unknown stream setting: {name}',
+    'mockSse.err.interval':
+      'Event interval must be a whole number of milliseconds between 0 and {max}',
+    'mockSse.err.heartbeat':
+      'Heartbeat interval must be a whole number of milliseconds between 0 and {max}',
+    'mockSse.err.loop': 'Loop must be on or off',
+    'mockSse.err.resume': 'Resume must be on or off',
+    'mockSse.err.onEnd': 'When finished must be Close or Keep open',
+    'mock.openInSse': 'Open in SSE tab',
+    'mock.startAndOpenInSse': 'Start & open in SSE tab',
+    'mock.noStreamEndpoint': 'Add a GET endpoint with an exact path first',
+    'mock.sseHintMethod': 'The SSE tab sends GET, POST, PUT, PATCH or DELETE requests.',
+    'mock.noStreams':
+      'No streams yet — Add creates GET /events with a ticker body. Or paste a captured stream into the body.',
     // ── MCP 2026-07-28 (issue #152) ──
     'mcp.protocol.label': 'Protocol',
     'mcp.protocol.hint':
@@ -6584,6 +6637,57 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockHttp.preset.faults': 'Gecikme ve hatalar',
     'mockHttp.preset.faultsHint':
       'GET /slow 1500 ms sonra yanıt verir; hata enjeksiyonu isteklerin ~3’te 1’ini HTTP 500 ile düşürür',
+    // ── Mock sunucular: SSE türü (issue #221) ──
+    'mockNew.typeSseHint':
+      'Server-Sent Events akışı: kimlikli, zamanlı olaylar; yeniden bağlanma ve heartbeat davranışı. SSE sekmesinde ya da tarayıcıda açın.',
+    'mockNew.addSse': 'Yeni SSE mock sunucusu',
+    'mockNew.sseEmpty': 'Henüz SSE mock sunucusu yok',
+    'mockNew.sseItemType': 'SSE mock sunucusu',
+    'mockNew.addAi': 'Yeni AI mock sunucusu',
+    'mockNew.aiEmpty': 'Henüz AI mock sunucusu yok',
+    'mockNew.aiItemType': 'AI mock sunucusu',
+    'mockSse.sectionTitle': 'SSE sunucuları',
+    'mockAi.sectionTitle': 'AI sunucuları',
+    'mockSse.preset.ticker': 'Sayaç',
+    'mockSse.preset.tickerHint':
+      'GET /events: istemci ayrılana kadar her saniye artan kimlikli bir "tick" olayı',
+    'mockSse.preset.replay': 'Sonlu tekrar',
+    'mockSse.preset.replayHint':
+      'GET /events: 5 sabit olay (kimlik 1–5), sonra kapanır; Last-Event-ID o kimlikten sonrasıyla sürer, son kimlik 204 alır',
+    'mockSse.preset.notifications': 'Bildirim akışı',
+    'mockSse.preset.notificationsHint':
+      'GET /notifications: her 2 sn’de JSON verili adlandırılmış olaylar (order / message / alert), ayrıca GET /notifications/unread (JSON)',
+    'mockSse.preset.slow': 'Yavaş / heartbeat',
+    'mockSse.preset.slowHint':
+      'GET /events: ilk olay 1500 ms sonra, ardından her 10 sn’de bir; her 5 sn’de ": keep-alive"',
+    'mockSse.stream': 'Akış',
+    'mockSse.interval': 'Aralık (ms)',
+    'mockSse.heartbeat': 'Heartbeat (ms)',
+    'mockSse.loop': 'Döngü',
+    'mockSse.onEnd': 'Bitince',
+    'mockSse.onEndClose': 'Kapat',
+    'mockSse.onEndKeepOpen': 'Açık tut',
+    'mockSse.resume': 'Last-Event-ID’den devam et',
+    'mockSse.resumeOffLoop':
+      'Döngü açıkken devam etme kapalıdır: dönen bir akışta "son olaydan sonrası" yoktur.',
+    'mockSse.resumeOffDynamicId':
+      'Devam etme kapalı: bir id: satırı şablon ({{…}}) kullanıyor, yeniden bağlanan istemcinin Last-Event-ID’si tekrar bulunamaz.',
+    'mockSse.bodyHint':
+      'Satırlar: id: / event: / data: / retry:, boş satır bir olayı bitirir. Şablonlar her olayda çalışır: {{stream.seq}}, {{stream.now}}, {{request.query.x}}. {{#if}} / {{#each}} boş satırı aşamaz; JSON veriyi {{json …}} ile yazın. HTTP Gönder akış kapanana kadar bekler — canlı olaylar için SSE sekmesinde açın.',
+    'mockSse.noEvents': 'Hiç olay bulunamadı (boş satır bir olayı bitirir)',
+    'mockSse.err.object': 'Akış ayarları bir nesne olmalı',
+    'mockSse.err.unknown': 'Bilinmeyen akış ayarı: {name}',
+    'mockSse.err.interval': 'Olay aralığı 0 ile {max} arasında tam sayı (ms) olmalı',
+    'mockSse.err.heartbeat': 'Heartbeat aralığı 0 ile {max} arasında tam sayı (ms) olmalı',
+    'mockSse.err.loop': 'Döngü açık ya da kapalı olmalı',
+    'mockSse.err.resume': 'Devam etme açık ya da kapalı olmalı',
+    'mockSse.err.onEnd': 'Bitince değeri Kapat ya da Açık tut olmalı',
+    'mock.openInSse': 'SSE sekmesinde aç',
+    'mock.startAndOpenInSse': 'Başlat ve SSE sekmesinde aç',
+    'mock.noStreamEndpoint': 'Önce tam yollu bir GET uç noktası ekleyin',
+    'mock.sseHintMethod': 'SSE sekmesi GET, POST, PUT, PATCH ya da DELETE istekleri gönderir.',
+    'mock.noStreams':
+      'Henüz akış yok — Ekle, sayaç gövdeli bir GET /events oluşturur. Ya da yakalanmış bir akışı gövdeye yapıştırın.',
     // ── MCP 2026-07-28 (issue #152) ──
     'mcp.protocol.label': 'Protokol',
     'mcp.protocol.hint':

@@ -3,7 +3,7 @@
  * verbatim wire blocks, and where a reconnecting client resumes.
  */
 import { describe, it, expect } from 'vitest'
-import { resumeCursor, splitSseBlocks } from '../../src/main/mock/stream/sse-blocks'
+import { resumeCursor, splitSseBlocks } from '../../src/shared/mock-sse-blocks'
 
 describe('splitSseBlocks', () => {
   it('splits on blank lines and keeps every block verbatim (control blocks included)', () => {

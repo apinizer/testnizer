@@ -8,6 +8,7 @@ import { openMockInMcpTab } from './mock-mcp-tabs'
 import { GhostButton, PrimaryButton } from './ui'
 import { CopyButton, StatusDot } from './ui-display'
 import { ERA_KEYS, STATUS_KEYS, sortEras } from './mock-mcp-format'
+import { MockKindBadge } from '../mock/MockServerRow'
 
 function UrlLine({ label, url, testId }: { label: string; url: string; testId: string }) {
   const { t } = useTranslation()
@@ -73,9 +74,7 @@ export default function MockMcpEditorHeader({
     <div className="flex shrink-0 items-start gap-3 border-b border-[var(--border)] bg-[var(--white)] px-4 py-2">
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 rounded border border-[var(--accent)] px-1 text-[9px] font-bold leading-[14px] text-[var(--accent-text)]">
-            MCP
-          </span>
+          <MockKindBadge kind="mcp" testId="mock-kind-badge" />
           <h2 className="m-0 truncate text-[15px] font-semibold text-[var(--heading)]">
             {server.name}
           </h2>

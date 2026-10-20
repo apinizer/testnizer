@@ -25,6 +25,13 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
 import JwksFillButton from './JwksFillButton'
 import { provisionJwksServe } from '../../lib/jwks-serve'
+import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mock-kind'
+import { MockKindBadge } from './MockServerRow'
+import { bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
+import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
+import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
+import { tickerResponse } from './mock-sse-presets'
+import { uniqueName } from './mock-create-helpers'
 
 const METHODS: MockMethod[] = [
   'GET',
@@ -38,7 +45,7 @@ const METHODS: MockMethod[] = [
   'ANY',
 ]
 const PATH_MODES: MockPathMode[] = ['exact', 'param', 'wildcard', 'regex']
-const BODY_TYPES: MockBodyType[] = ['json', 'xml', 'text', 'html']
+// Body types offered per server kind (json/xml/text/html, sse/json/text, …): `mock-kind-ui.ts`.
 
 // Stable empty references — used as Zustand selector fallbacks so we don't emit
 // a new `[]` literal each render and trip React's "Maximum update depth"
@@ -64,6 +71,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
     )
   }
 
+  const kind = normalizeMockServerKind(server.kind)
   const dot =
     status === 'running'
       ? '#1a7a4a'
@@ -82,6 +90,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
         className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
         style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
       >
+        <MockKindBadge kind={kind} testId="mock-kind-badge" />
         <h2 className="m-0 text-base font-semibold" style={{ color: 'var(--heading)' }}>
           {server.name}
         </h2>
@@ -117,6 +126,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
               <Play size={12} /> {t('mock.start')}
             </button>
           )}
+          {kind === 'sse' && <MockSseHeaderButton server={server} status={status} />}
         </div>
       </div>
 
@@ -145,7 +155,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {tab === 'endpoints' && <EndpointsTab serverId={serverId} />}
+        {tab === 'endpoints' && <EndpointsTab serverId={serverId} kind={kind} />}
         {tab === 'settings' && <SettingsTab server={server} />}
         {tab === 'logs' && <LogsTab serverId={serverId} />}
       </div>
@@ -179,7 +189,7 @@ function TabBtn({
 
 // ─── Endpoints tab ───────────────────────────────────────────────
 
-function EndpointsTab({ serverId }: { serverId: string }) {
+function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKind }) {
   const { t } = useTranslation()
   const endpoints = useMockStore((s) => s.endpointsByServer[serverId]) ?? EMPTY_ENDPOINTS
   const loadEndpoints = useMockStore((s) => s.loadEndpoints)
@@ -202,6 +212,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
   }, [endpoints, activeId])
 
   async function handleAdd(): Promise<void> {
+    if (kind === 'sse') return addStream()
     const ep = await createEndpoint({
       serverId,
       method: 'GET',
@@ -209,6 +220,29 @@ function EndpointsTab({ serverId }: { serverId: string }) {
       pathMode: 'exact',
     })
     if (ep) setActiveId(ep.id)
+  }
+
+  /**
+   * SSE server (issue #221): GET /events (or /events-2 …) with the Ticker
+   * preset's response. The response is created BEFORE the endpoint is
+   * selected, so the editor's first load already sees it.
+   */
+  async function addStream(): Promise<void> {
+    const path = uniqueName(
+      '/events',
+      endpoints.map((e) => e.path),
+      '-',
+    )
+    const ep = await createEndpoint({ serverId, method: 'GET', path, pathMode: 'exact' })
+    if (!ep) return
+    await createResponse({
+      endpointId: ep.id,
+      ...tickerResponse(),
+      script: '',
+      order: 0,
+      enabled: true,
+    })
+    setActiveId(ep.id)
   }
 
   /**
@@ -292,38 +326,44 @@ function EndpointsTab({ serverId }: { serverId: string }) {
             </button>
             {/* #61: publish a JWKS at the well-known path. One ordinary
                 endpoint + response row, created through the same store
-                actions — no new mock primitive. */}
-            <JwksFillButton
-              body=""
-              onFill={(built) => void handleServeJwks(built)}
-              label={t('mock.jwksServe')}
-              testId="mock-jwks-serve"
-            />
+                actions — no new mock primitive. HTTP servers only. */}
+            {showsHttpEndpointTools(kind) && (
+              <JwksFillButton
+                body=""
+                onFill={(built) => void handleServeJwks(built)}
+                label={t('mock.jwksServe')}
+                testId="mock-jwks-serve"
+              />
+            )}
           </div>
-          <div className="flex gap-1">
-            <button
-              onClick={() => handleImport('openapi')}
-              className="flex-1 rounded border px-2 py-0.5 text-[11px]"
-              style={{
-                borderColor: 'var(--border)',
-                color: 'var(--muted)',
-                background: 'var(--white)',
-              }}
-            >
-              {t('mock.importOpenApi')}
-            </button>
-            <button
-              onClick={() => handleImport('postman')}
-              className="flex-1 rounded border px-2 py-0.5 text-[11px]"
-              style={{
-                borderColor: 'var(--border)',
-                color: 'var(--muted)',
-                background: 'var(--white)',
-              }}
-            >
-              {t('mock.importPostman')}
-            </button>
-          </div>
+          {showsHttpEndpointTools(kind) && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleImport('openapi')}
+                data-testid="mock-import-openapi"
+                className="flex-1 rounded border px-2 py-0.5 text-[11px]"
+                style={{
+                  borderColor: 'var(--border)',
+                  color: 'var(--muted)',
+                  background: 'var(--white)',
+                }}
+              >
+                {t('mock.importOpenApi')}
+              </button>
+              <button
+                onClick={() => handleImport('postman')}
+                data-testid="mock-import-postman"
+                className="flex-1 rounded border px-2 py-0.5 text-[11px]"
+                style={{
+                  borderColor: 'var(--border)',
+                  color: 'var(--muted)',
+                  background: 'var(--white)',
+                }}
+              >
+                {t('mock.importPostman')}
+              </button>
+            </div>
+          )}
           {importStatus && (
             <div className="text-[11px]" style={{ color: 'var(--accentText)' }}>
               {importStatus}
@@ -333,7 +373,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
         <div className="flex-1 overflow-auto">
           {endpoints.length === 0 ? (
             <div className="p-3 text-sm" style={{ color: 'var(--muted)' }}>
-              {t('mock.noEndpoints')}
+              {kind === 'sse' ? t('mock.noStreams') : t('mock.noEndpoints')}
             </div>
           ) : (
             endpoints.map((ep) => (
@@ -377,6 +417,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
         {activeId && endpoints.find((e) => e.id === activeId) ? (
           <EndpointEditor
             key={activeId}
+            kind={kind}
             serverId={serverId}
             endpoint={endpoints.find((e) => e.id === activeId)!}
           />
@@ -415,7 +456,15 @@ function methodStyle(method: string): React.CSSProperties {
 
 // ─── Endpoint editor ─────────────────────────────────────────────
 
-function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: MockEndpoint }) {
+function EndpointEditor({
+  serverId,
+  endpoint,
+  kind,
+}: {
+  serverId: string
+  endpoint: MockEndpoint
+  kind: MockServerKind
+}) {
   // Draft-based so the box can be cleared; `Number('') || 0` used to slam a 0
   // back in and the next digit landed beside it.
   const priorityDraft = useNumberDraft({
@@ -489,7 +538,12 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
           />
         </div>
 
-        <FullUrlBar server={server} status={status} endpoint={endpoint} />
+        <FullUrlBar
+          server={server}
+          status={status}
+          endpoint={endpoint}
+          streams={responses.some((r) => r.bodyType === 'sse')}
+        />
 
         <div className="mt-2 flex items-center gap-2 text-xs">
           <label style={{ color: 'var(--muted)' }}>{t('mock.pathMode')}:</label>
@@ -603,6 +657,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
                 key={activeRespId}
                 response={responses.find((r) => r.id === activeRespId)!}
                 endpointId={endpoint.id}
+                kind={kind}
                 projectId={server?.projectId}
               />
             )}
@@ -619,10 +674,13 @@ function FullUrlBar({
   server,
   status,
   endpoint,
+  streams,
 }: {
   server: MockServer | null
   status: string
   endpoint: MockEndpoint
+  /** The endpoint has an `sse` response → offer "Open in SSE tab" (issue #221). */
+  streams: boolean
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState<'' | 'url' | 'curl'>('')
@@ -730,6 +788,7 @@ function FullUrlBar({
       >
         ↗ {t('mock.openInBrowser')}
       </button>
+      {streams && <MockEndpointOpenInSse server={server} endpoint={endpoint} />}
     </div>
   )
 }
@@ -751,10 +810,13 @@ function buildCurl(server: MockServer, endpoint: MockEndpoint): string {
 function ResponseEditor({
   response,
   endpointId,
+  kind,
   projectId,
 }: {
   response: MockResponse
   endpointId: string
+  /** Server kind — picks the body types offered (issue #221). */
+  kind: MockServerKind
   /** Lets the JWKS fill offer the project's saved certificate rows. */
   projectId?: string
 }) {
@@ -818,10 +880,11 @@ function ResponseEditor({
           onChange={(e) =>
             updateResponse(response.id, { bodyType: e.target.value as MockBodyType })
           }
+          data-testid="mock-response-body-type"
           className="rounded border px-2 py-1 text-xs"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         >
-          {BODY_TYPES.map((b) => (
+          {bodyTypeOptions(kind, response.bodyType).map((b) => (
             <option key={b} value={b}>
               {b}
             </option>
@@ -860,6 +923,8 @@ function ResponseEditor({
           {t('mock.enabled')}
         </label>
       </div>
+
+      {response.bodyType === 'sse' && <MockSseOptions response={response} />}
 
       <div className="mb-2">
         <label
@@ -916,6 +981,7 @@ function ResponseEditor({
         <div className="mt-1 text-[11px]" style={{ color: 'var(--muted)' }}>
           {t('mock.bodyHint')}
         </div>
+        {response.bodyType === 'sse' && <MockSseBodyNotes body={response.body} />}
       </div>
 
       <div>
