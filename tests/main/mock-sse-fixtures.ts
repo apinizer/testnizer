@@ -197,3 +197,20 @@ export async function waitFor(fn: () => boolean, ms = 2000): Promise<boolean> {
 }
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * A `bodyType: 'llm'` response (issue #221, Faz 2a): `body` is the assistant
+ * text, `llm` its settings (defaults: provider openai, word chunks, no wait).
+ */
+export function llmResponse(
+  body: string,
+  llm: Record<string, unknown> = {},
+  over: Partial<MockResponseDef> = {},
+): RouteSpec['response'] {
+  return {
+    bodyType: 'llm' as MockResponseDef['bodyType'],
+    body,
+    llmConfig: { provider: 'openai', chunkIntervalMs: 0, ...llm },
+    ...over,
+  } as RouteSpec['response']
+}

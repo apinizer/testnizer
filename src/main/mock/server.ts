@@ -29,14 +29,28 @@ import {
   SSE_MAX_OPEN_STREAMS,
   SSE_MAX_PLAN_FRAMES,
   renderBlocksOnce,
+  sseEventBlock,
   sseResponseHeaders,
   startSseStream,
   type SseFinishReason,
   type SseFrameContext,
   type SseStreamHandle,
+  type SseStreamPlan,
   type SseStreamSummary,
 } from './stream/sse-writer'
-import { normalizeStreamConfig, type MockSseStreamConfig } from '../../shared/mock-stream'
+import {
+  normalizeLlmConfig,
+  normalizeStreamConfig,
+  type MockLlmConfig,
+  type MockSseStreamConfig,
+} from '../../shared/mock-stream'
+import {
+  buildLlmPlan,
+  encodeLlmEvents,
+  encodeLlmJson,
+  llmErrorBody,
+  readLlmRequest,
+} from './stream/llm'
 import {
   NAME_ONLY,
   maskHeaderRecord,
@@ -80,6 +94,12 @@ export interface MockResponseDef {
    * normalized by `buildServerDef`. Absent / null = the defaults.
    */
   streamConfig?: MockSseStreamConfig | null
+  /**
+   * Settings of a `bodyType: 'llm'` response (issue #221, Faz 2a) — the same
+   * `stream_config` column, read for that body type by `buildServerDef`.
+   * Absent / null = the defaults.
+   */
+  llmConfig?: MockLlmConfig | null
 }
 
 export interface MockEndpointDef {
@@ -575,11 +595,13 @@ class MockServerManager extends EventEmitter {
       enabledResponses.find((r) => evaluateCondition(r.condition, condCtx)) ?? enabledResponses[0]
 
     const isSse = picked.bodyType === 'sse'
+    const isLlm = picked.bodyType === 'llm'
 
-    // Apply optional latency. An SSE request is tracked while it waits, so a
-    // Stop or a client abort during the delay never opens a stream later.
+    // Apply optional latency. A request that may stream (SSE, LLM) is tracked
+    // while it waits, so a Stop or a client abort during the delay never
+    // opens a stream later.
     if (picked.delayMs > 0) {
-      if (isSse) {
+      if (isSse || isLlm) {
         if (!(await this.waitBeforeStream(s, res, picked.delayMs))) return
       } else {
         await delay(picked.delayMs)
@@ -673,6 +695,24 @@ class MockServerManager extends EventEmitter {
     }
 
     // A script error answers as before (plain JSON), whatever the body type.
+    if (isLlm && scriptError === null) {
+      this.llmAndLog(
+        s,
+        res,
+        startedAt,
+        headers,
+        query,
+        path,
+        bodyText,
+        endpoint.id,
+        picked.id,
+        { statusCode: finalStatus, headers: finalHeaders, body: finalBody },
+        ctx,
+        normalizeLlmConfig(picked.llmConfig ?? null),
+        scriptLog,
+      )
+      return
+    }
     if (isSse && scriptError === null) {
       this.streamAndLog(
         s,
@@ -945,31 +985,78 @@ class MockServerManager extends EventEmitter {
       return
     }
 
-    const headers = sseResponseHeaders(out.headers)
+    this.runStream(
+      s,
+      res,
+      startedAt,
+      { reqHeaders, query, path, bodyText, matchedEndpointId, matchedResponseId, scriptLog },
+      out.statusCode,
+      sseResponseHeaders(out.headers),
+      { blocks, startIndex: cursor.start, config, render },
+      {
+        tag: cursor.resumed ? `open;resumeAt=${cursor.start}` : 'open',
+        // v1 §6.3.3-1: an empty body is served (an empty stream), but say so.
+        note: blocks.length === 0 ? 'The SSE body has no events' : null,
+      },
+    )
+  }
+
+  /**
+   * The stream tail shared by SSE and LLM replies (issue #221 — one owner of
+   * the lifecycle): writes the status line + `headers`, one "open" log
+   * entry, runs `plan` through the one SSE writer, registers the handle in
+   * `openStreams` (Stop ends it) and writes one "closed" log entry when it
+   * ends. Both entries carry the same `x-mock-stream-id`. The caller has
+   * already checked the open-stream limit and the plan's fixed limits.
+   *
+   * `open.logBody` replaces the written-frames preview in the closed entry.
+   * The LLM path passes the assembled reply: it cuts the text into frames
+   * itself (one character per frame with `char` chunking), so a credential
+   * echoed into the reply is never contiguous in the frames and the log's
+   * value scrub could not find it — the assembled JSON is masked like any
+   * other body (mask first, then clip: the whole body goes to `pushLog`).
+   */
+  private runStream(
+    s: RunningServer,
+    res: http.ServerResponse,
+    startedAt: number,
+    req: {
+      reqHeaders: Record<string, string>
+      query: Record<string, string>
+      path: string
+      bodyText: string
+      matchedEndpointId: string
+      matchedResponseId: string
+      scriptLog: string[]
+    },
+    statusCode: number,
+    headers: Record<string, string>,
+    plan: SseStreamPlan,
+    open: { tag: string; note: string | null; logBody?: string },
+  ): void {
     try {
-      res.writeHead(out.statusCode, headers)
+      res.writeHead(statusCode, headers)
       res.flushHeaders()
     } catch {
       return // socket already gone
     }
 
     const streamId = randomUUID()
-    const method = res.req.method ?? 'GET'
     const openHeaders: Record<string, string> = {
       ...headers,
-      'x-mock-stream': cursor.resumed ? `open;resumeAt=${cursor.start}` : 'open',
+      'x-mock-stream': open.tag,
       'x-mock-stream-id': streamId,
     }
-    if (scriptLog.length > 0) openHeaders['x-mock-script-log'] = scriptLog.join(' | ')
+    if (req.scriptLog.length > 0) openHeaders['x-mock-script-log'] = req.scriptLog.join(' | ')
     const base = {
-      method,
-      path,
-      query,
-      reqHeaders,
-      bodyText,
-      statusCode: out.statusCode,
-      matchedEndpointId,
-      matchedResponseId,
+      method: res.req.method ?? 'GET',
+      path: req.path,
+      query: req.query,
+      reqHeaders: req.reqHeaders,
+      bodyText: req.bodyText,
+      statusCode,
+      matchedEndpointId: req.matchedEndpointId,
+      matchedResponseId: req.matchedResponseId,
     }
     this.pushLog(s, {
       ...base,
@@ -977,34 +1064,152 @@ class MockServerManager extends EventEmitter {
       latencyMs: Date.now() - startedAt,
       responseHeaders: openHeaders,
       responseBody: '',
-      // v1 §6.3.3-1: an empty body is served (an empty stream), but say so.
-      error: blocks.length === 0 ? 'The SSE body has no events' : null,
+      error: open.note,
     })
 
-    const handle = startSseStream(
-      res,
-      { blocks, startIndex: cursor.start, config, render },
-      (summary: SseStreamSummary) => {
-        s.openStreams.delete(handle)
-        this.pushLog(s, {
-          ...base,
-          ts: Date.now(),
-          latencyMs: Date.now() - startedAt,
-          responseHeaders: {
-            ...headers,
-            'x-mock-stream': `frames=${summary.framesSent};reason=${summary.reason}`,
-            'x-mock-stream-id': streamId,
-          },
-          responseBody:
-            summary.preview +
-            (summary.previewTruncated ? '\n…' : '') +
-            `\n… (stream: ${summary.framesSent} frames, ${(summary.durationMs / 1000).toFixed(1)} s, ` +
-            `${FINISH_REASON_TEXT[summary.reason]})`,
-          error: summary.error,
-        })
-      },
-    )
+    const handle = startSseStream(res, plan, (summary: SseStreamSummary) => {
+      s.openStreams.delete(handle)
+      this.pushLog(s, {
+        ...base,
+        ts: Date.now(),
+        latencyMs: Date.now() - startedAt,
+        responseHeaders: {
+          ...headers,
+          'x-mock-stream': `frames=${summary.framesSent};reason=${summary.reason}`,
+          'x-mock-stream-id': streamId,
+        },
+        responseBody:
+          (open.logBody ?? summary.preview + (summary.previewTruncated ? '\n…' : '')) +
+          `\n… (stream: ${summary.framesSent} frames, ${(summary.durationMs / 1000).toFixed(1)} s, ` +
+          `${FINISH_REASON_TEXT[summary.reason]})`,
+        error: summary.error,
+      })
+    })
     s.openStreams.add(handle)
+  }
+
+  // ─── AI / LLM (issue #221, Faz 2a) ─────────────────────────────
+
+  /**
+   * Answer a `bodyType: 'llm'` response — the last step of the normal
+   * pipeline, like SSE. The body was rendered once (with `lastUserMessage` /
+   * `lastToolResult` / `model` in the context) and scripted; it is the
+   * assistant text.
+   *
+   *  - Status outside 2xx, or 204: the body goes out as written (an error
+   *    preset's provider JSON), `application/json` unless set.
+   *  - A request body that is not a chat request: the provider's 400.
+   *  - `stream` not true: one `chat.completion` / `message` JSON.
+   *  - `stream: true`: the provider's event stream through the one SSE
+   *    writer — the first frame at once, then one every `chunkIntervalMs`.
+   *
+   * The content type follows the mode (JSON vs `text/event-stream`), so a
+   * stored `content-type` header never breaks one of the two; other user
+   * headers are kept.
+   */
+  private llmAndLog(
+    s: RunningServer,
+    res: http.ServerResponse,
+    startedAt: number,
+    reqHeaders: Record<string, string>,
+    query: Record<string, string>,
+    path: string,
+    bodyText: string,
+    matchedEndpointId: string,
+    matchedResponseId: string,
+    out: { statusCode: number; headers: Record<string, string>; body: string },
+    ctx: TemplateContext,
+    config: MockLlmConfig,
+    scriptLog: string[],
+  ): void {
+    if (s.stopped || res.destroyed) return
+    const JSON_CT = 'application/json; charset=utf-8'
+    const plain = (statusCode: number, headers: Record<string, string>, body: string): void =>
+      this.respondAndLog(
+        s,
+        res.req,
+        res,
+        startedAt,
+        reqHeaders,
+        query,
+        path,
+        bodyText,
+        matchedEndpointId,
+        matchedResponseId,
+        { statusCode, headers, body },
+        scriptLog,
+      )
+    const json = (statusCode: number, body: string): void =>
+      plain(statusCode, { ...out.headers, 'content-type': JSON_CT }, body)
+
+    if (out.statusCode < 200 || out.statusCode >= 300 || out.statusCode === 204) {
+      plain(out.statusCode, { 'content-type': JSON_CT, ...out.headers }, out.body)
+      return
+    }
+    const request = readLlmRequest(config.provider, bodyText)
+    if (!request.ok) {
+      json(request.reply.status, request.reply.body)
+      return
+    }
+    const built = buildLlmPlan(config, request.value, out.body, (t) => renderTemplate(t, ctx))
+    if (!built.ok) {
+      json(built.reply.status, built.reply.body)
+      return
+    }
+    const plan = built.value
+    if (!request.value.stream) {
+      json(out.statusCode, encodeLlmJson(plan))
+      return
+    }
+
+    const serverError = (message: string): void =>
+      json(
+        503,
+        llmErrorBody(
+          config.provider,
+          config.provider === 'anthropic' ? 'api_error' : 'server_error',
+          message,
+        ),
+      )
+    const blocks = encodeLlmEvents(plan).map(sseEventBlock)
+    if (blocks.length > SSE_MAX_PLAN_FRAMES) {
+      serverError(
+        `The mock reply streams ${blocks.length} chunks; a mock stream serves at most ` +
+          `${SSE_MAX_PLAN_FRAMES} — use word chunking or a shorter text`,
+      )
+      return
+    }
+    if (blocks.some((b) => Buffer.byteLength(b.raw) + b.separator.length > SSE_MAX_FRAME_BYTES)) {
+      serverError(`A chunk of the mock reply is larger than ${SSE_MAX_FRAME_BYTES} bytes`)
+      return
+    }
+    if (s.openStreams.size >= SSE_MAX_OPEN_STREAMS) {
+      serverError(`This mock server already has ${SSE_MAX_OPEN_STREAMS} open streams`)
+      return
+    }
+
+    this.runStream(
+      s,
+      res,
+      startedAt,
+      { reqHeaders, query, path, bodyText, matchedEndpointId, matchedResponseId, scriptLog },
+      out.statusCode,
+      { ...sseResponseHeaders(out.headers), 'content-type': 'text/event-stream; charset=utf-8' },
+      {
+        blocks,
+        startIndex: 0,
+        config: {
+          intervalMs: config.chunkIntervalMs,
+          heartbeatMs: 0,
+          loop: false,
+          onEnd: 'close',
+          resume: false,
+        },
+        // Frames are encoded JSON: never run a template over them (user text may hold `{{`).
+        render: (raw) => raw,
+      },
+      { tag: 'open', note: null, logBody: encodeLlmJson(plan) },
+    )
   }
 
   private emitStatus(serverId: string, errorMessage: string | null = null): void {
@@ -1075,6 +1280,10 @@ function defaultContentType(bodyType: MockBodyType): string {
       return 'text/html; charset=utf-8'
     case 'sse':
       return 'text/event-stream; charset=utf-8'
+    // The LLM branch sets the type per mode (JSON / event stream); JSON is
+    // what an error status answers with.
+    case 'llm':
+      return 'application/json; charset=utf-8'
     case 'text':
     default:
       return 'text/plain; charset=utf-8'

@@ -34,7 +34,12 @@ import {
 import { mockServerManager, type MockServerDef } from '../mock/server'
 import { importOpenApi, importPostman, type ImportResult } from '../mock/importers'
 import { normalizeMockServerKind, type MockServerKind } from '../../shared/mock-kind'
-import { normalizeStreamConfig, validateStreamConfig } from '../../shared/mock-stream'
+import {
+  normalizeLlmConfig,
+  normalizeStreamConfig,
+  validateLlmConfig,
+  validateStreamConfig,
+} from '../../shared/mock-stream'
 import type {
   AuthConfig,
   CorsConfig,
@@ -135,22 +140,31 @@ export function buildServerDef(serverId: string): MockServerDef | null {
         script: r.script ?? '',
         order: r.response_order,
         enabled: !!r.enabled,
-        // Tolerant read (issue #221): a corrupt / foreign value serves the defaults.
+        // Tolerant read (issue #221): a corrupt / foreign value serves the
+        // defaults. One column, read per body type.
         streamConfig:
           r.body_type === 'sse' ? normalizeStreamConfig(parseStreamConfig(r.stream_config)) : null,
+        llmConfig:
+          r.body_type === 'llm' ? normalizeLlmConfig(parseStreamConfig(r.stream_config)) : null,
       })),
     })),
   }
 }
 
 /**
- * Save-time check of an SSE response's stream settings (issue #221). Only a
- * response that streams (`bodyType: 'sse'`) gives them meaning, so only then
- * is a bad value an error; `undefined` (not written) and `null` (clear) pass.
+ * Save-time check of a response's `stream_config` (issue #221). Only the
+ * body type that reads the column gives it meaning — `sse` (stream
+ * settings) or `llm` (AI reply settings) — so only then is a bad value an
+ * error; `undefined` (not written) and `null` (clear) pass.
  */
 function assertStreamConfig(bodyType: string | undefined, streamConfig: unknown): void {
-  if (bodyType !== 'sse' || streamConfig === undefined) return
-  const err = validateStreamConfig(streamConfig)
+  if (streamConfig === undefined) return
+  const err =
+    bodyType === 'sse'
+      ? validateStreamConfig(streamConfig)
+      : bodyType === 'llm'
+        ? validateLlmConfig(streamConfig)
+        : null
   if (err) throw new Error(err)
 }
 

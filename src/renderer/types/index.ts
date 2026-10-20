@@ -2,7 +2,7 @@
 // Testnizer — TypeScript tip referansi
 
 import type { MockServerKind } from '../../shared/mock-kind'
-import type { MockSseStreamConfig } from '../../shared/mock-stream'
+import type { MockLlmConfig, MockSseStreamConfig } from '../../shared/mock-stream'
 
 export type { MockServerKind }
 
@@ -1296,7 +1296,7 @@ export interface MockEndpoint {
   updatedAt: number
 }
 
-export type MockBodyType = 'json' | 'xml' | 'text' | 'html' | 'sse'
+export type MockBodyType = 'json' | 'xml' | 'text' | 'html' | 'sse' | 'llm'
 
 export type MockConditionOp = 'eq' | 'neq' | 'contains' | 'regex' | 'exists'
 
@@ -1331,12 +1331,15 @@ export interface MockResponse {
   order: number
   enabled: boolean
   /**
-   * Stream settings of an `sse` response (issue #221) — the stored
-   * `stream_config` JSON as written, or null when unset. It may be partial
-   * (or carry keys from another build): read it through
-   * `normalizeStreamConfig`, and write a full normalized object back.
+   * The stored `stream_config` JSON as written (issue #221), or null when
+   * unset. `bodyType` decides what it means: an `sse` response's stream
+   * settings (read through `normalizeStreamConfig`) or an `llm` response's
+   * AI reply settings (read through `normalizeLlmConfig`). It may be partial
+   * (or carry keys from another build / the other body type): always read
+   * it through the normalizer of the CURRENT body type, and write a full
+   * normalized object back.
    */
-  streamConfig: Partial<MockSseStreamConfig> | null
+  streamConfig: Partial<MockSseStreamConfig> | Partial<MockLlmConfig> | null
 }
 
 // ─── Test Suite (renderer-facing row shapes) ─────────────────

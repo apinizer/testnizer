@@ -421,4 +421,106 @@ describe('mock server kind + response stream_config (issue #221)', () => {
       ['json', null],
     ])
   })
+
+  // ─── Faz 2a: AI (`llm`) reply settings in the same column ───────
+
+  it('an llm response with invalid settings is refused on create and update; valid ones round-trip', async () => {
+    const ep = await endpointId()
+    const bad = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: { provider: 'gemini' },
+    })) as View
+    expect(bad.success).toBe(false)
+    expect(bad.error).toBe('Provider must be "openai" or "anthropic"')
+    // An SSE key is not an LLM setting.
+    const sseKey = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: { intervalMs: 5 },
+    })) as View
+    expect(sseKey.error).toBe('Unknown LLM setting: intervalMs')
+    expect(testDb.prepare('SELECT COUNT(*) AS n FROM mock_responses').get()).toEqual({ n: 0 })
+
+    const LLM = {
+      provider: 'anthropic',
+      chunking: 'char',
+      toolCalls: [{ name: 'echo', arguments: { text: '{{lastUserMessage}}' } }],
+    }
+    const good = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: LLM,
+    })) as View
+    expect(good.success).toBe(true)
+    expect(good.data?.streamConfig).toEqual(LLM)
+    const id = good.data!.id as string
+    // The stored row's body type (llm) decides when the patch does not carry one.
+    const upd = (await harness.invoke('mock:response:update', id, {
+      streamConfig: { stopReason: 'tool_calls' },
+    })) as View
+    expect(upd.success).toBe(false)
+    expect(upd.error).toBe('Stop reason "tool_calls" needs at least one tool call')
+    // A patch that switches the body type is checked against the NEW type.
+    const toSse = (await harness.invoke('mock:response:update', id, {
+      bodyType: 'sse',
+      streamConfig: { provider: 'openai' },
+    })) as View
+    expect(toSse.error).toBe('Unknown stream setting: provider')
+    const toJson = (await harness.invoke('mock:response:update', id, {
+      bodyType: 'json',
+      streamConfig: { provider: 'nope' },
+    })) as View
+    expect(toJson.success).toBe(true)
+  })
+
+  it('buildServerDef hands the engine a normalized llmConfig for llm rows only', async () => {
+    const srv = await createServer({ kind: 'ai', port: 3301 })
+    const ep = (await harness.invoke('mock:endpoint:create', {
+      serverId: srv.data!.id,
+      method: 'POST',
+      path: '/v1/chat/completions',
+    })) as { data: { id: string } }
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: { provider: 'anthropic', chunkIntervalMs: 0 },
+      order: 0,
+    })
+    const unset = (await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'llm',
+      body: 'Hi',
+      order: 1,
+    })) as View
+    // A foreign / corrupt stored value still serves (the defaults).
+    testDb
+      .prepare('UPDATE mock_responses SET stream_config = ? WHERE id = ?')
+      .run('{"provider":"x","chunking":"sentence"}', unset.data!.id)
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: 50 },
+      order: 2,
+    })
+    const started = (await harness.invoke('mock:server:start', srv.data!.id)) as View
+    expect(started.success).toBe(true)
+    const def = fakeManager.start.mock.calls.at(-1)![0] as unknown as {
+      endpoints: {
+        responses: { bodyType: string; streamConfig: unknown; llmConfig: unknown }[]
+      }[]
+    }
+    const base = { stopReason: 'stop', toolCalls: [], usage: 'auto' }
+    expect(def.endpoints[0].responses.map((r) => [r.bodyType, r.llmConfig])).toEqual([
+      ['llm', { ...base, provider: 'anthropic', chunking: 'word', chunkIntervalMs: 0 }],
+      ['llm', { ...base, provider: 'openai', chunking: 'sentence', chunkIntervalMs: 30 }],
+      ['sse', null],
+    ])
+    expect(def.endpoints[0].responses[0].streamConfig).toBeNull()
+  })
 })

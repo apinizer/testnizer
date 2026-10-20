@@ -99,6 +99,27 @@ export function sseResponseHeaders(headers: Record<string, string>): Record<stri
   return out
 }
 
+/** One server-sent event built by code (the LLM encoders), before framing. */
+export interface SseEvent {
+  /** `event:` field; absent = the default `message` event. */
+  event?: string
+  /** `data:` payload; each line of it becomes its own `data:` line. */
+  data: string
+}
+
+/**
+ * The framing of a code-built event, as a writer block (WHATWG: `event:`
+ * then one `data:` line per data line; the writer adds the blank line).
+ * Producers that build events instead of a body (the LLM encoders) go
+ * through here, so the SSE wire format has one owner.
+ */
+export function sseEventBlock(e: SseEvent): SseBlock {
+  const lines: string[] = []
+  if (e.event !== undefined) lines.push(`event: ${e.event}`)
+  for (const line of e.data.split(/\r\n|\n|\r/)) lines.push(`data: ${line}`)
+  return { raw: lines.join('\n'), separator: '\n\n', id: null, dynamicId: false }
+}
+
 /** Render every block once, back to back — the body of a non-streamed reply. */
 export function renderBlocksOnce(
   blocks: readonly SseBlock[],
