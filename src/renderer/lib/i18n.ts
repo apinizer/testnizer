@@ -2735,6 +2735,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.result.binary': 'binary, {bytes} bytes',
     'mcp.result.download': 'Download',
     'mcp.result.imageFailed': 'Image could not be displayed · {bytes} bytes · {mime}',
+    'mcp.result.imageIncomplete':
+      'The server sent incomplete image data · {bytes} bytes · {mime} ends before its end marker',
+    'mcp.result.downloadAsReceived': 'Download as received',
     'mcp.result.empty': 'Empty',
     'mcp.result.emptyText': '(empty text)',
     'mcp.resource.select': 'Select a resource or template from the list',
@@ -6053,6 +6056,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.result.binary': 'ikili, {bytes} bayt',
     'mcp.result.download': 'İndir',
     'mcp.result.imageFailed': 'Görsel gösterilemedi · {bytes} bayt · {mime}',
+    'mcp.result.imageIncomplete':
+      'Sunucu eksik görsel verisi gönderdi · {bytes} bayt · {mime} bitiş işaretinden önce kesiliyor',
+    'mcp.result.downloadAsReceived': 'Geldiği gibi indir',
     'mcp.result.empty': 'Boş',
     'mcp.result.emptyText': '(boş metin)',
     'mcp.resource.select': 'Listeden bir kaynak veya şablon seçin',

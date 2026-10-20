@@ -52,9 +52,12 @@ describe('McpContentBlockView image block (issue #209)', () => {
       fireEvent.error(screen.getByTestId('mcp-block-image'))
       expect(screen.queryByTestId('mcp-block-image')).toBeNull()
       const fallback = screen.getByTestId('mcp-image-fallback')
-      expect(fallback).toHaveTextContent('Image could not be displayed · 8 bytes · image/png')
+      // 8 bytes = a bare PNG signature: no IEND → "incomplete" (issue #215).
+      expect(fallback).toHaveTextContent(
+        'The server sent incomplete image data · 8 bytes · image/png ends before its end marker',
+      )
       const download = within(fallback).getByTestId('mcp-image-download')
-      expect(download).toHaveTextContent('Download')
+      expect(download).toHaveTextContent('Download as received')
       fireEvent.click(download)
       expect(create).toHaveBeenCalledTimes(1)
     } finally {
@@ -73,8 +76,9 @@ describe('McpContentBlockView image block (issue #209)', () => {
     )
     fireEvent.error(screen.getByTestId('mcp-block-image'))
     expect(screen.getByTestId('mcp-image-fallback')).toHaveTextContent(
-      'Görsel gösterilemedi · 8 bayt · image/png',
+      'Sunucu eksik görsel verisi gönderdi · 8 bayt · image/png bitiş işaretinden önce kesiliyor',
     )
+    expect(screen.getByTestId('mcp-image-download')).toHaveTextContent('Geldiği gibi indir')
   })
 
   it('a new image after a failed one renders inline again', () => {
@@ -124,7 +128,7 @@ describe('embedded resource image (issue #209)', () => {
     fireEvent.error(within(res).getByTestId('mcp-resource-image'))
     expect(within(res).queryByTestId('mcp-resource-image')).toBeNull()
     expect(within(res).getByTestId('mcp-image-fallback')).toHaveTextContent(
-      'Image could not be displayed · 8 bytes · image/png',
+      'The server sent incomplete image data · 8 bytes · image/png',
     )
     expect(within(res).getAllByRole('button', { name: /Download/ })).toHaveLength(1)
     expect(within(res).getByTestId('mcp-resource-download')).toBeInTheDocument()
