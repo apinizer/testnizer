@@ -198,21 +198,18 @@ describe('mock:import:* + mock:logs:*', () => {
   })
 
   it('import:openapi returns success envelope', async () => {
-    const res = (await harness.invoke(
-      'mock:import:openapi',
-      'srv-id',
-      'openapi: 3.0',
-    )) as { success: boolean; data?: { created: number } }
+    const res = (await harness.invoke('mock:import:openapi', 'srv-id', 'openapi: 3.0')) as {
+      success: boolean
+      data?: { created: number }
+    }
     expect(res.success).toBe(true)
     expect(res.data?.created).toBe(1)
   })
 
   it('import:postman returns success envelope', async () => {
-    const res = (await harness.invoke(
-      'mock:import:postman',
-      'srv-id',
-      '{}',
-    )) as { success: boolean }
+    const res = (await harness.invoke('mock:import:postman', 'srv-id', '{}')) as {
+      success: boolean
+    }
     expect(res.success).toBe(true)
   })
 })
@@ -357,5 +354,71 @@ describe('mock server kind + response stream_config (issue #221)', () => {
       }
       expect(list.data[0].streamConfig).toBeNull()
     }
+  })
+
+  // ─── Faz 1a: save-time validation + the engine definition ──────
+
+  it('an sse response with invalid stream settings is refused on create and update', async () => {
+    const ep = await endpointId()
+    const bad = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: -1 },
+    })) as View
+    expect(bad.success).toBe(false)
+    expect(bad.error).toMatch(/^Event interval must be a whole number of milliseconds/)
+    expect(testDb.prepare('SELECT COUNT(*) AS n FROM mock_responses').get()).toEqual({ n: 0 })
+
+    const good = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: 50, loop: true },
+    })) as View
+    expect(good.success).toBe(true)
+    const id = good.data!.id as string
+    // The stored row's body type decides when the patch does not carry one.
+    const upd = (await harness.invoke('mock:response:update', id, {
+      streamConfig: { onEnd: 'later' },
+    })) as View
+    expect(upd.success).toBe(false)
+    expect(upd.error).toMatch(/close or stay open/)
+    const cleared = (await harness.invoke('mock:response:update', id, {
+      streamConfig: null,
+    })) as View
+    expect(cleared.success).toBe(true)
+  })
+
+  it('buildServerDef hands the engine a normalized config for sse rows only', async () => {
+    const srv = await createServer({ kind: 'sse', port: 3201 })
+    const ep = (await harness.invoke('mock:endpoint:create', {
+      serverId: srv.data!.id,
+      method: 'GET',
+      path: '/events',
+    })) as { data: { id: string } }
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: 0, loop: true },
+      order: 0,
+    })
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'json',
+      body: '{}',
+      streamConfig: STREAM,
+      order: 1,
+    })
+    const started = (await harness.invoke('mock:server:start', srv.data!.id)) as View
+    expect(started.success).toBe(true)
+    const def = fakeManager.start.mock.calls.at(-1)![0] as unknown as {
+      endpoints: { responses: { bodyType: string; streamConfig: unknown }[] }[]
+    }
+    expect(def.endpoints[0].responses.map((r) => [r.bodyType, r.streamConfig])).toEqual([
+      ['sse', { intervalMs: 10, heartbeatMs: 0, loop: true, onEnd: 'close', resume: true }],
+      ['json', null],
+    ])
   })
 })

@@ -34,6 +34,7 @@ import {
 import { mockServerManager, type MockServerDef } from '../mock/server'
 import { importOpenApi, importPostman, type ImportResult } from '../mock/importers'
 import { normalizeMockServerKind, type MockServerKind } from '../../shared/mock-kind'
+import { normalizeStreamConfig, validateStreamConfig } from '../../shared/mock-stream'
 import type {
   AuthConfig,
   CorsConfig,
@@ -134,9 +135,23 @@ export function buildServerDef(serverId: string): MockServerDef | null {
         script: r.script ?? '',
         order: r.response_order,
         enabled: !!r.enabled,
+        // Tolerant read (issue #221): a corrupt / foreign value serves the defaults.
+        streamConfig:
+          r.body_type === 'sse' ? normalizeStreamConfig(parseStreamConfig(r.stream_config)) : null,
       })),
     })),
   }
+}
+
+/**
+ * Save-time check of an SSE response's stream settings (issue #221). Only a
+ * response that streams (`bodyType: 'sse'`) gives them meaning, so only then
+ * is a bad value an error; `undefined` (not written) and `null` (clear) pass.
+ */
+function assertStreamConfig(bodyType: string | undefined, streamConfig: unknown): void {
+  if (bodyType !== 'sse' || streamConfig === undefined) return
+  const err = validateStreamConfig(streamConfig)
+  if (err) throw new Error(err)
 }
 
 function safeJsonParse<T>(s: string, fallback: T): T {
@@ -302,6 +317,7 @@ export function registerMockHandlers(): void {
 
   ipcMain.handle('mock:response:create', async (_e, input: CreateMockResponseInput) => {
     try {
+      assertStreamConfig(input.bodyType, input.streamConfig)
       const row = createMockResponse(input)
       await reloadServerForEndpoint(input.endpointId)
       return ok(responseRowToView(row))
@@ -312,6 +328,9 @@ export function registerMockHandlers(): void {
 
   ipcMain.handle('mock:response:update', async (_e, id: string, patch: UpdateMockResponseInput) => {
     try {
+      if (patch.streamConfig !== undefined) {
+        assertStreamConfig(patch.bodyType ?? getMockResponse(id)?.body_type, patch.streamConfig)
+      }
       const row = updateMockResponse(id, patch)
       if (!row) return fail('Response not found')
       await reloadServerForEndpoint(row.endpoint_id)

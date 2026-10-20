@@ -1295,7 +1295,7 @@ export interface MockEndpoint {
   updatedAt: number
 }
 
-export type MockBodyType = 'json' | 'xml' | 'text' | 'html'
+export type MockBodyType = 'json' | 'xml' | 'text' | 'html' | 'sse'
 
 export type MockConditionOp = 'eq' | 'neq' | 'contains' | 'regex' | 'exists'
 

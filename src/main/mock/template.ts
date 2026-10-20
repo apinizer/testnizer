@@ -49,6 +49,13 @@ export interface TemplateContext {
   lastToolResult?: string
   /** `model` of the request body. */
   model?: string
+  /**
+   * Per-frame values of an SSE stream (issue #221), set only while a
+   * `bodyType: 'sse'` block is rendered: `{{stream.seq}}` (1-based frame
+   * number on this connection), `{{stream.iteration}}` (1-based pass over the
+   * list) and `{{stream.now}}` (ISO time of the render).
+   */
+  stream?: { seq: number; iteration: number; now: string }
 }
 
 export interface LlmRequestShortcuts {
