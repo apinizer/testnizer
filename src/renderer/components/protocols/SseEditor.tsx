@@ -25,6 +25,7 @@ export default function SseEditor() {
   const bodyType = useSseStore((s) => s.bodyType)
   const setBodyType = useSseStore((s) => s.setBodyType)
   const connectionState = useSseStore((s) => s.connectionState)
+  const reconnecting = useSseStore((s) => s.reconnecting)
 
   const enabledHeaderCount = customHeaders.filter((h) => h.enabled && h.key.trim()).length
   const bodyDisabled = method === 'GET'
@@ -34,7 +35,7 @@ export default function SseEditor() {
       {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
         <span className="font-medium text-[var(--accent-text)]">{t('sse.title')}</span>
-        {connectionState === 'connected' && (
+        {connectionState === 'connected' && !reconnecting && (
           <span className="rounded-full bg-[var(--green-bg)] px-2 py-0.5 font-medium text-[var(--green)]">
             {t('mcp.status.connected')}
           </span>

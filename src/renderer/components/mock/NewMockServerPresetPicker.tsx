@@ -1,9 +1,12 @@
 /**
  * Type switch (HTTP | MCP | SSE | AI) and preset list of the "New mock server"
  * dialog (issues #140, #221). Both are radio groups; the selected preset is
- * highlighted. The type list lives in `new-mock-server.ts`.
+ * highlighted. The type list lives in `new-mock-server.ts`. Keyboard (issue
+ * #226): one Tab stop per group, the arrow keys / Home / End move and select
+ * (`radio-group-keys.ts`).
  */
 import { useTranslation } from '../../lib/i18n'
+import { onRadioKeyDown, radioTabIndex } from '../../lib/radio-group-keys'
 import {
   MOCK_DIALOG_KINDS,
   MOCK_KIND_HINT_KEYS,
@@ -24,6 +27,10 @@ export default function NewMockServerPresetPicker({
   onPreset: (id: string) => void
 }) {
   const { t } = useTranslation()
+  const presets = presetOptions(kind)
+  const presetIds = presets.map((o) => o.id)
+  const kindIndex = MOCK_DIALOG_KINDS.indexOf(kind)
+  const presetIndex = presetIds.indexOf(presetId)
   return (
     <div className="flex flex-col gap-3">
       <div>
@@ -34,7 +41,7 @@ export default function NewMockServerPresetPicker({
           // One column per type; a computed `grid-cols-N` class would not be generated.
           style={{ gridTemplateColumns: `repeat(${MOCK_DIALOG_KINDS.length}, minmax(0, 1fr))` }}
         >
-          {MOCK_DIALOG_KINDS.map((k) => {
+          {MOCK_DIALOG_KINDS.map((k, i) => {
             const active = k === kind
             return (
               <button
@@ -42,8 +49,10 @@ export default function NewMockServerPresetPicker({
                 type="button"
                 role="radio"
                 aria-checked={active}
+                tabIndex={radioTabIndex(i, kindIndex)}
                 data-testid={`mock-new-type-${k}`}
                 onClick={() => onKind(k)}
+                onKeyDown={(e) => onRadioKeyDown(e, MOCK_DIALOG_KINDS, i, onKind)}
                 className={`h-7 cursor-pointer rounded-md border-none text-[12px] font-semibold transition-colors ${
                   active
                     ? 'bg-[var(--white)] text-[var(--accent-text)] shadow-sm'
@@ -70,7 +79,7 @@ export default function NewMockServerPresetPicker({
           data-testid="mock-new-presets"
           className="flex flex-col gap-1.5"
         >
-          {presetOptions(kind).map((o) => {
+          {presets.map((o, i) => {
             const active = o.id === presetId
             return (
               <button
@@ -78,8 +87,10 @@ export default function NewMockServerPresetPicker({
                 type="button"
                 role="radio"
                 aria-checked={active}
+                tabIndex={radioTabIndex(i, presetIndex)}
                 data-testid={`mock-new-preset-${o.id}`}
                 onClick={() => onPreset(o.id)}
+                onKeyDown={(e) => onRadioKeyDown(e, presetIds, i, onPreset)}
                 className={`flex w-full cursor-pointer items-start gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors ${
                   active
                     ? 'border-[var(--accent)] bg-[var(--accent-light)]'

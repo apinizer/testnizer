@@ -47,6 +47,54 @@ const ANTHROPIC_TOOL_BODY = {
   ],
 }
 
+/**
+ * Issue #226 P1 — `{{offeredTool 'echo'}}`: the name the CLIENT offered for an
+ * MCP tool. AI Chat sends `<server>__<tool>` (`wireToolName`), a plain SDK the
+ * bare name; a tool call must name exactly what was offered.
+ */
+describe("{{offeredTool 'name'}}", () => {
+  const ctx = (body: unknown) => ({
+    request: {
+      method: 'POST',
+      path: '/v1/chat/completions',
+      headers: {},
+      query: {},
+      params: {},
+      body,
+      bodyText: typeof body === 'string' ? body : JSON.stringify(body),
+    },
+  })
+  const openai = (...names: string[]) => ({
+    tools: names.map((name) => ({ type: 'function', function: { name, parameters: {} } })),
+  })
+  const T = "{{offeredTool 'echo'}}"
+
+  it('AI Chat (OpenAI shape): the namespaced <server>__echo', () => {
+    expect(renderTemplate(T, ctx(openai('Weather__forecast', 'Echo_tools__echo')))).toBe(
+      'Echo_tools__echo',
+    )
+  })
+
+  it('a plain SDK offering the bare name gets the bare name; an exact name wins', () => {
+    expect(renderTemplate(T, ctx(openai('echo')))).toBe('echo')
+    expect(renderTemplate(T, ctx(openai('A__echo', 'echo')))).toBe('echo')
+  })
+
+  it('Anthropic shape (tools[].name) and a JSON body that arrived as text', () => {
+    expect(renderTemplate(T, ctx({ tools: [{ name: 'Echo_MCP__echo', input_schema: {} }] }))).toBe(
+      'Echo_MCP__echo',
+    )
+    expect(renderTemplate(T, ctx(JSON.stringify(openai('S__echo'))))).toBe('S__echo')
+  })
+
+  it('a name that only contains the tool name does not match; nothing offered → the name itself', () => {
+    expect(renderTemplate(T, ctx(openai('X__echoes', 'echo_tool', 'myecho')))).toBe('echo')
+    expect(renderTemplate(T, ctx({ messages: [] }))).toBe('echo')
+    expect(renderTemplate(T, ctx(null))).toBe('echo')
+    expect(renderTemplate('{{offeredTool}}', ctx(openai('echo')))).toBe('')
+  })
+})
+
 describe('llmRequestShortcuts', () => {
   it('OpenAI: model + the last user text (string or text parts); no tool result', () => {
     expect(llmRequestShortcuts(OPENAI_BODY)).toEqual({

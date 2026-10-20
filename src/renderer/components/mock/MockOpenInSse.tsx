@@ -89,7 +89,7 @@ export function MockEndpointOpenInSse({
       data-testid="mock-endpoint-open-in-sse"
       onClick={() => method && open(endpoint.path, method)}
       disabled={!can}
-      className="rounded border px-2 py-0.5 text-[11px]"
+      className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
       // Same look as the URL bar's Open button (MockServerEditor.tsx FullUrlBar).
       style={{
         borderColor: 'var(--border)',

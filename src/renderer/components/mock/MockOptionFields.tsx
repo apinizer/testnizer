@@ -2,15 +2,21 @@
  * The field parts of the response editor's option rows (issue #221) — the
  * SSE "Stream" row (`MockSseOptions.tsx`) and the AI "LLM" row
  * (`MockLlmOptions.tsx`) are built from these, so the two rows cannot drift
- * apart. The look is the editor's "Delay (ms) / Enabled" row
- * (`MockServerEditor.tsx` ResponseEditor): muted label + 70 px number box,
- * plain select, small muted / red note lines under the row.
+ * apart. The editor's "Delay (ms)" and "Priority" boxes use `OptionNumber`
+ * too: muted label + number box, plain select, small muted / red note lines
+ * under the row. Labels never break inside (the rows wrap instead), and the
+ * number boxes are sized in rem — rem follows the app font size, px did not:
+ * a 70 px box clipped "15000" to "1500" at font size 16 (issue #226).
  */
 import type { ReactNode } from 'react'
 import { useTranslation } from '../../lib/i18n'
 import type { useNumberDraft } from '../../lib/number-draft'
 
-const NUMBER_STYLE = { width: 70, background: 'var(--white)', borderColor: 'var(--border)' }
+/** Fits 6 digits (every ms setting tops out at 600 000) at font size 13–16. */
+const NUMBER_WIDTH = '6.5rem'
+/** Fits 8 digits (token counts top out at 10 000 000). */
+const WIDE_NUMBER_WIDTH = '8rem'
+const NUMBER_COLORS = { background: 'var(--white)', borderColor: 'var(--border)' }
 const SELECT_STYLE = { background: 'var(--white)', borderColor: 'var(--border)' }
 
 /** The row's uppercase title ("Stream", "LLM"). */
@@ -30,20 +36,26 @@ export function OptionNumber({
   label,
   testId,
   draft,
+  wide,
 }: {
   label: string
   testId: string
   draft: ReturnType<typeof useNumberDraft>
+  /** Room for 8 digits instead of 6. */
+  wide?: boolean
 }) {
   return (
-    <label style={{ color: 'var(--muted)' }}>
+    <label
+      className="flex items-center gap-1.5 whitespace-nowrap"
+      style={{ color: 'var(--muted)' }}
+    >
       {label}:
       <input
         type="number"
         data-testid={testId}
         {...draft.inputProps}
-        className="ml-1 rounded border px-2 py-1"
-        style={NUMBER_STYLE}
+        className="rounded border px-2 py-1"
+        style={{ ...NUMBER_COLORS, width: wide ? WIDE_NUMBER_WIDTH : NUMBER_WIDTH }}
       />
     </label>
   )
@@ -61,7 +73,10 @@ export function OptionSelect<V extends string>(props: {
 }) {
   const { t } = useTranslation()
   return (
-    <label className="flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
+    <label
+      className="flex items-center gap-1.5 whitespace-nowrap"
+      style={{ color: 'var(--muted)' }}
+    >
       {props.label}:
       <select
         data-testid={props.testId}

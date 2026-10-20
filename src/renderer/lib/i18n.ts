@@ -2259,6 +2259,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.confirmDelete': 'Delete this mock server?',
     'mock.confirmDeleteEndpoint': 'Delete this endpoint?',
     'mock.confirmDeleteResponse': 'Delete this response?',
+    'mock.deleteResponse': 'Delete response',
     'mock.noActiveProject': 'No active project.',
     'mock.invalidPort': 'Port must be 1–65535.',
     'mock.nameRequired': 'Name is required.',
@@ -2511,6 +2512,9 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Workbench welcome surfaces — shown when no tab is active on the page
     'welcome.mocks': 'Select a mock server from the left panel',
+    'welcome.mocksEmptyTitle': 'No mock servers yet',
+    'welcome.mocksEmptyDesc':
+      'A mock server answers HTTP, MCP, SSE or AI requests on a local port, so you can test without the real backend.',
     'welcome.history': 'Pick a history entry from the left panel',
     'welcome.tools': 'Select a tool from the left panel',
     'welcome.docs': 'Documentation view coming soon',
@@ -3295,9 +3299,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.logPath': 'Path',
     'mock.logStatus': 'Status',
     'mock.logLatency': 'Latency',
+    'mock.logStreaming': 'streaming…',
     'sse.title': 'SSE (Server-Sent Events)',
     'sse.method': 'Method',
     'sse.reconnect': 'Reconnect',
+    'sse.reconnecting': 'Reconnecting…',
     'sse.customHeaders': 'Custom Headers',
     'sse.lastEventIdPlaceholder': 'Optional: resume from this event ID',
     'sse.bodyGetOnly': 'Body is only available for non-GET methods',
@@ -3327,7 +3333,7 @@ const translations: Record<Locale, Record<string, string>> = {
       'POST /v1/messages: the message_start … message_stop event stream; no x-api-key needed',
     'mockAi.preset.tools': 'Tool call round-trip',
     'mockAi.preset.toolsHint':
-      'POST /v1/chat/completions: the first turn calls the echo tool, the turn that carries the tool result gets the final answer — pair with Mock MCP "Echo"',
+      'POST /v1/chat/completions: the first turn calls the offered echo tool (echo, or AI Chat’s <server>__echo), the turn that carries the tool result gets the final answer — pair with Mock MCP "Echo"',
     'mockAi.preset.errors': 'Errors',
     'mockAi.preset.errorsHint':
       'POST /v1/chat/completions: model error-429 → 429 + retry-after, error-500 → 500, error-401 → 401; any other model → a normal reply',
@@ -3362,7 +3368,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockLlm.usageOut': 'Out',
     'mockLlm.toolCalls': 'Tool calls (JSON list, optional)',
     'mockLlm.toolCallsHint':
-      'Each item: {"name": …, "arguments": {…}} and an optional "id". String values are templates. Leave empty for a text reply.',
+      'Each item: {"name": …, "arguments": {…}} and an optional "id". String values are templates. As the name, {{offeredTool \'echo\'}} is the name the request offered the echo tool under (echo, or AI Chat’s <server>__echo). Leave empty for a text reply.',
     'mockLlm.toolCallsBadJson': 'Not valid JSON',
     'mockLlm.toolCallsNotList': 'Tool calls must be a JSON list ([…])',
     'mockLlm.bodyHint':
@@ -5748,6 +5754,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.confirmDelete': 'Bu mock sunucuyu silmek istediğinize emin misiniz?',
     'mock.confirmDeleteEndpoint': 'Bu endpoint silinsin mi?',
     'mock.confirmDeleteResponse': 'Bu response silinsin mi?',
+    'mock.deleteResponse': 'Yanıtı sil',
     'mock.noActiveProject': 'Aktif proje yok.',
     'mock.invalidPort': 'Port 1–65535 arasında olmalı.',
     'mock.nameRequired': 'İsim gerekli.',
@@ -5998,6 +6005,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.exportFailed': 'Dışa aktarma başarısız',
 
     'welcome.mocks': 'Sol panelden bir mock sunucu seçin',
+    'welcome.mocksEmptyTitle': 'Henüz mock sunucu yok',
+    'welcome.mocksEmptyDesc':
+      'Mock sunucu, yerel bir portta HTTP, MCP, SSE ya da AI isteklerini yanıtlar; gerçek arka uç olmadan test edebilirsiniz.',
     'welcome.history': 'Sol panelden bir geçmiş kaydı seçin',
     'welcome.tools': 'Sol panelden bir araç seçin',
     'welcome.docs': 'Dokümantasyon görünümü yakında',
@@ -6786,9 +6796,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.logPath': 'Yol',
     'mock.logStatus': 'Durum',
     'mock.logLatency': 'Gecikme',
+    'mock.logStreaming': 'akış sürüyor…',
     'sse.title': 'SSE (Server-Sent Events)',
     'sse.method': 'Metot',
     'sse.reconnect': 'Yeniden bağlan',
+    'sse.reconnecting': 'Yeniden bağlanıyor…',
     'sse.customHeaders': 'Özel Başlıklar',
     'sse.lastEventIdPlaceholder': 'İsteğe bağlı: bu olay kimliğinden devam et',
     'sse.bodyGetOnly': 'Gövde yalnızca GET dışındaki metotlarda kullanılabilir',
@@ -6818,7 +6830,7 @@ const translations: Record<Locale, Record<string, string>> = {
       'POST /v1/messages: message_start … message_stop olay akışı; x-api-key gerekmez',
     'mockAi.preset.tools': 'Araç çağrısı gidiş-dönüş',
     'mockAi.preset.toolsHint':
-      'POST /v1/chat/completions: ilk tur echo aracını çağırır, araç sonucunu taşıyan tur son yanıtı alır — Mock MCP "Echo" ile birlikte kullanın',
+      'POST /v1/chat/completions: ilk tur sunulan echo aracını çağırır (echo ya da AI Chat’in <sunucu>__echo adı), araç sonucunu taşıyan tur son yanıtı alır — Mock MCP "Echo" ile birlikte kullanın',
     'mockAi.preset.errors': 'Hatalar',
     'mockAi.preset.errorsHint':
       'POST /v1/chat/completions: error-429 modeli → 429 + retry-after, error-500 → 500, error-401 → 401; diğer her model → normal yanıt',
@@ -6854,7 +6866,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockLlm.usageOut': 'Çıkış',
     'mockLlm.toolCalls': 'Araç çağrıları (JSON listesi, isteğe bağlı)',
     'mockLlm.toolCallsHint':
-      'Her öğe: {"name": …, "arguments": {…}} ve isteğe bağlı bir "id". Metin değerleri şablondur. Metin yanıtı için boş bırakın.',
+      'Her öğe: {"name": …, "arguments": {…}} ve isteğe bağlı bir "id". Metin değerleri şablondur. Ad olarak {{offeredTool \'echo\'}}, isteğin echo aracını sunduğu addır (echo ya da AI Chat’in <sunucu>__echo adı). Metin yanıtı için boş bırakın.',
     'mockLlm.toolCallsBadJson': 'Geçerli JSON değil',
     'mockLlm.toolCallsNotList': 'Araç çağrıları bir JSON listesi ([…]) olmalı',
     'mockLlm.bodyHint':
