@@ -16,6 +16,7 @@ import { projectFileSlug, projectFileName, pickProjectFile } from '../lib/projec
 import { mergeProjectFiles } from '../lib/project-merge'
 import { applySelectedChanges, diffProjectDocs, normaliseExportDoc } from '../lib/project-changes'
 import { stripLocalSecrets } from '../lib/local-secrets'
+import { readSharedProjectSettings } from '../lib/project-settings'
 import {
   GIT_MERGE_IN_PROGRESS_ERROR,
   GIT_NOTHING_COMMITTED_ERROR,
@@ -787,6 +788,42 @@ function parseDoc(content: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Values that cannot travel and are still empty on THIS machine after a
+ * pull (issue #177 rule): secret environment / global variables with no
+ * value, and a project auth credential that arrived blanked. The pull
+ * reports the count so the teammate knows what to fill in — otherwise the
+ * first Send just fails with a 401.
+ */
+function countEmptyLocalSecrets(projectId: string): number {
+  const db = getDb()
+  const blank = "COALESCE(value, '') = '' AND COALESCE(initial_value, '') = ''"
+  const vars = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM environment_variables WHERE secret = 1 AND ${blank}
+         AND environment_id IN (SELECT id FROM environments WHERE project_id = ?)`,
+    )
+    .get(projectId) as { n: number }
+  const globals = db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM global_variables WHERE secret = 1 AND ${blank} AND project_id = ?`,
+    )
+    .get(projectId) as { n: number }
+  const auth = (readSharedProjectSettings(projectId)?.auth ?? null) as Record<
+    string,
+    unknown
+  > | null
+  const credential =
+    auth?.type === 'bearer'
+      ? auth.bearerToken
+      : auth?.type === 'basic'
+        ? auth.basicPass
+        : auth?.type === 'api-key'
+          ? auth.apiKeyValue
+          : undefined
+  return vars.n + globals.n + (credential === '' ? 1 : 0)
+}
+
 /** True when `dir/file` is an export of `projectId` (safe to delete — the DB regenerates it). */
 function isOurExport(dir: string, file: string, projectId: string): boolean {
   try {
@@ -1460,6 +1497,7 @@ export function registerGitHandlers(): void {
           state: 'clean',
           branch: currentBranch,
           fastForwarded,
+          emptySecrets: countEmptyLocalSecrets(projectId),
         },
       }
     } catch (e) {

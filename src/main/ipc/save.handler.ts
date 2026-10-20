@@ -34,6 +34,7 @@ import {
   keepLocalMockAuth,
   keepLocalMcpBearer,
   keepLocalCertSecrets,
+  keepLocalProjectSharedSettings,
   CERT_SECRET_COLUMNS,
   type LocalRowLookup,
 } from '../lib/local-secrets'
@@ -1002,6 +1003,12 @@ function importProjectData(
  * Copy name / display_name / description from the file's `project` header
  * onto the local project row. Identity fields (id, workspace, local_path,
  * save_mode, icon) stay local. A file without a usable name changes nothing.
+ *
+ * `shared_settings` (project auth, scripts, timeout…) travels the same way,
+ * with two keep-local rules: a file without the key or with NULL (written
+ * before it existed, or by a machine that never set any) leaves the local
+ * value alone, and a project auth credential the file carries blanked
+ * (issue #177 rule 5) keeps this machine's value.
  */
 function adoptProjectHeader(
   db: ReturnType<typeof getDb>,
@@ -1019,21 +1026,32 @@ function adoptProjectHeader(
       : null
   const description = typeof header?.description === 'string' ? header.description : null
   const current = db
-    .prepare('SELECT name, display_name, description FROM projects WHERE id = ?')
+    .prepare('SELECT name, display_name, description, shared_settings FROM projects WHERE id = ?')
     .get(projectId) as
-    | { name: string; display_name: string | null; description: string | null }
+    | {
+        name: string
+        display_name: string | null
+        description: string | null
+        shared_settings: string | null
+      }
     | undefined
   if (!current) return
+  const incomingSettings = (data.project as { shared_settings?: unknown }).shared_settings
+  const sharedSettings =
+    typeof incomingSettings === 'string' && incomingSettings.trim()
+      ? (keepLocalProjectSharedSettings(incomingSettings, current.shared_settings) as string)
+      : current.shared_settings
   if (
     current.name === name &&
     (current.display_name ?? null) === displayName &&
-    (current.description ?? null) === description
+    (current.description ?? null) === description &&
+    (current.shared_settings ?? null) === (sharedSettings ?? null)
   ) {
     return
   }
   db.prepare(
-    'UPDATE projects SET name = ?, display_name = ?, description = ?, updated_at = ? WHERE id = ?',
-  ).run(name, displayName, description, Date.now(), projectId)
+    'UPDATE projects SET name = ?, display_name = ?, description = ?, shared_settings = ?, updated_at = ? WHERE id = ?',
+  ).run(name, displayName, description, sharedSettings ?? null, Date.now(), projectId)
 }
 
 /**
@@ -1957,8 +1975,8 @@ export function importProjectAsNew(
   const tx = db.transaction(() => {
     // Insert project
     db.prepare(
-      `INSERT INTO projects (id, workspace_id, name, description, type, sort_order, created_at, updated_at, save_mode, local_path, icon_emoji, icon_color, display_name)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO projects (id, workspace_id, name, description, type, sort_order, created_at, updated_at, save_mode, local_path, icon_emoji, icon_color, display_name, shared_settings)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       newProjectId,
       workspaceId,
@@ -1976,6 +1994,9 @@ export function importProjectAsNew(
       // Hub doesn't show two identical labels after an import. If the caller
       // passed an explicit override, that wins.
       overrides?.name ?? (projName !== desiredName ? projName : (proj.display_name ?? null)),
+      // Project auth / scripts / timeout travel with the copy (Duplicate keeps
+      // secrets: it re-uses the unstripped export).
+      typeof proj.shared_settings === 'string' ? proj.shared_settings : null,
     )
 
     // Folders

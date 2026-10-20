@@ -18,6 +18,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
+import { emptySecretsMessage } from '../../lib/pull-messages'
 import ProjectIcon from '../shared/ProjectIcon'
 import Modal from '../shared/Modal'
 
@@ -542,7 +543,11 @@ export default function NewProjectModal() {
                 // (A push here would instead upload the freshly-created empty
                 // project and risk clobbering the remote.)
                 const res = (await window.api.git.pull(projectId)) as
-                  | { success?: boolean; error?: string; data?: { imported?: boolean } }
+                  | {
+                      success?: boolean
+                      error?: string
+                      data?: { imported?: boolean; emptySecrets?: number }
+                    }
                   | undefined
                 if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
                 // The clone landed but the checkout holds no project .json:
@@ -550,6 +555,9 @@ export default function NewProjectModal() {
                 // collection, so an empty tree is a warning, not silence.
                 if (res?.data?.imported === false) {
                   throw new Error(t('toast.pullNoProjectFile'))
+                }
+                if (res?.data?.emptySecrets) {
+                  warnings.push(emptySecretsMessage(t, res.data.emptySecrets))
                 }
               } else {
                 // New project with a git remote — seed the remote with the

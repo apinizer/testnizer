@@ -28,6 +28,12 @@
  *      `encryptSecret` output — ciphertext bound to this machine's keychain,
  *      or plaintext when the keychain is unavailable — so they are useless
  *      (or a leak) anywhere else.
+ *   5. Project auth in `projects.shared_settings` (bearer token, basic
+ *      password, API key value) becomes '' unless it is only `{{variable}}`
+ *      references: those carry no secret, resolve per machine at Send / Run,
+ *      and are what makes a teammate's Pull work. Project settings never
+ *      left the machine before they moved to the project row, so a literal
+ *      credential there must not start travelling now.
  *
  * Blank is '' and never a missing key or NULL: `environment_variables.value`,
  * `mock_mcp_servers.bearer_token` and `mock_servers.auth_config` are NOT NULL.
@@ -46,6 +52,7 @@ type Row = Record<string, unknown>
 
 /** The export sections this module reads; `ProjectExport` satisfies it. */
 export interface SecretBearingExport {
+  project?: Row
   environmentVariables?: Row[]
   globalVariables?: Row[]
   mockServers?: Row[]
@@ -295,8 +302,75 @@ function stripColumn(rows: Row[] | undefined, column: string): Row[] | undefined
  * tree, push, diff preview) — never inside `exportProjectData`, which
  * Duplicate Project relies on to copy secrets. Idempotent; never mutates.
  */
+// ─── Project auth (shared_settings) ──────────────────────────────
+
+/** Project auth fields that hold a credential (`StoredProjectAuth`). */
+const PROJECT_AUTH_SECRET_FIELDS = ['bearerToken', 'basicPass', 'apiKeyValue'] as const
+
+/** Only `{{var}}` references (and whitespace): no secret in the text itself. */
+export function isVariableReferenceOnly(v: string): boolean {
+  return /\{\{[^{}]+\}\}/.test(v) && v.replace(/\{\{[^{}]+\}\}/g, '').trim() === ''
+}
+
+function parseObject(raw: unknown): Row | null {
+  if (typeof raw !== 'string' || !raw.trim()) return null
+  try {
+    const v = JSON.parse(raw) as unknown
+    return isRecord(v) ? v : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * `projects.shared_settings` as it may leave the machine: literal project
+ * auth credentials blanked. Always re-serialised, so both sides of a
+ * `sameExport` comparison have the same key order.
+ */
+export function stripProjectSharedSettings(raw: unknown): unknown {
+  const settings = parseObject(raw)
+  if (!settings) return raw
+  const auth = settings.auth
+  if (isRecord(auth)) {
+    const next: Row = { ...auth }
+    for (const f of PROJECT_AUTH_SECRET_FIELDS) {
+      const v = next[f]
+      if (typeof v === 'string' && v !== '' && !isVariableReferenceOnly(v)) next[f] = ''
+    }
+    settings.auth = next
+  }
+  return JSON.stringify(settings)
+}
+
+/**
+ * Import: an incoming `shared_settings` whose project auth credential was
+ * blanked keeps this machine's value for it (same auth type only — a
+ * different type is a different credential).
+ */
+export function keepLocalProjectSharedSettings(incoming: unknown, local: unknown): unknown {
+  const inc = parseObject(incoming)
+  const loc = parseObject(local)
+  if (!inc || !loc || !isRecord(inc.auth) || !isRecord(loc.auth)) return incoming
+  if (inc.auth.type !== loc.auth.type) return incoming
+  const auth: Row = { ...inc.auth }
+  let changed = false
+  for (const f of PROJECT_AUTH_SECRET_FIELDS) {
+    if (auth[f] === '' && typeof loc.auth[f] === 'string' && loc.auth[f] !== '') {
+      auth[f] = loc.auth[f]
+      changed = true
+    }
+  }
+  return changed ? JSON.stringify({ ...inc, auth }) : incoming
+}
+
 export function stripLocalSecrets<T extends SecretBearingExport>(data: T): T {
   const out: T = { ...data }
+  if (data.project && 'shared_settings' in data.project) {
+    out.project = {
+      ...data.project,
+      shared_settings: stripProjectSharedSettings(data.project.shared_settings),
+    }
+  }
   if (data.environmentVariables)
     out.environmentVariables = stripVariables(data.environmentVariables)
   if (data.globalVariables) out.globalVariables = stripVariables(data.globalVariables)

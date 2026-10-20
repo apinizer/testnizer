@@ -7,6 +7,7 @@ import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import PushCommitModal, { type PushChoice } from '../modals/PushCommitModal'
+import { emptySecretsMessage } from '../../lib/pull-messages'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
 import BranchGitActions from './BranchGitActions'
 import GitCommitFlow, { type GitFlowMode } from './GitCommitFlow'
@@ -182,6 +183,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     const result = await pullBranch(activeProjectId)
     if (result.success) {
       toast.success(t('toast.pulled'))
+      if (result.emptySecrets) toast.warning(emptySecretsMessage(t, result.emptySecrets))
       // Full app refresh
       await syncAfterGit(activeProjectId)
       void fetchChanges(activeProjectId)

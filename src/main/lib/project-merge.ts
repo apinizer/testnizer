@@ -200,13 +200,35 @@ function repairReferences(doc: Doc): void {
   }
 }
 
+/** Header fields that travel with the file (see `project-changes.ts` HEADER_FIELDS). */
+const MERGED_HEADER_FIELDS = ['name', 'display_name', 'description', 'shared_settings'] as const
+
+/**
+ * The `project` header: ours, except a travelling field only THEY changed
+ * since the base takes theirs — otherwise a teammate's project-auth or
+ * script edit was lost whenever the same merge also had a row conflict.
+ */
+function mergeHeader(base: Doc | null, ours: Doc, theirs: Doc): unknown {
+  const o = ours.project
+  const t = theirs.project
+  if (!o || typeof o !== 'object' || !t || typeof t !== 'object') return ours.project
+  const b = (base?.project ?? {}) as Doc
+  const out: Doc = { ...(o as Doc) }
+  for (const f of MERGED_HEADER_FIELDS) {
+    const ov = (o as Doc)[f] ?? null
+    const tv = (t as Doc)[f] ?? null
+    if (canonical(ov) === canonical(b[f] ?? null) && canonical(tv) !== canonical(ov)) out[f] = tv
+  }
+  return out
+}
+
 /**
  * Merge three parsed project files. `base` may be null (no common ancestor —
  * e.g. an add/add conflict); every row is then treated as "added".
- * Scalars and the `project` header come from `ours`; `exportedAt` is now.
+ * Scalars come from `ours`, the `project` header field by field (`mergeHeader`); `exportedAt` is now.
  */
 export function mergeProjectDocs(base: Doc | null, ours: Doc, theirs: Doc): Doc {
-  const out: Doc = { ...ours }
+  const out: Doc = { ...ours, project: mergeHeader(base, ours, theirs) }
   for (const section of ROW_SECTIONS) {
     const present = Array.isArray(ours[section]) || Array.isArray(theirs[section])
     if (!present) continue

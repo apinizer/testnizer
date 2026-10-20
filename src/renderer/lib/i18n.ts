@@ -2608,6 +2608,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'gitCommit.nothingCommitted':
       'Nothing has been committed for this project yet, so there is nothing to restore.',
     'toast.pulled': 'Pulled successfully',
+    'toast.pulledEmptySecrets':
+      '{count} secret values are empty on this machine (secrets never travel through git) — fill them in Environments / project settings',
+    'toast.pulledEmptySecretOne':
+      '1 secret value is empty on this machine (secrets never travel through git) — fill it in Environments / project settings',
     'toast.pullFailed': 'Pull failed',
     'toast.pullNoProjectFile':
       'Pull finished, but the repository holds no project file — nothing was imported',
@@ -5942,6 +5946,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'gitCommit.nothingCommitted':
       'Bu proje için henüz hiçbir şey commit edilmedi, geri yüklenecek bir şey yok.',
     'toast.pulled': 'Çekim başarılı',
+    'toast.pulledEmptySecrets':
+      'Bu makinede {count} gizli değer boş (gizli değerler git ile taşınmaz) — Ortamlar / proje ayarlarından doldurun',
+    'toast.pulledEmptySecretOne':
+      'Bu makinede 1 gizli değer boş (gizli değerler git ile taşınmaz) — Ortamlar / proje ayarlarından doldurun',
     'toast.pullFailed': 'Çekim başarısız',
     'toast.pullNoProjectFile':
       'Çekim tamamlandı ancak depoda proje dosyası yok — hiçbir şey içe aktarılmadı',

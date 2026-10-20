@@ -30,8 +30,8 @@ type Doc = Record<string, unknown>
 /** Fields the importer rewrites to the local project on every machine. */
 const MACHINE_LOCAL_FIELDS = new Set(['project_id', 'workspace_id'])
 
-/** The project header fields that travel with the file. */
-const HEADER_FIELDS = ['name', 'display_name', 'description'] as const
+/** The project header fields that travel with the file (`shared_settings`: project auth, scripts…). */
+const HEADER_FIELDS = ['name', 'display_name', 'description', 'shared_settings'] as const
 
 function comparableRow(row: unknown): unknown {
   if (!row || typeof row !== 'object' || Array.isArray(row)) return row

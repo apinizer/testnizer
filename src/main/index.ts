@@ -13,6 +13,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase, getDb, type InitDatabaseResult } from './db/database'
 import { runHistoryMaskMigration } from './db/history-mask-migration'
 import { registerAllHandlers } from './ipc'
+import { migrateProjectSettings } from './ipc/settings.handler'
 import { initAutoUpdater } from './updater'
 import { initLogging } from './diagnostics'
 import { maybeInitTelemetry } from './telemetry'
@@ -297,6 +298,9 @@ app.whenReady().then(() => {
 
   // Register all IPC handlers
   registerAllHandlers()
+  // Project settings that travel with the project moved from electron-store
+  // to the project row; carry existing installs over before anything exports.
+  void migrateProjectSettings().catch(() => undefined)
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)

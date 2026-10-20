@@ -1,5 +1,13 @@
 import { ipcMain } from 'electron'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
+import {
+  mergeProjectSettings,
+  migrateProjectSettingsToDb,
+  projectIdOfSettingsKey,
+  readSharedProjectSettings,
+  splitProjectSettings,
+  writeSharedProjectSettings,
+} from '../lib/project-settings'
 
 // Field names that must never be written in plaintext. When writing/reading
 // structured settings values we transparently run safeStorage encryption
@@ -73,6 +81,33 @@ interface StoreInstance {
   clear(): void
 }
 
+/**
+ * `project.<id>.settings` is one object to the renderer but two owners here:
+ * the shared part lives in the project row (it travels with git / export),
+ * the rest in this store (`lib/project-settings.ts`).
+ */
+function readSetting(store: StoreInstance, key: string): unknown {
+  const value = transformSecrets(store.get(key), 'decrypt')
+  const projectId = projectIdOfSettingsKey(key)
+  return projectId ? mergeProjectSettings(value, readSharedProjectSettings(projectId)) : value
+}
+
+function writeSetting(store: StoreInstance, key: string, value: unknown): void {
+  const projectId = projectIdOfSettingsKey(key)
+  if (!projectId) {
+    store.set(key, transformSecrets(value, 'encrypt'))
+    return
+  }
+  const { shared, local } = splitProjectSettings(value)
+  if (shared) writeSharedProjectSettings(projectId, shared)
+  store.set(key, transformSecrets(local, 'encrypt'))
+}
+
+/** Startup: move pre-`shared_settings` project settings into the DB once. */
+export async function migrateProjectSettings(): Promise<number> {
+  return migrateProjectSettingsToDb(await getStore())
+}
+
 let storeInstance: StoreInstance | null = null
 
 async function getStore(): Promise<StoreInstance> {
@@ -99,8 +134,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:get', async (_event, key: string) => {
     try {
       const store = await getStore()
-      const data = transformSecrets(store.get(key), 'decrypt')
-      return { success: true, data }
+      return { success: true, data: readSetting(store, key) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -109,7 +143,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:set', async (_event, key: string, value: unknown) => {
     try {
       const store = await getStore()
-      store.set(key, transformSecrets(value, 'encrypt'))
+      writeSetting(store, key, value)
       return { success: true, data: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -119,9 +153,7 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:setAll', async (_event, settings: Partial<AppSettings>) => {
     try {
       const store = await getStore()
-      for (const [key, value] of Object.entries(settings)) {
-        store.set(key, transformSecrets(value, 'encrypt'))
-      }
+      for (const [key, value] of Object.entries(settings)) writeSetting(store, key, value)
       return { success: true, data: transformSecrets(store.store, 'decrypt') }
     } catch (e) {
       return { success: false, error: (e as Error).message }
