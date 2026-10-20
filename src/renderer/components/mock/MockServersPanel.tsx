@@ -1,22 +1,17 @@
 /**
  * Sidebar panel that lists all mock servers in the active project: header +
- * search + one group per type — HTTP, MCP, SSE (issues #140, #221), in the
- * dialog's order — that share one row design. Every "+" (header, and the
+ * search + one group per type — HTTP, MCP, SSE, AI (issues #140, #221), in
+ * the dialog's order — that share one row design. Every "+" (header, and the
  * small one on each group) opens the same "New mock server" dialog, with the
  * group's type preselected.
- *
- * AI servers (a later phase) get a group only when one exists — e.g. made by
- * a teammate's newer build — so such a row is never invisible; it has no "+"
- * until the dialog offers the type.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
 import MockMcpServersSection from '../mock-mcp/MockMcpServersSection'
 import MockKindServersSection from './MockKindServersSection'
-import { serversOfKind } from './mock-kind-ui'
 import NewMockServerModal from './NewMockServerModal'
 import LeftPanelCollapseButton from '../layout/LeftPanelCollapseButton'
 import type { MockKind } from './new-mock-server'
@@ -25,8 +20,6 @@ export default function MockServersPanel() {
   const { t } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const loadServers = useMockStore((s) => s.loadServers)
-  const servers = useMockStore((s) => s.servers)
-  const hasAi = useMemo(() => serversOfKind(servers, 'ai').length > 0, [servers])
   const [query, setQuery] = useState('')
   // The kind preselected in the open "New mock server" dialog; null = closed.
   const [newKind, setNewKind] = useState<MockKind | null>(null)
@@ -80,7 +73,12 @@ export default function MockServersPanel() {
           onAdd={() => setNewKind('sse')}
           disabled={!activeProjectId}
         />
-        {hasAi && <MockKindServersSection kind="ai" query={query} />}
+        <MockKindServersSection
+          kind="ai"
+          query={query}
+          onAdd={() => setNewKind('ai')}
+          disabled={!activeProjectId}
+        />
       </div>
 
       {newKind && <NewMockServerModal initialKind={newKind} onClose={() => setNewKind(null)} />}

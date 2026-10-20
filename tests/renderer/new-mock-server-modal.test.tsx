@@ -106,7 +106,12 @@ describe('New mock server dialog', () => {
     const types = within(screen.getByRole('radiogroup', { name: 'Server type' }))
       .getAllByRole('radio')
       .map((b) => b.getAttribute('data-testid'))
-    expect(types).toEqual(['mock-new-type-http', 'mock-new-type-mcp', 'mock-new-type-sse'])
+    expect(types).toEqual([
+      'mock-new-type-http',
+      'mock-new-type-mcp',
+      'mock-new-type-sse',
+      'mock-new-type-ai',
+    ])
     fireEvent.click(screen.getByTestId('mock-new-type-sse'))
     expect(screen.getByTestId('mock-new-type-sse')).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByTestId('mock-new-type-hint')).toHaveTextContent('Server-Sent Events')
@@ -150,6 +155,70 @@ describe('New mock server dialog', () => {
     expect(useTabsStore.getState().tabs[0]).toMatchObject({
       protocol: 'mockServer',
       name: 'Ticker SSE',
+    })
+  })
+
+  it('AI is the fourth type: its hint, presets (Chat by default), names and port 3300', () => {
+    render(<NewMockServerModal initialKind="http" onClose={vi.fn()} />)
+    fireEvent.click(screen.getByTestId('mock-new-type-ai'))
+    expect(screen.getByTestId('mock-new-type-ai')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('mock-new-type-hint')).toHaveTextContent('OpenAI / Anthropic')
+    expect(presetIds()).toEqual([
+      'mock-new-preset-chat',
+      'mock-new-preset-anthropic',
+      'mock-new-preset-tools',
+      'mock-new-preset-errors',
+    ])
+    expect(screen.getByTestId('mock-new-preset-chat')).toHaveAttribute('aria-checked', 'true')
+    expect(nameValue()).toBe('Chat API')
+    expect(portValue()).toBe('3300')
+    const names: Record<string, string> = {
+      anthropic: 'Messages API',
+      tools: 'Tool-call API',
+      errors: 'Error API',
+    }
+    for (const [id, name] of Object.entries(names)) {
+      fireEvent.click(screen.getByTestId(`mock-new-preset-${id}`))
+      expect(nameValue()).toBe(name)
+    }
+  })
+
+  it('Create (AI · Chat) sends kind "ai", the llm reply with its settings and GET /v1/models', async () => {
+    const onClose = vi.fn()
+    render(<NewMockServerModal initialKind="ai" onClose={onClose} />)
+    fireEvent.click(screen.getByTestId('mock-new-create'))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(httpBridge.server.create).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'p-1', name: 'Chat API', port: 3300, kind: 'ai' }),
+    )
+    expect(vi.mocked(httpBridge.endpoint.create).mock.calls.map((c) => c[0])).toEqual([
+      expect.objectContaining({ method: 'POST', path: '/v1/chat/completions', pathMode: 'exact' }),
+      expect.objectContaining({ method: 'GET', path: '/v1/models', pathMode: 'exact' }),
+    ])
+    expect(httpBridge.response.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyType: 'llm',
+        body: 'Hello from the mock LLM. You said: {{lastUserMessage}}',
+        streamConfig: {
+          provider: 'openai',
+          chunking: 'word',
+          chunkIntervalMs: 30,
+          stopReason: 'stop',
+          toolCalls: [],
+          usage: 'auto',
+        },
+      }),
+    )
+    expect(httpBridge.response.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyType: 'json',
+        body: expect.stringContaining('"mock-model"'),
+      }),
+    )
+    expect(mcp.bridge.server.create).not.toHaveBeenCalled()
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      protocol: 'mockServer',
+      name: 'Chat API',
     })
   })
 
@@ -316,16 +385,26 @@ describe('Mocks panel — SSE and AI sections (issue #221)', () => {
     expect(screen.getByTestId('mock-new-type-sse')).toHaveAttribute('aria-checked', 'true')
   })
 
-  it('the AI section is hidden until an AI server exists, then lists it', async () => {
+  it('the AI section is always shown after SSE; empty state, its "+" opens the dialog on AI', async () => {
     render(<MockServersPanel />)
     await screen.findByTestId('mock-http-row-h1')
-    expect(screen.queryByTestId('mock-ai-section')).toBeNull()
-    cleanup()
+    const ai = screen.getByTestId('mock-ai-section')
+    expect(ai).toHaveTextContent('No AI mock servers yet')
+    expect(
+      screen.getByTestId('mock-sse-section').compareDocumentPosition(ai) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    fireEvent.click(screen.getByTestId('mock-group-add-ai'))
+    await screen.findByTestId('mock-new-dialog')
+    expect(screen.getByTestId('mock-new-type-ai')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('an AI server is listed in the AI section with the AI badge, not under HTTP', async () => {
     await setupWith([...HTTP_SERVERS, httpServer({ id: 'a1', name: 'Chat API', kind: 'ai' })])
     render(<MockServersPanel />)
     const row = await screen.findByTestId('mock-ai-row-a1')
     expect(within(row).getByText('AI')).toBeInTheDocument()
-    expect(screen.queryByTestId('mock-group-add-ai')).toBeNull()
+    expect(screen.getByTestId('mock-ai-section-title-count')).toHaveTextContent('1')
     expect(screen.queryByTestId('mock-http-row-a1')).toBeNull()
   })
 })

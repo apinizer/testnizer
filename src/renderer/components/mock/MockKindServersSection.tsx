@@ -53,7 +53,7 @@ export default function MockKindServersSection({
 }: {
   kind: MockServerKind
   query: string
-  /** Omitted → no "+" on the group (a kind the dialog does not offer yet). */
+  /** Omitted → no "+" on the group. */
   onAdd?: () => void
   disabled?: boolean
 }) {

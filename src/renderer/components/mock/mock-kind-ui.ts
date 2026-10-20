@@ -4,7 +4,8 @@
  *
  *  - body types offered in the response editor: `http` keeps today's list,
  *    `sse` adds the stream type and keeps JSON / text for side endpoints and
- *    error bodies, `ai` offers JSON until the `llm` type lands (Faz 2);
+ *    error bodies, `ai` offers the AI reply type (`llm`) and JSON for side
+ *    endpoints (`GET /v1/models`) and error bodies (429 / 500 / 401);
  *  - the HTTP-only endpoint tools (OpenAPI / Postman import, JWKS serve);
  *  - the badge text shared by the sidebar row and the editor header.
  */
@@ -14,7 +15,7 @@ import type { MockBodyType, MockServer } from '../../types'
 const BODY_TYPES: Record<MockServerKind, readonly MockBodyType[]> = {
   http: ['json', 'xml', 'text', 'html'],
   sse: ['sse', 'json', 'text'],
-  ai: ['json'],
+  ai: ['llm', 'json'],
 }
 
 /**

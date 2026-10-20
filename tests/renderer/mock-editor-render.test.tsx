@@ -10,6 +10,12 @@
  * not in the list), the HTTP-only import / JWKS buttons, the SSE "Open in SSE
  * tab" button, the Stream row (Resume off while looping) and stream-setting
  * errors that used to be swallowed by the store.
+ *
+ * AI (Faz 2b): badge AI, llm/json, the "Open in AI Chat tab" header button
+ * and its disabled reason, the SDK base URL line, the LLM row (tool calls
+ * JSON, translated rejections), "Add" on an AI server, the LLM cURL, and a
+ * body-type switch that writes the new type's fresh settings in the same
+ * update.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup, within, act } from '@testing-library/react'
@@ -36,6 +42,7 @@ import { useMockStore } from '../../src/renderer/stores/mock.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { setLocale } from '../../src/renderer/lib/i18n'
 import { translateStreamError } from '../../src/renderer/components/mock/mock-stream-errors'
+import { buildMockCurl } from '../../src/renderer/components/mock/mock-curl'
 import type { MockEndpoint, MockResponse, MockServer } from '../../src/renderer/types'
 
 const TICKER = 'id: {{stream.seq}}\nevent: tick\ndata: {"n": {{stream.seq}}}\n'
@@ -70,6 +77,25 @@ async function mount(
   if (data.endpoints?.length) await screen.findByTestId('mock-endpoint-path')
   if (data.responses?.length) await screen.findByTestId('mock-response-body-type')
 }
+
+const LLM_DEFAULTS = {
+  provider: 'openai',
+  chunking: 'word',
+  chunkIntervalMs: 30,
+  stopReason: 'stop',
+  toolCalls: [],
+  usage: 'auto',
+}
+const SSE_DEFAULTS = { intervalMs: 1000, heartbeatMs: 0, loop: false, onEnd: 'close', resume: true }
+const AI_SERVER = httpServer({ id: 'srv-1', kind: 'ai', port: 3300, name: 'Chat API' })
+const CHAT_EP = httpEndpoint({ serverId: 'srv-1', method: 'POST', path: '/v1/chat/completions' })
+const llm = (cfg: Record<string, unknown> = {}, over: Partial<MockResponse> = {}): MockResponse =>
+  httpResponse({
+    bodyType: 'llm',
+    body: 'Hello from the mock LLM. You said: {{lastUserMessage}}',
+    streamConfig: { ...LLM_DEFAULTS, ...cfg } as MockResponse['streamConfig'],
+    ...over,
+  })
 
 const options = (): string[] =>
   within(screen.getByTestId('mock-response-body-type'))
@@ -291,5 +317,272 @@ describe('MockServerEditor — per kind (issue #221)', () => {
       expect.objectContaining({ method: 'GET', path: '/new-endpoint' }),
     )
     expect(httpBridge.response.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('MockServerEditor — AI kind (issue #221, Faz 2b)', () => {
+  it('AI: badge AI, llm/json, import + JWKS hidden, Start & open in AI Chat tab, SDK base URL', async () => {
+    await mount(AI_SERVER, { endpoints: [CHAT_EP], responses: [llm()] })
+    expect(screen.getByTestId('mock-kind-badge')).toHaveTextContent('AI')
+    expect(options()).toEqual(['llm', 'json'])
+    expect(screen.queryByTestId('mock-import-openapi')).toBeNull()
+    expect(screen.queryByTestId('mock-jwks-serve')).toBeNull()
+    const open = screen.getByTestId('mock-open-in-ai-chat')
+    expect(open).toHaveTextContent('Start & open in AI Chat tab')
+    expect(open).not.toBeDisabled()
+    expect(screen.queryByTestId('mock-open-in-sse')).toBeNull()
+    // No per-endpoint AI Chat (or SSE) button — the header one is enough.
+    expect(screen.queryByTestId('mock-endpoint-open-in-sse')).toBeNull()
+    expect(screen.getByTestId('mock-sdk-base-url')).toHaveTextContent('http://127.0.0.1:3300/v1')
+    expect(screen.getByTestId('mock-sdk-base-url-copy')).toBeInTheDocument()
+    expect(screen.getByTestId('mock-base-url')).toHaveTextContent('http://127.0.0.1:3300')
+  })
+
+  it('an HTTP / SSE server has no SDK base URL line', async () => {
+    await mount(httpServer({ id: 'srv-1', kind: 'sse' }))
+    expect(screen.queryByTestId('mock-sdk-base-url')).toBeNull()
+  })
+
+  it('AI without a chat endpoint (Anthropic only): the header button is disabled and says why', async () => {
+    await mount(AI_SERVER, {
+      endpoints: [httpEndpoint({ serverId: 'srv-1', method: 'POST', path: '/v1/messages' })],
+    })
+    const open = screen.getByTestId('mock-open-in-ai-chat')
+    expect(open).toBeDisabled()
+    expect(open.getAttribute('title')).toBe('Add POST /v1/chat/completions first')
+    expect(screen.getByTestId('mock-endpoint-path')).toHaveValue('/v1/messages')
+  })
+
+  it('AI with no endpoint: the empty list says what Add creates', async () => {
+    await mount(AI_SERVER)
+    expect(screen.getByText(/No chat endpoints yet/)).toBeInTheDocument()
+  })
+
+  it('LLM row: the stored settings, and every change writes the whole normalized config', async () => {
+    await mount(AI_SERVER, { endpoints: [CHAT_EP], responses: [llm({ chunkIntervalMs: 50 })] })
+    expect(screen.getByTestId('mock-llm-provider')).toHaveValue('openai')
+    expect(screen.getByTestId('mock-llm-chunking')).toHaveValue('word')
+    expect(screen.getByTestId('mock-llm-interval')).toHaveValue(50)
+    expect(screen.getByTestId('mock-llm-stop-reason')).toHaveValue('stop')
+    expect(screen.getByTestId('mock-llm-usage')).toHaveValue('auto')
+    expect(screen.queryByTestId('mock-llm-usage-in')).toBeNull()
+    expect(screen.getByTestId('mock-llm-hint')).toHaveTextContent('time to first token')
+    expect(screen.getByTestId('mock-llm-hint')).toHaveTextContent('{{lastToolResult}}')
+    expect(screen.queryByTestId('mock-llm-anthropic-hint')).toBeNull()
+
+    fireEvent.change(screen.getByTestId('mock-llm-provider'), { target: { value: 'anthropic' } })
+    await waitFor(() =>
+      expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+        streamConfig: { ...LLM_DEFAULTS, chunkIntervalMs: 50, provider: 'anthropic' },
+      }),
+    )
+    expect(await screen.findByTestId('mock-llm-anthropic-hint')).toHaveTextContent(
+      'saved Anthropic key',
+    )
+
+    fireEvent.change(screen.getByTestId('mock-llm-usage'), { target: { value: 'custom' } })
+    await waitFor(() =>
+      expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+        streamConfig: expect.objectContaining({ usage: { inputTokens: 0, outputTokens: 0 } }),
+      }),
+    )
+    expect(await screen.findByTestId('mock-llm-usage-in')).toHaveValue(0)
+    expect(screen.getByTestId('mock-llm-usage-out')).toHaveValue(0)
+  })
+
+  it('tool calls: invalid JSON shows a red line and is not saved; a valid list is saved', async () => {
+    await mount(AI_SERVER, { endpoints: [CHAT_EP], responses: [llm()] })
+    const box = screen.getByTestId('mock-llm-tool-calls')
+    expect(box).toHaveValue('')
+    fireEvent.change(box, { target: { value: '[{"name": "echo",' } })
+    fireEvent.blur(box)
+    const err = await screen.findByTestId('mock-llm-tool-calls-error')
+    expect(err).toHaveAttribute('role', 'alert')
+    expect(httpBridge.response.update).not.toHaveBeenCalled()
+
+    fireEvent.change(box, { target: { value: '{"name": "echo"}' } })
+    fireEvent.blur(box)
+    await waitFor(() =>
+      expect(screen.getByTestId('mock-llm-tool-calls-error')).toHaveTextContent('JSON list'),
+    )
+    expect(httpBridge.response.update).not.toHaveBeenCalled()
+
+    fireEvent.change(box, {
+      target: { value: '[{"name": "echo", "arguments": {"text": "hi"}}]' },
+    })
+    fireEvent.blur(box)
+    await waitFor(() =>
+      expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+        streamConfig: {
+          ...LLM_DEFAULTS,
+          // The engine always stops with tool_calls when there are calls — stored so.
+          stopReason: 'tool_calls',
+          toolCalls: [{ name: 'echo', arguments: { text: 'hi' } }],
+        },
+      }),
+    )
+    expect(screen.queryByTestId('mock-llm-tool-calls-error')).toBeNull()
+    // …and the Stop reason select says so, disabled with the reason.
+    await waitFor(() => expect(screen.getByTestId('mock-llm-stop-reason')).toBeDisabled())
+    expect(screen.getByTestId('mock-llm-stop-reason')).toHaveValue('tool_calls')
+    expect(screen.getByTestId('mock-llm-stop-reason-reason')).toHaveTextContent('Tool calls')
+
+    // Clearing the list goes back to a text reply that stops normally.
+    fireEvent.change(screen.getByTestId('mock-llm-tool-calls'), { target: { value: '' } })
+    fireEvent.blur(screen.getByTestId('mock-llm-tool-calls'))
+    await waitFor(() =>
+      expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+        streamConfig: LLM_DEFAULTS,
+      }),
+    )
+  })
+
+  it('a rejected LLM setting is shown (translated), not swallowed', async () => {
+    await mount(AI_SERVER, {
+      endpoints: [CHAT_EP],
+      responses: [llm()],
+      failResponseUpdate: 'Stop reason "tool_calls" needs at least one tool call',
+    })
+    fireEvent.change(screen.getByTestId('mock-llm-stop-reason'), {
+      target: { value: 'tool_calls' },
+    })
+    const alert = await screen.findByTestId('mock-llm-error')
+    expect(alert).toHaveAttribute('role', 'alert')
+    expect(alert).toHaveTextContent('Stop reason "Tool calls" needs at least one tool call')
+  })
+
+  it('engine LLM-setting errors map to both locales (anchored: no prefix mix-up)', () => {
+    expect(translateStreamError('Tool call 2: arguments must be a JSON object')).toBe(
+      'Tool call 2: arguments must be a JSON object',
+    )
+    setLocale('tr')
+    expect(translateStreamError('Unknown LLM setting: ttftMs')).toBe('Bilinmeyen LLM ayarı: ttftMs')
+    expect(translateStreamError('Tool call 2: arguments must be a JSON object')).toBe(
+      'Araç çağrısı 2: argümanlar bir JSON nesnesi olmalı',
+    )
+    expect(translateStreamError('Tool call 2: arguments must be a JSON object or JSON text')).toBe(
+      'Araç çağrısı 2: argümanlar bir JSON nesnesi ya da JSON metni olmalı',
+    )
+    expect(
+      translateStreamError(
+        'Chunk interval must be a whole number of milliseconds between 0 and 10000',
+      ),
+    ).toBe('Parça aralığı 0 ile 10000 arasında tam sayı (ms) olmalı')
+    expect(translateStreamError('Stop reason "tool_calls" needs at least one tool call')).toBe(
+      'Durma nedeni "Araç çağrıları" en az bir araç çağrısı ister',
+    )
+  })
+
+  it('body-type switch writes the new type’s fresh settings in the same update (AI: json → llm → json)', async () => {
+    await mount(AI_SERVER, {
+      endpoints: [CHAT_EP],
+      responses: [httpResponse({ bodyType: 'json', streamConfig: null })],
+    })
+    const select = screen.getByTestId('mock-response-body-type')
+    fireEvent.change(select, { target: { value: 'llm' } })
+    await waitFor(() => expect(httpBridge.response.update).toHaveBeenCalledTimes(1))
+    expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+      bodyType: 'llm',
+      streamConfig: LLM_DEFAULTS,
+    })
+    await screen.findByTestId('mock-llm-options')
+
+    fireEvent.change(select, { target: { value: 'json' } })
+    await waitFor(() => expect(httpBridge.response.update).toHaveBeenCalledTimes(2))
+    expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+      bodyType: 'json',
+      streamConfig: null,
+    })
+    await waitFor(() => expect(screen.queryByTestId('mock-llm-options')).toBeNull())
+  })
+
+  it('body-type switch on an SSE server: an LLM leftover is replaced by fresh stream settings', async () => {
+    await mount(httpServer({ id: 'srv-1', kind: 'sse' }), {
+      endpoints: [httpEndpoint({ serverId: 'srv-1' })],
+      // A response another build left as llm, with llm settings in the column.
+      responses: [llm()],
+    })
+    const select = screen.getByTestId('mock-response-body-type')
+    fireEvent.change(select, { target: { value: 'sse' } })
+    await waitFor(() => expect(httpBridge.response.update).toHaveBeenCalledTimes(1))
+    expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+      bodyType: 'sse',
+      streamConfig: SSE_DEFAULTS,
+    })
+    await screen.findByTestId('mock-sse-options')
+    fireEvent.change(select, { target: { value: 'text' } })
+    await waitFor(() => expect(httpBridge.response.update).toHaveBeenCalledTimes(2))
+    expect(httpBridge.response.update).toHaveBeenLastCalledWith('r-1', {
+      bodyType: 'text',
+      streamConfig: null,
+    })
+  })
+
+  it('AI "Add": POST /v1/chat/completions (llm openai), then /v1/messages (anthropic), then /new-endpoint', async () => {
+    await mount(AI_SERVER)
+    const add = async (): Promise<void> => {
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('mock-add-endpoint'))
+      })
+    }
+    await add()
+    await waitFor(() => expect(httpBridge.response.create).toHaveBeenCalledTimes(1))
+    expect(httpBridge.endpoint.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ method: 'POST', path: '/v1/chat/completions', pathMode: 'exact' }),
+    )
+    expect(httpBridge.response.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        bodyType: 'llm',
+        body: 'Hello from the mock LLM. You said: {{lastUserMessage}}',
+        streamConfig: LLM_DEFAULTS,
+      }),
+    )
+    await add()
+    await waitFor(() => expect(httpBridge.response.create).toHaveBeenCalledTimes(2))
+    expect(httpBridge.endpoint.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ method: 'POST', path: '/v1/messages' }),
+    )
+    expect(httpBridge.response.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        bodyType: 'llm',
+        streamConfig: { ...LLM_DEFAULTS, provider: 'anthropic' },
+      }),
+    )
+    await add()
+    await waitFor(() => expect(httpBridge.endpoint.create).toHaveBeenCalledTimes(3))
+    expect(httpBridge.endpoint.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ method: 'POST', path: '/new-endpoint' }),
+    )
+    // The plain fallback gets no canned reply.
+    expect(httpBridge.response.create).toHaveBeenCalledTimes(2)
+  })
+
+  it('LLM cURL: the copy button puts an OpenAI streaming chat request on the clipboard', async () => {
+    const writeText = vi.fn(async () => undefined)
+    Object.assign(navigator, { clipboard: { writeText } })
+    await mount(AI_SERVER, { endpoints: [CHAT_EP], responses: [llm()] })
+    fireEvent.click(screen.getByTestId('mock-copy-curl'))
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    expect(writeText.mock.calls[0][0]).toBe(
+      "curl -N 'http://127.0.0.1:3300/v1/chat/completions' \\\n" +
+        "  -H 'content-type: application/json' \\\n" +
+        `  -d '{"model":"mock-model","stream":true,"messages":[{"role":"user","content":"Hello"}]}'`,
+    )
+  })
+
+  it('LLM cURL (Anthropic) adds anthropic-version and max_tokens; non-LLM keeps the old cURL', () => {
+    const server = httpServer({ port: 3300 })
+    const ep = httpEndpoint({ method: 'POST', path: '/v1/messages' })
+    expect(buildMockCurl(server, ep, 'anthropic')).toBe(
+      "curl -N 'http://127.0.0.1:3300/v1/messages' \\\n" +
+        "  -H 'content-type: application/json' \\\n" +
+        "  -H 'anthropic-version: 2023-06-01' \\\n" +
+        `  -d '{"model":"mock-model","stream":true,"max_tokens":256,"messages":[{"role":"user","content":"Hello"}]}'`,
+    )
+    expect(buildMockCurl(server, ep, null)).toBe(
+      "curl -X POST 'http://127.0.0.1:3300/v1/messages' \\\n" +
+        "  -H 'Content-Type: application/json' \\\n" +
+        "  -d '{}'",
+    )
   })
 })

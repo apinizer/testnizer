@@ -15,6 +15,7 @@ import { ExternalLink } from 'lucide-react'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
 import type { MockEndpoint, MockServer } from '../../types'
+import { useStartThenOpen } from './use-start-then-open'
 import { GhostButton } from '../mock-mcp/ui'
 import type { SseHttpMethod } from '../../stores/sse.store'
 import {
@@ -26,24 +27,21 @@ import {
 
 const EMPTY_ENDPOINTS: readonly MockEndpoint[] = []
 
-/**
- * The one start-then-open path both buttons use: stopped → start first and
- * open only on success (a start error is a toast, no tab); running → open.
- */
+/** The SSE buttons' open action, on top of `useStartThenOpen`. */
 function useOpenInSse(server: MockServer, status: string) {
-  const { t } = useTranslation()
-  const startServer = useMockStore((s) => s.startServer)
-  const running = status === 'running'
+  const { label, starting, gate } = useStartThenOpen(server, status, {
+    open: 'mock.openInSse',
+    startAndOpen: 'mock.startAndOpenInSse',
+  })
   return {
-    label: running ? t('mock.openInSse') : t('mock.startAndOpenInSse'),
-    starting: status === 'starting',
+    label,
+    starting,
     open: (path: string, method: SseHttpMethod): void => {
       void startAndOpenMockInSseTab({
         name: server.name,
         url: mockEndpointUrl(server, path),
         method,
-        running,
-        start: () => startServer(server.id),
+        ...gate,
       })
     },
   }

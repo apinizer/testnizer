@@ -3316,6 +3316,77 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.sseHintMethod': 'The SSE tab sends GET, POST, PUT, PATCH or DELETE requests.',
     'mock.noStreams':
       'No streams yet — Add creates GET /events with a ticker body. Or paste a captured stream into the body.',
+    // ── Mock servers: AI type (issue #221, Faz 2b) ──
+    'mockNew.typeAiHint':
+      'An OpenAI / Anthropic-compatible chat API that streams canned replies — no tokens, no network. Point an SDK at it or open it in the AI Chat tab.',
+    'mockAi.preset.chat': 'OpenAI-compatible chat',
+    'mockAi.preset.chatHint':
+      'POST /v1/chat/completions + GET /v1/models: streams a text reply word by word; stream: false answers with JSON',
+    'mockAi.preset.anthropic': 'Anthropic messages',
+    'mockAi.preset.anthropicHint':
+      'POST /v1/messages: the message_start … message_stop event stream; no x-api-key needed',
+    'mockAi.preset.tools': 'Tool call round-trip',
+    'mockAi.preset.toolsHint':
+      'POST /v1/chat/completions: the first turn calls the echo tool, the turn that carries the tool result gets the final answer — pair with Mock MCP "Echo"',
+    'mockAi.preset.errors': 'Errors',
+    'mockAi.preset.errorsHint':
+      'POST /v1/chat/completions: model error-429 → 429 + retry-after, error-500 → 500, error-401 → 401; any other model → a normal reply',
+    'mock.openInAiChat': 'Open in AI Chat tab',
+    'mock.startAndOpenInAiChat': 'Start & open in AI Chat tab',
+    'mock.noChatEndpoint': 'Add POST /v1/chat/completions first',
+    'mock.noChatEndpoints': 'No chat endpoints yet — Add creates POST /v1/chat/completions.',
+    'mock.sdkBaseUrl': 'SDK base URL',
+    'mock.anthropicKeyHint':
+      'Testing /v1/messages from the AI Chat tab sends your saved Anthropic key to this mock — fine for localhost; never type a mock token into the Anthropic provider (it replaces your real key).',
+    'mockLlm.title': 'LLM',
+    'mockLlm.provider': 'Provider',
+    'mockLlm.providerOpenai': 'OpenAI-compatible',
+    'mockLlm.providerAnthropic': 'Anthropic',
+    'mockLlm.chunking': 'Chunking',
+    'mockLlm.chunkWord': 'Word',
+    'mockLlm.chunkChar': 'Character',
+    'mockLlm.chunkSentence': 'Sentence',
+    'mockLlm.chunkInterval': 'Chunk interval (ms)',
+    'mockLlm.stopReason': 'Stop reason',
+    'mockLlm.stopStop': 'Stop',
+    'mockLlm.stopLength': 'Length limit',
+    'mockLlm.stopToolCalls': 'Tool calls',
+    'mockLlm.stopReasonToolCalls':
+      'A reply with tool calls always stops with "Tool calls"; clear the tool calls to pick another reason.',
+    'mockLlm.usage': 'Usage',
+    'mockLlm.usageAuto': 'Auto (≈ 4 characters per token)',
+    'mockLlm.usageCustom': 'Custom',
+    'mockLlm.usageIn': 'In',
+    'mockLlm.usageOut': 'Out',
+    'mockLlm.toolCalls': 'Tool calls (JSON list, optional)',
+    'mockLlm.toolCallsHint':
+      'Each item: {"name": …, "arguments": {…}} and an optional "id". String values are templates. Leave empty for a text reply.',
+    'mockLlm.toolCallsBadJson': 'Not valid JSON',
+    'mockLlm.toolCallsNotList': 'Tool calls must be a JSON list ([…])',
+    'mockLlm.bodyHint':
+      'The body is the assistant reply text. Delay (ms) is the time to first token; the request’s stream flag picks a stream or one JSON reply. Templates: {{lastUserMessage}}, {{lastToolResult}}, {{model}}. Auto usage counts about 4 characters per token. A 4xx / 5xx json response is sent as it is.',
+    'mockLlm.err.object': 'LLM settings must be an object',
+    'mockLlm.err.unknown': 'Unknown LLM setting: {name}',
+    'mockLlm.err.provider': 'Provider must be OpenAI-compatible or Anthropic',
+    'mockLlm.err.chunking': 'Chunking must be Word, Character or Sentence',
+    'mockLlm.err.interval':
+      'Chunk interval must be a whole number of milliseconds between 0 and {max}',
+    'mockLlm.err.stopReason': 'Stop reason must be Stop, Length limit or Tool calls',
+    'mockLlm.err.toolCallsList': 'Tool calls must be a JSON list',
+    'mockLlm.err.toolCallsMax': 'At most {max} tool calls per reply',
+    'mockLlm.err.toolCallObject': 'Tool call {n} must be an object with a name and arguments',
+    'mockLlm.err.toolCallField': 'Tool call {n}: unknown field {name}',
+    'mockLlm.err.toolCallName': 'Tool call {n} needs a name',
+    'mockLlm.err.toolCallId':
+      'Tool call {n}: the id must be non-empty text (or left out to generate one)',
+    'mockLlm.err.argsType': 'Tool call {n}: arguments must be a JSON object or JSON text',
+    'mockLlm.err.argsLength': 'Tool call {n}: arguments are longer than {max} characters',
+    'mockLlm.err.argsJson': 'Tool call {n}: arguments are not valid JSON',
+    'mockLlm.err.argsObject': 'Tool call {n}: arguments must be a JSON object',
+    'mockLlm.err.toolCallsNeeded': 'Stop reason "Tool calls" needs at least one tool call',
+    'mockLlm.err.usage': 'Usage must be Auto or Custom with input and output token counts',
+    'mockLlm.err.usageField': 'Unknown usage field: {name}',
+    'mockLlm.err.usageCount': 'Usage {name} must be a whole number between 0 and {max}',
     // ── MCP 2026-07-28 (issue #152) ──
     'mcp.protocol.label': 'Protocol',
     'mcp.protocol.hint':
@@ -6734,6 +6805,77 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.sseHintMethod': 'SSE sekmesi GET, POST, PUT, PATCH ya da DELETE istekleri gönderir.',
     'mock.noStreams':
       'Henüz akış yok — Ekle, sayaç gövdeli bir GET /events oluşturur. Ya da yakalanmış bir akışı gövdeye yapıştırın.',
+    // ── Mock sunucular: AI türü (issue #221, Faz 2b) ──
+    'mockNew.typeAiHint':
+      'Hazır yanıtları akış olarak gönderen OpenAI / Anthropic uyumlu bir sohbet API’si — belirteç yok, ağ yok. Bir SDK’yı ona yöneltin ya da AI Chat sekmesinde açın.',
+    'mockAi.preset.chat': 'OpenAI uyumlu sohbet',
+    'mockAi.preset.chatHint':
+      'POST /v1/chat/completions + GET /v1/models: metin yanıtını kelime kelime akış olarak gönderir; stream: false ise JSON ile yanıt verir',
+    'mockAi.preset.anthropic': 'Anthropic mesajları',
+    'mockAi.preset.anthropicHint':
+      'POST /v1/messages: message_start … message_stop olay akışı; x-api-key gerekmez',
+    'mockAi.preset.tools': 'Araç çağrısı gidiş-dönüş',
+    'mockAi.preset.toolsHint':
+      'POST /v1/chat/completions: ilk tur echo aracını çağırır, araç sonucunu taşıyan tur son yanıtı alır — Mock MCP "Echo" ile birlikte kullanın',
+    'mockAi.preset.errors': 'Hatalar',
+    'mockAi.preset.errorsHint':
+      'POST /v1/chat/completions: error-429 modeli → 429 + retry-after, error-500 → 500, error-401 → 401; diğer her model → normal yanıt',
+    'mock.openInAiChat': 'AI Chat sekmesinde aç',
+    'mock.startAndOpenInAiChat': 'Başlat ve AI Chat sekmesinde aç',
+    'mock.noChatEndpoint': 'Önce POST /v1/chat/completions ekleyin',
+    'mock.noChatEndpoints':
+      'Henüz sohbet uç noktası yok — Ekle, POST /v1/chat/completions oluşturur.',
+    'mock.sdkBaseUrl': 'SDK temel URL’si',
+    'mock.anthropicKeyHint':
+      '/v1/messages’ı AI Chat sekmesinden denemek kayıtlı Anthropic anahtarınızı bu mock’a gönderir — localhost için sorun değil; Anthropic sağlayıcısına asla bir mock belirteci yazmayın (gerçek anahtarınızın yerine geçer).',
+    'mockLlm.title': 'LLM',
+    'mockLlm.provider': 'Sağlayıcı',
+    'mockLlm.providerOpenai': 'OpenAI uyumlu',
+    'mockLlm.providerAnthropic': 'Anthropic',
+    'mockLlm.chunking': 'Parçalama',
+    'mockLlm.chunkWord': 'Kelime',
+    'mockLlm.chunkChar': 'Karakter',
+    'mockLlm.chunkSentence': 'Cümle',
+    'mockLlm.chunkInterval': 'Parça aralığı (ms)',
+    'mockLlm.stopReason': 'Durma nedeni',
+    'mockLlm.stopStop': 'Durdu',
+    'mockLlm.stopLength': 'Uzunluk sınırı',
+    'mockLlm.stopToolCalls': 'Araç çağrıları',
+    'mockLlm.stopReasonToolCalls':
+      'Araç çağrısı olan bir yanıt her zaman "Araç çağrıları" ile durur; başka bir neden seçmek için araç çağrılarını temizleyin.',
+    'mockLlm.usage': 'Kullanım',
+    'mockLlm.usageAuto': 'Otomatik (belirteç başına ≈ 4 karakter)',
+    'mockLlm.usageCustom': 'Özel',
+    'mockLlm.usageIn': 'Giriş',
+    'mockLlm.usageOut': 'Çıkış',
+    'mockLlm.toolCalls': 'Araç çağrıları (JSON listesi, isteğe bağlı)',
+    'mockLlm.toolCallsHint':
+      'Her öğe: {"name": …, "arguments": {…}} ve isteğe bağlı bir "id". Metin değerleri şablondur. Metin yanıtı için boş bırakın.',
+    'mockLlm.toolCallsBadJson': 'Geçerli JSON değil',
+    'mockLlm.toolCallsNotList': 'Araç çağrıları bir JSON listesi ([…]) olmalı',
+    'mockLlm.bodyHint':
+      'Gövde, asistanın yanıt metnidir. Gecikme (ms) ilk belirtece kadar geçen süredir; akış mı tek JSON yanıtı mı olacağını isteğin stream bayrağı belirler. Şablonlar: {{lastUserMessage}}, {{lastToolResult}}, {{model}}. Otomatik kullanım belirteç başına yaklaşık 4 karakter sayar. 4xx / 5xx bir json yanıtı olduğu gibi gönderilir.',
+    'mockLlm.err.object': 'LLM ayarları bir nesne olmalı',
+    'mockLlm.err.unknown': 'Bilinmeyen LLM ayarı: {name}',
+    'mockLlm.err.provider': 'Sağlayıcı OpenAI uyumlu ya da Anthropic olmalı',
+    'mockLlm.err.chunking': 'Parçalama Kelime, Karakter ya da Cümle olmalı',
+    'mockLlm.err.interval': 'Parça aralığı 0 ile {max} arasında tam sayı (ms) olmalı',
+    'mockLlm.err.stopReason': 'Durma nedeni Durdu, Uzunluk sınırı ya da Araç çağrıları olmalı',
+    'mockLlm.err.toolCallsList': 'Araç çağrıları bir JSON listesi olmalı',
+    'mockLlm.err.toolCallsMax': 'Yanıt başına en fazla {max} araç çağrısı',
+    'mockLlm.err.toolCallObject': 'Araç çağrısı {n} adı ve argümanları olan bir nesne olmalı',
+    'mockLlm.err.toolCallField': 'Araç çağrısı {n}: bilinmeyen alan {name}',
+    'mockLlm.err.toolCallName': 'Araç çağrısı {n} bir ad ister',
+    'mockLlm.err.toolCallId':
+      'Araç çağrısı {n}: id boş olmayan bir metin olmalı (ya da üretilmesi için hiç yazılmamalı)',
+    'mockLlm.err.argsType': 'Araç çağrısı {n}: argümanlar bir JSON nesnesi ya da JSON metni olmalı',
+    'mockLlm.err.argsLength': 'Araç çağrısı {n}: argümanlar {max} karakterden uzun',
+    'mockLlm.err.argsJson': 'Araç çağrısı {n}: argümanlar geçerli JSON değil',
+    'mockLlm.err.argsObject': 'Araç çağrısı {n}: argümanlar bir JSON nesnesi olmalı',
+    'mockLlm.err.toolCallsNeeded': 'Durma nedeni "Araç çağrıları" en az bir araç çağrısı ister',
+    'mockLlm.err.usage': 'Kullanım Otomatik ya da giriş ve çıkış belirteç sayılı Özel olmalı',
+    'mockLlm.err.usageField': 'Bilinmeyen kullanım alanı: {name}',
+    'mockLlm.err.usageCount': 'Kullanım {name} 0 ile {max} arasında tam sayı olmalı',
     // ── MCP 2026-07-28 (issue #152) ──
     'mcp.protocol.label': 'Protokol',
     'mcp.protocol.hint':

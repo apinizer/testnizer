@@ -2,12 +2,11 @@
  * Logic behind the "New mock server" dialog (issues #140, #221): the type
  * list, the preset catalog of every type, the name / port suggestions and
  * the create action. One flow for every type — only the factory at the end
- * differs: MCP has its own store; HTTP and SSE share the HTTP mock table and
- * `createFromHttpPreset` (the preset carries the server kind).
+ * differs: MCP has its own store; HTTP, SSE and AI share the HTTP mock table
+ * and `createFromHttpPreset` (the preset carries the server kind).
  *
- * Adding a type (AI, Faz 2) = one entry in `MOCK_DIALOG_KINDS` plus one in
- * each `Record<MockKind, …>` below — TypeScript flags every one that is
- * missing.
+ * Adding a type = one entry in `MOCK_DIALOG_KINDS` plus one in each
+ * `Record<MockKind, …>` below — TypeScript flags every one that is missing.
  */
 import { useMockStore } from '../../stores/mock.store'
 import { useMockMcpStore } from '../../stores/mock-mcp.store'
@@ -39,6 +38,15 @@ import {
   type MockSsePresetId,
 } from './mock-sse-presets'
 import {
+  buildAiPreset,
+  MOCK_AI_PRESET_HINT_KEYS,
+  MOCK_AI_PRESET_IDS,
+  MOCK_AI_PRESET_LABEL_KEYS,
+  MOCK_AI_PRESET_NAMES,
+  type MockAiPresetId,
+} from './mock-ai-presets'
+import {
+  AI_MOCK_PORT_START,
   HTTP_MOCK_PORT_START,
   MCP_MOCK_PORT_START,
   SSE_MOCK_PORT_START,
@@ -47,18 +55,24 @@ import {
 import { openMockServerTab } from './mock-http-tabs'
 
 /** A type offered by the dialog. */
-export type MockKind = 'http' | 'mcp' | 'sse'
+export type MockKind = 'http' | 'mcp' | 'sse' | 'ai'
 
 /** The dialog's type switch, in order (the Mocks sidebar uses the same order). */
-export const MOCK_DIALOG_KINDS: readonly MockKind[] = ['http', 'mcp', 'sse']
+export const MOCK_DIALOG_KINDS: readonly MockKind[] = ['http', 'mcp', 'sse', 'ai']
 
-export const MOCK_KIND_LABEL: Record<MockKind, string> = { http: 'HTTP', mcp: 'MCP', sse: 'SSE' }
+export const MOCK_KIND_LABEL: Record<MockKind, string> = {
+  http: 'HTTP',
+  mcp: 'MCP',
+  sse: 'SSE',
+  ai: 'AI',
+}
 
 /** i18n key of the one-line hint under the type switch — literal for the key-coverage test. */
 export const MOCK_KIND_HINT_KEYS: Record<MockKind, string> = {
   http: 'mockNew.typeHttpHint',
   mcp: 'mockNew.typeMcpHint',
   sse: 'mockNew.typeSseHint',
+  ai: 'mockNew.typeAiHint',
 }
 
 export interface MockPresetOption {
@@ -72,6 +86,7 @@ export const DEFAULT_PRESET: Record<MockKind, string> = {
   http: 'blank',
   mcp: 'echo',
   sse: 'ticker',
+  ai: 'chat',
 }
 
 function optionsOf<Id extends string>(
@@ -107,12 +122,19 @@ const OPTIONS: Record<MockKind, MockPresetOption[]> = {
     MOCK_SSE_PRESET_HINT_KEYS,
     MOCK_SSE_PRESET_NAMES,
   ),
+  ai: optionsOf(
+    MOCK_AI_PRESET_IDS,
+    MOCK_AI_PRESET_LABEL_KEYS,
+    MOCK_AI_PRESET_HINT_KEYS,
+    MOCK_AI_PRESET_NAMES,
+  ),
 }
 
 const PORT_START: Record<MockKind, number> = {
   http: HTTP_MOCK_PORT_START,
   mcp: MCP_MOCK_PORT_START,
   sse: SSE_MOCK_PORT_START,
+  ai: AI_MOCK_PORT_START,
 }
 
 export function presetOptions(kind: MockKind): MockPresetOption[] {
@@ -124,7 +146,7 @@ export function presetOption(kind: MockKind, presetId: string): MockPresetOption
   return list.find((o) => o.id === presetId) ?? list[0]
 }
 
-/** HTTP suggestions start at 3001, MCP at 3100, SSE at 3200; all skip every mock port in the project. */
+/** HTTP suggestions start at 3001, MCP at 3100, SSE at 3200, AI at 3300; all skip every mock port in the project. */
 export function suggestMockPort(kind: MockKind, takenPorts: Iterable<number>): number {
   return suggestPort(takenPorts, PORT_START[kind])
 }
@@ -140,9 +162,9 @@ export interface CreateMockInput {
 /** Presets of the types that live in the HTTP mock table. */
 function tablePreset(kind: Exclude<MockKind, 'mcp'>, presetId: string): HttpPreset {
   const id = presetOption(kind, presetId).id
-  return kind === 'sse'
-    ? buildSsePreset(id as MockSsePresetId)
-    : buildHttpPreset(id as MockHttpPresetId)
+  if (kind === 'sse') return buildSsePreset(id as MockSsePresetId)
+  if (kind === 'ai') return buildAiPreset(id as MockAiPresetId)
+  return buildHttpPreset(id as MockHttpPresetId)
 }
 
 /**

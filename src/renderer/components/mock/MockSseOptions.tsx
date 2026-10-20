@@ -4,7 +4,8 @@
  *  - `MockSseOptions` — the "Stream" row shown while the body type is `sse`:
  *    interval, heartbeat, loop, when finished, resume. Same anatomy as the
  *    editor's "Delay (ms) / Enabled" row (label + number box, checkbox
- *    label, plain select). Every change writes the whole normalized config
+ *    label, plain select) — the field parts are shared with the AI "LLM" row
+ *    (`MockOptionFields.tsx`). Every change writes the whole normalized config
  *    (a stored value may be partial or carry keys from another build — those
  *    the main process would reject); a rejected value is shown, translated,
  *    in a `role="alert"` line like the condition editor's error.
@@ -23,10 +24,18 @@ import {
 } from '../../../shared/mock-stream'
 import { splitSseBlocks } from '../../../shared/mock-sse-blocks'
 import { translateStreamError } from './mock-stream-errors'
+import {
+  OptionError,
+  OptionNumber,
+  OptionReason,
+  OptionRowTitle,
+  OptionSelect,
+} from './MockOptionFields'
 
-// Copied from the response editor's Delay row / selects (MockServerEditor.tsx) — one look.
-const NUMBER_STYLE = { width: 70, background: 'var(--white)', borderColor: 'var(--border)' }
-const SELECT_STYLE = { background: 'var(--white)', borderColor: 'var(--border)' }
+const ON_END: readonly (readonly [MockSseEndBehaviour, string])[] = [
+  ['close', 'mockSse.onEndClose'],
+  ['keep-open', 'mockSse.onEndKeepOpen'],
+]
 
 export default function MockSseOptions({ response }: { response: MockResponse }) {
   const { t } = useTranslation()
@@ -62,33 +71,18 @@ export default function MockSseOptions({ response }: { response: MockResponse })
 
   return (
     <div className="mb-2" data-testid="mock-sse-options">
-      <label
-        className="mb-1 block text-[11px] uppercase tracking-wide"
-        style={{ color: 'var(--muted)' }}
-      >
-        {t('mockSse.stream')}
-      </label>
+      <OptionRowTitle>{t('mockSse.stream')}</OptionRowTitle>
       <div className="flex flex-wrap items-center gap-3 text-xs">
-        <label style={{ color: 'var(--muted)' }}>
-          {t('mockSse.interval')}:
-          <input
-            type="number"
-            data-testid="mock-stream-interval"
-            {...intervalDraft.inputProps}
-            className="ml-1 rounded border px-2 py-1"
-            style={NUMBER_STYLE}
-          />
-        </label>
-        <label style={{ color: 'var(--muted)' }}>
-          {t('mockSse.heartbeat')}:
-          <input
-            type="number"
-            data-testid="mock-stream-heartbeat"
-            {...heartbeatDraft.inputProps}
-            className="ml-1 rounded border px-2 py-1"
-            style={NUMBER_STYLE}
-          />
-        </label>
+        <OptionNumber
+          label={t('mockSse.interval')}
+          testId="mock-stream-interval"
+          draft={intervalDraft}
+        />
+        <OptionNumber
+          label={t('mockSse.heartbeat')}
+          testId="mock-stream-heartbeat"
+          draft={heartbeatDraft}
+        />
         <label
           className="flex cursor-pointer items-center gap-1.5"
           style={{ color: 'var(--text)' }}
@@ -101,19 +95,13 @@ export default function MockSseOptions({ response }: { response: MockResponse })
           />
           {t('mockSse.loop')}
         </label>
-        <label className="flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
-          {t('mockSse.onEnd')}:
-          <select
-            data-testid="mock-stream-on-end"
-            value={cfg.onEnd}
-            onChange={(e) => void write({ onEnd: e.target.value as MockSseEndBehaviour })}
-            className="rounded border px-2 py-1"
-            style={SELECT_STYLE}
-          >
-            <option value="close">{t('mockSse.onEndClose')}</option>
-            <option value="keep-open">{t('mockSse.onEndKeepOpen')}</option>
-          </select>
-        </label>
+        <OptionSelect
+          label={t('mockSse.onEnd')}
+          testId="mock-stream-on-end"
+          value={cfg.onEnd}
+          options={ON_END}
+          onChange={(onEnd) => void write({ onEnd })}
+        />
         <label
           className={`flex items-center gap-1.5 ${resumeOff ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           style={{ color: 'var(--text)' }}
@@ -131,25 +119,11 @@ export default function MockSseOptions({ response }: { response: MockResponse })
         </label>
       </div>
       {resumeOff && (
-        <div
-          id={reasonId}
-          data-testid="mock-sse-resume-reason"
-          className="mt-1 text-[11px]"
-          style={{ color: 'var(--muted)' }}
-        >
+        <OptionReason id={reasonId} testId="mock-sse-resume-reason">
           {resumeOff}
-        </div>
+        </OptionReason>
       )}
-      {error && (
-        <div
-          data-testid="mock-sse-error"
-          role="alert"
-          className="mt-1 text-xs"
-          style={{ color: 'var(--red)' }}
-        >
-          {error}
-        </div>
-      )}
+      {error && <OptionError testId="mock-sse-error">{error}</OptionError>}
     </div>
   )
 }

@@ -32,8 +32,17 @@ import { mockServerUrl } from './mock-http-tabs'
 import { bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
 import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
+import MockLlmOptions, { MockLlmBodyNotes } from './MockLlmOptions'
+import { MockAiChatHeaderButton } from './MockOpenInAiChat'
 import { tickerResponse } from './mock-sse-presets'
+import { chatResponse } from './mock-ai-presets'
+import { buildMockCurl } from './mock-curl'
 import { uniqueName } from './mock-create-helpers'
+import {
+  normalizeLlmConfig,
+  normalizeStreamConfig,
+  type MockLlmProvider,
+} from '../../../shared/mock-stream'
 
 const METHODS: MockMethod[] = [
   'GET',
@@ -110,10 +119,19 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
               onToggle={() => void toggle()}
             />
             {kind === 'sse' && <MockSseHeaderButton server={server} status={status} />}
+            {kind === 'ai' && <MockAiChatHeaderButton server={server} status={status} />}
           </>
         }
       >
         <MockUrlLine label={t('mock.baseUrl')} url={mockServerUrl(server)} testId="mock-base-url" />
+        {/* AI: what an OpenAI / Anthropic SDK takes as its base URL (§D.3.3). */}
+        {kind === 'ai' && (
+          <MockUrlLine
+            label={t('mock.sdkBaseUrl')}
+            url={`${mockServerUrl(server)}/v1`}
+            testId="mock-sdk-base-url"
+          />
+        )}
       </MockEditorHeader>
 
       {/* Same tab strip as the Mock MCP editor (MockEditorTabButton). */}
@@ -168,6 +186,7 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
 
   async function handleAdd(): Promise<void> {
     if (kind === 'sse') return addStream()
+    if (kind === 'ai') return addChat()
     const ep = await createEndpoint({
       serverId,
       method: 'GET',
@@ -197,6 +216,39 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
       order: 0,
       enabled: true,
     })
+    setActiveId(ep.id)
+  }
+
+  /**
+   * AI server (issue #221): POST /v1/chat/completions with the Chat preset's
+   * OpenAI reply; taken → POST /v1/messages with the Anthropic reply; both
+   * taken → the plain POST /new-endpoint with no response.
+   */
+  async function addChat(): Promise<void> {
+    const taken = new Set(endpoints.map((e) => e.path))
+    const pick: { path: string; provider: MockLlmProvider | null } = !taken.has(
+      '/v1/chat/completions',
+    )
+      ? { path: '/v1/chat/completions', provider: 'openai' }
+      : !taken.has('/v1/messages')
+        ? { path: '/v1/messages', provider: 'anthropic' }
+        : { path: '/new-endpoint', provider: null }
+    const ep = await createEndpoint({
+      serverId,
+      method: 'POST',
+      path: pick.path,
+      pathMode: 'exact',
+    })
+    if (!ep) return
+    if (pick.provider) {
+      await createResponse({
+        endpointId: ep.id,
+        ...chatResponse(pick.provider),
+        script: '',
+        order: 0,
+        enabled: true,
+      })
+    }
     setActiveId(ep.id)
   }
 
@@ -328,7 +380,11 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
         <div className="flex-1 overflow-auto">
           {endpoints.length === 0 ? (
             <div className="p-3 text-sm" style={{ color: 'var(--muted)' }}>
-              {kind === 'sse' ? t('mock.noStreams') : t('mock.noEndpoints')}
+              {kind === 'sse'
+                ? t('mock.noStreams')
+                : kind === 'ai'
+                  ? t('mock.noChatEndpoints')
+                  : t('mock.noEndpoints')}
             </div>
           ) : (
             endpoints.map((ep) => (
@@ -500,6 +556,7 @@ function EndpointEditor({
           status={status}
           endpoint={endpoint}
           streams={responses.some((r) => r.bodyType === 'sse')}
+          llm={llmProviderOf(responses)}
         />
 
         <div className="mt-2 flex items-center gap-2 text-xs">
@@ -632,12 +689,15 @@ function FullUrlBar({
   status,
   endpoint,
   streams,
+  llm,
 }: {
   server: MockServer | null
   status: string
   endpoint: MockEndpoint
   /** The endpoint has an `sse` response → offer "Open in SSE tab" (issue #221). */
   streams: boolean
+  /** Provider of the endpoint's `llm` response → an LLM chat cURL (issue #221). */
+  llm: MockLlmProvider | null
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState<'' | 'url' | 'curl'>('')
@@ -653,7 +713,7 @@ function FullUrlBar({
     (endpoint.method === 'GET' || endpoint.method === 'ANY') &&
     endpoint.pathMode === 'exact'
 
-  const curl = buildCurl(server, endpoint)
+  const curl = buildMockCurl(server, endpoint, llm)
 
   async function copy(kind: 'url' | 'curl', text: string): Promise<void> {
     try {
@@ -715,6 +775,7 @@ function FullUrlBar({
         {copied === 'url' ? '✓' : '⧉'} {t('mock.copyUrl')}
       </button>
       <button
+        data-testid="mock-copy-curl"
         onClick={() => copy('curl', curl)}
         className="rounded border px-2 py-0.5 text-[11px]"
         style={{
@@ -754,16 +815,22 @@ function FullUrlBar({
   )
 }
 
-function buildCurl(server: MockServer, endpoint: MockEndpoint): string {
-  const url = `http://${server.host}:${server.port}${server.basePath}${endpoint.path}`
-  const method = endpoint.method === 'ANY' ? 'GET' : endpoint.method
-  const parts = [`curl -X ${method} '${url}'`]
-  // For methods that typically carry a body, hint at a placeholder content-type + body.
-  if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-    parts.push(`-H 'Content-Type: application/json'`)
-    parts.push(`-d '{}'`)
-  }
-  return parts.join(' \\\n  ')
+/** Provider of the first `llm` response of an endpoint, or null (cURL shape, issue #221). */
+function llmProviderOf(responses: readonly MockResponse[]): MockLlmProvider | null {
+  const r = responses.find((x) => x.bodyType === 'llm')
+  return r ? normalizeLlmConfig(r.streamConfig).provider : null
+}
+
+/**
+ * The settings a response gets when its body type changes (issue #221):
+ * the new type's defaults, in the SAME update as the type — `stream_config`
+ * means something else per type, and a leftover of the old type would be
+ * read (or rejected) as the new one's.
+ */
+function freshStreamConfig(bodyType: MockBodyType): MockResponse['streamConfig'] {
+  if (bodyType === 'sse') return normalizeStreamConfig(null)
+  if (bodyType === 'llm') return normalizeLlmConfig(null)
+  return null
 }
 
 // ─── Response editor ─────────────────────────────────────────────
@@ -838,9 +905,10 @@ function ResponseEditor({
         />
         <select
           value={response.bodyType}
-          onChange={(e) =>
-            updateResponse(response.id, { bodyType: e.target.value as MockBodyType })
-          }
+          onChange={(e) => {
+            const bodyType = e.target.value as MockBodyType
+            updateResponse(response.id, { bodyType, streamConfig: freshStreamConfig(bodyType) })
+          }}
           data-testid="mock-response-body-type"
           className="rounded border px-2 py-1 text-xs"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
@@ -886,6 +954,7 @@ function ResponseEditor({
       </div>
 
       {response.bodyType === 'sse' && <MockSseOptions response={response} />}
+      {response.bodyType === 'llm' && <MockLlmOptions response={response} />}
 
       <div className="mb-2">
         <label
@@ -943,6 +1012,9 @@ function ResponseEditor({
           {t('mock.bodyHint')}
         </div>
         {response.bodyType === 'sse' && <MockSseBodyNotes body={response.body} />}
+        {response.bodyType === 'llm' && (
+          <MockLlmBodyNotes provider={normalizeLlmConfig(response.streamConfig).provider} />
+        )}
       </div>
 
       <div>

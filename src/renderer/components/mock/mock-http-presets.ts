@@ -1,7 +1,8 @@
 /**
  * "New mock server" presets for HTTP mocks (issue #140) — the HTTP twin of
- * `mock-mcp/mock-mcp-presets.ts`. The SSE presets (`mock-sse-presets.ts`,
- * issue #221) reuse the same shapes, builders and orchestrator. Pure factories plus one orchestrator
+ * `mock-mcp/mock-mcp-presets.ts`. The SSE and AI presets
+ * (`mock-sse-presets.ts`, `mock-ai-presets.ts`, issue #221) reuse the same
+ * shapes, builders and orchestrator. Pure factories plus one orchestrator
  * (`createFromHttpPreset`) that replays a preset over the existing
  * `window.api.mock` IPC: server → (settings) → endpoints → responses.
  *
@@ -23,7 +24,7 @@ import type {
   MockServer,
 } from '../../types'
 import type { MockServerKind } from '../../../shared/mock-kind'
-import type { MockSseStreamConfig } from '../../../shared/mock-stream'
+import type { MockLlmConfig, MockSseStreamConfig } from '../../../shared/mock-stream'
 
 export type MockHttpPresetId = 'blank' | 'rest' | 'echo' | 'auth' | 'faults'
 
@@ -69,8 +70,11 @@ export interface HttpPresetResponse {
   body: string
   delayMs: number
   condition: MockCondition
-  /** Stream settings of an `sse` response (issue #221) — forwarded to `response.create`. */
-  streamConfig?: MockSseStreamConfig
+  /**
+   * Settings of an `sse` (stream) or `llm` (AI reply) response (issue #221) —
+   * forwarded to `response.create`; the body type says which.
+   */
+  streamConfig?: MockSseStreamConfig | MockLlmConfig
 }
 
 export interface HttpPresetEndpoint {

@@ -1,5 +1,5 @@
 /**
- * Type switch (HTTP | MCP | SSE) and preset list of the "New mock server"
+ * Type switch (HTTP | MCP | SSE | AI) and preset list of the "New mock server"
  * dialog (issues #140, #221). Both are radio groups; the selected preset is
  * highlighted. The type list lives in `new-mock-server.ts`.
  */
