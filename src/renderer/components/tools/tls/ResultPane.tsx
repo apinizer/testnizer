@@ -148,7 +148,7 @@ export default function ResultPane({
                   >
                     <span
                       className="truncate text-xs font-medium"
-                      style={{ color: 'var(--accentText)' }}
+                      style={{ color: 'var(--accent-text)' }}
                     >
                       {i === 0 ? `${t('tools.tlsInspect.leaf')} · ` : ''}
                       {c.subjectDN}
@@ -163,7 +163,7 @@ export default function ResultPane({
                     style={{
                       borderColor: 'var(--border)',
                       background: 'var(--white)',
-                      color: 'var(--accentText)',
+                      color: 'var(--accent-text)',
                     }}
                     title={t('tools.tlsInspect.addTrusted')}
                   >

@@ -6,6 +6,7 @@ import type {
   MockServerStatus,
   MockLogEntry,
 } from '../types'
+import type { MockServerKind } from '../../shared/mock-kind'
 
 const api = window.api.mock
 
@@ -25,6 +26,8 @@ export interface MockState {
     port: number
     basePath?: string
     description?: string
+    /** Fixed at creation (issue #221); absent = `http`. */
+    kind?: MockServerKind
   }) => Promise<MockServer | null>
   updateServer: (id: string, patch: Partial<MockServer>) => Promise<void>
   deleteServer: (id: string) => Promise<void>
@@ -47,7 +50,11 @@ export interface MockState {
   createResponse: (
     input: Partial<MockResponse> & { endpointId: string },
   ) => Promise<MockResponse | null>
-  updateResponse: (id: string, patch: Partial<MockResponse>) => Promise<void>
+  /**
+   * Returns the main process's error message (e.g. a rejected stream setting,
+   * issue #221), or null on success — callers that show it must not swallow it.
+   */
+  updateResponse: (id: string, patch: Partial<MockResponse>) => Promise<string | null>
   deleteResponse: (endpointId: string, responseId: string) => Promise<void>
 
   // Logs
@@ -108,6 +115,7 @@ export const useMockStore = create<MockState>((set) => ({
       port: input.port,
       basePath: input.basePath,
       description: input.description,
+      ...(input.kind ? { kind: input.kind } : {}),
     } as Partial<MockServer> & { projectId: string; name: string; port: number })
     if (!r.success || !r.data) return null
     set((s) => ({ servers: [...s.servers, r.data!] }))
@@ -227,17 +235,17 @@ export const useMockStore = create<MockState>((set) => ({
 
   updateResponse: async (id, patch) => {
     const r = await api.response.update(id, patch)
-    if (r.success && r.data) {
-      const resp = r.data
-      set((s) => ({
-        responsesByEndpoint: {
-          ...s.responsesByEndpoint,
-          [resp.endpointId]: (s.responsesByEndpoint[resp.endpointId] ?? []).map((rr) =>
-            rr.id === id ? resp : rr,
-          ),
-        },
-      }))
-    }
+    if (!r.success || !r.data) return r.error ?? 'Update failed'
+    const resp = r.data
+    set((s) => ({
+      responsesByEndpoint: {
+        ...s.responsesByEndpoint,
+        [resp.endpointId]: (s.responsesByEndpoint[resp.endpointId] ?? []).map((rr) =>
+          rr.id === id ? resp : rr,
+        ),
+      },
+    }))
+    return null
   },
 
   deleteResponse: async (endpointId, responseId) => {

@@ -100,10 +100,10 @@ export default function UuidTool() {
                   onClick={() => setVersion(v)}
                   className="rounded px-3 py-1 text-xs font-semibold"
                   style={{
-                    background: version === v ? 'var(--accentLight)' : 'var(--white)',
-                    color: version === v ? 'var(--accentText)' : 'var(--muted)',
+                    background: version === v ? 'var(--accent-light)' : 'var(--white)',
+                    color: version === v ? 'var(--accent-text)' : 'var(--muted)',
                     border: '1px solid',
-                    borderColor: version === v ? 'var(--accentText)' : 'var(--border)',
+                    borderColor: version === v ? 'var(--accent-text)' : 'var(--border)',
                   }}
                 >
                   {v}

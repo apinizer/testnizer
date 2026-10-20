@@ -1,8 +1,9 @@
 /**
  * Sidebar panel that lists all mock servers in the active project: header +
- * search + two groups (HTTP servers, MCP servers — issue #140) that share one
- * row design. Every "+" (header, and the small one on each group) opens the
- * same "New mock server" dialog, with the group's type preselected.
+ * search + one group per type — HTTP, MCP, SSE, AI (issues #140, #221), in
+ * the dialog's order — that share one row design. Every "+" (header, and the
+ * small one on each group) opens the same "New mock server" dialog, with the
+ * group's type preselected.
  */
 import { useEffect, useState } from 'react'
 import { Plus } from 'lucide-react'
@@ -10,7 +11,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
 import MockMcpServersSection from '../mock-mcp/MockMcpServersSection'
-import MockHttpServersSection from './MockHttpServersSection'
+import MockKindServersSection from './MockKindServersSection'
 import NewMockServerModal from './NewMockServerModal'
 import LeftPanelCollapseButton from '../layout/LeftPanelCollapseButton'
 import type { MockKind } from './new-mock-server'
@@ -47,7 +48,7 @@ export default function MockServersPanel() {
         <LeftPanelCollapseButton />
       </div>
 
-      {/* Search — filters both groups */}
+      {/* Search — filters every group */}
       <div className="border-b border-[var(--border)] px-2.5 py-2">
         <input
           data-testid="mock-search"
@@ -59,12 +60,25 @@ export default function MockServersPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        <MockHttpServersSection
+        <MockKindServersSection
+          kind="http"
           query={query}
           onAdd={() => setNewKind('http')}
           disabled={!activeProjectId}
         />
         <MockMcpServersSection query={query} onAdd={() => setNewKind('mcp')} />
+        <MockKindServersSection
+          kind="sse"
+          query={query}
+          onAdd={() => setNewKind('sse')}
+          disabled={!activeProjectId}
+        />
+        <MockKindServersSection
+          kind="ai"
+          query={query}
+          onAdd={() => setNewKind('ai')}
+          disabled={!activeProjectId}
+        />
       </div>
 
       {newKind && <NewMockServerModal initialKind={newKind} onClose={() => setNewKind(null)} />}

@@ -209,7 +209,7 @@ export default function JwksVerifyPanel({
               onClick={loadSet}
               disabled={busy || uri.trim() === ''}
               className="shrink-0 rounded border px-2 py-1 text-xs disabled:opacity-50"
-              style={{ ...FIELD_STYLE, color: 'var(--accentText)' }}
+              style={{ ...FIELD_STYLE, color: 'var(--accent-text)' }}
             >
               {busyKind === 'load' ? t('tools.jwt.loading') : t('tools.jwt.jwksLoad')}
             </button>
@@ -338,10 +338,10 @@ function Choice({
       onClick={onClick}
       className="rounded px-2 py-0.5 text-[11px] font-medium"
       style={{
-        background: active ? 'var(--accentLight)' : 'transparent',
-        color: active ? 'var(--accentText)' : 'var(--muted)',
+        background: active ? 'var(--accent-light)' : 'transparent',
+        color: active ? 'var(--accent-text)' : 'var(--muted)',
         border: '1px solid',
-        borderColor: active ? 'var(--accentText)' : 'var(--border)',
+        borderColor: active ? 'var(--accent-text)' : 'var(--border)',
       }}
     >
       {children}

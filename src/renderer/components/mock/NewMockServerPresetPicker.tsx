@@ -1,12 +1,16 @@
 /**
- * Type switch (HTTP | MCP) and preset list of the "New mock server" dialog
- * (issue #140). Both are radio groups; the selected preset is highlighted.
+ * Type switch (HTTP | MCP | SSE | AI) and preset list of the "New mock server"
+ * dialog (issues #140, #221). Both are radio groups; the selected preset is
+ * highlighted. The type list lives in `new-mock-server.ts`.
  */
 import { useTranslation } from '../../lib/i18n'
-import { presetOptions, type MockKind } from './new-mock-server'
-
-const KINDS: readonly MockKind[] = ['http', 'mcp']
-const KIND_LABEL: Record<MockKind, string> = { http: 'HTTP', mcp: 'MCP' }
+import {
+  MOCK_DIALOG_KINDS,
+  MOCK_KIND_HINT_KEYS,
+  MOCK_KIND_LABEL,
+  presetOptions,
+  type MockKind,
+} from './new-mock-server'
 
 export default function NewMockServerPresetPicker({
   kind,
@@ -26,9 +30,11 @@ export default function NewMockServerPresetPicker({
         <div
           role="radiogroup"
           aria-label={t('mockNew.type')}
-          className="grid grid-cols-2 gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1"
+          className="grid gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1"
+          // One column per type; a computed `grid-cols-N` class would not be generated.
+          style={{ gridTemplateColumns: `repeat(${MOCK_DIALOG_KINDS.length}, minmax(0, 1fr))` }}
         >
-          {KINDS.map((k) => {
+          {MOCK_DIALOG_KINDS.map((k) => {
             const active = k === kind
             return (
               <button
@@ -44,13 +50,13 @@ export default function NewMockServerPresetPicker({
                     : 'bg-transparent text-[var(--muted)] hover:text-[var(--text)]'
                 }`}
               >
-                {KIND_LABEL[k]}
+                {MOCK_KIND_LABEL[k]}
               </button>
             )
           })}
         </div>
-        <p className="mt-1.5 text-[11px] text-[var(--muted)]">
-          {kind === 'http' ? t('mockNew.typeHttpHint') : t('mockNew.typeMcpHint')}
+        <p data-testid="mock-new-type-hint" className="mt-1.5 text-[11px] text-[var(--muted)]">
+          {t(MOCK_KIND_HINT_KEYS[kind])}
         </p>
       </div>
 

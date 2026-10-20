@@ -208,6 +208,8 @@ const MOCK_SERVER_COLUMNS = [
   'proxy_record',
   'created_at',
   'updated_at',
+  // 'http' | 'sse' | 'ai' (issue #221) — see MOCK_SERVER_ADDED_COLUMN_DEFAULTS.
+  'kind',
 ] as const
 
 const MOCK_ENDPOINT_COLUMNS = [
@@ -239,7 +241,21 @@ const MOCK_RESPONSE_COLUMNS = [
   'script',
   'response_order',
   'enabled',
+  // Streaming knobs JSON (issue #221) — see MOCK_RESPONSE_ADDED_COLUMN_DEFAULTS.
+  'stream_config',
 ] as const
+
+/**
+ * Mock columns a file written before issue #221 does not carry, with the
+ * value a NEW row takes. An existing row keeps its local value
+ * (`fillAbsentColumns`): `kind` is NOT NULL, so an absent key must never
+ * become NULL, and an older file must not reset a stream response's knobs
+ * (Ek C R05). An explicit `null` stream_config in the file still clears it.
+ */
+const MOCK_SERVER_ADDED_COLUMN_DEFAULTS: Readonly<Record<string, unknown>> = { kind: 'http' }
+const MOCK_RESPONSE_ADDED_COLUMN_DEFAULTS: Readonly<Record<string, unknown>> = {
+  stream_config: null,
+}
 
 const CERTIFICATE_COLUMNS = [
   'id',
@@ -928,10 +944,19 @@ function importProjectData(
   // upsert parents before children. Missing arrays are skipped — pre-v1.2
   // export files don't carry these.
   if (data.mockServers?.length) {
-    const rows = keepLocalMockAuth(
+    const withAuth = keepLocalMockAuth(
       rebind(data.mockServers),
       'auth_config',
       localRow('mock_servers', 'auth_config, description'),
+    )
+    // `kind` is NOT NULL: an explicit null (a hand-edited file) counts as
+    // absent instead of aborting the whole import on the constraint.
+    const rows = fillAbsentColumns(
+      withAuth.map(({ kind, ...rest }) =>
+        kind === null || kind === undefined ? rest : { ...rest, kind },
+      ),
+      MOCK_SERVER_ADDED_COLUMN_DEFAULTS,
+      localRow('mock_servers', 'kind'),
     )
     upsert('mock_servers', rows, [...MOCK_SERVER_COLUMNS])
   }
@@ -944,7 +969,12 @@ function importProjectData(
     upsert('mock_endpoints', rows, [...MOCK_ENDPOINT_COLUMNS])
   }
   if (data.mockResponses?.length) {
-    upsert('mock_responses', data.mockResponses, [...MOCK_RESPONSE_COLUMNS])
+    const rows = fillAbsentColumns(
+      data.mockResponses,
+      MOCK_RESPONSE_ADDED_COLUMN_DEFAULTS,
+      localRow('mock_responses', 'stream_config'),
+    )
+    upsert('mock_responses', rows, [...MOCK_RESPONSE_COLUMNS])
   }
 
   // Named response examples (issue #125). Owner ids are stable in the

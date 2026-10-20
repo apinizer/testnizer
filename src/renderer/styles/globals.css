@@ -491,7 +491,7 @@ select:focus {
   overflow-x: auto;
 }
 .release-notes-html a {
-  color: var(--accentText);
+  color: var(--accent-text);
   text-decoration: underline;
 }
 .release-notes-html hr {

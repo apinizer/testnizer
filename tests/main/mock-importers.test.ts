@@ -48,7 +48,8 @@ function freshDb(): Database.Database {
       condition TEXT NOT NULL DEFAULT '{"type":"always"}',
       script TEXT NOT NULL DEFAULT '',
       response_order INTEGER NOT NULL DEFAULT 0,
-      enabled INTEGER NOT NULL DEFAULT 1
+      enabled INTEGER NOT NULL DEFAULT 1,
+      stream_config TEXT
     );
   `)
   d.prepare(`INSERT INTO mock_servers (id) VALUES (?)`).run('server-1')

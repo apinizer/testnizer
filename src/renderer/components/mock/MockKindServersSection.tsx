@@ -1,7 +1,9 @@
 /**
- * "HTTP servers" group of the Mocks panel: the project's HTTP mock servers in
- * the shared `MockServerRow` (issue #140). The panel loads the list; opening
- * a row opens its `mockServer` editor tab.
+ * One group of the Mocks panel for a kind of the HTTP mock table — "HTTP
+ * servers", "SSE servers", "AI servers" (issues #140, #221): that kind's
+ * servers in the shared `MockServerRow`. The panel loads the one list; each
+ * group filters it client-side. Opening a row opens its `mockServer` editor
+ * tab (the editor adapts to the kind).
  */
 import { useMemo, useState } from 'react'
 import { useMockStore } from '../../stores/mock.store'
@@ -9,21 +11,56 @@ import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type { MockServer } from '../../types'
+import type { MockServerKind } from '../../../shared/mock-kind'
+import { serversOfKind } from './mock-kind-ui'
 import MockGroupHeader from './MockGroupHeader'
 import MockServerRow from './MockServerRow'
 import { closeMockServerTab, mockServerUrl, openMockServerTab } from './mock-http-tabs'
 
-export default function MockHttpServersSection({
+/** Per-kind wording and testid prefix — literal keys for the key-coverage test. */
+const SECTION: Record<
+  MockServerKind,
+  { titleKey: string; addKey: string; emptyKey: string; itemTypeKey: string; prefix: string }
+> = {
+  http: {
+    titleKey: 'mockMcp.httpSectionTitle',
+    addKey: 'mockNew.addHttp',
+    emptyKey: 'mockNew.httpEmpty',
+    itemTypeKey: 'mockNew.httpItemType',
+    prefix: 'mock-http',
+  },
+  sse: {
+    titleKey: 'mockSse.sectionTitle',
+    addKey: 'mockNew.addSse',
+    emptyKey: 'mockNew.sseEmpty',
+    itemTypeKey: 'mockNew.sseItemType',
+    prefix: 'mock-sse',
+  },
+  ai: {
+    titleKey: 'mockAi.sectionTitle',
+    addKey: 'mockNew.addAi',
+    emptyKey: 'mockNew.aiEmpty',
+    itemTypeKey: 'mockNew.aiItemType',
+    prefix: 'mock-ai',
+  },
+}
+
+export default function MockKindServersSection({
+  kind,
   query,
   onAdd,
   disabled,
 }: {
+  kind: MockServerKind
   query: string
+  /** Omitted → no "+" on the group. */
   onAdd?: () => void
   disabled?: boolean
 }) {
   const { t } = useTranslation()
-  const servers = useMockStore((s) => s.servers)
+  const all = useMockStore((s) => s.servers)
+  const servers = useMemo(() => serversOfKind(all, kind), [all, kind])
+  const section = SECTION[kind]
   const statusByServer = useMockStore((s) => s.statusByServer)
   const errorByServer = useMockStore((s) => s.errorByServer)
   const startServer = useMockStore((s) => s.startServer)
@@ -50,19 +87,19 @@ export default function MockHttpServersSection({
   }
 
   return (
-    <section data-testid="mock-http-section">
+    <section data-testid={`${section.prefix}-section`}>
       <MockGroupHeader
-        title={t('mockMcp.httpSectionTitle')}
+        title={t(section.titleKey)}
         count={servers.length}
-        addLabel={t('mockNew.addHttp')}
+        addLabel={t(section.addKey)}
         onAdd={onAdd}
         disabled={disabled}
-        testId="mock-http-section-title"
-        addTestId="mock-group-add-http"
+        testId={`${section.prefix}-section-title`}
+        addTestId={`mock-group-add-${kind}`}
       />
       {filtered.length === 0 ? (
         <div className="px-4 pb-4 pt-1 text-center text-[12px] text-[var(--muted)]">
-          {servers.length === 0 ? t('mockNew.httpEmpty') : t('mock.noMatches')}
+          {servers.length === 0 ? t(section.emptyKey) : t('mock.noMatches')}
         </div>
       ) : (
         filtered.map((s) => {
@@ -70,8 +107,8 @@ export default function MockHttpServersSection({
           return (
             <MockServerRow
               key={s.id}
-              kind="http"
-              testIdPrefix="mock-http"
+              kind={kind}
+              testIdPrefix={section.prefix}
               id={s.id}
               name={s.name}
               status={statusByServer[s.id] ?? 'stopped'}
@@ -89,7 +126,7 @@ export default function MockHttpServersSection({
       <DeleteConfirmDialog
         open={deleteTarget !== null}
         itemName={deleteTarget?.name ?? ''}
-        itemType={t('mockNew.httpItemType')}
+        itemType={t(section.itemTypeKey)}
         onConfirm={() => void confirmDelete()}
         onCancel={() => setDeleteTarget(null)}
       />

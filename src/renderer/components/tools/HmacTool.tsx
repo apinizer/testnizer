@@ -132,7 +132,7 @@ export default function HmacTool() {
                     <tr key={alg}>
                       <td
                         className="border-b px-3 py-1.5 align-top font-mono font-semibold"
-                        style={{ borderColor: 'var(--border)', color: 'var(--accentText)' }}
+                        style={{ borderColor: 'var(--border)', color: 'var(--accent-text)' }}
                       >
                         {alg}
                       </td>

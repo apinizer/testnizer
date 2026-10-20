@@ -154,9 +154,9 @@ export default function RequestForm({
                   onClick={() => patch({ clientCert: { ...cc, mode: m } })}
                   className="rounded px-2 py-0.5 text-[11px]"
                   style={{
-                    background: cc.mode === m ? 'var(--accentLight)' : 'var(--white)',
+                    background: cc.mode === m ? 'var(--accent-light)' : 'var(--white)',
                     border: '1px solid',
-                    borderColor: cc.mode === m ? 'var(--accentText)' : 'var(--border)',
+                    borderColor: cc.mode === m ? 'var(--accent-text)' : 'var(--border)',
                     color: 'var(--text)',
                   }}
                 >

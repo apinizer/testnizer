@@ -1,8 +1,8 @@
 /**
- * "New mock server" dialog (issue #140) — ONE creation flow for HTTP mocks
- * and Mock MCP servers: type switch, preset list, Name (prefilled, unique) and
- * Port (suggested, free across both kinds), Create. Enter submits, Escape
- * closes. Mount it only while open: every open starts from fresh state.
+ * "New mock server" dialog (issues #140, #221) — ONE creation flow for HTTP
+ * and SSE mocks and Mock MCP servers: type switch, preset list, Name
+ * (prefilled, unique) and Port (suggested, free across every kind), Create.
+ * Enter submits, Escape closes. Mount it only while open: every open starts from fresh state.
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { Loader2, X } from 'lucide-react'

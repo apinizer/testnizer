@@ -57,9 +57,9 @@ export default function CertificateDetailDialog({
                 onClick={() => setIndex(i)}
                 className="rounded px-2 py-0.5 text-[11px]"
                 style={{
-                  background: i === index ? 'var(--accentLight)' : 'var(--white)',
+                  background: i === index ? 'var(--accent-light)' : 'var(--white)',
                   border: '1px solid',
-                  borderColor: i === index ? 'var(--accentText)' : 'var(--border)',
+                  borderColor: i === index ? 'var(--accent-text)' : 'var(--border)',
                   color: 'var(--text)',
                 }}
               >
@@ -159,7 +159,7 @@ function PemBlock({ pem }: { pem: string }) {
           style={{
             borderColor: 'var(--border)',
             background: 'var(--white)',
-            color: 'var(--accentText)',
+            color: 'var(--accent-text)',
           }}
         >
           {copied ? t('tools.keystore.copied') : t('tools.keystore.copy')}

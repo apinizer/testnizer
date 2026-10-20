@@ -33,3 +33,8 @@ export function mockServerUrl(server: Pick<MockServer, 'host' | 'port' | 'basePa
   const base = server.basePath ? `/${server.basePath.replace(/^\/+/, '')}` : ''
   return `http://${host}:${server.port}${base}`
 }
+
+/** What an OpenAI / Anthropic SDK takes as its base URL for an AI mock (§D.3.3). */
+export function mockSdkBaseUrl(server: Pick<MockServer, 'host' | 'port' | 'basePath'>): string {
+  return `${mockServerUrl(server)}/v1`
+}

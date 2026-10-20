@@ -33,7 +33,14 @@ const HTTP_SERVERS = [
 ]
 
 async function setup(opts: { failEndpointCreate?: string } = {}): Promise<void> {
-  resetHttpBridge(HTTP_SERVERS, opts)
+  await setupWith(HTTP_SERVERS, opts)
+}
+
+async function setupWith(
+  servers: ReturnType<typeof httpServer>[],
+  opts: { failEndpointCreate?: string } = {},
+): Promise<void> {
+  resetHttpBridge(servers, opts)
   mcp = installBridge([
     sampleServer({ id: 'a', name: 'Echo MCP', port: 3100 }),
     sampleServer({ id: 'b', name: 'Beta', port: 3002 }),
@@ -92,6 +99,136 @@ describe('New mock server dialog', () => {
     ])
     expect(screen.getByTestId('mock-new-preset-echo')).toHaveAttribute('aria-checked', 'true')
     expect(screen.queryByTestId('mock-new-preset-rest')).toBeNull()
+  })
+
+  it('SSE is a third type with its own presets (Ticker by default) and port 3200', () => {
+    render(<NewMockServerModal initialKind="http" onClose={vi.fn()} />)
+    const types = within(screen.getByRole('radiogroup', { name: 'Server type' }))
+      .getAllByRole('radio')
+      .map((b) => b.getAttribute('data-testid'))
+    expect(types).toEqual([
+      'mock-new-type-http',
+      'mock-new-type-mcp',
+      'mock-new-type-sse',
+      'mock-new-type-ai',
+    ])
+    fireEvent.click(screen.getByTestId('mock-new-type-sse'))
+    expect(screen.getByTestId('mock-new-type-sse')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('mock-new-type-hint')).toHaveTextContent('Server-Sent Events')
+    expect(presetIds()).toEqual([
+      'mock-new-preset-ticker',
+      'mock-new-preset-replay',
+      'mock-new-preset-notifications',
+      'mock-new-preset-slow',
+    ])
+    expect(screen.getByTestId('mock-new-preset-ticker')).toHaveAttribute('aria-checked', 'true')
+    expect(nameValue()).toBe('Ticker SSE')
+    expect(portValue()).toBe('3200')
+    fireEvent.click(screen.getByTestId('mock-new-preset-replay'))
+    expect(nameValue()).toBe('Replay SSE')
+  })
+
+  it('Create (SSE · Ticker) sends kind "sse" and the stream settings with the response', async () => {
+    const onClose = vi.fn()
+    render(<NewMockServerModal initialKind="sse" onClose={onClose} />)
+    fireEvent.click(screen.getByTestId('mock-new-create'))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(httpBridge.server.create).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'p-1', name: 'Ticker SSE', port: 3200, kind: 'sse' }),
+    )
+    expect(httpBridge.endpoint.create).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'GET', path: '/events', pathMode: 'exact' }),
+    )
+    expect(httpBridge.response.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyType: 'sse',
+        streamConfig: {
+          intervalMs: 1000,
+          heartbeatMs: 15000,
+          loop: true,
+          onEnd: 'keep-open',
+          resume: false,
+        },
+      }),
+    )
+    expect(mcp.bridge.server.create).not.toHaveBeenCalled()
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      protocol: 'mockServer',
+      name: 'Ticker SSE',
+    })
+  })
+
+  it('AI is the fourth type: its hint, presets (Chat by default), names and port 3300', () => {
+    render(<NewMockServerModal initialKind="http" onClose={vi.fn()} />)
+    fireEvent.click(screen.getByTestId('mock-new-type-ai'))
+    expect(screen.getByTestId('mock-new-type-ai')).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByTestId('mock-new-type-hint')).toHaveTextContent('OpenAI / Anthropic')
+    expect(presetIds()).toEqual([
+      'mock-new-preset-chat',
+      'mock-new-preset-anthropic',
+      'mock-new-preset-tools',
+      'mock-new-preset-errors',
+    ])
+    expect(screen.getByTestId('mock-new-preset-chat')).toHaveAttribute('aria-checked', 'true')
+    expect(nameValue()).toBe('Chat API')
+    expect(portValue()).toBe('3300')
+    const names: Record<string, string> = {
+      anthropic: 'Messages API',
+      tools: 'Tool-call API',
+      errors: 'Error API',
+    }
+    for (const [id, name] of Object.entries(names)) {
+      fireEvent.click(screen.getByTestId(`mock-new-preset-${id}`))
+      expect(nameValue()).toBe(name)
+    }
+  })
+
+  it('Create (AI · Chat) sends kind "ai", the llm reply with its settings and GET /v1/models', async () => {
+    const onClose = vi.fn()
+    render(<NewMockServerModal initialKind="ai" onClose={onClose} />)
+    fireEvent.click(screen.getByTestId('mock-new-create'))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(httpBridge.server.create).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: 'p-1', name: 'Chat API', port: 3300, kind: 'ai' }),
+    )
+    expect(vi.mocked(httpBridge.endpoint.create).mock.calls.map((c) => c[0])).toEqual([
+      expect.objectContaining({ method: 'POST', path: '/v1/chat/completions', pathMode: 'exact' }),
+      expect.objectContaining({ method: 'GET', path: '/v1/models', pathMode: 'exact' }),
+    ])
+    expect(httpBridge.response.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyType: 'llm',
+        body: 'Hello from the mock LLM. You said: {{lastUserMessage}}',
+        streamConfig: {
+          provider: 'openai',
+          chunking: 'word',
+          chunkIntervalMs: 30,
+          stopReason: 'stop',
+          toolCalls: [],
+          usage: 'auto',
+        },
+      }),
+    )
+    expect(httpBridge.response.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyType: 'json',
+        body: expect.stringContaining('"mock-model"'),
+      }),
+    )
+    expect(mcp.bridge.server.create).not.toHaveBeenCalled()
+    expect(useTabsStore.getState().tabs[0]).toMatchObject({
+      protocol: 'mockServer',
+      name: 'Chat API',
+    })
+  })
+
+  it('Create (HTTP) still sends no SSE kind', async () => {
+    const onClose = vi.fn()
+    render(<NewMockServerModal initialKind="http" onClose={onClose} />)
+    fireEvent.click(screen.getByTestId('mock-new-create'))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    const input = vi.mocked(httpBridge.server.create).mock.calls[0][0] as { kind?: string }
+    expect(input.kind ?? 'http').toBe('http')
   })
 
   it('the name prefills from the preset, unique across both kinds, until the user types', () => {
@@ -211,6 +348,64 @@ describe('New mock server dialog', () => {
     expect(onClose).not.toHaveBeenCalled()
     expect(httpBridge.server.delete).toHaveBeenCalledTimes(1)
     expect(useTabsStore.getState().tabs).toHaveLength(0)
+  })
+})
+
+describe('Mocks panel — SSE and AI sections (issue #221)', () => {
+  it('SSE servers get their own section with the SSE badge; HTTP counts only HTTP', async () => {
+    await setupWith([
+      ...HTTP_SERVERS,
+      httpServer({ id: 's1', name: 'Ticker SSE', port: 3200, kind: 'sse' }),
+    ])
+    render(<MockServersPanel />)
+    const row = await screen.findByTestId('mock-sse-row-s1')
+    expect(within(row).getByText('SSE')).toBeInTheDocument()
+    expect(within(row).getByTestId('mock-sse-start')).toBeInTheDocument()
+    expect(screen.getByTestId('mock-sse-section-title-count')).toHaveTextContent('1')
+    expect(screen.getByTestId('mock-http-section-title-count')).toHaveTextContent('2')
+    expect(screen.queryByTestId('mock-http-row-s1')).toBeNull()
+    // Order: HTTP, MCP, SSE.
+    const order = ['mock-http-section', 'mock-mcp-section', 'mock-sse-section'].map((id) =>
+      screen.getByTestId(id),
+    )
+    expect(
+      order[0].compareDocumentPosition(order[1]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(
+      order[1].compareDocumentPosition(order[2]) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  it('an empty SSE section says so; its "+" opens the dialog on SSE', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-http-row-h1')
+    expect(screen.getByTestId('mock-sse-section')).toHaveTextContent('No SSE mock servers yet')
+    fireEvent.click(screen.getByTestId('mock-group-add-sse'))
+    await screen.findByTestId('mock-new-dialog')
+    expect(screen.getByTestId('mock-new-type-sse')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('the AI section is always shown after SSE; empty state, its "+" opens the dialog on AI', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-http-row-h1')
+    const ai = screen.getByTestId('mock-ai-section')
+    expect(ai).toHaveTextContent('No AI mock servers yet')
+    expect(
+      screen.getByTestId('mock-sse-section').compareDocumentPosition(ai) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    fireEvent.click(screen.getByTestId('mock-group-add-ai'))
+    await screen.findByTestId('mock-new-dialog')
+    expect(screen.getByTestId('mock-new-type-ai')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('an AI server is listed in the AI section with the AI badge, not under HTTP', async () => {
+    await setupWith([...HTTP_SERVERS, httpServer({ id: 'a1', name: 'Chat API', kind: 'ai' })])
+    render(<MockServersPanel />)
+    const row = await screen.findByTestId('mock-ai-row-a1')
+    expect(within(row).getByText('AI')).toBeInTheDocument()
+    expect(screen.getByTestId('mock-ai-section-title-count')).toHaveTextContent('1')
+    expect(screen.queryByTestId('mock-http-row-a1')).toBeNull()
   })
 })
 

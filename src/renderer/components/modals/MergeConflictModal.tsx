@@ -138,7 +138,7 @@ export default function MergeConflictModal() {
           </div>
           <span
             className="rounded px-2 py-0.5 text-[11px] font-medium"
-            style={{ background: 'var(--accentLight)', color: 'var(--accentText)' }}
+            style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
           >
             {conflict.conflicts.length} {t('mergeConflict.files')}
           </span>
@@ -157,9 +157,9 @@ export default function MergeConflictModal() {
                 className="rounded px-2 py-1 text-xs font-mono transition-colors"
                 style={{
                   background: i === fileIdx ? 'var(--white)' : 'transparent',
-                  color: i === fileIdx ? 'var(--accentText)' : 'var(--muted)',
+                  color: i === fileIdx ? 'var(--accent-text)' : 'var(--muted)',
                   border: '1px solid',
-                  borderColor: i === fileIdx ? 'var(--accentText)' : 'var(--border)',
+                  borderColor: i === fileIdx ? 'var(--accent-text)' : 'var(--border)',
                 }}
               >
                 {c.file}

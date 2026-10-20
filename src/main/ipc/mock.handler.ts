@@ -33,6 +33,13 @@ import {
 } from '../db/mock.repo'
 import { mockServerManager, type MockServerDef } from '../mock/server'
 import { importOpenApi, importPostman, type ImportResult } from '../mock/importers'
+import { normalizeMockServerKind, type MockServerKind } from '../../shared/mock-kind'
+import {
+  normalizeLlmConfig,
+  normalizeStreamConfig,
+  validateLlmConfig,
+  validateStreamConfig,
+} from '../../shared/mock-stream'
 import type {
   AuthConfig,
   CorsConfig,
@@ -133,9 +140,32 @@ export function buildServerDef(serverId: string): MockServerDef | null {
         script: r.script ?? '',
         order: r.response_order,
         enabled: !!r.enabled,
+        // Tolerant read (issue #221): a corrupt / foreign value serves the
+        // defaults. One column, read per body type.
+        streamConfig:
+          r.body_type === 'sse' ? normalizeStreamConfig(parseStreamConfig(r.stream_config)) : null,
+        llmConfig:
+          r.body_type === 'llm' ? normalizeLlmConfig(parseStreamConfig(r.stream_config)) : null,
       })),
     })),
   }
+}
+
+/**
+ * Save-time check of a response's `stream_config` (issue #221). Only the
+ * body type that reads the column gives it meaning — `sse` (stream
+ * settings) or `llm` (AI reply settings) — so only then is a bad value an
+ * error; `undefined` (not written) and `null` (clear) pass.
+ */
+function assertStreamConfig(bodyType: string | undefined, streamConfig: unknown): void {
+  if (streamConfig === undefined) return
+  const err =
+    bodyType === 'sse'
+      ? validateStreamConfig(streamConfig)
+      : bodyType === 'llm'
+        ? validateLlmConfig(streamConfig)
+        : null
+  if (err) throw new Error(err)
 }
 
 function safeJsonParse<T>(s: string, fallback: T): T {
@@ -144,6 +174,17 @@ function safeJsonParse<T>(s: string, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+/**
+ * `mock_responses.stream_config` for the view (issue #221): the stored JSON
+ * object, or null when unset / not valid JSON / not an object. Opaque for
+ * now — the streaming body types give it meaning.
+ */
+function parseStreamConfig(raw: string | null | undefined): Record<string, unknown> | null {
+  if (!raw) return null
+  const v = safeJsonParse<unknown>(raw, null)
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
 }
 
 function broadcast(channel: string, payload: unknown): void {
@@ -290,6 +331,7 @@ export function registerMockHandlers(): void {
 
   ipcMain.handle('mock:response:create', async (_e, input: CreateMockResponseInput) => {
     try {
+      assertStreamConfig(input.bodyType, input.streamConfig)
       const row = createMockResponse(input)
       await reloadServerForEndpoint(input.endpointId)
       return ok(responseRowToView(row))
@@ -300,6 +342,9 @@ export function registerMockHandlers(): void {
 
   ipcMain.handle('mock:response:update', async (_e, id: string, patch: UpdateMockResponseInput) => {
     try {
+      if (patch.streamConfig !== undefined) {
+        assertStreamConfig(patch.bodyType ?? getMockResponse(id)?.body_type, patch.streamConfig)
+      }
       const row = updateMockResponse(id, patch)
       if (!row) return fail('Response not found')
       await reloadServerForEndpoint(row.endpoint_id)
@@ -433,6 +478,7 @@ function serverRowToView(r: MockServerRow): {
   proxyEnabled: boolean
   proxyTarget: string
   proxyRecord: boolean
+  kind: MockServerKind
   createdAt: number
   updatedAt: number
 } {
@@ -469,6 +515,7 @@ function serverRowToView(r: MockServerRow): {
     proxyEnabled: !!r.proxy_enabled,
     proxyTarget: r.proxy_target,
     proxyRecord: !!r.proxy_record,
+    kind: normalizeMockServerKind(r.kind),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -519,6 +566,7 @@ function responseRowToView(r: MockResponseRow): {
   script: string
   order: number
   enabled: boolean
+  streamConfig: Record<string, unknown> | null
 } {
   return {
     id: r.id,
@@ -533,5 +581,6 @@ function responseRowToView(r: MockResponseRow): {
     script: r.script ?? '',
     order: r.response_order,
     enabled: !!r.enabled,
+    streamConfig: parseStreamConfig(r.stream_config),
   }
 }

@@ -34,8 +34,8 @@ uiTest.describe('Mock servers (deep)', () => {
     const row = window.getByText(/Mock|Server/i).first()
     if (await row.isVisible()) {
       await row.click()
-      for (const tab of [/Endpoints/i, /Settings/i, /Logs/i]) {
-        const btn = window.getByRole('button', { name: tab }).first()
+      for (const tab of ['endpoints', 'settings', 'logs']) {
+        const btn = window.getByTestId(`mock-tab-${tab}`)
         if (await btn.isVisible()) await btn.click()
       }
     }

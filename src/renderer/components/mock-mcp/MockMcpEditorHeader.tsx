@@ -1,4 +1,4 @@
-import { BellRing, ExternalLink, Play, Save, Square, Undo2 } from 'lucide-react'
+import { BellRing, ExternalLink, Save, Undo2 } from 'lucide-react'
 import { useMockMcpStore, stoppedState, getMockMcpApi } from '../../stores/mock-mcp.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
@@ -6,21 +6,8 @@ import type { MockMcpServer } from '../../types/mock-mcp'
 import { connectUrl, sseConnectUrl } from './mock-mcp-draft'
 import { openMockInMcpTab } from './mock-mcp-tabs'
 import { GhostButton, PrimaryButton } from './ui'
-import { CopyButton, StatusDot } from './ui-display'
-import { ERA_KEYS, STATUS_KEYS, sortEras } from './mock-mcp-format'
-
-function UrlLine({ label, url, testId }: { label: string; url: string; testId: string }) {
-  const { t } = useTranslation()
-  return (
-    <div className="flex min-w-0 items-center gap-1.5 text-[11px]">
-      <span className="shrink-0 text-[var(--muted)]">{label}</span>
-      <span data-testid={testId} className="truncate font-mono text-[var(--text)]" title={url}>
-        {url}
-      </span>
-      <CopyButton text={url} title={t('mockMcp.copyUrl')} />
-    </div>
-  )
-}
+import { ERA_KEYS, sortEras } from './mock-mcp-format'
+import MockEditorHeader, { MockStartStopButton, MockUrlLine } from '../mock/MockEditorHeader'
 
 /**
  * Editor header: name + live status, connect URL(s), Start/Stop, Open in MCP
@@ -70,95 +57,81 @@ export default function MockMcpEditorHeader({
   }
 
   return (
-    <div className="flex shrink-0 items-start gap-3 border-b border-[var(--border)] bg-[var(--white)] px-4 py-2">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 rounded border border-[var(--accent)] px-1 text-[9px] font-bold leading-[14px] text-[var(--accent-text)]">
-            MCP
-          </span>
-          <h2 className="m-0 truncate text-[15px] font-semibold text-[var(--heading)]">
-            {server.name}
-          </h2>
+    <MockEditorHeader
+      kind="mcp"
+      name={server.name}
+      status={live.status}
+      testIdPrefix="mock-mcp"
+      errorMessage={live.status === 'error' ? live.errorMessage : null}
+      titleExtras={
+        dirty && (
           <span
-            data-testid="mock-mcp-status"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text)]"
+            data-testid="mock-mcp-unsaved"
+            className="shrink-0 rounded bg-[var(--surface)] px-1.5 py-0.5 text-[11px] text-[var(--orange)]"
           >
-            <StatusDot status={live.status} />
-            {t(STATUS_KEYS[live.status])}
+            {t('mockMcp.unsaved')}
           </span>
-          {dirty && (
-            <span
-              data-testid="mock-mcp-unsaved"
-              className="shrink-0 rounded bg-[var(--surface)] px-1.5 py-0.5 text-[11px] text-[var(--orange)]"
+        )
+      }
+      actions={
+        <>
+          <MockStartStopButton
+            status={live.status}
+            testIdPrefix="mock-mcp"
+            onToggle={() => void toggle()}
+          />
+          {running && (
+            <GhostButton
+              data-testid="mock-mcp-notify"
+              onClick={() => void notifyTools()}
+              title={t('mockMcp.eras.notifyHint')}
             >
-              {t('mockMcp.unsaved')}
-            </span>
+              <BellRing size={12} />
+              {t('mockMcp.eras.notify')}
+            </GhostButton>
+          )}
+          <GhostButton data-testid="mock-mcp-open-in-mcp" onClick={openInMcp}>
+            <ExternalLink size={12} />
+            {t('mockMcp.openInMcp')}
+          </GhostButton>
+          {dirty && (
+            <GhostButton
+              data-testid="mock-mcp-discard"
+              onClick={onDiscard}
+              title={t('mockMcp.discard')}
+            >
+              <Undo2 size={12} />
+            </GhostButton>
+          )}
+          {/* One Save for the whole draft — every tab (issue #210). */}
+          <PrimaryButton
+            data-testid="mock-mcp-save"
+            onClick={onSave}
+            disabled={!dirty || saving}
+            title={t('mockMcp.saveAllHint')}
+          >
+            <Save size={12} />
+            {saving ? t('mockMcp.saving') : t('mockMcp.save')}
+          </PrimaryButton>
+        </>
+      }
+    >
+      <MockUrlLine label={t('mockMcp.urlStreamable')} url={url} testId="mock-mcp-url" />
+      {server.legacySse && (
+        <MockUrlLine
+          label={t('mockMcp.urlSse')}
+          url={sseConnectUrl(server, live.sseUrl)}
+          testId="mock-mcp-sse-url"
+        />
+      )}
+      {eras.length > 0 && (
+        <div data-testid="mock-mcp-eras" className="text-[11px] text-[var(--muted)]">
+          {t('mockMcp.eras.label')}: {eras.map((e) => t(ERA_KEYS[e])).join(' + ')}
+          {eras.includes('legacy') && live.legacyNotifications === false && (
+            <span className="text-[var(--hint)]"> · {t('mockMcp.eras.legacyNoNotify')}</span>
           )}
         </div>
-        <UrlLine label={t('mockMcp.urlStreamable')} url={url} testId="mock-mcp-url" />
-        {server.legacySse && (
-          <UrlLine
-            label={t('mockMcp.urlSse')}
-            url={sseConnectUrl(server, live.sseUrl)}
-            testId="mock-mcp-sse-url"
-          />
-        )}
-        {eras.length > 0 && (
-          <div data-testid="mock-mcp-eras" className="text-[11px] text-[var(--muted)]">
-            {t('mockMcp.eras.label')}: {eras.map((e) => t(ERA_KEYS[e])).join(' + ')}
-            {eras.includes('legacy') && live.legacyNotifications === false && (
-              <span className="text-[var(--hint)]"> · {t('mockMcp.eras.legacyNoNotify')}</span>
-            )}
-          </div>
-        )}
-        {live.status === 'error' && live.errorMessage && (
-          <div className="text-[11px] text-[var(--red)]">{live.errorMessage}</div>
-        )}
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <GhostButton
-          data-testid={running ? 'mock-mcp-stop' : 'mock-mcp-start'}
-          onClick={() => void toggle()}
-          disabled={live.status === 'starting'}
-          className={running ? 'text-[var(--red)]' : 'text-[var(--green)]'}
-        >
-          {running ? <Square size={12} /> : <Play size={12} />}
-          {running ? t('mock.stop') : t('mock.start')}
-        </GhostButton>
-        {running && (
-          <GhostButton
-            data-testid="mock-mcp-notify"
-            onClick={() => void notifyTools()}
-            title={t('mockMcp.eras.notifyHint')}
-          >
-            <BellRing size={12} />
-            {t('mockMcp.eras.notify')}
-          </GhostButton>
-        )}
-        <GhostButton data-testid="mock-mcp-open-in-mcp" onClick={openInMcp}>
-          <ExternalLink size={12} />
-          {t('mockMcp.openInMcp')}
-        </GhostButton>
-        {dirty && (
-          <GhostButton
-            data-testid="mock-mcp-discard"
-            onClick={onDiscard}
-            title={t('mockMcp.discard')}
-          >
-            <Undo2 size={12} />
-          </GhostButton>
-        )}
-        {/* One Save for the whole draft — every tab (issue #210). */}
-        <PrimaryButton
-          data-testid="mock-mcp-save"
-          onClick={onSave}
-          disabled={!dirty || saving}
-          title={t('mockMcp.saveAllHint')}
-        >
-          <Save size={12} />
-          {saving ? t('mockMcp.saving') : t('mockMcp.save')}
-        </PrimaryButton>
-      </div>
-    </div>
+      )}
+    </MockEditorHeader>
   )
 }

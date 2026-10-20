@@ -309,7 +309,7 @@ export default function JweBody(): React.JSX.Element {
               onClick={runDecrypt}
               disabled={busy || jwe.trim() === ''}
               className="rounded border px-3 py-1 text-xs font-medium disabled:opacity-50"
-              style={{ ...FIELD_STYLE, color: 'var(--accentText)' }}
+              style={{ ...FIELD_STYLE, color: 'var(--accent-text)' }}
             >
               {t('tools.jwt.jweDecryptButton')}
             </button>

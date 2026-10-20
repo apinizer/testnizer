@@ -144,10 +144,10 @@ export default function RegexTool() {
                     title={FLAG_DESCRIPTIONS[f]}
                     className="rounded px-2 py-1 text-xs font-mono font-semibold"
                     style={{
-                      background: active ? 'var(--accentLight)' : 'var(--white)',
-                      color: active ? 'var(--accentText)' : 'var(--muted)',
+                      background: active ? 'var(--accent-light)' : 'var(--white)',
+                      color: active ? 'var(--accent-text)' : 'var(--muted)',
                       border: '1px solid',
-                      borderColor: active ? 'var(--accentText)' : 'var(--border)',
+                      borderColor: active ? 'var(--accent-text)' : 'var(--border)',
                     }}
                   >
                     {f}
@@ -330,7 +330,7 @@ export default function RegexTool() {
                           ) : (
                             m.groups.map((g, j) => (
                               <div key={j}>
-                                <span style={{ color: 'var(--accentText)' }}>
+                                <span style={{ color: 'var(--accent-text)' }}>
                                   {g.name ?? `$${j + 1}`}:{' '}
                                 </span>
                                 {g.value ?? <em style={{ color: 'var(--muted)' }}>(undefined)</em>}

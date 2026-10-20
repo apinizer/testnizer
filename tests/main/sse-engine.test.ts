@@ -263,8 +263,79 @@ describe('sse.engine — error path', () => {
     const err = await waitFor(() => sseEvents().find((e) => e.type === 'error'))
     expect(err.connectionId).toBe(info.connectionId)
     expect(typeof err.timestamp).toBe('number')
+    // A dropped connection is transient — the client reconnects on its own.
+    expect(err.closed).toBeUndefined()
 
     disconnect(info.connectionId)
+  })
+})
+
+describe('sse.engine — the server ends the stream for good', () => {
+  /** First request streams one event and ends; every reconnect gets `status`. */
+  async function startFiniteServer(status: number): Promise<{ server: Server; url: string }> {
+    let hits = 0
+    const server = createServer((_req, res) => {
+      hits += 1
+      if (hits > 1) {
+        res.writeHead(status)
+        res.end()
+        return
+      }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.end('retry: 50\nid: 1\ndata: last\n\n')
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const port = (server.address() as AddressInfo).port
+    return { server, url: `http://127.0.0.1:${port}/events` }
+  }
+
+  it('a reconnect answered with HTTP 204 is reported as a terminal `ended` close', async () => {
+    const { server, url } = await startFiniteServer(204)
+    try {
+      const info = await connect({ url }, 1)
+      const err = await waitFor(
+        () => sseEvents().find((e) => e.type === 'error' && e.httpStatus === 204),
+        5000,
+      )
+      expect(err.connectionId).toBe(info.connectionId)
+      expect(err.closed).toBe('ended')
+      // Nothing left to disconnect — the engine dropped it.
+      expect(getConnectionInfo(info.connectionId)).toBeNull()
+    } finally {
+      server.closeAllConnections?.()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('a reconnect answered with a non-200 status is a terminal `failed` close', async () => {
+    const { server, url } = await startFiniteServer(503)
+    try {
+      const info = await connect({ url }, 1)
+      const err = await waitFor(
+        () => sseEvents().find((e) => e.type === 'error' && e.httpStatus === 503),
+        5000,
+      )
+      expect(err.connectionId).toBe(info.connectionId)
+      expect(err.closed).toBe('failed')
+    } finally {
+      server.closeAllConnections?.()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  it('the fetch path (POST) ending its stream is a terminal `ended` close', async () => {
+    const { server, url } = await startFiniteServer(204)
+    try {
+      const info = await connect({ url, method: 'POST', body: '{}' }, 1)
+      const err = await waitFor(() =>
+        sseEvents().find((e) => e.type === 'error' && e.connectionId === info.connectionId),
+      )
+      expect(err.closed).toBe('ended')
+      expect(err.data).toBe('SSE stream closed')
+    } finally {
+      server.closeAllConnections?.()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   })
 })
 

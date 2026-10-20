@@ -198,21 +198,329 @@ describe('mock:import:* + mock:logs:*', () => {
   })
 
   it('import:openapi returns success envelope', async () => {
-    const res = (await harness.invoke(
-      'mock:import:openapi',
-      'srv-id',
-      'openapi: 3.0',
-    )) as { success: boolean; data?: { created: number } }
+    const res = (await harness.invoke('mock:import:openapi', 'srv-id', 'openapi: 3.0')) as {
+      success: boolean
+      data?: { created: number }
+    }
     expect(res.success).toBe(true)
     expect(res.data?.created).toBe(1)
   })
 
   it('import:postman returns success envelope', async () => {
-    const res = (await harness.invoke(
-      'mock:import:postman',
-      'srv-id',
-      '{}',
-    )) as { success: boolean }
+    const res = (await harness.invoke('mock:import:postman', 'srv-id', '{}')) as {
+      success: boolean
+    }
     expect(res.success).toBe(true)
+  })
+})
+
+// ─── Issue #221 (Faz 0): server kind + response stream_config ────
+
+describe('mock server kind + response stream_config (issue #221)', () => {
+  type View = { success: boolean; error?: string; data?: Record<string, unknown> }
+
+  const createServer = (over: Record<string, unknown> = {}): Promise<View> =>
+    harness.invoke('mock:server:create', {
+      projectId,
+      name: 'mock-k',
+      port: 3100,
+      ...over,
+    }) as Promise<View>
+
+  it('defaults kind to http when absent — an old caller creates an HTTP server', async () => {
+    const r = await createServer()
+    expect(r.success).toBe(true)
+    expect(r.data?.kind).toBe('http')
+    expect(
+      testDb.prepare('SELECT kind FROM mock_servers WHERE id = ?').get(r.data!.id as string),
+    ).toEqual({ kind: 'http' })
+  })
+
+  it('stores sse / ai and returns them from get + list', async () => {
+    const sse = await createServer({ kind: 'sse' })
+    const ai = await createServer({ kind: 'ai', port: 3101 })
+    expect(sse.data?.kind).toBe('sse')
+    expect(ai.data?.kind).toBe('ai')
+    const got = (await harness.invoke('mock:server:get', sse.data!.id)) as View
+    expect(got.data?.kind).toBe('sse')
+    const list = (await harness.invoke('mock:server:list', projectId)) as {
+      data: { kind: string }[]
+    }
+    expect(list.data.map((s) => s.kind)).toEqual(['sse', 'ai'])
+  })
+
+  it('rejects an unknown kind on create (MCP is its own table) and writes nothing', async () => {
+    for (const kind of ['mcp', 'x']) {
+      const r = await createServer({ kind })
+      expect(r.success).toBe(false)
+      expect(r.error).toMatch(/Unknown mock server kind/)
+    }
+    expect(testDb.prepare('SELECT COUNT(*) AS n FROM mock_servers').get()).toEqual({ n: 0 })
+  })
+
+  it('kind is fixed at creation — update ignores it', async () => {
+    const r = await createServer({ kind: 'sse' })
+    const up = (await harness.invoke('mock:server:update', r.data!.id, {
+      name: 'renamed',
+      kind: 'ai',
+    })) as View
+    expect(up.success).toBe(true)
+    expect(up.data).toMatchObject({ name: 'renamed', kind: 'sse' })
+    expect(
+      testDb.prepare('SELECT kind FROM mock_servers WHERE id = ?').get(r.data!.id as string),
+    ).toEqual({ kind: 'sse' })
+  })
+
+  it('a stored unknown kind (file from another build) reads back as http, raw value untouched', async () => {
+    const r = await createServer()
+    testDb.prepare("UPDATE mock_servers SET kind = 'future' WHERE id = ?").run(r.data!.id)
+    const got = (await harness.invoke('mock:server:get', r.data!.id)) as View
+    expect(got.data?.kind).toBe('http')
+    expect(
+      testDb.prepare('SELECT kind FROM mock_servers WHERE id = ?').get(r.data!.id as string),
+    ).toEqual({ kind: 'future' })
+  })
+
+  async function endpointId(): Promise<string> {
+    const srv = await createServer({ kind: 'sse' })
+    const ep = (await harness.invoke('mock:endpoint:create', {
+      serverId: srv.data!.id,
+      method: 'GET',
+      path: '/events',
+    })) as { data: { id: string } }
+    return ep.data.id
+  }
+
+  const STREAM = { intervalMs: 1000, heartbeatMs: 15000, loop: true }
+
+  it('round-trips stream_config on create; absent → null', async () => {
+    const ep = await endpointId()
+    const plain = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      body: '{}',
+      order: 0,
+    })) as View
+    expect(plain.data?.streamConfig).toBeNull()
+    const streamed = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'json',
+      body: 'data: hi',
+      streamConfig: STREAM,
+      order: 1,
+    })) as View
+    expect(streamed.success).toBe(true)
+    expect(streamed.data?.streamConfig).toEqual(STREAM)
+    expect(
+      testDb
+        .prepare('SELECT stream_config FROM mock_responses WHERE id = ?')
+        .get(streamed.data!.id as string),
+    ).toEqual({ stream_config: JSON.stringify(STREAM) })
+    const list = (await harness.invoke('mock:response:list', ep)) as {
+      data: { streamConfig: unknown }[]
+    }
+    expect(list.data.map((r) => r.streamConfig)).toEqual([null, STREAM])
+  })
+
+  it('update: undefined keeps stream_config, an object sets it, null clears it', async () => {
+    const ep = await endpointId()
+    const r = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      streamConfig: STREAM,
+    })) as View
+    const id = r.data!.id as string
+    const kept = (await harness.invoke('mock:response:update', id, { name: 'n' })) as View
+    expect(kept.data?.streamConfig).toEqual(STREAM)
+    const set = (await harness.invoke('mock:response:update', id, {
+      streamConfig: { intervalMs: 5 },
+    })) as View
+    expect(set.data?.streamConfig).toEqual({ intervalMs: 5 })
+    const cleared = (await harness.invoke('mock:response:update', id, {
+      streamConfig: null,
+    })) as View
+    expect(cleared.data?.streamConfig).toBeNull()
+    expect(testDb.prepare('SELECT stream_config FROM mock_responses WHERE id = ?').get(id)).toEqual(
+      { stream_config: null },
+    )
+  })
+
+  it('a stored non-object / corrupt stream_config reads back as null', async () => {
+    const ep = await endpointId()
+    const r = (await harness.invoke('mock:response:create', { endpointId: ep })) as View
+    const id = r.data!.id as string
+    for (const raw of ['not json', '[1,2]', '42']) {
+      testDb.prepare('UPDATE mock_responses SET stream_config = ? WHERE id = ?').run(raw, id)
+      const list = (await harness.invoke('mock:response:list', ep)) as {
+        data: { streamConfig: unknown }[]
+      }
+      expect(list.data[0].streamConfig).toBeNull()
+    }
+  })
+
+  // ─── Faz 1a: save-time validation + the engine definition ──────
+
+  it('an sse response with invalid stream settings is refused on create and update', async () => {
+    const ep = await endpointId()
+    const bad = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: -1 },
+    })) as View
+    expect(bad.success).toBe(false)
+    expect(bad.error).toMatch(/^Event interval must be a whole number of milliseconds/)
+    expect(testDb.prepare('SELECT COUNT(*) AS n FROM mock_responses').get()).toEqual({ n: 0 })
+
+    const good = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: 50, loop: true },
+    })) as View
+    expect(good.success).toBe(true)
+    const id = good.data!.id as string
+    // The stored row's body type decides when the patch does not carry one.
+    const upd = (await harness.invoke('mock:response:update', id, {
+      streamConfig: { onEnd: 'later' },
+    })) as View
+    expect(upd.success).toBe(false)
+    expect(upd.error).toMatch(/close or stay open/)
+    const cleared = (await harness.invoke('mock:response:update', id, {
+      streamConfig: null,
+    })) as View
+    expect(cleared.success).toBe(true)
+  })
+
+  it('buildServerDef hands the engine a normalized config for sse rows only', async () => {
+    const srv = await createServer({ kind: 'sse', port: 3201 })
+    const ep = (await harness.invoke('mock:endpoint:create', {
+      serverId: srv.data!.id,
+      method: 'GET',
+      path: '/events',
+    })) as { data: { id: string } }
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: 0, loop: true },
+      order: 0,
+    })
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'json',
+      body: '{}',
+      streamConfig: STREAM,
+      order: 1,
+    })
+    const started = (await harness.invoke('mock:server:start', srv.data!.id)) as View
+    expect(started.success).toBe(true)
+    const def = fakeManager.start.mock.calls.at(-1)![0] as unknown as {
+      endpoints: { responses: { bodyType: string; streamConfig: unknown }[] }[]
+    }
+    expect(def.endpoints[0].responses.map((r) => [r.bodyType, r.streamConfig])).toEqual([
+      ['sse', { intervalMs: 10, heartbeatMs: 0, loop: true, onEnd: 'close', resume: true }],
+      ['json', null],
+    ])
+  })
+
+  // ─── Faz 2a: AI (`llm`) reply settings in the same column ───────
+
+  it('an llm response with invalid settings is refused on create and update; valid ones round-trip', async () => {
+    const ep = await endpointId()
+    const bad = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: { provider: 'gemini' },
+    })) as View
+    expect(bad.success).toBe(false)
+    expect(bad.error).toBe('Provider must be "openai" or "anthropic"')
+    // An SSE key is not an LLM setting.
+    const sseKey = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: { intervalMs: 5 },
+    })) as View
+    expect(sseKey.error).toBe('Unknown LLM setting: intervalMs')
+    expect(testDb.prepare('SELECT COUNT(*) AS n FROM mock_responses').get()).toEqual({ n: 0 })
+
+    const LLM = {
+      provider: 'anthropic',
+      chunking: 'char',
+      toolCalls: [{ name: 'echo', arguments: { text: '{{lastUserMessage}}' } }],
+    }
+    const good = (await harness.invoke('mock:response:create', {
+      endpointId: ep,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: LLM,
+    })) as View
+    expect(good.success).toBe(true)
+    expect(good.data?.streamConfig).toEqual(LLM)
+    const id = good.data!.id as string
+    // The stored row's body type (llm) decides when the patch does not carry one.
+    const upd = (await harness.invoke('mock:response:update', id, {
+      streamConfig: { stopReason: 'tool_calls' },
+    })) as View
+    expect(upd.success).toBe(false)
+    expect(upd.error).toBe('Stop reason "tool_calls" needs at least one tool call')
+    // A patch that switches the body type is checked against the NEW type.
+    const toSse = (await harness.invoke('mock:response:update', id, {
+      bodyType: 'sse',
+      streamConfig: { provider: 'openai' },
+    })) as View
+    expect(toSse.error).toBe('Unknown stream setting: provider')
+    const toJson = (await harness.invoke('mock:response:update', id, {
+      bodyType: 'json',
+      streamConfig: { provider: 'nope' },
+    })) as View
+    expect(toJson.success).toBe(true)
+  })
+
+  it('buildServerDef hands the engine a normalized llmConfig for llm rows only', async () => {
+    const srv = await createServer({ kind: 'ai', port: 3301 })
+    const ep = (await harness.invoke('mock:endpoint:create', {
+      serverId: srv.data!.id,
+      method: 'POST',
+      path: '/v1/chat/completions',
+    })) as { data: { id: string } }
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'llm',
+      body: 'Hi',
+      streamConfig: { provider: 'anthropic', chunkIntervalMs: 0 },
+      order: 0,
+    })
+    const unset = (await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'llm',
+      body: 'Hi',
+      order: 1,
+    })) as View
+    // A foreign / corrupt stored value still serves (the defaults).
+    testDb
+      .prepare('UPDATE mock_responses SET stream_config = ? WHERE id = ?')
+      .run('{"provider":"x","chunking":"sentence"}', unset.data!.id)
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'sse',
+      body: 'data: x',
+      streamConfig: { intervalMs: 50 },
+      order: 2,
+    })
+    const started = (await harness.invoke('mock:server:start', srv.data!.id)) as View
+    expect(started.success).toBe(true)
+    const def = fakeManager.start.mock.calls.at(-1)![0] as unknown as {
+      endpoints: {
+        responses: { bodyType: string; streamConfig: unknown; llmConfig: unknown }[]
+      }[]
+    }
+    const base = { stopReason: 'stop', toolCalls: [], usage: 'auto' }
+    expect(def.endpoints[0].responses.map((r) => [r.bodyType, r.llmConfig])).toEqual([
+      ['llm', { ...base, provider: 'anthropic', chunking: 'word', chunkIntervalMs: 0 }],
+      ['llm', { ...base, provider: 'openai', chunking: 'sentence', chunkIntervalMs: 30 }],
+      ['sse', null],
+    ])
+    expect(def.endpoints[0].responses[0].streamConfig).toBeNull()
   })
 })
