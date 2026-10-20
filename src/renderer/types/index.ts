@@ -1,6 +1,10 @@
 // src/renderer/types/index.ts
 // Testnizer — TypeScript tip referansi
 
+import type { MockServerKind } from '../../shared/mock-kind'
+
+export type { MockServerKind }
+
 // ─── Enums ───────────────────────────────────────────────────
 
 export type Protocol =
@@ -1251,6 +1255,11 @@ export interface MockServer {
   proxyTarget: string
   /** When enabled together with proxy, captured upstream responses are saved as new mock endpoints. */
   proxyRecord: boolean
+  /**
+   * Authoring profile (`src/shared/mock-kind.ts`, issue #221): sidebar section,
+   * presets, offered body types. Fixed at creation; the engine ignores it.
+   */
+  kind: MockServerKind
   createdAt: number
   updatedAt: number
 }
@@ -1320,6 +1329,8 @@ export interface MockResponse {
   script: string
   order: number
   enabled: boolean
+  /** Streaming knobs (issue #221) — parsed `stream_config` JSON, or null when unset. */
+  streamConfig: Record<string, unknown> | null
 }
 
 // ─── Test Suite (renderer-facing row shapes) ─────────────────

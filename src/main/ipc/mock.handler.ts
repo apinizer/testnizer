@@ -33,6 +33,7 @@ import {
 } from '../db/mock.repo'
 import { mockServerManager, type MockServerDef } from '../mock/server'
 import { importOpenApi, importPostman, type ImportResult } from '../mock/importers'
+import { normalizeMockServerKind, type MockServerKind } from '../../shared/mock-kind'
 import type {
   AuthConfig,
   CorsConfig,
@@ -144,6 +145,17 @@ function safeJsonParse<T>(s: string, fallback: T): T {
   } catch {
     return fallback
   }
+}
+
+/**
+ * `mock_responses.stream_config` for the view (issue #221): the stored JSON
+ * object, or null when unset / not valid JSON / not an object. Opaque for
+ * now — the streaming body types give it meaning.
+ */
+function parseStreamConfig(raw: string | null | undefined): Record<string, unknown> | null {
+  if (!raw) return null
+  const v = safeJsonParse<unknown>(raw, null)
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
 }
 
 function broadcast(channel: string, payload: unknown): void {
@@ -433,6 +445,7 @@ function serverRowToView(r: MockServerRow): {
   proxyEnabled: boolean
   proxyTarget: string
   proxyRecord: boolean
+  kind: MockServerKind
   createdAt: number
   updatedAt: number
 } {
@@ -469,6 +482,7 @@ function serverRowToView(r: MockServerRow): {
     proxyEnabled: !!r.proxy_enabled,
     proxyTarget: r.proxy_target,
     proxyRecord: !!r.proxy_record,
+    kind: normalizeMockServerKind(r.kind),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }
@@ -519,6 +533,7 @@ function responseRowToView(r: MockResponseRow): {
   script: string
   order: number
   enabled: boolean
+  streamConfig: Record<string, unknown> | null
 } {
   return {
     id: r.id,
@@ -533,5 +548,6 @@ function responseRowToView(r: MockResponseRow): {
     script: r.script ?? '',
     order: r.response_order,
     enabled: !!r.enabled,
+    streamConfig: parseStreamConfig(r.stream_config),
   }
 }

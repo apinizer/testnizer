@@ -14,7 +14,7 @@ import { URL } from 'node:url'
 import { EventEmitter } from 'node:events'
 import { matchEndpoint, type MatchableEndpoint } from './matcher'
 import { evaluateCondition } from './condition'
-import { renderTemplate, type TemplateContext } from './template'
+import { llmRequestShortcuts, renderTemplate, type TemplateContext } from './template'
 import { loadEnvVars } from '../lib/env-vars'
 import { getState, clearState } from './state'
 import { runScript, type ScriptResponse } from './script'
@@ -527,6 +527,9 @@ class MockServerManager extends EventEmitter {
       },
       state: getState(s.def.id),
       envVars,
+      // `{{lastUserMessage}}` / `{{lastToolResult}}` / `{{model}}` (issue #221)
+      // — every body type; empty for a body without that shape.
+      ...llmRequestShortcuts(body),
     }
     const renderedBody = renderTemplate(picked.body, ctx)
     const renderedHeaders: Record<string, string> = {}

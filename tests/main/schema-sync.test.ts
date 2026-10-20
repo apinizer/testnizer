@@ -419,6 +419,7 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
       proxy_enabled INTEGER NOT NULL DEFAULT 0,
       proxy_target TEXT NOT NULL DEFAULT '',
       proxy_record INTEGER NOT NULL DEFAULT 0,
+      kind TEXT NOT NULL DEFAULT 'http',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -451,7 +452,8 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
       condition TEXT NOT NULL DEFAULT '{"type":"always"}',
       script TEXT NOT NULL DEFAULT '',
       response_order INTEGER NOT NULL DEFAULT 0,
-      enabled INTEGER NOT NULL DEFAULT 1
+      enabled INTEGER NOT NULL DEFAULT 1,
+      stream_config TEXT
     );
 
     CREATE TABLE IF NOT EXISTS ai_conversations (
@@ -481,6 +483,8 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
     `ALTER TABLE mock_servers ADD COLUMN proxy_enabled INTEGER NOT NULL DEFAULT 0`,
     `ALTER TABLE mock_servers ADD COLUMN proxy_target TEXT NOT NULL DEFAULT ''`,
     `ALTER TABLE mock_servers ADD COLUMN proxy_record INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE mock_servers ADD COLUMN kind TEXT NOT NULL DEFAULT 'http'`,
+    `ALTER TABLE mock_responses ADD COLUMN stream_config TEXT`,
   ]
   for (const sql of alters) {
     try {

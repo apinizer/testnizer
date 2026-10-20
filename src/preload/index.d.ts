@@ -519,6 +519,7 @@ interface ConsoleApi {
 // the format could not carry (issue #197) — see src/shared/collection-export.ts.
 import type { ExportSkippedItem } from '../shared/collection-export'
 import type { HistoryConfigured } from '../shared/history-snapshot'
+import type { MockServerKind } from '../shared/mock-kind'
 import type {
   AiApprovalDecision,
   AiChatStreamEvent,
@@ -2378,6 +2379,8 @@ interface MockServerCreatePayload {
   basePath?: string
   description?: string
   autoStart?: boolean
+  /** Fixed at creation (issue #221); absent → 'http'. */
+  kind?: MockServerKind
 }
 
 interface MockServerSubApi {
