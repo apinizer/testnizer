@@ -48,6 +48,46 @@ export function chunkText(text: string, mode: MockLlmChunking): string[] {
   return chunks.flatMap(capLength)
 }
 
+/** Code points of `text`, counting stops past `limit`. */
+function codePoints(text: string, limit = Infinity): number {
+  let n = 0
+  for (const _ of text) if (++n > limit) break
+  return n
+}
+
+/** Pieces `capLength` cuts one non-empty chunk into. */
+function capCount(chunk: string): number {
+  return Math.max(1, Math.ceil(codePoints(chunk) / LLM_MAX_CHUNK_CHARS))
+}
+
+/**
+ * `chunkText(text, mode).length` without building the chunks — for the
+ * frame limit, checked BEFORE a reply is encoded (a 5 MB echoed prompt with
+ * `char` chunking would otherwise build millions of events only to be
+ * refused). Counting stops as soon as it passes `limit` (the result is then
+ * some number above it), so a huge text costs O(limit), not O(text).
+ */
+export function countChunks(text: string, mode: MockLlmChunking, limit = Infinity): number {
+  if (text === '') return 0
+  if (mode === 'char') return codePoints(text, limit)
+  let n = 0
+  for (const m of text.matchAll(mode === 'sentence' ? SENTENCE : WORD)) {
+    if (m[0] === '') continue
+    n += capCount(m[0])
+    if (n > limit) return n
+  }
+  // Whitespace-only text matches no word: it is one chunk of its own (then capped).
+  return n === 0 ? capCount(text) : n
+}
+
+/** `argumentPieces(json).length`, without building the pieces. */
+export function argumentPieceCount(json: string): number {
+  const points = codePoints(json)
+  if (points === 0) return 1
+  const count = Math.max(1, Math.min(16, Math.ceil(points / 4)))
+  return Math.ceil(points / Math.ceil(points / count))
+}
+
 /**
  * Tool-call arguments as streamed fragments (design §6.6.2: 8–16 pieces for
  * a typical call): about 4 code points per piece, never more than 16

@@ -18,3 +18,22 @@ describe('mock.bodyHint lists query syntax (#30)', () => {
     })
   }
 })
+
+/**
+ * Issue #221 review (PR #225), item 6 — the AI mock's OpenAI stream reports
+ * usage on the finish chunk ALWAYS and, with `include_usage`, again on
+ * OpenAI's `choices: []` chunk. The LLM hint says so (a client that sums
+ * usage across chunks would double count), in both locales.
+ */
+describe('mockLlm.bodyHint explains where streamed usage is sent', () => {
+  for (const locale of ['en', 'tr'] as const) {
+    it(`mentions the finish chunk, include_usage and choices: [] in ${locale}`, () => {
+      setLocale(locale)
+      const hint = t('mockLlm.bodyHint')
+      expect(hint).toContain('stream_options.include_usage')
+      expect(hint).toContain('choices: []')
+      expect(hint).toMatch(locale === 'en' ? /finish chunk/ : /bitiş parçası/)
+      expect(hint).toMatch(locale === 'en' ? /twice/ : /iki kez/)
+    })
+  }
+})

@@ -305,6 +305,28 @@ export function normalizeLlmConfig(raw: unknown): MockLlmConfig {
   }
 }
 
+/**
+ * The response editor's read of a stored `llm` config: `normalizeLlmConfig`,
+ * except that a stored tool-call list is kept AS STORED (and the stored
+ * stop reason with it). The editor writes the whole config back on every
+ * change; with the tolerant read a hand-edited call that `normalizeToolCall`
+ * rejects (no name, oversized arguments) was silently deleted by an
+ * unrelated edit. Kept, it is shown, and the main process's validation says
+ * what is wrong with it.
+ */
+export function llmConfigForEdit(raw: unknown): MockLlmConfig {
+  const cfg = normalizeLlmConfig(raw)
+  const r = asRecord(parseMaybeJson(raw))
+  if (!r || !Array.isArray(r.toolCalls) || r.toolCalls.length === 0) return cfg
+  return {
+    ...cfg,
+    toolCalls: r.toolCalls as MockLlmToolCall[],
+    stopReason: LLM_STOP_REASONS.includes(r.stopReason as MockLlmStopReason)
+      ? (r.stopReason as MockLlmStopReason)
+      : cfg.stopReason,
+  }
+}
+
 function toolCallError(raw: unknown, n: number): string | null {
   const r = asRecord(raw)
   if (!r) return `Tool call ${n} must be an object with a name and arguments`

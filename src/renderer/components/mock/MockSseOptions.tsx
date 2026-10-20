@@ -7,8 +7,10 @@
  *    label, plain select) — the field parts are shared with the AI "LLM" row
  *    (`MockOptionFields.tsx`). Every change writes the whole normalized config
  *    (a stored value may be partial or carry keys from another build — those
- *    the main process would reject); a rejected value is shown, translated,
- *    in a `role="alert"` line like the condition editor's error.
+ *    the main process would reject), merged over the last written one while
+ *    a save is in flight (`useConfigWriter`: quick changes compose); a
+ *    rejected value is shown, translated, in a `role="alert"` line like the
+ *    condition editor's error.
  *  - `MockSseBodyNotes` — the hint under the body and the "no events" warning.
  */
 import { useId, useState } from 'react'
@@ -24,6 +26,7 @@ import {
 } from '../../../shared/mock-stream'
 import { splitSseBlocks } from '../../../shared/mock-sse-blocks'
 import { translateStreamError } from './mock-stream-errors'
+import { useConfigWriter, type ConfigPatch } from './use-config-writer'
 import {
   OptionError,
   OptionNumber,
@@ -43,9 +46,10 @@ export default function MockSseOptions({ response }: { response: MockResponse })
   const [error, setError] = useState<string | null>(null)
   const reasonId = useId()
   const cfg = normalizeStreamConfig(response.streamConfig)
+  const save = useConfigWriter(cfg, (streamConfig) => updateResponse(response.id, { streamConfig }))
 
-  async function write(patch: Partial<MockSseStreamConfig>): Promise<void> {
-    const err = await updateResponse(response.id, { streamConfig: { ...cfg, ...patch } })
+  async function write(patch: ConfigPatch<MockSseStreamConfig>): Promise<void> {
+    const err = await save(patch)
     setError(err ? translateStreamError(err) : null)
   }
 

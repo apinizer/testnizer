@@ -25,9 +25,11 @@ import { validateBody } from './schemaValidator'
 import { buildEchoResponse, forwardRequest } from './proxy'
 import { splitSseBlocks, resumeCursor } from '../../shared/mock-sse-blocks'
 import {
+  SSE_LOG_WINDOW_BYTES,
   SSE_MAX_FRAME_BYTES,
   SSE_MAX_OPEN_STREAMS,
   SSE_MAX_PLAN_FRAMES,
+  clipMaskedPreview,
   renderBlocksOnce,
   sseEventBlock,
   sseResponseHeaders,
@@ -49,13 +51,18 @@ import {
   encodeLlmEvents,
   encodeLlmJson,
   llmErrorBody,
+  llmStreamFrameCount,
   readLlmRequest,
 } from './stream/llm'
 import {
   NAME_ONLY,
+  maskBodyText,
+  maskFreeText,
   maskHeaderRecord,
+  maskResponseBodyText,
   maskUrlText,
   withCredentialValues,
+  type Scrubber,
 } from '../lib/sensitive-scrub'
 import {
   createMockEndpoint as repoCreateEndpoint,
@@ -302,6 +309,14 @@ class MockServerManager extends EventEmitter {
    */
   openStreamCount(serverId: string): number {
     return this.servers.get(serverId)?.openStreams.size ?? 0
+  }
+
+  /**
+   * Number of SSE / AI requests of a server still waiting out their
+   * `delayMs` (test hook). They count toward `SSE_MAX_OPEN_STREAMS`.
+   */
+  pendingStreamCount(serverId: string): number {
+    return this.servers.get(serverId)?.pendingStreams.size ?? 0
   }
 
   /** Per-stream counters of a server's open SSE streams (test hook). */
@@ -602,7 +617,35 @@ class MockServerManager extends EventEmitter {
     // opens a stream later.
     if (picked.delayMs > 0) {
       if (isSse || isLlm) {
-        if (!(await this.waitBeforeStream(s, res, picked.delayMs))) return
+        const wait = await this.waitBeforeStream(s, res, picked.delayMs)
+        if (wait === 'full') {
+          // Refused now, not after the delay: open + waiting ≤ the limit.
+          const message = tooManyStreamsMessage()
+          this.respondAndLog(
+            s,
+            req,
+            res,
+            startedAt,
+            headers,
+            query,
+            path,
+            bodyText,
+            endpoint.id,
+            picked.id,
+            {
+              statusCode: 503,
+              headers: {
+                'content-type': 'application/json; charset=utf-8',
+                ...this.corsFor(s, headers),
+              },
+              body: isLlm
+                ? llmServerErrorBody(normalizeLlmConfig(picked.llmConfig ?? null).provider, message)
+                : JSON.stringify({ error: 'too_many_streams', message }),
+            },
+          )
+          return
+        }
+        if (wait === 'gone') return
       } else {
         await delay(picked.delayMs)
       }
@@ -767,15 +810,25 @@ class MockServerManager extends EventEmitter {
     out: { statusCode: number; headers: Record<string, string>; body: string },
     scriptLog: string[] = [],
     scriptError: string | null = null,
+    /** The 500 body when the head cannot be written (AI replies: the provider's shape). */
+    errorBody?: (message: string) => string,
   ): void {
+    let sent = out
+    let error = scriptError
     try {
       res.statusCode = out.statusCode
       for (const [k, v] of Object.entries(out.headers)) res.setHeader(k, v)
       res.end(out.body)
-    } catch {
-      /* socket already closed */
+    } catch (e) {
+      // A status / header the response cannot carry (a script's CR/LF value,
+      // a status below 100) — answer 500 instead of leaving the client hanging.
+      const fallback = sendHeadFailure(res, e, this.corsFor(s, reqHeaders), errorBody)
+      if (fallback) {
+        sent = fallback.out
+        error = scriptError ? `${scriptError}; ${fallback.error}` : fallback.error
+      }
     }
-    const responseHeaders = { ...out.headers }
+    const responseHeaders = { ...sent.headers }
     if (scriptLog.length > 0) {
       // Surface script console output as part of the log entry's response body
       // when not strictly typed for it; for now we append to error or attach via headers.
@@ -788,26 +841,35 @@ class MockServerManager extends EventEmitter {
       query,
       reqHeaders,
       bodyText,
-      statusCode: out.statusCode,
+      statusCode: sent.statusCode,
       latencyMs: Date.now() - startedAt,
       matchedEndpointId,
       matchedResponseId,
       responseHeaders,
-      responseBody: out.body,
-      error: scriptError,
+      responseBody: sent.body,
+      error,
     })
+  }
+
+  private corsFor(s: RunningServer, reqHeaders: Record<string, string>): Record<string, string> {
+    return s.def.cors.enabled ? corsResponseHeaders(s.def.cors, reqHeaders) : {}
   }
 
   /**
    * Append one entry to the server's log ring buffer and broadcast it. The
    * ONE place a mock log entry is built, so the credential mask applies to
-   * every path (matched response, SSE, 404, echo, proxy, auth failure, …):
-   * credential-named request headers and query params are masked by name
-   * (`src/shared/credential-headers.ts` rules, via `sensitive-scrub.ts`),
-   * and the credential values they carried are scrubbed from the rest of the
-   * entry — an echo template returning `{{request.headers.authorization}}`
-   * does not undo the mask. Only the LOG is masked: auth checks, templates
-   * and the proxy have long since used the real values.
+   * every path (matched response, SSE, 404, echo, proxy, auth failure, …).
+   * The History / Runner helpers of `sensitive-scrub.ts`, both layers:
+   *  - name rule (`src/shared/credential-headers.ts`): credential-named
+   *    request and response headers (`Authorization`, an upstream
+   *    `Set-Cookie` / `X-Auth-Token`), query params, request body fields
+   *    (`client_secret` in JSON, a form `password`, `<wsse:Password>`) and
+   *    response body fields (`access_token`, `refresh_token`, …);
+   *  - value scrub: the credential values the request carried by name are
+   *    scrubbed from the rest of the entry — an echo template returning
+   *    `{{request.headers.authorization}}` does not undo the mask.
+   * Only the LOG is masked: auth checks, templates, the proxy and the reply
+   * the client receives have long since used the real values.
    */
   private pushLog(
     s: RunningServer,
@@ -827,10 +889,8 @@ class MockServerManager extends EventEmitter {
       error: string | null
     },
   ): void {
-    const scrub = withCredentialValues(NAME_ONLY, { headers: e.reqHeaders, query: e.query })
+    const scrub = logScrubber(e.reqHeaders, e.query)
     const qs = new URLSearchParams(e.query).toString()
-    const maskedResponseHeaders: Record<string, string> = {}
-    for (const [k, v] of Object.entries(e.responseHeaders)) maskedResponseHeaders[k] = scrub.text(v)
     const log: MockLogEntry = {
       id: randomUUID(),
       serverId: s.def.id,
@@ -844,10 +904,13 @@ class MockServerManager extends EventEmitter {
       matchedResponseId: e.matchedResponseId,
       request: {
         headers: maskHeaderRecord(e.reqHeaders, scrub) ?? {},
-        body: scrub.text(e.bodyText),
+        body: maskBodyText(e.bodyText, scrub),
       },
-      response: { headers: maskedResponseHeaders, body: scrub.text(e.responseBody) },
-      error: e.error === null ? null : scrub.text(e.error),
+      response: {
+        headers: maskHeaderRecord(e.responseHeaders, scrub) ?? {},
+        body: maskResponseBodyText(e.responseBody, scrub),
+      },
+      error: e.error === null ? null : maskFreeText(e.error, scrub),
     }
     s.logBuffer.push(log)
     if (s.logBuffer.length > MAX_LOG_BUFFER) s.logBuffer.shift()
@@ -857,16 +920,20 @@ class MockServerManager extends EventEmitter {
   // ─── SSE (issue #221) ──────────────────────────────────────────
 
   /**
-   * Wait out an SSE response's `delayMs` while tracked by the server.
-   * Resolves false — and the caller does nothing more — when the server
-   * stopped (the request's socket is destroyed) or the client went away.
+   * Wait out an SSE / AI response's `delayMs` while tracked by the server.
+   * A waiting request holds a stream slot: `'full'` (nothing waited, the
+   * caller answers 503) when open + waiting streams already reach
+   * `SSE_MAX_OPEN_STREAMS`. `'gone'` — and the caller does nothing more —
+   * when the server stopped (the request's socket is destroyed) or the
+   * client went away; `'ok'` after the delay.
    */
   private waitBeforeStream(
     s: RunningServer,
     res: http.ServerResponse,
     ms: number,
-  ): Promise<boolean> {
-    if (s.stopped || res.destroyed) return Promise.resolve(false)
+  ): Promise<'ok' | 'gone' | 'full'> {
+    if (s.stopped || res.destroyed) return Promise.resolve('gone')
+    if (streamSlotsTaken(s) >= SSE_MAX_OPEN_STREAMS) return Promise.resolve('full')
     return new Promise((resolve) => {
       let done = false
       const settle = (alive: boolean): void => {
@@ -875,7 +942,7 @@ class MockServerManager extends EventEmitter {
         clearTimeout(timer)
         res.off('close', onClose)
         s.pendingStreams.delete(cancel)
-        resolve(alive && !s.stopped && !res.destroyed && !res.writableEnded)
+        resolve(alive && !s.stopped && !res.destroyed && !res.writableEnded ? 'ok' : 'gone')
       }
       const onClose = (): void => settle(false)
       const cancel = (): void => {
@@ -971,11 +1038,8 @@ class MockServerManager extends EventEmitter {
       plain(out.statusCode, sseResponseHeaders(out.headers), '')
       return
     }
-    if (s.openStreams.size >= SSE_MAX_OPEN_STREAMS) {
-      jsonError(
-        'too_many_streams',
-        `This mock server already has ${SSE_MAX_OPEN_STREAMS} open streams`,
-      )
+    if (streamSlotsTaken(s) >= SSE_MAX_OPEN_STREAMS) {
+      jsonError('too_many_streams', tooManyStreamsMessage())
       return
     }
 
@@ -1014,7 +1078,9 @@ class MockServerManager extends EventEmitter {
    * itself (one character per frame with `char` chunking), so a credential
    * echoed into the reply is never contiguous in the frames and the log's
    * value scrub could not find it — the assembled JSON is masked like any
-   * other body (mask first, then clip: the whole body goes to `pushLog`).
+   * other body. Either way the closed entry is masked first, then clipped
+   * (`clipMaskedPreview`): a window of `SSE_LOG_WINDOW_BYTES` is masked, the
+   * preview is cut from the masked text.
    */
   private runStream(
     s: RunningServer,
@@ -1032,13 +1098,40 @@ class MockServerManager extends EventEmitter {
     statusCode: number,
     headers: Record<string, string>,
     plan: SseStreamPlan,
-    open: { tag: string; note: string | null; logBody?: string },
+    open: {
+      tag: string
+      note: string | null
+      logBody?: string
+      /** The 500 body when the head cannot be written (AI replies: the provider's shape). */
+      errorBody?: (message: string) => string
+    },
   ): void {
     try {
       res.writeHead(statusCode, headers)
       res.flushHeaders()
-    } catch {
-      return // socket already gone
+    } catch (e) {
+      // A header the response cannot carry (a script's CR/LF value): 500,
+      // logged — not a request left open. A socket already gone: nothing to answer.
+      const fallback = sendHeadFailure(res, e, this.corsFor(s, req.reqHeaders), open.errorBody)
+      if (!fallback) return
+      const responseHeaders = { ...fallback.out.headers }
+      if (req.scriptLog.length > 0) responseHeaders['x-mock-script-log'] = req.scriptLog.join(' | ')
+      this.pushLog(s, {
+        ts: startedAt,
+        method: res.req.method ?? 'GET',
+        path: req.path,
+        query: req.query,
+        reqHeaders: req.reqHeaders,
+        bodyText: req.bodyText,
+        statusCode: fallback.out.statusCode,
+        latencyMs: Date.now() - startedAt,
+        matchedEndpointId: req.matchedEndpointId,
+        matchedResponseId: req.matchedResponseId,
+        responseHeaders,
+        responseBody: fallback.out.body,
+        error: fallback.error,
+      })
+      return
     }
 
     const streamId = randomUUID()
@@ -1069,6 +1162,17 @@ class MockServerManager extends EventEmitter {
 
     const handle = startSseStream(res, plan, (summary: SseStreamSummary) => {
       s.openStreams.delete(handle)
+      // Mask the whole window, THEN clip (`pushLog` masks the clipped text
+      // again — harmless): a credential straddling the preview cut is masked
+      // before the cut can split it.
+      const scrub = logScrubber(req.reqHeaders, req.query)
+      const windowCut =
+        open.logBody !== undefined
+          ? open.logBody.length > SSE_LOG_WINDOW_BYTES
+          : summary.previewTruncated
+      const window =
+        open.logBody !== undefined ? open.logBody.slice(0, SSE_LOG_WINDOW_BYTES) : summary.preview
+      const shown = clipMaskedPreview(maskResponseBodyText(window, scrub), windowCut)
       this.pushLog(s, {
         ...base,
         ts: Date.now(),
@@ -1079,7 +1183,7 @@ class MockServerManager extends EventEmitter {
           'x-mock-stream-id': streamId,
         },
         responseBody:
-          (open.logBody ?? summary.preview + (summary.previewTruncated ? '\n…' : '')) +
+          shown +
           `\n… (stream: ${summary.framesSent} frames, ${(summary.durationMs / 1000).toFixed(1)} s, ` +
           `${FINISH_REASON_TEXT[summary.reason]})`,
         error: summary.error,
@@ -1124,6 +1228,7 @@ class MockServerManager extends EventEmitter {
   ): void {
     if (s.stopped || res.destroyed) return
     const JSON_CT = 'application/json; charset=utf-8'
+    const providerError = (message: string): string => llmServerErrorBody(config.provider, message)
     const plain = (statusCode: number, headers: Record<string, string>, body: string): void =>
       this.respondAndLog(
         s,
@@ -1138,6 +1243,8 @@ class MockServerManager extends EventEmitter {
         matchedResponseId,
         { statusCode, headers, body },
         scriptLog,
+        null,
+        providerError,
       )
     const json = (statusCode: number, body: string): void =>
       plain(statusCode, { ...out.headers, 'content-type': JSON_CT }, body)
@@ -1162,29 +1269,31 @@ class MockServerManager extends EventEmitter {
       return
     }
 
-    const serverError = (message: string): void =>
-      json(
-        503,
-        llmErrorBody(
-          config.provider,
-          config.provider === 'anthropic' ? 'api_error' : 'server_error',
-          message,
-        ),
-      )
-    const blocks = encodeLlmEvents(plan).map(sseEventBlock)
-    if (blocks.length > SSE_MAX_PLAN_FRAMES) {
+    const serverError = (message: string): void => json(503, providerError(message))
+    const tooManyFrames = (count: string): void =>
       serverError(
-        `The mock reply streams ${blocks.length} chunks; a mock stream serves at most ` +
+        `The mock reply streams ${count} chunks; a mock stream serves at most ` +
           `${SSE_MAX_PLAN_FRAMES} — use word chunking or a shorter text`,
       )
+    // Limits before work: the frame count is estimated from the text (counting
+    // stops past the limit) — encoding a 5 MB echoed prompt char by char only
+    // to refuse it would block the main process.
+    const estimate = llmStreamFrameCount(plan, SSE_MAX_PLAN_FRAMES)
+    if (estimate > SSE_MAX_PLAN_FRAMES) {
+      tooManyFrames(`more than ${SSE_MAX_PLAN_FRAMES}`)
+      return
+    }
+    if (streamSlotsTaken(s) >= SSE_MAX_OPEN_STREAMS) {
+      serverError(tooManyStreamsMessage())
+      return
+    }
+    const blocks = encodeLlmEvents(plan).map(sseEventBlock)
+    if (blocks.length > SSE_MAX_PLAN_FRAMES) {
+      tooManyFrames(String(blocks.length))
       return
     }
     if (blocks.some((b) => Buffer.byteLength(b.raw) + b.separator.length > SSE_MAX_FRAME_BYTES)) {
       serverError(`A chunk of the mock reply is larger than ${SSE_MAX_FRAME_BYTES} bytes`)
-      return
-    }
-    if (s.openStreams.size >= SSE_MAX_OPEN_STREAMS) {
-      serverError(`This mock server already has ${SSE_MAX_OPEN_STREAMS} open streams`)
       return
     }
 
@@ -1208,7 +1317,7 @@ class MockServerManager extends EventEmitter {
         // Frames are encoded JSON: never run a template over them (user text may hold `{{`).
         render: (raw) => raw,
       },
-      { tag: 'open', note: null, logBody: encodeLlmJson(plan) },
+      { tag: 'open', note: null, logBody: encodeLlmJson(plan), errorBody: providerError },
     )
   }
 
@@ -1224,6 +1333,79 @@ class MockServerManager extends EventEmitter {
 export const mockServerManager = new MockServerManager()
 
 // ─── Helpers ─────────────────────────────────────────────────────
+
+/**
+ * The status line or a header could not be written (`writeHead` /
+ * `setHeader` threw: a CR/LF header value → `ERR_INVALID_CHAR`, a status
+ * outside 100–999 → `RangeError`). While nothing was sent and the socket is
+ * open, answer 500 JSON — `errorBody` shapes it (an AI reply: the
+ * provider's error envelope), else the mock's own `{error, message}` — and
+ * return what was sent for the log. Anything else (headers already out, the
+ * socket gone): the response is destroyed, `null`.
+ */
+function sendHeadFailure(
+  res: http.ServerResponse,
+  e: unknown,
+  corsHeaders: Record<string, string>,
+  errorBody?: (message: string) => string,
+): {
+  out: { statusCode: number; headers: Record<string, string>; body: string }
+  error: string
+} | null {
+  if (res.headersSent || res.destroyed || res.writableEnded) {
+    try {
+      res.destroy()
+    } catch {
+      /* already gone */
+    }
+    return null
+  }
+  const reason = e instanceof Error ? e.message : String(e)
+  const error = `The mock response could not be sent: ${reason}`
+  const out = {
+    statusCode: 500,
+    headers: { 'content-type': 'application/json; charset=utf-8', ...corsHeaders },
+    body: errorBody
+      ? errorBody(error)
+      : JSON.stringify({ error: 'invalid_response', message: error }),
+  }
+  try {
+    // Headers stored before the bad one must not ride on the 500.
+    for (const name of res.getHeaderNames()) res.removeHeader(name)
+    res.statusCode = out.statusCode
+    for (const [k, v] of Object.entries(out.headers)) res.setHeader(k, v)
+    res.end(out.body)
+  } catch {
+    try {
+      res.destroy()
+    } catch {
+      /* already gone */
+    }
+  }
+  return { out, error }
+}
+
+/**
+ * Stream slots in use: open streams plus SSE / AI requests still waiting out
+ * their delay (a waiting request will open one). Kept ≤ `SSE_MAX_OPEN_STREAMS`.
+ */
+function streamSlotsTaken(s: RunningServer): number {
+  return s.openStreams.size + s.pendingStreams.size
+}
+
+/** A provider-shaped server error (`server_error` / Anthropic `api_error`). */
+function llmServerErrorBody(provider: MockLlmConfig['provider'], message: string): string {
+  return llmErrorBody(provider, provider === 'anthropic' ? 'api_error' : 'server_error', message)
+}
+
+function tooManyStreamsMessage(): string {
+  return `This mock server already has ${SSE_MAX_OPEN_STREAMS} open or waiting streams`
+}
+
+/** The log's value scrubber: the credential values the request carried by name. */
+function logScrubber(reqHeaders: Record<string, string>, query: Record<string, string>): Scrubber {
+  return withCredentialValues(NAME_ONLY, { headers: reqHeaders, query })
+}
 
 function headersToRecord(h: http.IncomingHttpHeaders): Record<string, string> {
   const out: Record<string, string> = {}

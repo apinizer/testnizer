@@ -38,8 +38,21 @@ export const SSE_MAX_FRAME_BYTES = 64 * 1024
 export const SSE_MAX_PLAN_FRAMES = 10_000
 /** Open streams per mock server; one more is refused with 503. */
 export const SSE_MAX_OPEN_STREAMS = 64
-/** Bytes of written frames kept for the log entry. */
+/** Characters of written frames the log entry shows (after masking). */
 export const SSE_LOG_PREVIEW_BYTES = 16 * 1024
+/**
+ * Bytes of written frames the writer keeps for the log: the preview plus a
+ * slack, so the log can MASK first and clip after (issue #196's Console
+ * rule). Clipping first cut a credential that straddled byte 16 384 in two,
+ * and the cut prefix no longer matched the value scrub or the name rule.
+ */
+export const SSE_LOG_WINDOW_BYTES = SSE_LOG_PREVIEW_BYTES + 64 * 1024
+/**
+ * When the window itself was cut, its last characters may hold the cut-off
+ * (so unrecognisable) start of a secret; that tail is always dropped. Longer
+ * than any realistic credential.
+ */
+export const SSE_LOG_MASK_TAIL = 16 * 1024
 
 /** The heartbeat comment. Clients ignore comment lines. */
 export const SSE_HEARTBEAT = ': keep-alive\n\n'
@@ -69,8 +82,12 @@ export interface SseStreamSummary {
   framesSent: number
   startedAt: number
   durationMs: number
-  /** The first `SSE_LOG_PREVIEW_BYTES` of the written frames. */
+  /**
+   * The first `SSE_LOG_WINDOW_BYTES` of the written frames, RAW — mask it,
+   * then `clipMaskedPreview` it; never show it as it is.
+   */
   preview: string
+  /** More frames were written than the window holds (the window was cut). */
   previewTruncated: boolean
   error: string | null
 }
@@ -140,6 +157,23 @@ export function renderBlocksOnce(
   return out
 }
 
+/**
+ * The log preview of a MASKED window: at most `SSE_LOG_PREVIEW_BYTES`
+ * characters, ending in `\n…` when anything was left out. `windowCut`: the
+ * raw window was cut, so its masked tail may end in a partial secret —
+ * `SSE_LOG_MASK_TAIL` characters of it are dropped (`console-logger.ts`
+ * `clipBody`). A cut inside a mask (`•••`) leaks nothing: the secret is
+ * already gone.
+ */
+export function clipMaskedPreview(masked: string, windowCut: boolean): string {
+  const keep = windowCut
+    ? Math.max(0, Math.min(SSE_LOG_PREVIEW_BYTES, masked.length - SSE_LOG_MASK_TAIL))
+    : Math.min(SSE_LOG_PREVIEW_BYTES, masked.length)
+  if (keep === masked.length) return masked
+  // Never end on half a surrogate pair.
+  return masked.slice(0, keep).replace(/[\uD800-\uDBFF]$/, '') + '\n…'
+}
+
 function safeRender(render: SseStreamPlan['render'], b: SseBlock, f: SseFrameContext): string {
   try {
     return render(b.raw, f).replace(/(?:\r\n|\n|\r)+$/, '')
@@ -207,17 +241,21 @@ export function startSseStream(
         : { kind: 'immediate', t: setImmediate(fire) }
   }
 
+  // The log window (raw): whole frames while they fit, then a cut one.
   const addPreview = (text: string): void => {
     if (previewTruncated) return
     const bytes = Buffer.byteLength(text)
-    if (previewBytes + bytes <= SSE_LOG_PREVIEW_BYTES) {
+    if (previewBytes + bytes <= SSE_LOG_WINDOW_BYTES) {
       preview += text
       previewBytes += bytes
       return
     }
-    const room = SSE_LOG_PREVIEW_BYTES - previewBytes
-    preview += Buffer.from(text).subarray(0, room).toString('utf8').replace(/�$/, '')
-    previewBytes = SSE_LOG_PREVIEW_BYTES
+    const room = SSE_LOG_WINDOW_BYTES - previewBytes
+    preview += Buffer.from(text)
+      .subarray(0, room)
+      .toString('utf8')
+      .replace(/\uFFFD$/, '')
+    previewBytes = SSE_LOG_WINDOW_BYTES
     previewTruncated = true
   }
 

@@ -12,7 +12,12 @@
  *     clients that never ask for usage (AI Chat's `custom` provider) still
  *     get the numbers (Testnizer's parser reads usage from any chunk);
  *  5. only when the request asked `stream_options.include_usage`: OpenAI's
- *     own `{choices: [], usage}` chunk;
+ *     own `{choices: [], usage}` chunk, IN ADDITION to step 4 — the same
+ *     numbers twice. Testnizer (`ai-chat.engine.ts` keeps the last `usage`
+ *     object) and most clients read the LAST usage they see, so they count
+ *     it once; a client that SUMS usage across chunks would double count
+ *     against this mock (real OpenAI sends usage only on the `choices: []`
+ *     chunk). Said in the editor's LLM hint (`mockLlm.bodyHint`) too;
  *  6. `data: [DONE]`.
  */
 import type { SseEvent } from './sse-writer'

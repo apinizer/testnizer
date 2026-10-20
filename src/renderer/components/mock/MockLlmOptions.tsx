@@ -5,9 +5,12 @@
  *  - `MockLlmOptions` — the "LLM" row shown while the body type is `llm`:
  *    provider, chunking, chunk interval, stop reason, usage, and the tool
  *    calls (`MockLlmToolCalls`). Built from the Stream row's field parts
- *    (`MockOptionFields.tsx`), with its disabled-with-reason pattern. Every change writes the
- *    whole normalized config; a rejected value is shown, translated, in a
- *    `role="alert"` line.
+ *    (`MockOptionFields.tsx`), with its disabled-with-reason pattern. Every
+ *    change writes the whole config, merged over the last written one while
+ *    a save is in flight (`useConfigWriter`); the stored tool-call list is
+ *    kept as stored (`llmConfigForEdit` — an invalid call is shown, never
+ *    dropped by an unrelated edit); a rejected value is shown, translated,
+ *    in a `role="alert"` line.
  *  - `MockLlmBodyNotes` — the hint under the body (and the Anthropic key note).
  */
 import { useId, useState } from 'react'
@@ -18,13 +21,14 @@ import type { MockResponse } from '../../types'
 import {
   LLM_MAX_CHUNK_INTERVAL_MS,
   LLM_MAX_USAGE_TOKENS,
-  normalizeLlmConfig,
+  llmConfigForEdit,
   type MockLlmChunking,
   type MockLlmConfig,
   type MockLlmProvider,
   type MockLlmStopReason,
 } from '../../../shared/mock-stream'
 import { translateStreamError } from './mock-stream-errors'
+import { useConfigWriter, type ConfigPatch } from './use-config-writer'
 import MockLlmToolCalls from './MockLlmToolCalls'
 import {
   OptionError,
@@ -59,13 +63,16 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
   const updateResponse = useMockStore((s) => s.updateResponse)
   const [error, setError] = useState<string | null>(null)
   const reasonId = useId()
-  const cfg = normalizeLlmConfig(response.streamConfig)
+  const cfg = llmConfigForEdit(response.streamConfig)
   const usage = cfg.usage === 'auto' ? null : cfg.usage
+  const save = useConfigWriter(cfg, (streamConfig) => updateResponse(response.id, { streamConfig }))
 
-  async function write(patch: Partial<MockLlmConfig>): Promise<void> {
-    const err = await updateResponse(response.id, { streamConfig: { ...cfg, ...patch } })
+  async function write(patch: ConfigPatch<MockLlmConfig>): Promise<void> {
+    const err = await save(patch)
     setError(err ? translateStreamError(err) : null)
   }
+  const usageOf = (c: MockLlmConfig) =>
+    c.usage === 'auto' ? { inputTokens: 0, outputTokens: 0 } : c.usage
 
   const intervalDraft = useNumberDraft({
     value: cfg.chunkIntervalMs,
@@ -77,15 +84,13 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
     value: usage?.inputTokens ?? 0,
     min: 0,
     max: LLM_MAX_USAGE_TOKENS,
-    onChange: (v) =>
-      void write({ usage: { inputTokens: v, outputTokens: usage?.outputTokens ?? 0 } }),
+    onChange: (v) => void write((b) => ({ usage: { ...usageOf(b), inputTokens: v } })),
   })
   const outDraft = useNumberDraft({
     value: usage?.outputTokens ?? 0,
     min: 0,
     max: LLM_MAX_USAGE_TOKENS,
-    onChange: (v) =>
-      void write({ usage: { inputTokens: usage?.inputTokens ?? 0, outputTokens: v } }),
+    onChange: (v) => void write((b) => ({ usage: { ...usageOf(b), outputTokens: v } })),
   })
 
   // The engine always stops with tool_calls when there are tool calls.
@@ -151,16 +156,16 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
       <MockLlmToolCalls
         toolCalls={cfg.toolCalls}
         onCommit={(toolCalls) =>
-          void write({
+          void write((b) => ({
             toolCalls,
             // Keep the stored reason honest: tool_calls exactly while there are calls.
             stopReason:
               toolCalls.length > 0
                 ? 'tool_calls'
-                : cfg.stopReason === 'tool_calls'
+                : b.stopReason === 'tool_calls'
                   ? 'stop'
-                  : cfg.stopReason,
-          })
+                  : b.stopReason,
+          }))
         }
       />
       {error && <OptionError testId="mock-llm-error">{error}</OptionError>}

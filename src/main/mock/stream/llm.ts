@@ -30,6 +30,7 @@ import type {
 import type { SseEvent } from './sse-writer'
 import { openAiCompletion, openAiEvents } from './llm-openai'
 import { anthropicEvents, anthropicMessage } from './llm-anthropic'
+import { argumentPieceCount, countChunks } from './chunking'
 
 export const LLM_DEFAULT_MODEL = 'mock-model'
 
@@ -267,4 +268,25 @@ export function encodeLlmJson(plan: LlmPlan): string {
 /** The streamed reply as server-sent events, in order. */
 export function encodeLlmEvents(plan: LlmPlan): SseEvent[] {
   return plan.provider === 'anthropic' ? anthropicEvents(plan) : openAiEvents(plan)
+}
+
+/**
+ * `encodeLlmEvents(plan).length`, without encoding — the stream's frame
+ * count, checked against the writer's plan limit BEFORE anything is built.
+ * Counting the text chunks stops past `limit`: the result is then some
+ * number above it. Mirrors the event lists of `llm-openai.ts` /
+ * `llm-anthropic.ts` (golden-tested against them).
+ */
+export function llmStreamFrameCount(plan: LlmPlan, limit = Infinity): number {
+  const text = countChunks(plan.text, plan.chunking, limit)
+  const calls = plan.toolCalls.reduce((n, c) => n + argumentPieceCount(c.arguments) + 2, 0)
+  if (plan.provider === 'anthropic') {
+    // message_start · (text block start + ping + deltas + stop | ping) · calls · message_delta · message_stop
+    const textBlock = plan.text !== '' || plan.toolCalls.length === 0 ? text + 3 : 1
+    // A tool call: start + pieces + stop.
+    return 1 + textBlock + calls + 2
+  }
+  // role · deltas · calls (open + pieces) · finish · [usage] · [DONE]
+  const openAiCalls = calls - plan.toolCalls.length
+  return 1 + text + openAiCalls + 1 + (plan.includeUsage ? 1 : 0) + 1
 }

@@ -3364,7 +3364,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockLlm.toolCallsBadJson': 'Not valid JSON',
     'mockLlm.toolCallsNotList': 'Tool calls must be a JSON list ([…])',
     'mockLlm.bodyHint':
-      'The body is the assistant reply text. Delay (ms) is the time to first token; the request’s stream flag picks a stream or one JSON reply. Templates: {{lastUserMessage}}, {{lastToolResult}}, {{model}}. Auto usage counts about 4 characters per token. A 4xx / 5xx json response is sent as it is.',
+      'The body is the assistant reply text. Delay (ms) is the time to first token; the request’s stream flag picks a stream or one JSON reply. Templates: {{lastUserMessage}}, {{lastToolResult}}, {{model}}. Auto usage counts about 4 characters per token. A streamed OpenAI reply always carries usage on its finish chunk (clients read the last usage they see); with stream_options.include_usage it also sends OpenAI’s own choices: [] usage chunk — a client that adds usage up across chunks counts it twice. A 4xx / 5xx json response is sent as it is.',
     'mockLlm.err.object': 'LLM settings must be an object',
     'mockLlm.err.unknown': 'Unknown LLM setting: {name}',
     'mockLlm.err.provider': 'Provider must be OpenAI-compatible or Anthropic',
@@ -6854,7 +6854,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockLlm.toolCallsBadJson': 'Geçerli JSON değil',
     'mockLlm.toolCallsNotList': 'Araç çağrıları bir JSON listesi ([…]) olmalı',
     'mockLlm.bodyHint':
-      'Gövde, asistanın yanıt metnidir. Gecikme (ms) ilk belirtece kadar geçen süredir; akış mı tek JSON yanıtı mı olacağını isteğin stream bayrağı belirler. Şablonlar: {{lastUserMessage}}, {{lastToolResult}}, {{model}}. Otomatik kullanım belirteç başına yaklaşık 4 karakter sayar. 4xx / 5xx bir json yanıtı olduğu gibi gönderilir.',
+      'Gövde, asistanın yanıt metnidir. Gecikme (ms) ilk belirtece kadar geçen süredir; akış mı tek JSON yanıtı mı olacağını isteğin stream bayrağı belirler. Şablonlar: {{lastUserMessage}}, {{lastToolResult}}, {{model}}. Otomatik kullanım belirteç başına yaklaşık 4 karakter sayar. Akışlı bir OpenAI yanıtı kullanımı her zaman bitiş parçasında taşır (istemciler gördükleri son kullanımı okur); stream_options.include_usage ile OpenAI’ın kendi choices: [] kullanım parçası da gönderilir — kullanımı parçalar boyunca toplayan bir istemci onu iki kez sayar. 4xx / 5xx bir json yanıtı olduğu gibi gönderilir.',
     'mockLlm.err.object': 'LLM ayarları bir nesne olmalı',
     'mockLlm.err.unknown': 'Bilinmeyen LLM ayarı: {name}',
     'mockLlm.err.provider': 'Sağlayıcı OpenAI uyumlu ya da Anthropic olmalı',
