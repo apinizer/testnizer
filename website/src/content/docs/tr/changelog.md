@@ -102,7 +102,17 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   loglanmıyor. Yeni ekranlar dar pencerelerde ve büyük yazı boyutlarında düzgün
   satır kırıyor, New mock server diyaloğu ok tuşlarıyla kullanılıyor, boş bir
   Mocks sayfası New mock server öneriyor ve kenar çubuğu araması tür ve portla
-  da eşleşiyor.
+  da eşleşiyor. Akışlar sabit boyutlu parçalara bölünebiliyor ya da tek
+  parçada gönderilebiliyor, seçtiğiniz bitiş nedeniyle (her sağlayıcının kendi
+  adlandırmasıyla) bitiyor ve isterseniz yarı yolda bilerek hata veriyor: N
+  olaydan sonra SSE `event: error` ya da N parçadan sonra OpenAI / Anthropic
+  hatası — Errors şablonu ikisini ve Anthropic 529 `overloaded_error`'ı
+  içeriyor. Yeni bir şablon Anthropic messages API üzerinden tool çağrısını
+  gidiş-dönüş çalıştırıyor. Bir mock'un türü (HTTP / SSE / AI) Settings'ten
+  hiçbir şey kaybetmeden değiştirilebiliyor; **Open in AI Chat** Anthropic uç
+  noktasını da sunuyor ve Mock MCP sunucusu **Başlat ve MCP sekmesinde aç**
+  seçeneği veriyor. Bir mock'tan açılan sohbet sekmesi kayıtlı sağlayıcı
+  anahtarınızı asla göndermiyor.
 
 - **AI Chat:** asistan **MCP sunucularını tool olarak** kullanabiliyor —
   kayıtlı bir MCP isteği ya da anlık bir URL / stdio komutu; sunucu ve tool
@@ -118,7 +128,9 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   tutulmuyor; temperature ve max tokens ayarlanabiliyor. Settings ve Tools
   birlikte açıkken sohbet ince bir şeride sıkışıp onay düğmelerini kırpıyordu;
   yapılandırma artık sohbetin üstünde, kendi yeniden boyutlandırılabilir
-  panelinde kayıyor ve sohbet asgari bir yüksekliği koruyor.
+  panelinde kayıyor ve sohbet asgari bir yüksekliği koruyor. Sağlayıcı bir
+  yanıtın ortasında hata bildirdiğinde AI Chat artık yarım metni koruyor ve
+  hatayı altında gösteriyor; eskiden yanıt tamamlanmış gibi görünüyordu.
 
 - **Git:** dal menüsünde **Commit…**, Pull, Push, Merge ve **Discard all
   changes** var; ahead / behind sayıları gösteriliyor. Commit paneli neyin
@@ -184,9 +196,13 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   bir sürümün kaydettikleri açılışta temizleniyor. **Generate Code**, kod paneli
   ve MCP **Copy as…**, "Include secret values" işaretlenmedikçe sır
   değişkenlerini `{{ad}}` olarak bırakıyor. Bir istek editörüne — HTTP, MCP,
-  WebSocket, SSE, Socket.IO, GraphQL ve gRPC — yazılan parolalar, token'lar,
-  API anahtarları ve kimlik bilgisi başlıkları artık uygulamanın tarayıcı
-  deposunda tutulmuyor; yalnızca `{{değişken}}` referansları tutuluyor.
+  WebSocket, SSE, Socket.IO, GraphQL, gRPC ve SOAP — yazılan parolalar,
+  token'lar, API anahtarları ve kimlik bilgisi başlıkları artık uygulamanın
+  tarayıcı deposunda tutulmuyor; yalnızca `{{değişken}}` referansları
+  tutuluyor. Buna auth alanları, kimlik bilgisi başlıkları ve metadata, sorgu
+  parametreleri, form ve JSON gövde alanları, GraphQL değişkenleri, bağlantı
+  URL'leri, MCP komut satırları ve tool argümanları, SOAP UsernameToken
+  parolası ve imzalama anahtarı dahil.
   Kaydedilmiş bir istek bunları kayıttan geri alıyor (yeniden başlatmadan
   hemen sonra Send'e bassanız da), kaydedilmemiş bir sekme ise yeniden
   başlatmadan sonra bunları yeniden girmenizi istiyor. WebSocket, gRPC, GraphQL, SSE ve
@@ -220,7 +236,11 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   sürümleri) eş aralıklı yazı tipini kullanıyor. Genel bir stil kuralı ikisini
   de geçersiz kılıyordu. WebSocket ve Socket.IO bağlantı çubukları artık MCP
   ve SSE çubukları gibi görünüyor ve okunuyor — temaya uyan durum göstergesi,
-  çevrilmiş etiketler, koyu tema.
+  çevrilmiş etiketler, koyu tema. Açılır listeler, giriş alanları ve metin
+  kutuları da artık boyut ve renk sınıflarına uyuyor: bir açılır liste
+  yanındaki giriş alanıyla aynı boyda, yer tutucu metinler gerçek değerlerden
+  açık renkte ve boyutlar yazı boyutu ayarını izliyor; Runner sonuç filtresi
+  artık kırpılmıyor.
 
 - **Uygulama parolası ve başlangıç ekranı:** Ayarlar'da artık bir **Uygulama
   parolası** bölümü var: parola olup olmadığını görebilir, değiştirebilir ya da
@@ -252,7 +272,8 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   Sequence'ta bir isteği sürüklemek artık onu klasöründen çıkarmıyor.
 
 - **Türkçe arayüz:** 110 metin düzeltildi; kenar çubuğu, sekme şeridi, istek
-  editörü, Auth sekmesi ve yanıt paneli çevrildi.
+  editörü, Auth sekmesi, yanıt paneli, Ortamlar penceresi, silme onayları, Tüm
+  Çalıştırmalar ve Planlanmış Görevler çevrildi.
 
 **Testler:** süit 502 dosyada 6201 teste ulaştı. Yeni uçtan uca senaryolar SSE
 ve AI mock sunucularını (`tur1/mock-sse`, `tur1/mock-ai`; mock'u her iki
@@ -269,12 +290,9 @@ Git taşınabilirliği, dışa aktarılan her tablonun her kolonunu dolduran ve 
 takım arkadaşının bunu, tasarım gereği yerel kalan belgelenmiş bir liste
 dışında, birebir aldığını doğrulayan bir garanti testine sahip.
 
-**Ertelenenler:** bazı mock iyileştirmeleri, MCP dışındaki güvenlik
-taramaları (HTTP, GraphQL, SOAP, gerçek zamanlı ve LLM uç noktaları), sorgu
-parametrelerine, gövdelere, MCP URL'leri / komut satırlarına ve SOAP
-UsernameToken'a yazılan ve hâlâ uygulamanın tarayıcı deposunda tutulan kimlik
-bilgileri ile açılır liste yazı boyutlarını ve giriş alanı renklerini geçersiz
-kılan kalan stil kuralları.
+**Ertelenenler:** MCP dışındaki güvenlik taramaları (HTTP, GraphQL, SOAP,
+gerçek zamanlı ve LLM uç noktaları) ile CLI / sözleşme / açık bankacılık yol
+haritası.
 
 ## v1.5.4
 

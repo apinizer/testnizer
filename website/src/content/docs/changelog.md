@@ -98,7 +98,16 @@ panel — and secrets stay on your machine.**
   reconnect, and a normally ended stream is no longer logged as an error. The
   new screens wrap properly in narrow windows and at large font sizes, the
   New mock server dialog works with the arrow keys, an empty Mocks page offers
-  New mock server, and the sidebar search matches type and port.
+  New mock server, and the sidebar search matches type and port. Streams can be
+  chunked by a fixed size or sent whole, end with the stop reason you pick
+  (written as each provider names it), and fail on purpose part-way through:
+  an SSE `event: error` after N events, or an OpenAI / Anthropic error after N
+  chunks — the Errors preset includes both, plus an Anthropic 529
+  `overloaded_error`. A new preset round-trips a tool call over the Anthropic
+  messages API. A mock's type (HTTP / SSE / AI) can be changed in its Settings
+  without losing anything; **Open in AI Chat** also offers the Anthropic
+  endpoint, and a Mock MCP server offers **Start & open in MCP tab**. A chat tab
+  opened from a mock never sends your saved provider key.
 
 - **AI Chat:** the assistant can
   use **MCP servers as tools** — a saved MCP request or an ad-hoc URL / stdio
@@ -114,7 +123,9 @@ panel — and secrets stay on your machine.**
   configurable. With Settings and Tools both open, the conversation used to
   shrink to a sliver and clip the approval buttons; the configuration now
   scrolls in its own resizable panel above the conversation, which keeps a
-  minimum height.
+  minimum height. When a provider reports an error part-way through a reply,
+  AI Chat now keeps the partial text and shows the error under it; before,
+  the reply looked complete.
 
 - **Git:** the branch menu has **Commit…**,
   Pull, Push, Merge and **Discard all changes**, with ahead / behind counts. The
@@ -174,9 +185,12 @@ panel — and secrets stay on your machine.**
   cleaned at start. **Generate Code**, the code pane and MCP **Copy as…** keep
   secret variables as `{{name}}` unless you tick "Include secret values".
   Passwords, tokens, API keys and credential headers typed into a request
-  editor — HTTP, MCP, WebSocket, SSE, Socket.IO, GraphQL and gRPC — are no
-  longer kept in the app's browser storage; only `{{variable}}` references
-  are. A saved request gets them back from the saved request (also when you
+  editor — HTTP, MCP, WebSocket, SSE, Socket.IO, GraphQL, gRPC and SOAP — are
+  no longer kept in the app's browser storage; only `{{variable}}` references
+  are. That covers auth fields, credential headers and metadata, query
+  parameters, form and JSON body fields, GraphQL variables, connection URLs,
+  MCP command lines and tool arguments, the SOAP UsernameToken password and
+  signing key. A saved request gets them back from the saved request (also when you
   press Send right after a restart), and an unsaved tab asks you to type them
   again after a restart. WebSocket, gRPC,
   GraphQL, SSE and Socket.IO calls reopen from History in their own editors.
@@ -205,7 +219,11 @@ panel — and secrets stay on your machine.**
   designed for, and code-like values (URLs, paths, tokens, protocol versions)
   use the monospace font; a global style rule had been overriding both. The
   WebSocket and Socket.IO connection bars now look and read like the MCP and
-  SSE bars — themed status, translated labels, dark mode.
+  SSE bars — themed status, translated labels, dark mode. Drop-downs, inputs
+  and text areas now follow their size and colour classes too, so a select
+  matches the input next to it, placeholders are lighter than real values and
+  sizes follow the font-size setting; the Runner results filter no longer
+  clips.
 
 - **App password and start screen:** Settings now has an **App password**
   section — see whether one is set, change it, or turn it off with your
@@ -238,7 +256,8 @@ panel — and secrets stay on your machine.**
   moves it out of its folder.
 
 - **Turkish interface:** 110 strings corrected, and
-  the sidebar, tab strip, request editor, Auth tab and response pane are
+  the sidebar, tab strip, request editor, Auth tab, response pane,
+  Environments dialog, delete confirmations, All Runs and Scheduled Tasks are
   translated.
 
 **Tests:** the suite grew to 6201 tests in 502 files. New end-to-end specs
@@ -256,11 +275,8 @@ guarantee test that fills every column of every exported table and checks that
 a teammate receives it exactly, apart from a documented list of things that stay
 local by design.
 
-**Still deferred:** some mock follow-ups, security scans beyond MCP (HTTP,
-GraphQL, SOAP, real-time and LLM endpoints), credentials typed into query
-parameters, bodies, MCP URLs / command lines and the SOAP UsernameToken
-(still kept in the app's browser storage), and the remaining style rules that
-override drop-down font sizes and input colours.
+**Still deferred:** security scans beyond MCP (HTTP, GraphQL, SOAP, real-time
+and LLM endpoints) and the CLI / contract / open-banking roadmap.
 
 ## v1.5.4
 
