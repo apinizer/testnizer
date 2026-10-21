@@ -59,22 +59,33 @@ export interface PersistedTabbed<TState> {
 export function loadTabbedState<TState>(
   storageKey: string,
   emptyTabState: () => TState,
+  /**
+   * The same `sanitize` the store passes to `attachTabbedPersist`. Given, it
+   * is applied to what an OLDER build may have written (e.g. received stream
+   * payloads, before they were kept out of the snapshot) and the cleaned
+   * snapshot is written back at once — the store is not guaranteed to change
+   * this session, and the leaked data must neither show nor stay on disk.
+   */
+  sanitize?: (s: TState) => TState,
 ): { current: TState; _tabStates: Map<string, TState>; _currentTabId: string | null } {
   const empty = emptyTabState()
   const persisted = loadJson<PersistedTabbed<TState>>(storageKey)
   if (!persisted) {
     return { current: empty, _tabStates: new Map(), _currentTabId: null }
   }
+  const clean = sanitize ?? ((s: TState) => s)
   // Make sure cached per-tab states also have any new fields filled in.
   const tabStates = new Map<string, TState>()
   for (const [id, st] of persisted._tabStates ?? []) {
-    tabStates.set(id, { ...empty, ...(st as object) } as TState)
+    tabStates.set(id, clean({ ...empty, ...(st as object) } as TState))
   }
-  return {
-    current: { ...empty, ...(persisted.current as object) } as TState,
+  const loaded = {
+    current: clean({ ...empty, ...(persisted.current as object) } as TState),
     _tabStates: tabStates,
     _currentTabId: persisted._currentTabId ?? null,
   }
+  if (sanitize) writeTabbedSnapshot(storageKey, loaded.current, loaded, sanitize)
+  return loaded
 }
 
 /**
@@ -85,9 +96,12 @@ export function loadTabbedState<TState>(
  *
  * `sanitize` (optional) is applied to the active state AND to every cached
  * tab state on the way OUT to storage only. Use it for write-only secrets
- * (e.g. the Key Material Provider's store/key passwords, #60): they stay
- * usable in memory for the session — switching tabs must not lose them —
- * while never being written to disk or read back after a reload.
+ * (e.g. the Key Material Provider's store/key passwords, #60) and for what a
+ * server SENT (stream events, message timelines, response bodies — they may
+ * carry tokens or personal data): they stay usable in memory for the
+ * session — switching tabs must not lose them — while never being written to
+ * disk or read back after a reload. Do NOT drop such fields from
+ * `extractCurrent` instead: it also feeds the in-memory tab cache.
  */
 export function attachTabbedPersist<TStore, TState>(
   store: { subscribe: (cb: (s: TStore) => void) => () => void },

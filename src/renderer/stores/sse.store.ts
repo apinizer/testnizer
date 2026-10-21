@@ -135,8 +135,31 @@ function extractState(s: SseStore): TabSseState {
   }
 }
 
+/**
+ * On-disk view of a tab: what the user set up, never what the server sent.
+ * Received events are server output (a stream may echo a token or personal
+ * data) and the error text can quote them — like a response body they stay
+ * in memory for the session and are not written to localStorage. The
+ * connection itself does not survive a reload either, so it is stored as
+ * disconnected instead of pointing at a connection that no longer exists.
+ */
+function persistableSse(st: TabSseState): TabSseState {
+  const idle = emptyTabState()
+  return {
+    ...st,
+    events: idle.events,
+    errorMessage: idle.errorMessage,
+    connectionId: idle.connectionId,
+    connectionState: idle.connectionState,
+    reconnecting: idle.reconnecting,
+    connectedAt: idle.connectedAt,
+    _unsubscribe: undefined,
+    _pendingConnectId: undefined,
+  }
+}
+
 const STORAGE_KEY = 'testnizer-sse'
-const persisted = loadTabbedState<TabSseState>(STORAGE_KEY, emptyTabState)
+const persisted = loadTabbedState<TabSseState>(STORAGE_KEY, emptyTabState, persistableSse)
 
 export const useSseStore = create<SseStore>((set, get) => ({
   ...persisted.current,
@@ -520,7 +543,10 @@ export const useSseStore = create<SseStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useSseStore, STORAGE_KEY, extractState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useSseStore,
+  STORAGE_KEY,
+  extractState,
+  (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
+  persistableSse,
+)

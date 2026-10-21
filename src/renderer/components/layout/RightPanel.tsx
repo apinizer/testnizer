@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { Code2, Variable, ChevronRight, Copy, Check } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
-import { useRequestStore } from '../../stores/request.store'
-import { useEnvironmentStore } from '../../stores/environment.store'
 import RunnerVariables from '../runner/RunnerVariables'
 import MonacoWrapper from '../shared/MonacoWrapper'
-import { generateCode, CODE_LANGUAGES } from '../../lib/code-generator'
+import { CODE_LANGUAGES } from '../../lib/code-generator'
+import { useGeneratedCode } from '../shared/use-generated-code'
+import IncludeSecretsToggle from '../shared/IncludeSecretsToggle'
 import type { CodeLanguage } from '../../types'
 import { useTranslation } from '../../lib/i18n'
 
@@ -15,47 +15,17 @@ function GenerateCodePane() {
   const [activeLang, setActiveLang] = useState<CodeLanguage>('curl')
   const [copied, setCopied] = useState(false)
 
-  const method = useRequestStore((s) => s.method)
-  const url = useRequestStore((s) => s.url)
-  const params = useRequestStore((s) => s.params)
-  const headers = useRequestStore((s) => s.headers)
-  const body = useRequestStore((s) => s.body)
-  const auth = useRequestStore((s) => s.auth)
-  const getActiveVariables = useEnvironmentStore((s) => s.getActiveVariables)
-  const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
-  const envVarsRev = useEnvironmentStore((s) => s.environments)
-
-  const code = useMemo(
-    () =>
-      generateCode(
-        activeLang,
-        { method, url, params, headers, body, auth },
-        { envVars: getActiveVariables() },
-      ),
-    [
-      activeLang,
-      method,
-      url,
-      params,
-      headers,
-      body,
-      auth,
-      getActiveVariables,
-      activeEnvId,
-      envVarsRev,
-    ],
-  )
-
-  // Detect any `{{var}}` placeholders the resolver couldn't substitute and
-  // surface a banner so users notice missing-variable cases like
+  // Session-only opt-in: a secret variable stays `{{name}}` in the snippet.
+  const [includeSecrets, setIncludeSecrets] = useState(false)
+  // `unresolved`: `{{var}}` placeholders the resolver couldn't substitute,
+  // surfaced as a banner so users notice missing-variable cases like
   // body=`{{employee_body}}` with no `employee_body` in the active env
-  // (v1.4.2 T-5.5). The check runs on the rendered code so it catches
-  // url / header / body unresolved spots in one shot.
-  const unresolvedVars = useMemo(() => {
-    const matches = code.match(/\{\{\s*([^}\s]+)\s*\}\}/g)
-    if (!matches) return [] as string[]
-    return Array.from(new Set(matches.map((m) => m.replace(/[{}]/g, '').trim())))
-  }, [code])
+  // (v1.4.2 T-5.5). A hidden secret is not "unresolved" — it has its own note.
+  const {
+    code,
+    hiddenSecrets,
+    unresolved: unresolvedVars,
+  } = useGeneratedCode(activeLang, includeSecrets)
 
   const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
 
@@ -96,9 +66,25 @@ function GenerateCodePane() {
         </button>
       </div>
 
+      <div className="flex shrink-0 items-center border-b border-[var(--border)] px-2.5 py-1.5">
+        <IncludeSecretsToggle checked={includeSecrets} onChange={setIncludeSecrets} />
+      </div>
+
+      {hiddenSecrets.length > 0 && (
+        <div
+          data-testid="codegen-secrets-hidden"
+          className="shrink-0 border-b border-[var(--border)] px-2.5 py-1.5 text-[var(--muted)]"
+          style={{ fontSize: 12 }}
+          title={t('codeGen.includeSecretsHint')}
+        >
+          {t('codeGen.secretsHidden')} {hiddenSecrets.map((v) => `{{${v}}}`).join(', ')}
+        </div>
+      )}
+
       {/* Unresolved-variable banner */}
       {unresolvedVars.length > 0 && (
         <div
+          data-testid="codegen-unresolved"
           className="shrink-0 border-t border-b px-2.5 py-1.5"
           style={{
             background: 'var(--orange-bg, #fff7e6)',

@@ -1,11 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { X, Copy, Check, Terminal, Code2, FileCode } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
-import { useRequestStore } from '../../stores/request.store'
-import { useEnvironmentStore } from '../../stores/environment.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import Modal from '../shared/Modal'
-import { generateCode, CODE_LANGUAGES } from '../../lib/code-generator'
+import { CODE_LANGUAGES } from '../../lib/code-generator'
+import { useGeneratedCode } from '../shared/use-generated-code'
+import IncludeSecretsToggle from '../shared/IncludeSecretsToggle'
 import type { CodeLanguage } from '../../types'
 
 const LANG_ICONS: Record<string, React.ReactNode> = {
@@ -24,38 +24,18 @@ const LANG_ICONS: Record<string, React.ReactNode> = {
 
 export default function CodeGeneratorModal() {
   const show = useUIStore((s) => s.showCodeGenerator)
-  const setShow = useUIStore((s) => s.setShowCodeGenerator)
+  const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
   const [activeLang, setActiveLang] = useState<CodeLanguage>('curl')
   const [copied, setCopied] = useState(false)
 
-  const method = useRequestStore((s) => s.method)
-  const url = useRequestStore((s) => s.url)
-  const params = useRequestStore((s) => s.params)
-  const headers = useRequestStore((s) => s.headers)
-  const body = useRequestStore((s) => s.body)
-  const auth = useRequestStore((s) => s.auth)
-  const getActiveVariables = useEnvironmentStore((s) => s.getActiveVariables)
-  const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
-  const envState = useEnvironmentStore((s) => s.environments)
-
-  const code = useMemo(() => {
-    return generateCode(
-      activeLang,
-      { method, url, params, headers, body, auth },
-      { envVars: getActiveVariables() },
-    )
-  }, [
-    activeLang,
-    method,
-    url,
-    params,
-    headers,
-    body,
-    auth,
-    getActiveVariables,
-    activeEnvId,
-    envState,
-  ])
+  // Session-only opt-in: a secret variable stays `{{name}}` in the snippet.
+  const [includeSecrets, setIncludeSecrets] = useState(false)
+  const { code } = useGeneratedCode(activeLang, includeSecrets)
+  // The modal stays mounted while hidden — the opt-in must not outlive one opening.
+  function setShow(open: boolean): void {
+    if (!open) setIncludeSecrets(false)
+    setShowCodeGenerator(open)
+  }
 
   const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
 
@@ -76,7 +56,8 @@ export default function CodeGeneratorModal() {
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-3">
           <div className="font-bold text-[var(--text)]">Generate Code</div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <IncludeSecretsToggle checked={includeSecrets} onChange={setIncludeSecrets} />
             <button
               type="button"
               onClick={handleCopy}

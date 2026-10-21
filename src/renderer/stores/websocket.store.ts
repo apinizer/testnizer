@@ -105,8 +105,29 @@ function extractState(s: WebSocketStore): TabWsState {
   }
 }
 
+/**
+ * On-disk view of a tab: URL, headers and the composer draft — never the
+ * message timeline. Received frames are server output and sent ones are the
+ * RESOLVED text (`{{secret}}` already substituted), so neither is written to
+ * localStorage; they stay in memory for the session. The connection does not
+ * survive a reload, so it is stored as disconnected.
+ */
+function persistableWs(st: TabWsState): TabWsState {
+  const idle = emptyTabState()
+  return {
+    ...st,
+    messages: idle.messages,
+    errorMessage: idle.errorMessage,
+    connectionId: idle.connectionId,
+    connectionState: idle.connectionState,
+    connectedAt: idle.connectedAt,
+    _unsubscribe: undefined,
+    _pendingConnectId: undefined,
+  }
+}
+
 const STORAGE_KEY = 'testnizer-websocket'
-const persisted = loadTabbedState<TabWsState>(STORAGE_KEY, emptyTabState)
+const persisted = loadTabbedState<TabWsState>(STORAGE_KEY, emptyTabState, persistableWs)
 
 export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   ...persisted.current,
@@ -483,7 +504,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useWebSocketStore, STORAGE_KEY, extractState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useWebSocketStore,
+  STORAGE_KEY,
+  extractState,
+  (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
+  persistableWs,
+)

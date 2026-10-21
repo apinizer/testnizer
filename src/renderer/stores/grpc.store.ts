@@ -304,8 +304,30 @@ function extractState(s: GrpcStore): TabGrpcState {
   }
 }
 
+/**
+ * On-disk view of a tab: address, proto source, the selected method, request
+ * body and metadata (the loaded service list is schema and stays) — never the
+ * response or stream events (server output; they stay in memory for the
+ * session) or the error text. Calls and streams do not survive a reload.
+ */
+function persistableGrpc(st: TabGrpcState): TabGrpcState {
+  const idle = emptyTabState()
+  return {
+    ...st,
+    response: idle.response,
+    streamEvents: idle.streamEvents,
+    activeStreamId: idle.activeStreamId,
+    streamUnsubscribe: idle.streamUnsubscribe,
+    isLoading: idle.isLoading,
+    isStreaming: idle.isStreaming,
+    halfClosed: idle.halfClosed,
+    errorMessage: idle.errorMessage,
+    _unaryRequestId: idle._unaryRequestId,
+  }
+}
+
 const STORAGE_KEY = 'testnizer-grpc'
-const persisted = loadTabbedState<TabGrpcState>(STORAGE_KEY, emptyTabState)
+const persisted = loadTabbedState<TabGrpcState>(STORAGE_KEY, emptyTabState, persistableGrpc)
 
 export const useGrpcStore = create<GrpcStore>((set, get) => ({
   ...persisted.current,
@@ -966,7 +988,10 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useGrpcStore, STORAGE_KEY, extractState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useGrpcStore,
+  STORAGE_KEY,
+  extractState,
+  (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
+  persistableGrpc,
+)

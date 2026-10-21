@@ -244,6 +244,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'rightPanel.unresolved': 'Unresolved:',
     'rightPanel.unresolvedHint':
       'Define these variables in the active environment so the snippet uses real values',
+    'codeGen.includeSecrets': 'Include secret values',
+    'codeGen.includeSecretsHint':
+      'Secret variables stay as {{name}} placeholders. Include them for a ready-to-run command — the copied text then holds the real values.',
+    'codeGen.secretsHidden': 'Secret values not included:',
     'authTab.digestAuth': 'Digest Auth',
     'authTab.wsSecurity': 'WS-Security',
     'authTab.noAuthHelp': 'This request does not use any authorization.',
@@ -3736,6 +3740,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'rightPanel.unresolved': 'Çözümlenmemiş:',
     'rightPanel.unresolvedHint':
       'Kod parçasının gerçek değerleri kullanması için bu değişkenleri etkin ortamda tanımlayın',
+    'codeGen.includeSecrets': 'Gizli değerleri dahil et',
+    'codeGen.includeSecretsHint':
+      'Gizli değişkenler {{name}} yer tutucusu olarak kalır. Doğrudan çalışan bir komut için dahil edin — kopyalanan metin o zaman gerçek değerleri içerir.',
+    'codeGen.secretsHidden': 'Dahil edilmeyen gizli değerler:',
     'authTab.digestAuth': 'Digest Auth',
     'authTab.wsSecurity': 'WS-Security',
     'authTab.noAuthHelp': 'Bu istek herhangi bir yetkilendirme kullanmıyor.',
