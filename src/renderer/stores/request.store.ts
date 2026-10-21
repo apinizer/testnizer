@@ -9,6 +9,15 @@ import type {
   ConsoleLog,
 } from '../types'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import {
+  credentialRows,
+  remapWithheldRows,
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
@@ -76,7 +85,7 @@ function mergeParamsFromUrl(url: string, existing: KeyValuePair[]): KeyValuePair
 }
 
 /** Snapshot of request state for a single tab */
-interface TabRequestState {
+interface TabRequestState extends WithheldState {
   method: HttpMethod
   url: string
   params: KeyValuePair[]
@@ -122,7 +131,40 @@ function emptyTabState(): TabRequestState {
     maxRedirects: 5,
     sslVerification: true,
     requestTimeout: null,
+    withheldCredentials: [],
   }
+}
+
+/**
+ * Issue #244: what the tab snapshot never holds literally. Every auth
+ * sub-object is covered, not only the active type's — the Auth tab keeps them
+ * across a type switch. Usernames, the API key NAME and the AWS access key id
+ * are identifiers, not secrets, and stay. The request store backs EVERY tab
+ * (Ctrl+S writes its auth + headers for every protocol), so this applies to
+ * all of them. Query params and the body are out of scope: a param lives in
+ * the URL too, and blanking one would desync the URL bar.
+ */
+const HTTP_CREDENTIALS: CredentialSpec = {
+  fields: [
+    'auth.basic.password',
+    'auth.bearer.token',
+    'auth.apiKey.value',
+    'auth.oauth2.clientSecret',
+    'auth.oauth2.password',
+    'auth.oauth2.token',
+    'auth.oauth2.refreshToken',
+    'auth.digest.password',
+    'auth.ntlm.password',
+    'auth.hawk.authKey',
+    'auth.awsSignature.secretKey',
+    'auth.wsse.password',
+  ],
+  rows: [credentialRows('headers')],
+}
+
+/** On-disk view of a tab (issue #244); also applied on load. */
+function persistableRequest(st: TabRequestState): TabRequestState {
+  return withholdCredentials(st, HTTP_CREDENTIALS)
 }
 
 interface RequestStore extends TabRequestState {
@@ -208,12 +250,13 @@ function extractState(s: RequestStore): TabRequestState {
     maxRedirects: s.maxRedirects,
     sslVerification: s.sslVerification,
     requestTimeout: s.requestTimeout,
+    withheldCredentials: s.withheldCredentials,
   }
 }
 
 // ─── Persistence ──────────────────────────────────────────────
 const STORAGE_KEY = 'testnizer-request'
-const persisted = loadTabbedState<TabRequestState>(STORAGE_KEY, emptyTabState)
+const persisted = loadTabbedState<TabRequestState>(STORAGE_KEY, emptyTabState, persistableRequest)
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
   ...persisted.current,
@@ -401,16 +444,28 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const tabStates = new Map(state._tabStates)
     // KV/asssertion arrays carry stable ids — re-stamp them so future edits
     // on the duplicate don't accidentally mutate the source via a shared id.
+    const headerIds = new Map<string, string>()
+    const headers = srcState.headers.map((h) => {
+      const id = makeId()
+      headerIds.set(h.id, id)
+      return { ...h, id }
+    })
     tabStates.set(dstTabId, {
       ...srcState,
       params: srcState.params.map((p) => ({ ...p, id: makeId() })),
-      headers: srcState.headers.map((h) => ({ ...h, id: makeId() })),
+      headers,
       assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
+      // Issue #244: a value still withheld on the source stays withheld on
+      // the copy (its row is a copy of the source's), so Ctrl+S on the copy
+      // reloads it instead of writing the empty field.
+      withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], headerIds),
     })
     set({ _tabStates: tabStates })
   },
 
   sendRequest: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { method, url, params, headers, body, auth, preScript } = get()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
@@ -952,6 +1007,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       maxRedirects: data.maxRedirects ?? 5,
       sslVerification: data.sslVerification ?? true,
       requestTimeout: data.requestTimeout ?? null,
+      // Fresh from the row — nothing is waiting for a withheld value (#244).
+      withheldCredentials: [] as string[],
     }
     // ALSO refresh the per-tab cache for the current tab. Without this,
     // closing and reopening a test-suite item (or any tab) would restore
@@ -968,7 +1025,15 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useRequestStore, STORAGE_KEY, extractState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useRequestStore,
+  STORAGE_KEY,
+  extractState,
+  (s) => ({
+    _tabStates: s._tabStates,
+    _currentTabId: s._currentTabId,
+  }),
+  persistableRequest,
+)
+// Issue #244: a user edit to a withheld value drops its marker.
+trackCredentialEdits(useRequestStore)

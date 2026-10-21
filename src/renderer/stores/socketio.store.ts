@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
@@ -31,7 +32,7 @@ interface TabSioState {
    * Issue #243: the literal bearer token was left out of the localStorage
    * snapshot this tab was restored from. Distinct from "the user cleared it":
    * the token may still be on the saved row, and an untouched empty field
-   * must not overwrite it on Ctrl+S (`lib/socketio-saved-token.ts` reloads it
+   * must not overwrite it on Ctrl+S (`lib/withheld-credentials.ts` reloads it
    * from the row). Any explicit set clears the flag.
    */
   bearerTokenWithheld: boolean
@@ -181,6 +182,8 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   setNewSubscription: (newSubscription) => set({ newSubscription }),
 
   connect: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().bearerTokenWithheld) await reloadWithheldBeforeSend()
     const { url, namespace, bearerToken } = get()
     if (!url.trim()) return
     // Issue #195: a History mask left in a credential field is never sent.

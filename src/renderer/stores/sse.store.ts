@@ -4,6 +4,14 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import {
+  credentialRows,
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
 import { makeId } from '../lib/utils'
 import { t } from '../lib/i18n'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
@@ -24,7 +32,7 @@ function getSseApi() {
 }
 
 /** Snapshot of SSE state for per-tab caching. */
-interface TabSseState {
+interface TabSseState extends WithheldState {
   url: string
   method: SseHttpMethod
   body: string
@@ -95,6 +103,7 @@ interface SseStore extends TabSseState {
 
 function emptyTabState(): TabSseState {
   return {
+    withheldCredentials: [],
     url: 'https://stream.wikimedia.org/v2/stream/recentchange',
     method: 'GET',
     body: '',
@@ -116,6 +125,7 @@ function emptyTabState(): TabSseState {
 
 function extractState(s: SseStore): TabSseState {
   return {
+    withheldCredentials: s.withheldCredentials,
     url: s.url,
     method: s.method,
     body: s.body,
@@ -143,10 +153,17 @@ function extractState(s: SseStore): TabSseState {
  * connection itself does not survive a reload either, so it is stored as
  * disconnected instead of pointing at a connection that no longer exists.
  */
+/**
+ * Issue #244: credential-named SSE custom headers rows never hold a literal value in
+ * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
+ * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
+ */
+const SSE_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('customHeaders')] }
+
 function persistableSse(st: TabSseState): TabSseState {
   const idle = emptyTabState()
   return {
-    ...st,
+    ...withholdCredentials(st, SSE_CREDENTIALS),
     events: idle.events,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -196,6 +213,8 @@ export const useSseStore = create<SseStore>((set, get) => ({
   },
 
   connect: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { url, customHeaders, lastEventId, method, body, bodyType } = get()
     if (!url.trim()) return
 
@@ -550,3 +569,5 @@ attachTabbedPersist(
   (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
   persistableSse,
 )
+// Issue #244: a user edit to a withheld value drops its marker.
+trackCredentialEdits(useSseStore)

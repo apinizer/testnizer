@@ -473,6 +473,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'A typed bearer token is not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep it in the environment instead.',
     'credentials.restartHint':
       'Typed passwords, tokens and keys are not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep them in the environment instead.',
+    'credentials.reloadFailedSend':
+      'The saved credentials could not be reloaded, so this request is sent with the empty fields. Reopen the request from the tree and try again.',
     'socketio.namespace': 'Namespace',
     'socketio.namespacePlaceholder': 'Namespace (/)',
     'aiChat.headers': 'Custom Headers',
@@ -4015,6 +4017,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'Yazılan bearer token, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{değişken}} (gizli bir değişken) kullanın.',
     'credentials.restartHint':
       'Yazılan parola, token ve anahtarlar, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{değişken}} (gizli bir değişken) kullanın.',
+    'credentials.reloadFailedSend':
+      'Kayıtlı kimlik bilgileri yeniden yüklenemedi; bu istek boş alanlarla gönderiliyor. İsteği ağaçtan yeniden açıp tekrar deneyin.',
     'socketio.namespace': 'Namespace',
     'socketio.namespacePlaceholder': 'Namespace (/)',
     'aiChat.headers': 'Özel Başlıklar',

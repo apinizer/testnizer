@@ -7,6 +7,7 @@ import { useEnvironmentStore } from '../../stores/environment.store'
 import { resolveVariables } from '../../lib/variable-resolver'
 import { toast } from '../../lib/toast'
 import SoapSecuritySection from '../protocols/SoapSecuritySection'
+import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { useTranslation } from '../../lib/i18n'
 import type { AuthType } from '../../types'
 
@@ -41,6 +42,9 @@ const INPUT =
   'w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 outline-none'
 const CARD = 'rounded-lg border border-[var(--border)] bg-[var(--white)] p-4'
 
+/** The hint every secret field points at (issue #244). */
+const RESTART_HINT_ID = 'auth-credential-restart-hint'
+
 function PasswordInput({
   value,
   onChange,
@@ -66,6 +70,7 @@ function PasswordInput({
         style={{ color: 'var(--text)', paddingRight: 36 }}
         placeholder={placeholder || t('authPane.password')}
         data-testid={dataTestId}
+        aria-describedby={RESTART_HINT_ID}
       />
       <button
         type="button"
@@ -206,6 +211,7 @@ export default function AuthTab() {
               style={{ color: 'var(--text)' }}
               placeholder="{{token}}"
               data-testid="auth-bearer-token"
+              aria-describedby={RESTART_HINT_ID}
             />
             <button
               type="button"
@@ -312,6 +318,7 @@ export default function AuthTab() {
               style={{ color: 'var(--text)' }}
               placeholder="api-key-value"
               data-testid="auth-apikey-value"
+              aria-describedby={RESTART_HINT_ID}
             />
           </div>
           <div>
@@ -685,6 +692,11 @@ export default function AuthTab() {
         <div className={CARD} data-testid="auth-wsse-section">
           <SoapSecuritySection />
         </div>
+      )}
+
+      {/* Issue #244: literal credentials are not kept in the tab snapshot. */}
+      {auth.type !== 'none' && auth.type !== 'inherit' && auth.type !== 'wsse' && (
+        <CredentialRestartHint id={RESTART_HINT_ID} testId="auth-credential-restart-hint" />
       )}
     </div>
   )

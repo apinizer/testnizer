@@ -25,7 +25,7 @@ import { normalizeMcpProtocol } from './mcp-protocol'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import { autoRequestName } from './endpoint-name'
-import { ensureSocketioTokenLoaded } from './socketio-saved-token'
+import { ensureWithheldCredentialsLoaded } from './withheld-credentials'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
@@ -607,18 +607,13 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   const activeTab = tabs.tabs.find((t) => t.id === tabs.activeTabId)
   if (!activeTab) return { success: false, notApplicable: true }
 
-  // Issue #243: a Socket.IO tab restored after a restart has an empty token
-  // field — the literal token is kept out of localStorage — while the row
-  // still holds it. Read it back before the snapshot; when the row cannot be
-  // read, do not save rather than write the empty field over the token.
-  if (
-    (activeTab.endpointId || activeTab.savedRequestId || activeTab.testSuiteItemId) &&
-    !(await ensureSocketioTokenLoaded(activeTab))
-  ) {
-    return {
-      success: false,
-      error: 'Could not reload the saved Socket.IO bearer token; the request was not saved.',
-    }
+  // Issues #243 / #244: a tab restored after a restart has empty credential
+  // fields — literal credentials are kept out of localStorage — while the row
+  // still holds them. Read them back before the snapshot; when the row cannot
+  // be read, do not save rather than write the empty fields over them.
+  if (activeTab.endpointId || activeTab.savedRequestId || activeTab.testSuiteItemId) {
+    const reload = await ensureWithheldCredentialsLoaded(activeTab)
+    if (!reload.ok) return { success: false, error: reload.error }
   }
 
   const req = useRequestStore.getState()

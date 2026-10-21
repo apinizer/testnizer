@@ -77,7 +77,7 @@ import { T } from '../../styles/tokens'
 // up — v1.4.4 close-bypass).
 import { cleanupTabState } from '../../lib/cleanup-tab-state'
 import { saveActiveRequestInPlace } from '../../lib/save-active-request'
-import { ensureSocketioTokenLoaded } from '../../lib/socketio-saved-token'
+import { ensureWithheldCredentialsLoaded } from '../../lib/withheld-credentials'
 import { saveMockMcpDraft } from '../mock-mcp/mock-mcp-save'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
 import { toast } from '../../lib/toast'
@@ -175,11 +175,12 @@ export function EndpointTabBar() {
   useEffect(() => {
     if (!activeTabId) return
     activateTabStores(activeTabId)
-    // Issue #243: a Socket.IO tab restored after a restart gets its bearer
-    // token back from the saved row (localStorage never holds it). No-op for
-    // every other tab.
+    // Issues #243 / #244: a tab restored after a restart gets its literal
+    // credentials (auth, credential headers, MCP env, Socket.IO token) back
+    // from the saved row — localStorage never holds them — so Send / Connect
+    // work without retyping. No-op when nothing is withheld.
     const tab = useTabsStore.getState().tabs.find((t) => t.id === activeTabId)
-    if (tab) void ensureSocketioTokenLoaded(tab)
+    if (tab) void ensureWithheldCredentialsLoaded(tab)
   }, [activeTabId])
 
   type TabContextAction =

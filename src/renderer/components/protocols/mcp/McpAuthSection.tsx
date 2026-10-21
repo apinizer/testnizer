@@ -4,7 +4,13 @@ import { MCP_AUTH_TYPES } from '../../../stores/mcp-auth.slice'
 import type { McpAuthType } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
 import McpOAuthSection from './McpOAuthSection'
-import { McpApiKeyAuthFields, McpBasicAuthFields, McpBearerAuthFields } from './McpAuthFields'
+import {
+  MCP_AUTH_RESTART_HINT_ID,
+  McpApiKeyAuthFields,
+  McpBasicAuthFields,
+  McpBearerAuthFields,
+} from './McpAuthFields'
+import CredentialRestartHint from '../../shared/CredentialRestartHint'
 import { sentAsPreview } from './config-ui'
 
 const TYPE_KEYS: Record<McpAuthType, string> = {
@@ -99,6 +105,10 @@ export default function McpAuthSection() {
                 </code>{' '}
                 {t('mcp.auth.precedence')}
               </div>
+            )}
+            {/* Issue #244: literal credentials are not kept in the tab snapshot. */}
+            {(auth.type === 'basic' || auth.type === 'bearer' || auth.type === 'api-key') && (
+              <CredentialRestartHint id={MCP_AUTH_RESTART_HINT_ID} testId="mcp-auth-restart-hint" />
             )}
             {auth.type === 'api-key' && auth.apiKey?.in === 'query' && transport === 'sse' && (
               <p data-testid="mcp-auth-sse-query" className="m-0 text-[11px] text-[var(--hint)]">

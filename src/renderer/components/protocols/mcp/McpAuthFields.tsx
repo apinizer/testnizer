@@ -4,6 +4,9 @@ import type { McpAuthConfig } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 
+/** The Authorization tab's restart hint (issue #244) — `McpAuthSection` renders it. */
+export const MCP_AUTH_RESTART_HINT_ID = 'mcp-auth-restart-hint'
+
 const INPUT =
   'h-8 w-full min-w-0 rounded-md border border-[var(--border)] px-2.5 font-mono text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]'
 
@@ -58,6 +61,7 @@ function SecretField(props: {
           onChange={(e) => props.onChange(e.target.value)}
           placeholder={props.placeholder}
           data-testid={props.testId}
+          aria-describedby={MCP_AUTH_RESTART_HINT_ID}
           className={`${INPUT} bg-[var(--white)] pr-8`}
         />
         <button

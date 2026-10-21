@@ -11,7 +11,7 @@ import {
 } from '../../stores/ai-chat-conversations'
 import { useTranslation } from '../../lib/i18n'
 import { autoRequestName } from '../../lib/endpoint-name'
-import { ensureSocketioTokenLoaded } from '../../lib/socketio-saved-token'
+import { ensureWithheldCredentialsLoaded } from '../../lib/withheld-credentials'
 import {
   requestSettingsFor,
   savedRequestMetadata,
@@ -33,13 +33,7 @@ export default function EndpointSaveModal() {
   })
   const url = useRequestStore((s) => s.url)
   const method = useRequestStore((s) => s.method)
-  const params = useRequestStore((s) => s.params)
-  const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
-  const auth = useRequestStore((s) => s.auth)
-  const preScript = useRequestStore((s) => s.preScript)
-  const postScript = useRequestStore((s) => s.postScript)
-  const assertions = useRequestStore((s) => s.assertions)
 
   const [endpointName, setEndpointName] = useState(t('endpointSave.defaultName'))
   const [selectedFolder, setSelectedFolder] = useState('')
@@ -169,10 +163,21 @@ export default function EndpointSaveModal() {
       // to persist an empty HTTP request and lose the original protocol
       // payload (v1.4.2 T-12.6/8/9, v1.4.4 §12.8/12.9).
       const protocol = (activeTab?.protocol ?? 'http') as string
-      // Issue #243: "Save As" from a Socket.IO tab restored after a restart —
-      // reload the token its source row holds before copying it. Best effort:
-      // a new row is written either way.
-      if (activeTab) await ensureSocketioTokenLoaded(activeTab)
+      // Issues #243 / #244: "Save As" from a tab restored after a restart —
+      // reload the credentials its source row holds before copying them. A
+      // new row is written either way (best effort); updating the tab's own
+      // saved request in place is refused instead of writing empty fields
+      // over the stored values.
+      if (activeTab) {
+        const reload = await ensureWithheldCredentialsLoaded(activeTab)
+        if (!reload.ok && isUpdate && existingSavedRequestId) {
+          setSaveError(reload.error)
+          return
+        }
+      }
+      // Read the request store AFTER the reload: the render-time values above
+      // predate it.
+      const req = useRequestStore.getState()
       const snapshot = activeTab
         ? snapshotProtocol(activeTab)
         : {
@@ -191,13 +196,13 @@ export default function EndpointSaveModal() {
         method: effectiveMethod,
         url: effectiveUrl,
         protocol,
-        params: JSON.stringify(params),
-        headers: JSON.stringify(headers),
+        params: JSON.stringify(req.params),
+        headers: JSON.stringify(req.headers),
         body: JSON.stringify(effectiveBody),
-        auth: JSON.stringify(auth),
-        pre_script: preScript,
-        post_script: postScript,
-        assertions: JSON.stringify(assertions),
+        auth: JSON.stringify(req.auth),
+        pre_script: req.preScript,
+        post_script: req.postScript,
+        assertions: JSON.stringify(req.assertions),
         folder_id: selectedFolder || null,
         metadata: savedRequestMetadata(protocolMeta, settings),
       }

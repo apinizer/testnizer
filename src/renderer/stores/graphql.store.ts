@@ -6,6 +6,14 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import {
+  credentialRows,
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
 import { makeId } from '../lib/utils'
 import { graphqlMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
@@ -63,7 +71,7 @@ type SubscriptionState = 'disconnected' | 'connecting' | 'connected' | 'error'
  * `isIntrospecting` / `introspectError` are intentionally NOT in this set —
  * the schema is keyed off the endpoint URL and lives in a separate global cache.
  */
-interface TabGraphQLState {
+interface TabGraphQLState extends WithheldState {
   url: string
   query: string
   variables: string
@@ -183,6 +191,7 @@ function parseIntrospectionResult(data: Record<string, unknown>): GqlSchema | nu
 
 function emptyTabState(): TabGraphQLState {
   return {
+    withheldCredentials: [],
     url: 'https://countries.trevorblades.com/graphql',
     query: DEFAULT_QUERY,
     variables: '{}',
@@ -197,6 +206,7 @@ function emptyTabState(): TabGraphQLState {
 
 function extractState(s: GraphQLStore): TabGraphQLState {
   return {
+    withheldCredentials: s.withheldCredentials,
     url: s.url,
     query: s.query,
     variables: s.variables,
@@ -215,10 +225,17 @@ function extractState(s: GraphQLStore): TabGraphQLState {
  * response they stay in memory for the session). In-flight and subscription
  * state does not survive a reload either.
  */
+/**
+ * Issue #244: credential-named GraphQL headers rows never hold a literal value in
+ * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
+ * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
+ */
+const GQL_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('headers')] }
+
 function persistableGql(st: TabGraphQLState): TabGraphQLState {
   const idle = emptyTabState()
   return {
-    ...st,
+    ...withholdCredentials(st, GQL_CREDENTIALS),
     response: idle.response,
     isLoading: idle.isLoading,
     _inflightRequestId: idle._inflightRequestId,
@@ -274,6 +291,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   },
 
   executeQuery: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { url, query, variables, headers } = get()
     if (!url.trim() || !query.trim()) return
 
@@ -442,6 +461,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   },
 
   introspect: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { url, headers } = get()
     if (!url.trim()) {
       // Previously silently returned — the user clicked Introspect and
@@ -656,6 +677,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   },
 
   subscribe: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { url, query } = get()
     if (!url.trim() || !isSubscriptionQuery(query)) return
 
@@ -767,3 +790,5 @@ attachTabbedPersist(
   (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
   persistableGql,
 )
+// Issue #244: a user edit to a withheld value drops its marker.
+trackCredentialEdits(useGraphQLStore)
