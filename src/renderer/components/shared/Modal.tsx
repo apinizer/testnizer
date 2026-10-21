@@ -21,7 +21,15 @@ interface ModalProps {
   testId?: string
 }
 
-const DEFAULT_CONTENT_CLASS = 'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
+/**
+ * Centred with `inset-0` + auto margins on a fit-content box, NOT with
+ * `translate(-50%, -50%)`: a transform puts the dialog on its own compositor
+ * layer, and when its width or height is odd the layer lands on a half pixel
+ * — Chromium then draws every glyph blurred. Invisible on Retina, plainly
+ * soft on a 1x external monitor.
+ */
+export const CENTERED_CONTENT_CLASS = 'fixed inset-0 m-auto h-fit w-fit'
+const DEFAULT_CONTENT_CLASS = CENTERED_CONTENT_CLASS
 
 const visuallyHidden: CSSProperties = {
   position: 'absolute',
