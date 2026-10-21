@@ -1074,6 +1074,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'sidebar.tools': 'Tools',
     'sidebar.security': 'Security',
     'security.tools': 'Tools',
+    // Issue #229 — Security-page door to the MCP request tab's Security scan.
+    'security.mcpScan.title': 'MCP Security Scan',
+    'security.mcpScan.hint':
+      'Grade an MCP server A–F: transport, authorization, protocol conformance, prompt injection and tool poisoning, information disclosure, CORS and security headers',
     'sidebar.settings': 'Settings',
     'sidebar.invite': 'Invite',
 
@@ -4561,6 +4565,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'sidebar.tools': 'Araçlar',
     'sidebar.security': 'Güvenlik',
     'security.tools': 'Araçlar',
+    'security.mcpScan.title': 'MCP Güvenlik Taraması',
+    'security.mcpScan.hint':
+      'Bir MCP sunucusunu A–F notuyla tarar: taşıma, yetkilendirme, protokol uyumu, istem enjeksiyonu ve araç zehirleme, bilgi ifşası, CORS ve güvenlik başlıkları',
     'sidebar.settings': 'Ayarlar',
     'sidebar.invite': 'Davet Et',
 
