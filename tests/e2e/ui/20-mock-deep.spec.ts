@@ -10,7 +10,9 @@ uiTest.describe('Mock servers (deep)', () => {
 
   uiTest('create mock server', async ({ window }) => {
     // Unified "New mock server" dialog (issue #140): header "+" → HTTP · Blank.
-    await window.getByRole('button', { name: 'New mock server' }).click()
+    // By testid: with no server yet the Mocks page centre has a second
+    // "New mock server" button (empty state, issue #226).
+    await window.getByTestId('mock-new').click()
     await expect(window.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
     await expect(window.getByTestId('mock-new-type-http')).toHaveAttribute('aria-checked', 'true')
     await window.getByTestId('mock-new-name').fill('E2E Mock')
@@ -34,8 +36,8 @@ uiTest.describe('Mock servers (deep)', () => {
     const row = window.getByText(/Mock|Server/i).first()
     if (await row.isVisible()) {
       await row.click()
-      for (const tab of [/Endpoints/i, /Settings/i, /Logs/i]) {
-        const btn = window.getByRole('button', { name: tab }).first()
+      for (const tab of ['endpoints', 'settings', 'logs']) {
+        const btn = window.getByTestId(`mock-tab-${tab}`)
         if (await btn.isVisible()) await btn.click()
       }
     }

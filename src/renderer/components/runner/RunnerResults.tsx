@@ -529,8 +529,8 @@ export default function RunnerResults({
                       height: 26,
                       fontSize: 12,
                       borderColor: methodFilter.length > 0 ? 'var(--accent)' : 'var(--border2)',
-                      color: methodFilter.length > 0 ? 'var(--accentText)' : 'var(--muted)',
-                      background: methodFilter.length > 0 ? 'var(--accentLight)' : 'var(--white)',
+                      color: methodFilter.length > 0 ? 'var(--accent-text)' : 'var(--muted)',
+                      background: methodFilter.length > 0 ? 'var(--accent-light)' : 'var(--white)',
                     }}
                   >
                     {methodFilter.length > 0

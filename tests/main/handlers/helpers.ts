@@ -534,6 +534,8 @@ const SCHEMA_SQL = `
     proxy_enabled INTEGER NOT NULL DEFAULT 0,
     proxy_target TEXT NOT NULL DEFAULT '',
     proxy_record INTEGER NOT NULL DEFAULT 0,
+    -- 'http' | 'sse' | 'ai' (issue #221) — mirrors database.ts.
+    kind TEXT NOT NULL DEFAULT 'http',
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     -- Mirrors database.ts: a project delete cascades to its HTTP mocks.
@@ -568,7 +570,9 @@ const SCHEMA_SQL = `
     condition TEXT NOT NULL DEFAULT '{"type":"always"}',
     script TEXT NOT NULL DEFAULT '',
     response_order INTEGER NOT NULL DEFAULT 0,
-    enabled INTEGER NOT NULL DEFAULT 1
+    enabled INTEGER NOT NULL DEFAULT 1,
+    -- Streaming knobs JSON (issue #221) — nullable, mirrors database.ts.
+    stream_config TEXT
   );
 
   -- Mock MCP servers (issue #140) — mirrors src/main/db/database.ts.

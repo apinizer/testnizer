@@ -417,8 +417,8 @@ function NavButton({
       className="rounded border px-1.5 py-0.5 text-[11px] leading-none disabled:opacity-40"
       style={{
         borderColor: active ? 'var(--accent)' : 'var(--border)',
-        color: active ? 'var(--accentText)' : 'var(--text)',
-        background: active ? 'var(--accentLight)' : 'var(--white)',
+        color: active ? 'var(--accent-text)' : 'var(--text)',
+        background: active ? 'var(--accent-light)' : 'var(--white)',
       }}
     >
       {label}

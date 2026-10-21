@@ -182,9 +182,9 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
           title="Auto-scroll"
           style={{
-            background: autoScroll ? 'var(--accentLight)' : 'transparent',
+            background: autoScroll ? 'var(--accent-light)' : 'transparent',
             border: '1px solid var(--border)',
-            color: autoScroll ? 'var(--accentText)' : 'var(--muted)',
+            color: autoScroll ? 'var(--accent-text)' : 'var(--muted)',
           }}
         >
           {autoScroll ? <ArrowDown size={11} /> : <ArrowUp size={11} />}

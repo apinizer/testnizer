@@ -499,6 +499,25 @@ export function initConsoleListeners(): () => void {
               responseBody: ev.data,
             },
           })
+        } else if (ev.type === 'error' && ev.streamEnded) {
+          // The server ended the response and the client reconnects — a
+          // finite stream ends this way before its 204 (issue #226).
+          add({
+            protocol: 'sse',
+            level: 'info',
+            category: 'event',
+            message: 'SSE response ended — reconnecting',
+          })
+        } else if (ev.type === 'error' && ev.closed === 'ended') {
+          // The server closed the stream for good (HTTP 204 / clean end of the
+          // fetch path): a normal end, not an error (issue #226).
+          add({
+            protocol: 'sse',
+            level: 'info',
+            category: 'event',
+            message: `SSE stream closed by the server${ev.httpStatus ? ` (HTTP ${ev.httpStatus})` : ''}`,
+            ...(ev.httpStatus ? { status: ev.httpStatus } : {}),
+          })
         } else if (ev.type === 'error') {
           add({
             protocol: 'sse',

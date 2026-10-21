@@ -7,6 +7,7 @@ import AiChatSettingsSection from './ai-chat/AiChatSettingsSection'
 import AiChatToolsSection from './ai-chat/AiChatToolsSection'
 import AiChatConversationView from './ai-chat/AiChatConversationView'
 import AiChatConversationBar from './ai-chat/AiChatConversationBar'
+import AiChatSplit from './ai-chat/AiChatSplit'
 
 // Kept importable from the editor (tests and older call sites).
 export { isPinnedToBottom, SCROLL_PIN_THRESHOLD_PX } from '../../lib/ai-chat-view'
@@ -27,6 +28,10 @@ export default function AiChatEditor(): ReactElement {
   const clearConversation = useAiChatStore((s) => s.clearConversation)
 
   const [draft, setDraft] = useState('')
+  // Settings opens by default, Tools does not; the editor owns both so it can
+  // split the body while either is open (issue #228).
+  const [settingsExpanded, setSettingsExpanded] = useState(true)
+  const [toolsExpanded, setToolsExpanded] = useState(false)
   const pinnedRef = useRef(true)
 
   // The request's conversations come from the local database (issue #199) —
@@ -53,7 +58,10 @@ export default function AiChatEditor(): ReactElement {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
+    <div
+      data-testid="ai-chat-editor"
+      className="flex h-full flex-col overflow-hidden bg-[var(--white)]"
+    >
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
         <Bot size={16} style={{ color: 'var(--accent-text)' }} />
         <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
@@ -81,9 +89,22 @@ export default function AiChatEditor(): ReactElement {
         </button>
       </div>
 
-      <AiChatSettingsSection />
-      <AiChatToolsSection />
-      <AiChatConversationView pinnedRef={pinnedRef} />
+      <AiChatSplit
+        split={settingsExpanded || toolsExpanded}
+        config={
+          <>
+            <AiChatSettingsSection
+              expanded={settingsExpanded}
+              onToggle={() => setSettingsExpanded((v) => !v)}
+            />
+            <AiChatToolsSection
+              expanded={toolsExpanded}
+              onToggle={() => setToolsExpanded((v) => !v)}
+            />
+          </>
+        }
+        transcript={<AiChatConversationView pinnedRef={pinnedRef} />}
+      />
 
       <div className="shrink-0 border-t border-[var(--border)] p-3.5">
         <div className="flex items-end gap-2 rounded-lg border border-[var(--border)] bg-[var(--white)] p-2 focus-within:border-[var(--accent)]">

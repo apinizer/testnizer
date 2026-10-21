@@ -724,6 +724,9 @@ function runMigrations(database: Database.Database): void {
       proxy_enabled INTEGER NOT NULL DEFAULT 0,
       proxy_target TEXT NOT NULL DEFAULT '',
       proxy_record INTEGER NOT NULL DEFAULT 0,
+      -- 'http' | 'sse' | 'ai' (src/shared/mock-kind.ts) — a presentation
+      -- profile; the engine never reads it.
+      kind TEXT NOT NULL DEFAULT 'http',
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
@@ -763,6 +766,8 @@ function runMigrations(database: Database.Database): void {
       script TEXT NOT NULL DEFAULT '',
       response_order INTEGER NOT NULL DEFAULT 0,
       enabled INTEGER NOT NULL DEFAULT 1,
+      -- Streaming knobs for the 'sse' / 'llm' body types (JSON). NULL = unset.
+      stream_config TEXT,
       FOREIGN KEY (endpoint_id) REFERENCES mock_endpoints(id) ON DELETE CASCADE
     );
 
@@ -873,6 +878,16 @@ function runMigrations(database: Database.Database): void {
     // (proxy, working directory, UI) stay in electron-store
     // (`lib/project-settings.ts` owns the split).
     `ALTER TABLE projects ADD COLUMN shared_settings TEXT`,
+    // HTTP mock server kind (issue #221): 'http' | 'sse' | 'ai'
+    // (src/shared/mock-kind.ts). Existing servers become 'http' — the editor
+    // and the engine behave exactly as before. Fixed at creation; only a
+    // project file can change it.
+    `ALTER TABLE mock_servers ADD COLUMN kind TEXT NOT NULL DEFAULT 'http'`,
+    // Streaming knobs for a mock response (issue #221) — JSON, read by the
+    // 'sse' / 'llm' body types. Nullable, no default: NULL reads back as the
+    // body type's defaults. The project-file importer keeps the local value
+    // when an older file lacks the key (fillAbsentColumns, issue #186).
+    `ALTER TABLE mock_responses ADD COLUMN stream_config TEXT`,
   ]
   for (const sql of alters) {
     try {

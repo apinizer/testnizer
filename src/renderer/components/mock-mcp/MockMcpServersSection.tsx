@@ -12,6 +12,7 @@ import { toast } from '../../lib/toast'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type { MockMcpServer } from '../../types/mock-mcp'
 import MockGroupHeader from '../mock/MockGroupHeader'
+import { matchesMockQuery } from '../mock/mock-kind-ui'
 import MockMcpServerRow from './MockMcpServerRow'
 import { closeMockMcpServerTab, openMockMcpServerTab } from './mock-mcp-tabs'
 
@@ -39,8 +40,9 @@ export default function MockMcpServersSection({
   // Never show the previous project's list while the new one loads.
   const servers = loadedFor && loadedFor === projectId ? allServers : EMPTY
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return q ? servers.filter((s) => s.name.toLowerCase().includes(q)) : servers
+    return servers.filter((s) =>
+      matchesMockQuery(query, { name: s.name, kind: 'mcp', port: s.port }),
+    )
   }, [servers, query])
 
   async function confirmDelete(): Promise<void> {

@@ -6,15 +6,20 @@ import type {
   MockServerStatus,
   MockLogEntry,
 } from '../types'
+import type { MockServerKind } from '../../shared/mock-kind'
+import { collapseStreamLogs, mergeStreamLog } from '../lib/mock-log-streams'
 
 const api = window.api.mock
 
 export interface MockState {
   servers: MockServer[]
+  /** Project whose list `servers` holds; null until the first load lands (issue #226). */
+  projectId: string | null
   endpointsByServer: Record<string, MockEndpoint[]>
   responsesByEndpoint: Record<string, MockResponse[]>
   statusByServer: Record<string, MockServerStatus>
   errorByServer: Record<string, string | null>
+  /** One entry per request, and ONE per SSE / AI stream (`mock-log-streams.ts`, issue #226). */
   logsByServer: Record<string, MockLogEntry[]>
 
   // Server CRUD
@@ -25,6 +30,8 @@ export interface MockState {
     port: number
     basePath?: string
     description?: string
+    /** Fixed at creation (issue #221); absent = `http`. */
+    kind?: MockServerKind
   }) => Promise<MockServer | null>
   updateServer: (id: string, patch: Partial<MockServer>) => Promise<void>
   deleteServer: (id: string) => Promise<void>
@@ -47,7 +54,11 @@ export interface MockState {
   createResponse: (
     input: Partial<MockResponse> & { endpointId: string },
   ) => Promise<MockResponse | null>
-  updateResponse: (id: string, patch: Partial<MockResponse>) => Promise<void>
+  /**
+   * Returns the main process's error message (e.g. a rejected stream setting,
+   * issue #221), or null on success — callers that show it must not swallow it.
+   */
+  updateResponse: (id: string, patch: Partial<MockResponse>) => Promise<string | null>
   deleteResponse: (endpointId: string, responseId: string) => Promise<void>
 
   // Logs
@@ -88,6 +99,7 @@ let loadSeq = 0
 
 export const useMockStore = create<MockState>((set) => ({
   servers: [],
+  projectId: null,
   endpointsByServer: {},
   responsesByEndpoint: {},
   statusByServer: {},
@@ -98,7 +110,7 @@ export const useMockStore = create<MockState>((set) => ({
     const seq = ++loadSeq
     const r = await api.server.list(projectId)
     if (seq !== loadSeq) return // a newer load superseded this one
-    if (r.success && r.data) set({ servers: r.data })
+    if (r.success && r.data) set({ servers: r.data, projectId })
   },
 
   createServer: async (input) => {
@@ -108,6 +120,7 @@ export const useMockStore = create<MockState>((set) => ({
       port: input.port,
       basePath: input.basePath,
       description: input.description,
+      ...(input.kind ? { kind: input.kind } : {}),
     } as Partial<MockServer> & { projectId: string; name: string; port: number })
     if (!r.success || !r.data) return null
     set((s) => ({ servers: [...s.servers, r.data!] }))
@@ -227,17 +240,17 @@ export const useMockStore = create<MockState>((set) => ({
 
   updateResponse: async (id, patch) => {
     const r = await api.response.update(id, patch)
-    if (r.success && r.data) {
-      const resp = r.data
-      set((s) => ({
-        responsesByEndpoint: {
-          ...s.responsesByEndpoint,
-          [resp.endpointId]: (s.responsesByEndpoint[resp.endpointId] ?? []).map((rr) =>
-            rr.id === id ? resp : rr,
-          ),
-        },
-      }))
-    }
+    if (!r.success || !r.data) return r.error ?? 'Update failed'
+    const resp = r.data
+    set((s) => ({
+      responsesByEndpoint: {
+        ...s.responsesByEndpoint,
+        [resp.endpointId]: (s.responsesByEndpoint[resp.endpointId] ?? []).map((rr) =>
+          rr.id === id ? resp : rr,
+        ),
+      },
+    }))
+    return null
   },
 
   deleteResponse: async (endpointId, responseId) => {
@@ -257,7 +270,9 @@ export const useMockStore = create<MockState>((set) => ({
   loadLogs: async (serverId) => {
     const r = await api.logs.get(serverId)
     if (r.success && r.data) {
-      set((s) => ({ logsByServer: { ...s.logsByServer, [serverId]: r.data! } }))
+      set((s) => ({
+        logsByServer: { ...s.logsByServer, [serverId]: collapseStreamLogs(r.data!) },
+      }))
     }
   },
 
@@ -292,7 +307,8 @@ export const useMockStore = create<MockState>((set) => ({
 api.onLog((entry) => {
   useMockStore.setState((s) => {
     const cur = s.logsByServer[entry.serverId] ?? []
-    const next = [...cur, entry]
+    // A stream's "closed" entry replaces its "open" row (issue #226).
+    const next = mergeStreamLog(cur, entry)
     if (next.length > 500) next.splice(0, next.length - 500)
     return { logsByServer: { ...s.logsByServer, [entry.serverId]: next } }
   })

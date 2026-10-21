@@ -1,6 +1,11 @@
 // src/renderer/types/index.ts
 // Testnizer — TypeScript tip referansi
 
+import type { MockServerKind } from '../../shared/mock-kind'
+import type { MockLlmConfig, MockSseStreamConfig } from '../../shared/mock-stream'
+
+export type { MockServerKind }
+
 // ─── Enums ───────────────────────────────────────────────────
 
 export type Protocol =
@@ -1251,6 +1256,11 @@ export interface MockServer {
   proxyTarget: string
   /** When enabled together with proxy, captured upstream responses are saved as new mock endpoints. */
   proxyRecord: boolean
+  /**
+   * Authoring profile (`src/shared/mock-kind.ts`, issue #221): sidebar section,
+   * presets, offered body types. Fixed at creation; the engine ignores it.
+   */
+  kind: MockServerKind
   createdAt: number
   updatedAt: number
 }
@@ -1286,7 +1296,7 @@ export interface MockEndpoint {
   updatedAt: number
 }
 
-export type MockBodyType = 'json' | 'xml' | 'text' | 'html'
+export type MockBodyType = 'json' | 'xml' | 'text' | 'html' | 'sse' | 'llm'
 
 export type MockConditionOp = 'eq' | 'neq' | 'contains' | 'regex' | 'exists'
 
@@ -1320,6 +1330,16 @@ export interface MockResponse {
   script: string
   order: number
   enabled: boolean
+  /**
+   * The stored `stream_config` JSON as written (issue #221), or null when
+   * unset. `bodyType` decides what it means: an `sse` response's stream
+   * settings (read through `normalizeStreamConfig`) or an `llm` response's
+   * AI reply settings (read through `normalizeLlmConfig`). It may be partial
+   * (or carry keys from another build / the other body type): always read
+   * it through the normalizer of the CURRENT body type, and write a full
+   * normalized object back.
+   */
+  streamConfig: Partial<MockSseStreamConfig> | Partial<MockLlmConfig> | null
 }
 
 // ─── Test Suite (renderer-facing row shapes) ─────────────────

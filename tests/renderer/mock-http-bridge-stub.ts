@@ -35,6 +35,7 @@ export function httpServer(over: Partial<MockServer> = {}): MockServer {
     proxyEnabled: false,
     proxyTarget: '',
     proxyRecord: false,
+    kind: 'http',
     createdAt: 1,
     updatedAt: 1,
     ...over,
@@ -50,6 +51,8 @@ const state = {
   responses: [] as MockResponse[],
   /** When set, `endpoint.create` fails with this message (rollback tests). */
   failEndpointCreate: null as string | null,
+  /** When set, `response.update` fails with this message (error-surfacing tests). */
+  failResponseUpdate: null as string | null,
 }
 
 export const calls: string[] = []
@@ -131,7 +134,14 @@ export const httpBridge = {
       state.responses.push(r)
       return ok(r)
     }),
-    update: track('response.update', () => fail('not used')),
+    update: track('response.update', (id: string, patch: Partial<MockResponse>) => {
+      if (state.failResponseUpdate) return fail(state.failResponseUpdate)
+      const cur = state.responses.find((r) => r.id === id)
+      if (!cur) return fail('Response not found')
+      const next = { ...cur, ...patch }
+      state.responses = state.responses.map((r) => (r.id === id ? next : r))
+      return ok(next)
+    }),
     delete: track('response.delete', () => ok(true)),
   },
   logs: {
@@ -153,9 +163,59 @@ export function resetHttpBridge(
   state.endpoints = []
   state.responses = []
   state.failEndpointCreate = opts.failEndpointCreate ?? null
+  state.failResponseUpdate = null
   calls.length = 0
   for (const group of [httpBridge.server, httpBridge.endpoint, httpBridge.response]) {
     for (const fn of Object.values(group)) fn.mockClear()
+  }
+}
+
+/** Seed endpoints / responses the editor will load (after `resetHttpBridge`). */
+export function seedHttpBridge(data: {
+  endpoints?: MockEndpoint[]
+  responses?: MockResponse[]
+  failResponseUpdate?: string
+}): void {
+  state.endpoints = [...(data.endpoints ?? [])]
+  state.responses = [...(data.responses ?? [])]
+  state.failResponseUpdate = data.failResponseUpdate ?? null
+}
+
+export function httpEndpoint(over: Partial<MockEndpoint> = {}): MockEndpoint {
+  return {
+    id: 'ep-1',
+    serverId: 'h-1',
+    method: 'GET',
+    path: '/events',
+    pathMode: 'exact',
+    description: '',
+    priority: 0,
+    enabled: true,
+    sortOrder: 0,
+    authOverride: null,
+    schemaValidation: null,
+    createdAt: 1,
+    updatedAt: 1,
+    ...over,
+  }
+}
+
+export function httpResponse(over: Partial<MockResponse> = {}): MockResponse {
+  return {
+    id: 'r-1',
+    endpointId: 'ep-1',
+    name: 'Default',
+    statusCode: 200,
+    headers: [],
+    bodyType: 'json',
+    body: '{}',
+    delayMs: 0,
+    condition: { type: 'always' },
+    script: '',
+    order: 0,
+    enabled: true,
+    streamConfig: null,
+    ...over,
   }
 }
 

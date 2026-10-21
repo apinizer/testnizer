@@ -1,8 +1,9 @@
-import { Server, Clock, Wrench, Settings, FileText } from 'lucide-react'
+import { Clock, Wrench, Settings, FileText } from 'lucide-react'
 
 import ProjectWelcome from './ProjectWelcome'
 import TestsHome from '../runner/TestsHome'
 import EmptyState from '../shared/EmptyState'
+import MocksWelcome from '../mock/MocksWelcome'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
 import type { SidebarPage } from '../../lib/sidebar-pages'
@@ -12,8 +13,7 @@ interface PageWelcomeProps {
   page: SidebarPage
 }
 
-const SECONDARY: Partial<Record<SidebarPage, { icon: typeof Server; key: string }>> = {
-  mocks: { icon: Server, key: 'welcome.mocks' },
+const SECONDARY: Partial<Record<SidebarPage, { icon: typeof Clock; key: string }>> = {
   history: { icon: Clock, key: 'welcome.history' },
   tools: { icon: Wrench, key: 'welcome.tools' },
   docs: { icon: FileText, key: 'welcome.docs' },
@@ -29,6 +29,8 @@ export default function PageWelcome({ page }: PageWelcomeProps) {
   const { t } = useTranslation()
 
   if (page === 'apis') return <ProjectWelcome />
+  // No servers yet → "New mock server"; otherwise "select one on the left" (issue #226).
+  if (page === 'mocks') return <MocksWelcome />
 
   if (page === 'tests') {
     return (

@@ -161,7 +161,7 @@ export default function EpochTool() {
               <Row
                 label={t('tools.epoch.assuming')}
                 value={
-                  <span style={{ color: 'var(--accentText)' }}>
+                  <span style={{ color: 'var(--accent-text)' }}>
                     {tsUnit === 'auto'
                       ? `${detectedUnit} ${t('tools.epoch.autoDetected')}`
                       : decoded.unit}

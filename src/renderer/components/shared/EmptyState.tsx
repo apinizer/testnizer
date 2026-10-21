@@ -5,6 +5,8 @@ type EmptyStateAction = {
   label: string
   onClick: () => void
   icon?: LucideIcon
+  /** `data-testid` of the action button. */
+  testId?: string
 }
 
 interface EmptyStateProps {
@@ -95,6 +97,7 @@ export default function EmptyState({
       {action && (
         <button
           type="button"
+          data-testid={action.testId}
           onClick={action.onClick}
           className="mt-1 flex cursor-pointer items-center gap-1.5 rounded-[7px] bg-[var(--accent)] px-3.5 py-1.5 font-semibold text-white transition-colors hover:opacity-90"
           style={{ fontSize: tokens.descPx }}

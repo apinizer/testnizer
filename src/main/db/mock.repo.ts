@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { isMockServerKind, type MockServerKind } from '../../shared/mock-kind'
 
 // ─── Row types (raw SQLite shape) ────────────────────────────────
 
@@ -25,6 +26,8 @@ export interface MockServerRow {
   proxy_enabled: number
   proxy_target: string
   proxy_record: number
+  /** Raw stored kind — read it through `normalizeMockServerKind` (issue #221). */
+  kind: string
   created_at: number
   updated_at: number
 }
@@ -58,6 +61,8 @@ export interface MockResponseRow {
   script: string
   response_order: number
   enabled: number
+  /** Streaming knobs as JSON text, or NULL = unset (issue #221). Opaque here. */
+  stream_config: string | null
 }
 
 // ─── Server CRUD ─────────────────────────────────────────────────
@@ -72,9 +77,22 @@ export interface CreateMockServerInput {
   autoStart?: boolean
   corsEnabled?: boolean
   corsAllowOrigins?: string
+  /**
+   * Fixed at creation — `UpdateMockServerInput` has no `kind` (issue #221).
+   * Absent → 'http'; anything else that is not a known kind is rejected.
+   */
+  kind?: MockServerKind
+}
+
+/** Absent → 'http'; an unknown value (e.g. 'mcp' — its own table) is an error. */
+function kindForCreate(raw: unknown): MockServerKind {
+  if (raw === undefined || raw === null) return 'http'
+  if (!isMockServerKind(raw)) throw new Error(`Unknown mock server kind: ${String(raw)}`)
+  return raw
 }
 
 export function createMockServer(input: CreateMockServerInput): MockServerRow {
+  const kind = kindForCreate(input.kind)
   const id = randomUUID()
   const now = Date.now()
   const row: MockServerRow = {
@@ -110,6 +128,7 @@ export function createMockServer(input: CreateMockServerInput): MockServerRow {
     proxy_enabled: 0,
     proxy_target: '',
     proxy_record: 0,
+    kind,
     created_at: now,
     updated_at: now,
   }
@@ -120,12 +139,12 @@ export function createMockServer(input: CreateMockServerInput): MockServerRow {
          cors_enabled, cors_allow_origins, cors_allow_methods, cors_allow_headers,
          cors_allow_credentials, cors_max_age, auth_config, failure_config,
          rate_limit_config, echo_enabled, proxy_enabled, proxy_target, proxy_record,
-         created_at, updated_at)
+         kind, created_at, updated_at)
        VALUES (@id, @project_id, @name, @description, @host, @port, @base_path,
          @auto_start, @cors_enabled, @cors_allow_origins, @cors_allow_methods,
          @cors_allow_headers, @cors_allow_credentials, @cors_max_age,
          @auth_config, @failure_config, @rate_limit_config, @echo_enabled,
-         @proxy_enabled, @proxy_target, @proxy_record, @created_at, @updated_at)`,
+         @proxy_enabled, @proxy_target, @proxy_record, @kind, @created_at, @updated_at)`,
     )
     .run(row)
   return row
@@ -359,6 +378,13 @@ export interface CreateMockResponseInput {
   script?: string
   order?: number
   enabled?: boolean
+  /** Streaming knobs (issue #221); stored as JSON, not interpreted here. */
+  streamConfig?: Record<string, unknown> | null
+}
+
+/** `null` / absent → NULL; anything else is stored as its JSON text. */
+function streamConfigText(cfg: Record<string, unknown> | null | undefined): string | null {
+  return cfg === undefined || cfg === null ? null : JSON.stringify(cfg)
 }
 
 export function createMockResponse(input: CreateMockResponseInput): MockResponseRow {
@@ -376,14 +402,15 @@ export function createMockResponse(input: CreateMockResponseInput): MockResponse
     script: input.script ?? '',
     response_order: input.order ?? 0,
     enabled: input.enabled === false ? 0 : 1,
+    stream_config: streamConfigText(input.streamConfig),
   }
   getDb()
     .prepare(
       `INSERT INTO mock_responses
         (id, endpoint_id, name, status_code, headers, body_type, body, delay_ms,
-         condition, script, response_order, enabled)
+         condition, script, response_order, enabled, stream_config)
        VALUES (@id, @endpoint_id, @name, @status_code, @headers, @body_type, @body,
-         @delay_ms, @condition, @script, @response_order, @enabled)`,
+         @delay_ms, @condition, @script, @response_order, @enabled, @stream_config)`,
     )
     .run(row)
   return row
@@ -414,6 +441,8 @@ export interface UpdateMockResponseInput {
   script?: string
   order?: number
   enabled?: boolean
+  /** undefined = keep current; null = clear; object = set (issue #221). */
+  streamConfig?: Record<string, unknown> | null
 }
 
 export function updateMockResponse(
@@ -434,13 +463,15 @@ export function updateMockResponse(
     script: patch.script ?? cur.script,
     response_order: patch.order ?? cur.response_order,
     enabled: patch.enabled === undefined ? cur.enabled : patch.enabled ? 1 : 0,
+    stream_config:
+      patch.streamConfig === undefined ? cur.stream_config : streamConfigText(patch.streamConfig),
   }
   getDb()
     .prepare(
       `UPDATE mock_responses SET
          name=@name, status_code=@status_code, headers=@headers, body_type=@body_type,
          body=@body, delay_ms=@delay_ms, condition=@condition, script=@script,
-         response_order=@response_order, enabled=@enabled
+         response_order=@response_order, enabled=@enabled, stream_config=@stream_config
        WHERE id=@id`,
     )
     .run(next)

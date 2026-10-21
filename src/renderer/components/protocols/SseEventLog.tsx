@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef } from 'react'
 import { Trash2, Filter } from 'lucide-react'
 import { useSseStore } from '../../stores/sse.store'
+import { useTranslation } from '../../lib/i18n'
 
+/** Event-type badge tones — globals.css tokens (the method-badge palette), so dark mode follows. */
 const EVENT_TYPE_COLORS: Record<string, { bg: string; color: string }> = {
-  message: { bg: '#e8f4ff', color: '#0066cc' },
-  update: { bg: '#e8f9f1', color: '#1a7a4a' },
-  notification: { bg: '#fff4e0', color: '#b35a00' },
-  heartbeat: { bg: '#f0f0f0', color: '#888888' },
-  error: { bg: '#fff0f0', color: '#cc2200' },
+  message: { bg: 'var(--mb-get-bg)', color: 'var(--mb-get-fg)' },
+  update: { bg: 'var(--mb-post-bg)', color: 'var(--mb-post-fg)' },
+  notification: { bg: 'var(--mb-put-bg)', color: 'var(--mb-put-fg)' },
+  heartbeat: { bg: 'var(--surface)', color: 'var(--muted)' },
+  error: { bg: 'var(--mb-delete-bg)', color: 'var(--mb-delete-fg)' },
 }
 
 function getEventTypeStyle(type: string): { bg: string; color: string } {
@@ -59,6 +61,7 @@ function formatDuration(ms: number): string {
 }
 
 export default function SseEventLog() {
+  const { t } = useTranslation()
   const events = useSseStore((s) => s.events)
   const clearEvents = useSseStore((s) => s.clearEvents)
   const autoScroll = useSseStore((s) => s.autoScroll)
@@ -101,7 +104,7 @@ export default function SseEventLog() {
             onChange={(e) => setEventTypeFilter(e.target.value)}
             className="rounded border border-[var(--border)] bg-[var(--white)] px-2 py-0.5 text-[var(--text)] outline-none"
           >
-            <option value="">All events</option>
+            <option value="">{t('sse.filterAll')}</option>
             {eventTypes.map((type) => (
               <option key={type} value={type}>
                 {type}
@@ -109,7 +112,9 @@ export default function SseEventLog() {
             ))}
           </select>
           <span className="text-[var(--hint)]">
-            {filteredEvents.length} of {events.length}
+            {t('sse.filterCount')
+              .replace('{shown}', String(filteredEvents.length))
+              .replace('{total}', String(events.length))}
           </span>
         </div>
       )}
@@ -118,9 +123,7 @@ export default function SseEventLog() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {filteredEvents.length === 0 ? (
           <div className="flex h-full items-center justify-center text-[var(--hint)]">
-            {connectionState === 'connected'
-              ? 'Waiting for events...'
-              : 'Connect to an SSE endpoint to begin.'}
+            {connectionState === 'connected' ? t('sse.waitingForEvents') : t('sse.connectToBegin')}
           </div>
         ) : (
           filteredEvents.map((event, idx) => {
@@ -132,6 +135,9 @@ export default function SseEventLog() {
             return (
               <div
                 key={eventKey}
+                data-testid="sse-event-row"
+                data-event-id={event.id || undefined}
+                data-event-type={event.type}
                 className="cursor-pointer border-b border-[var(--border)] px-3 py-1.5 transition-colors hover:bg-[var(--surface)]"
                 onClick={() => setExpandedId(isExpanded ? null : eventKey)}
               >
@@ -185,8 +191,10 @@ export default function SseEventLog() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <div className="flex items-center gap-3">
-          <span className="text-[var(--muted)]">
-            {events.length} event{events.length !== 1 ? 's' : ''}
+          <span data-testid="sse-event-count" className="text-[var(--muted)]">
+            {events.length === 1
+              ? t('sse.eventCountOne')
+              : t('sse.eventCount').replace('{count}', String(events.length))}
           </span>
           {connectionState === 'connected' && connectedAt && (
             <span className="text-[var(--hint)]">{formatDuration(now - connectedAt)}</span>
@@ -200,7 +208,7 @@ export default function SseEventLog() {
               onChange={(e) => setAutoScroll(e.target.checked)}
               className="accent-[var(--accent)]"
             />
-            <span className="text-[var(--muted)]">Auto-scroll</span>
+            <span className="text-[var(--muted)]">{t('console.autoScroll')}</span>
           </label>
           <button
             type="button"
@@ -209,7 +217,7 @@ export default function SseEventLog() {
             style={{ background: 'transparent', border: 'none' }}
           >
             <Trash2 size={11} />
-            Clear
+            {t('console.clear')}
           </button>
         </div>
       </div>

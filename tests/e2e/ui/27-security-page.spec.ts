@@ -134,6 +134,47 @@ uiTest.describe('Security page', () => {
     await expectNoErrorBoundary(window)
   })
 
+  uiTest(
+    'MCP Security Scan opens the scan in an MCP request tab (issue #229)',
+    async ({ window }) => {
+      // beforeEach closed every tab → the "no MCP tab open" case: a new MCP
+      // request tab opens with its right pane on Security.
+      const entry = window.getByTestId('security-tool-mcp-scan')
+      await expect(entry).toBeVisible()
+      await expect(entry).toHaveText(/MCP Security Scan|MCP Güvenlik Taraması/)
+      await entry.click()
+      await expect(window.getByTestId('mcp-editor')).toBeVisible()
+      await expect(window.getByTestId('mcp-section-security')).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+      await expect(window.getByTestId('mcp-security-tab')).toBeVisible()
+      await expect(entry).toHaveAttribute('aria-current', 'page')
+
+      // Back to Explorer, click again → the SAME tab switches back to Security
+      // (no second MCP tab).
+      const tabs = window.locator('[data-testid="endpoint-tab"]')
+      const tabCount = await tabs.count()
+      await window.getByTestId('mcp-section-explorer').click()
+      await expect(entry).not.toHaveAttribute('aria-current', 'page')
+      await entry.click()
+      await expect(window.getByTestId('mcp-section-security')).toHaveAttribute(
+        'aria-selected',
+        'true',
+      )
+      await expect(tabs).toHaveCount(tabCount)
+      await expectNoErrorBoundary(window)
+    },
+  )
+
+  uiTest('the Security page search finds the MCP Security Scan', async ({ window }) => {
+    const search = window.getByLabel(/^(Search|Ara)/).first()
+    await search.fill('MCP')
+    await expect(window.getByTestId('security-tool-mcp-scan')).toBeVisible()
+    await expect(window.getByTestId('security-tool-tools.keystore')).toHaveCount(0)
+    await search.fill('')
+  })
+
   uiTest('the Security page search filters the tool list', async ({ window }) => {
     const search = window
       .locator(

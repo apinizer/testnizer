@@ -5,6 +5,7 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
+import { t } from '../lib/i18n'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SSE, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -35,6 +36,13 @@ interface TabSseState {
   connectionId: string | null
   connectionState: ConnectionState
   errorMessage: string | null
+  /**
+   * Still connected, but the client is reconnecting on its own: the server
+   * ended the response (a finite stream does so just before its reconnect
+   * gets HTTP 204) or a transient network error (issue #226). Cleared by the
+   * next `open`, a terminal close and Connect / Disconnect.
+   */
+  reconnecting: boolean
   events: SseEvent[]
   connectedAt: number | null
   /** Per-tab subscription returned by `sse.onEvent`. */
@@ -98,6 +106,7 @@ function emptyTabState(): TabSseState {
     connectionId: null,
     connectionState: 'disconnected',
     errorMessage: null,
+    reconnecting: false,
     events: [],
     connectedAt: null,
     _unsubscribe: undefined,
@@ -118,6 +127,7 @@ function extractState(s: SseStore): TabSseState {
     connectionId: s.connectionId,
     connectionState: s.connectionState,
     errorMessage: s.errorMessage,
+    reconnecting: s.reconnecting,
     events: s.events,
     connectedAt: s.connectedAt,
     _unsubscribe: s._unsubscribe,
@@ -170,6 +180,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
     set({
       connectionState: 'connecting',
       errorMessage: null,
+      reconnecting: false,
       events: [],
       _pendingConnectId: pendingConnectId,
     })
@@ -250,6 +261,8 @@ export const useSseStore = create<SseStore>((set, get) => ({
     // inside `connect()`, attaching after would race against the event.
     const prevUnsub = get()._unsubscribe
     if (prevUnsub) prevUnsub()
+    /** Set once a terminal close has settled this connection's final state. */
+    let closedByServer = false
     const unsub = sse.onEvent((evt) => {
       const expected = getOwnerConnectionId()
       if (expected && evt.connectionId !== expected) return
@@ -260,6 +273,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
             connectionState: 'connected',
             connectedAt: Date.now(),
             errorMessage: null,
+            reconnecting: false,
           })
           break
         case 'event':
@@ -271,17 +285,45 @@ export const useSseStore = create<SseStore>((set, get) => ({
           })
           break
         case 'error':
+          // Terminal (`closed`): nothing reconnects — leave "connected" for good.
+          // A 204 (SSE spec: "stop reconnecting") or a clean end of stream is
+          // the server finishing → disconnected; any other failure → error.
+          if (evt.closed && getOwnerConnectionState() === 'connected') {
+            closedByServer = true
+            unsub()
+            const ended = evt.closed === 'ended'
+            applyToOwner({
+              connectionState: ended ? 'disconnected' : 'error',
+              reconnecting: false,
+              connectionId: null,
+              _unsubscribe: undefined,
+              _pendingConnectId: undefined,
+              errorMessage:
+                evt.httpStatus === 204
+                  ? t('sse.closedByServerStatus').replace('{status}', '204')
+                  : ended
+                    ? t('sse.closedByServer')
+                    : evt.data || t('sse.connectionError'),
+            })
+            break
+          }
           // The eventsource library reconnects automatically on transient
           // failures, so we only escalate to `error` while still connecting.
-          // Once connected, we surface the error string but keep the state
-          // until an explicit close/disconnect arrives.
+          // Once connected, the state stays (Disconnect keeps working) and the
+          // tab reads "Reconnecting…" until the next open or a terminal close
+          // (issue #226). The server ending the response is not a failure:
+          // no message. A network error keeps its text for the record.
           if (getOwnerConnectionState() !== 'connected') {
             applyToOwner({
               connectionState: 'error',
+              reconnecting: false,
               errorMessage: evt.data || 'SSE connection error',
             })
           } else {
-            applyToOwner({ errorMessage: evt.data || 'SSE error' })
+            applyToOwner({
+              reconnecting: true,
+              errorMessage: evt.streamEnded ? null : evt.data || 'SSE error',
+            })
           }
           break
       }
@@ -316,7 +358,10 @@ export const useSseStore = create<SseStore>((set, get) => ({
           },
         },
       })
-      if (result?.success && result.data) {
+      if (closedByServer) {
+        // The stream already opened AND ended (a short finite stream can beat
+        // this IPC reply) — the close handler set the final state.
+      } else if (result?.success && result.data) {
         const newId = result.data.connectionId
         const current = get()
         if (current._currentTabId === ownerTabId) {
@@ -380,6 +425,9 @@ export const useSseStore = create<SseStore>((set, get) => ({
     set({
       connectionState: 'disconnected',
       connectionId: null,
+      // A user Disconnect clears the last reconnect / close message too.
+      errorMessage: null,
+      reconnecting: false,
       _unsubscribe: undefined,
       _pendingConnectId: undefined,
     })

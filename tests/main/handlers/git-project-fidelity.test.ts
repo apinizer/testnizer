@@ -235,6 +235,9 @@ function overrides(ids: Ids, table: string): Row[] {
           failure_config:
             '{"enabled":true,"probability":0.1,"mode":"status","status":503,"timeoutMs":1000}',
           rate_limit_config: '{"enabled":true,"requestsPerWindow":5,"windowMs":1000,"scope":"ip"}',
+          // A real kind, not the JSON seed: the renderer branches on it
+          // (sidebar section, editor profile — issue #221).
+          kind: 'sse',
         },
       ]
     case 'mock_endpoints':
@@ -248,7 +251,15 @@ function overrides(ids: Ids, table: string): Row[] {
         },
       ]
     case 'mock_responses':
-      return [{ id: randomUUID(), endpoint_id: ids.mockEndpoint }]
+      return [
+        {
+          id: randomUUID(),
+          endpoint_id: ids.mockEndpoint,
+          // A streaming response with real knobs (issue #221).
+          body_type: 'sse',
+          stream_config: '{"intervalMs":1000,"heartbeatMs":15000,"loop":true}',
+        },
+      ]
     case 'mock_mcp_servers':
       return [
         {

@@ -27,6 +27,7 @@ import {
   Globe,
   Key,
   IdCard,
+  ShieldAlert,
 } from 'lucide-react'
 import type { ToolProtocol } from '../types'
 
@@ -287,3 +288,42 @@ export const TOOLS_MENU: ToolCatalogItem[] = TOOL_CATALOG.filter((t) => t.sectio
 export const SECURITY_TOOLS: ToolCatalogItem[] = TOOL_CATALOG.filter(
   (t) => t.section === 'security',
 )
+
+/** Ids of the Security-page rows that run an action instead of opening a tool tab. */
+export type SecurityActionId = 'mcp-scan'
+
+/**
+ * A Security-page row that is NOT a tool (issue #229): it looks exactly like a
+ * tool row but runs an action, like `CommandAction.run` in the command
+ * registry. Kept out of `TOOL_CATALOG` on purpose — that list is what Cmd+K
+ * turns into "Open tool" commands and what `openToolTab` opens, and these
+ * entries have no tool tab to open. The action itself is bound in
+ * `SecurityPanel` by id (this module stays store-free).
+ */
+export interface SecurityActionItem {
+  id: SecurityActionId
+  Icon: typeof Wrench
+  labelKey: string
+  /** One line saying what the action does — the row's tooltip. */
+  hintKey: string
+  bg: string
+  color: string
+}
+
+/**
+ * Action rows of the Security page, listed after `SECURITY_TOOLS` under the
+ * same "Tools" heading.
+ *
+ *   • MCP Security Scan — a second door to the scan that lives in the MCP
+ *     request tab (right pane, Explorer | Security); see `open-mcp-security.ts`.
+ */
+export const SECURITY_ACTIONS: SecurityActionItem[] = [
+  {
+    id: 'mcp-scan',
+    Icon: ShieldAlert,
+    labelKey: 'security.mcpScan.title',
+    hintKey: 'security.mcpScan.hint',
+    bg: '#fff0f0',
+    color: '#cc2200',
+  },
+]

@@ -47,7 +47,45 @@ export interface SseEventPayload {
   retry?: number
   /** HTTP status code when the SSE handshake failed with a non-2xx response. */
   httpStatus?: number
+  /**
+   * `error` only: the connection is over for good — nothing reconnects. Set
+   * when `eventsource@3` closes the source (HTTP 204 "stop reconnecting", any
+   * other non-200, a wrong content type) and when the fetch path's stream
+   * ends or breaks (that path never reconnects). Without it the error is
+   * transient and the client retries on its own.
+   *  - `'ended'`  — the server finished: HTTP 204, or the fetch path's clean end.
+   *  - `'failed'` — anything else (non-200, wrong type, broken stream).
+   */
+  closed?: 'ended' | 'failed'
+  /**
+   * `error` only, never with `closed` (issue #226): the server ended the
+   * response normally and the client is reconnecting, as EventSource does
+   * after every response. Not a failure — a finite stream ends this way just
+   * before its reconnect gets HTTP 204. A transient network error (a message
+   * from the transport) is not marked.
+   */
+  streamEnded?: true
   timestamp: number
+}
+
+/** `data` of a `streamEnded` error. */
+export const SSE_STREAM_ENDED_MESSAGE = 'The server ended the response; reconnecting'
+
+/**
+ * Whether an `eventsource@3` error is the server ending the response (issue
+ * #226). The library reports a body that finished cleanly through its
+ * reconnect path with no message and no status; a broken stream or a refused
+ * reconnect carries a message (`flattenError`) or a status. Only meaningful
+ * once the connection had opened and while the library is reconnecting.
+ */
+export function isStreamEndReconnect(
+  err: { code?: unknown; message?: unknown },
+  readyState: number,
+  opened: boolean,
+): boolean {
+  if (!opened || readyState !== EventSource.CONNECTING) return false
+  if (err.code !== undefined && err.code !== null) return false
+  return typeof err.message !== 'string' || err.message.trim() === ''
 }
 
 // ─── Error message enrichment ───────────────────────────────
@@ -309,12 +347,24 @@ function connectEventSource(
         code: err.code,
         message: err.message,
       })
+      // CLOSED here = the library gave up (`failConnection`): a reconnect
+      // answered 204 / non-200 / wrong type. CONNECTING = it will retry.
+      const closed =
+        eventSource.readyState !== EventSource.CLOSED
+          ? undefined
+          : httpStatus === 204
+            ? ('ended' as const)
+            : ('failed' as const)
+      const streamEnded =
+        !closed && isStreamEndReconnect(err, eventSource.readyState, connections.has(connectionId))
 
       sendEventToRenderer(windowId, {
         connectionId,
         type: 'error',
-        data: message,
+        data: streamEnded ? SSE_STREAM_ENDED_MESSAGE : message,
         httpStatus,
+        ...(closed ? { closed } : {}),
+        ...(streamEnded ? { streamEnded: true as const } : {}),
         timestamp: Date.now(),
       })
 
@@ -461,6 +511,27 @@ function connectStreaming(
             type: 'error',
             data: message,
             httpStatus,
+            closed: 'failed',
+            timestamp: Date.now(),
+          })
+          reject(new Error(message))
+          return
+        }
+        if (response.status === 204) {
+          // `response.ok` covers 204, but per the SSE spec it means "no stream,
+          // do not reconnect" — report it like the EventSource path does.
+          clearTimeout(timeout)
+          if (options.pendingId) pendingConnects.delete(options.pendingId)
+          const { message, httpStatus } = describeSseError({
+            status: 204,
+            message: 'No Content',
+          })
+          sendEventToRenderer(windowId, {
+            connectionId,
+            type: 'error',
+            data: message,
+            httpStatus,
+            closed: 'ended',
             timestamp: Date.now(),
           })
           reject(new Error(message))
@@ -473,6 +544,7 @@ function connectStreaming(
             connectionId,
             type: 'error',
             data: msg,
+            closed: 'failed',
             timestamp: Date.now(),
           })
           reject(new Error(msg))
@@ -524,13 +596,14 @@ function connectStreaming(
             if (done) break
             if (value) parse(decoder.decode(value, { stream: true }))
           }
-          // Stream closed cleanly — fire a synthetic error so the renderer
-          // can transition out of "connected" if it cares to.
+          // Stream closed cleanly — fire a terminal error so the renderer
+          // leaves "connected" (this path never reconnects).
           if (connections.has(connectionId)) {
             sendEventToRenderer(windowId, {
               connectionId,
               type: 'error',
               data: 'SSE stream closed',
+              closed: 'ended',
               timestamp: Date.now(),
             })
             connections.delete(connectionId)
@@ -548,6 +621,7 @@ function connectStreaming(
             type: 'error',
             data: message,
             httpStatus,
+            closed: 'failed',
             timestamp: Date.now(),
           })
           connections.delete(connectionId)
@@ -574,6 +648,7 @@ function connectStreaming(
           type: 'error',
           data: message,
           httpStatus,
+          closed: 'failed',
           timestamp: Date.now(),
         })
         if (!connections.has(connectionId)) {

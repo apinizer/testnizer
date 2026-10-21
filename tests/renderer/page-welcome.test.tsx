@@ -3,7 +3,6 @@ import '@testing-library/jest-dom/vitest'
 import * as React from 'react'
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
-
 ;(globalThis as unknown as { React: typeof React }).React = React
 
 // Stub the heavy descendants so the test focuses on the dispatch decision.
@@ -11,6 +10,11 @@ import { render, screen, cleanup } from '@testing-library/react'
 // into window.api — none of that matters here.
 vi.mock('../../src/renderer/components/layout/ProjectWelcome', () => ({
   default: () => <div data-testid="project-welcome" />,
+}))
+// MocksWelcome reads the mock stores (window.api.mock); its own suite is
+// tests/renderer/mocks-welcome.test.tsx (issue #226).
+vi.mock('../../src/renderer/components/mock/MocksWelcome', () => ({
+  default: () => <div data-testid="mocks-welcome" />,
 }))
 vi.mock('../../src/renderer/components/runner/TestsHome', () => ({
   default: (props: { onNewRun?: () => void }) => (
@@ -46,7 +50,12 @@ describe('PageWelcome', () => {
     expect(home.getAttribute('data-has-actions')).toBe('true')
   })
 
-  it.each(['mocks', 'history', 'tools', 'docs', 'settings'] as const)(
+  it('renders MocksWelcome on the Mocks page', () => {
+    render(<PageWelcome page="mocks" />)
+    expect(screen.getByTestId('mocks-welcome')).toBeInTheDocument()
+  })
+
+  it.each(['history', 'tools', 'docs', 'settings'] as const)(
     'renders an EmptyState on the %s page',
     (page) => {
       render(<PageWelcome page={page} />)

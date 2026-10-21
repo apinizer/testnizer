@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2, Play, Square, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, RefreshCw } from 'lucide-react'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
 import { useNumberDraft } from '../../lib/number-draft'
@@ -25,6 +25,26 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
 import JwksFillButton from './JwksFillButton'
 import { provisionJwksServe } from '../../lib/jwks-serve'
+import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mock-kind'
+import MockEditorHeader, { MockStartStopButton, MockUrlLine } from './MockEditorHeader'
+import { MockEditorTabButton } from '../mock-mcp/MockMcpEditorTabs'
+import { mockSdkBaseUrl, mockServerUrl } from './mock-http-tabs'
+import { bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
+import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
+import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
+import MockLlmOptions, { MockLlmBodyNotes } from './MockLlmOptions'
+import { OptionNumber } from './MockOptionFields'
+import { MockAiChatHeaderButton } from './MockOpenInAiChat'
+import { tickerResponse } from './mock-sse-presets'
+import { chatResponse } from './mock-ai-presets'
+import { buildMockCurl } from './mock-curl'
+import { uniqueName } from './mock-create-helpers'
+import { isOpenStreamEntry } from '../../lib/mock-log-streams'
+import {
+  normalizeLlmConfig,
+  normalizeStreamConfig,
+  type MockLlmProvider,
+} from '../../../shared/mock-stream'
 
 const METHODS: MockMethod[] = [
   'GET',
@@ -38,7 +58,14 @@ const METHODS: MockMethod[] = [
   'ANY',
 ]
 const PATH_MODES: MockPathMode[] = ['exact', 'param', 'wildcard', 'regex']
-const BODY_TYPES: MockBodyType[] = ['json', 'xml', 'text', 'html']
+type EditorTab = 'endpoints' | 'settings' | 'logs'
+/** Tab ids + i18n keys (literal so the key-coverage test sees them). */
+const EDITOR_TABS: readonly { id: EditorTab; label: string }[] = [
+  { id: 'endpoints', label: 'mock.tabEndpoints' },
+  { id: 'settings', label: 'mock.tabSettings' },
+  { id: 'logs', label: 'mock.tabLogs' },
+]
+// Body types offered per server kind (json/xml/text/html, sse/json/text, …): `mock-kind-ui.ts`.
 
 // Stable empty references — used as Zustand selector fallbacks so we don't emit
 // a new `[]` literal each render and trip React's "Maximum update depth"
@@ -54,7 +81,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
   const error = useMockStore((s) => s.errorByServer[serverId] ?? null)
   const startServer = useMockStore((s) => s.startServer)
   const stopServer = useMockStore((s) => s.stopServer)
-  const [tab, setTab] = useState<'endpoints' | 'settings' | 'logs'>('endpoints')
+  const [tab, setTab] = useState<EditorTab>('endpoints')
 
   if (!server) {
     return (
@@ -64,122 +91,80 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
     )
   }
 
-  const dot =
-    status === 'running'
-      ? '#1a7a4a'
-      : status === 'starting'
-        ? '#b35a00'
-        : status === 'error'
-          ? '#cc2200'
-          : '#999'
+  const kind = normalizeMockServerKind(server.kind)
+  const toggle = async (): Promise<void> => {
+    if (status === 'running') {
+      await stopServer(serverId)
+      return
+    }
+    const err = await startServer(serverId)
+    if (err) toast.error(err)
+  }
 
   return (
     <div
       className="flex h-full w-full flex-col overflow-hidden"
       style={{ background: 'var(--bg)' }}
     >
-      <div
-        className="flex shrink-0 items-center gap-3 border-b px-4 py-2"
-        style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
+      {/* Same header as Mock MCP (MockEditorHeader) — badge, name, status, base URL. */}
+      <MockEditorHeader
+        kind={kind}
+        name={server.name}
+        status={status}
+        testIdPrefix="mock"
+        errorMessage={error}
+        actions={
+          <>
+            <MockStartStopButton
+              status={status}
+              testIdPrefix="mock"
+              onToggle={() => void toggle()}
+            />
+            {kind === 'sse' && <MockSseHeaderButton server={server} status={status} />}
+            {kind === 'ai' && <MockAiChatHeaderButton server={server} status={status} />}
+          </>
+        }
       >
-        <h2 className="m-0 text-base font-semibold" style={{ color: 'var(--heading)' }}>
-          {server.name}
-        </h2>
-        <span
-          data-testid="mock-status"
-          className="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-xs"
-          style={{ border: `1px solid ${dot}40`, background: `${dot}15`, color: dot }}
-        >
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: dot }} />
-          {status}
-        </span>
-        <span className="text-xs" style={{ color: 'var(--muted)' }}>
-          {server.host}:{server.port}
-          {server.basePath ? ` · ${server.basePath}` : ''}
-        </span>
-        <div className="ml-auto flex gap-2">
-          {status === 'running' ? (
-            <button
-              onClick={() => stopServer(serverId)}
-              data-testid="mock-stop"
-              className="flex items-center gap-1 rounded border px-2 py-1 text-xs"
-              style={{ borderColor: 'var(--border)', color: '#cc2200', background: 'var(--white)' }}
-            >
-              <Square size={12} /> {t('mock.stop')}
-            </button>
-          ) : (
-            <button
-              onClick={() => startServer(serverId)}
-              data-testid="mock-start"
-              className="flex items-center gap-1 rounded border px-2 py-1 text-xs"
-              style={{ borderColor: 'var(--border)', color: '#1a7a4a', background: 'var(--white)' }}
-            >
-              <Play size={12} /> {t('mock.start')}
-            </button>
-          )}
-        </div>
-      </div>
+        <MockUrlLine label={t('mock.baseUrl')} url={mockServerUrl(server)} testId="mock-base-url" />
+        {/* AI: what an OpenAI / Anthropic SDK takes as its base URL (§D.3.3). */}
+        {kind === 'ai' && (
+          <MockUrlLine
+            label={t('mock.sdkBaseUrl')}
+            url={mockSdkBaseUrl(server)}
+            testId="mock-sdk-base-url"
+          />
+        )}
+      </MockEditorHeader>
 
-      {error && (
-        <div
-          className="shrink-0 px-4 py-1.5 text-xs"
-          style={{ background: '#cc220015', color: '#cc2200', borderBottom: '1px solid #cc220040' }}
-        >
-          {error}
-        </div>
-      )}
-
+      {/* Same tab strip as the Mock MCP editor (MockEditorTabButton). */}
       <div
-        className="flex shrink-0 border-b"
-        style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
+        role="tablist"
+        className="flex shrink-0 border-b border-[var(--border)] bg-[var(--white)]"
       >
-        <TabBtn active={tab === 'endpoints'} onClick={() => setTab('endpoints')}>
-          {t('mock.tabEndpoints')}
-        </TabBtn>
-        <TabBtn active={tab === 'settings'} onClick={() => setTab('settings')}>
-          {t('mock.tabSettings')}
-        </TabBtn>
-        <TabBtn active={tab === 'logs'} onClick={() => setTab('logs')}>
-          {t('mock.tabLogs')}
-        </TabBtn>
+        {EDITOR_TABS.map(({ id, label }) => (
+          <MockEditorTabButton
+            key={id}
+            testId={`mock-tab-${id}`}
+            active={tab === id}
+            onClick={() => setTab(id)}
+          >
+            {t(label)}
+          </MockEditorTabButton>
+        ))}
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {tab === 'endpoints' && <EndpointsTab serverId={serverId} />}
-        {tab === 'settings' && <SettingsTab server={server} />}
+        {tab === 'endpoints' && <EndpointsTab serverId={serverId} kind={kind} />}
+        {tab === 'settings' && <SettingsTab server={server} kind={kind} />}
         {tab === 'logs' && <LogsTab serverId={serverId} />}
       </div>
     </div>
   )
 }
 
-function TabBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="border-b-2 px-4 py-2 text-xs font-semibold"
-      style={{
-        borderColor: active ? 'var(--accent)' : 'transparent',
-        color: active ? 'var(--accentText)' : 'var(--muted)',
-        background: 'transparent',
-      }}
-    >
-      {children}
-    </button>
-  )
-}
-
 // ─── Endpoints tab ───────────────────────────────────────────────
 
-function EndpointsTab({ serverId }: { serverId: string }) {
+function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKind }) {
   const { t } = useTranslation()
   const endpoints = useMockStore((s) => s.endpointsByServer[serverId]) ?? EMPTY_ENDPOINTS
   const loadEndpoints = useMockStore((s) => s.loadEndpoints)
@@ -202,6 +187,8 @@ function EndpointsTab({ serverId }: { serverId: string }) {
   }, [endpoints, activeId])
 
   async function handleAdd(): Promise<void> {
+    if (kind === 'sse') return addStream()
+    if (kind === 'ai') return addChat()
     const ep = await createEndpoint({
       serverId,
       method: 'GET',
@@ -209,6 +196,62 @@ function EndpointsTab({ serverId }: { serverId: string }) {
       pathMode: 'exact',
     })
     if (ep) setActiveId(ep.id)
+  }
+
+  /**
+   * SSE server (issue #221): GET /events (or /events-2 …) with the Ticker
+   * preset's response. The response is created BEFORE the endpoint is
+   * selected, so the editor's first load already sees it.
+   */
+  async function addStream(): Promise<void> {
+    const path = uniqueName(
+      '/events',
+      endpoints.map((e) => e.path),
+      '-',
+    )
+    const ep = await createEndpoint({ serverId, method: 'GET', path, pathMode: 'exact' })
+    if (!ep) return
+    await createResponse({
+      endpointId: ep.id,
+      ...tickerResponse(),
+      script: '',
+      order: 0,
+      enabled: true,
+    })
+    setActiveId(ep.id)
+  }
+
+  /**
+   * AI server (issue #221): POST /v1/chat/completions with the Chat preset's
+   * OpenAI reply; taken → POST /v1/messages with the Anthropic reply; both
+   * taken → the plain POST /new-endpoint with no response.
+   */
+  async function addChat(): Promise<void> {
+    const taken = new Set(endpoints.map((e) => e.path))
+    const pick: { path: string; provider: MockLlmProvider | null } = !taken.has(
+      '/v1/chat/completions',
+    )
+      ? { path: '/v1/chat/completions', provider: 'openai' }
+      : !taken.has('/v1/messages')
+        ? { path: '/v1/messages', provider: 'anthropic' }
+        : { path: '/new-endpoint', provider: null }
+    const ep = await createEndpoint({
+      serverId,
+      method: 'POST',
+      path: pick.path,
+      pathMode: 'exact',
+    })
+    if (!ep) return
+    if (pick.provider) {
+      await createResponse({
+        endpointId: ep.id,
+        ...chatResponse(pick.provider),
+        script: '',
+        order: 0,
+        enabled: true,
+      })
+    }
+    setActiveId(ep.id)
   }
 
   /**
@@ -292,40 +335,46 @@ function EndpointsTab({ serverId }: { serverId: string }) {
             </button>
             {/* #61: publish a JWKS at the well-known path. One ordinary
                 endpoint + response row, created through the same store
-                actions — no new mock primitive. */}
-            <JwksFillButton
-              body=""
-              onFill={(built) => void handleServeJwks(built)}
-              label={t('mock.jwksServe')}
-              testId="mock-jwks-serve"
-            />
+                actions — no new mock primitive. HTTP servers only. */}
+            {showsHttpEndpointTools(kind) && (
+              <JwksFillButton
+                body=""
+                onFill={(built) => void handleServeJwks(built)}
+                label={t('mock.jwksServe')}
+                testId="mock-jwks-serve"
+              />
+            )}
           </div>
-          <div className="flex gap-1">
-            <button
-              onClick={() => handleImport('openapi')}
-              className="flex-1 rounded border px-2 py-0.5 text-[11px]"
-              style={{
-                borderColor: 'var(--border)',
-                color: 'var(--muted)',
-                background: 'var(--white)',
-              }}
-            >
-              {t('mock.importOpenApi')}
-            </button>
-            <button
-              onClick={() => handleImport('postman')}
-              className="flex-1 rounded border px-2 py-0.5 text-[11px]"
-              style={{
-                borderColor: 'var(--border)',
-                color: 'var(--muted)',
-                background: 'var(--white)',
-              }}
-            >
-              {t('mock.importPostman')}
-            </button>
-          </div>
+          {showsHttpEndpointTools(kind) && (
+            <div className="flex gap-1">
+              <button
+                onClick={() => handleImport('openapi')}
+                data-testid="mock-import-openapi"
+                className="flex-1 rounded border px-2 py-0.5 text-[11px]"
+                style={{
+                  borderColor: 'var(--border)',
+                  color: 'var(--muted)',
+                  background: 'var(--white)',
+                }}
+              >
+                {t('mock.importOpenApi')}
+              </button>
+              <button
+                onClick={() => handleImport('postman')}
+                data-testid="mock-import-postman"
+                className="flex-1 rounded border px-2 py-0.5 text-[11px]"
+                style={{
+                  borderColor: 'var(--border)',
+                  color: 'var(--muted)',
+                  background: 'var(--white)',
+                }}
+              >
+                {t('mock.importPostman')}
+              </button>
+            </div>
+          )}
           {importStatus && (
-            <div className="text-[11px]" style={{ color: 'var(--accentText)' }}>
+            <div className="text-[11px]" style={{ color: 'var(--accent-text)' }}>
               {importStatus}
             </div>
           )}
@@ -333,7 +382,11 @@ function EndpointsTab({ serverId }: { serverId: string }) {
         <div className="flex-1 overflow-auto">
           {endpoints.length === 0 ? (
             <div className="p-3 text-sm" style={{ color: 'var(--muted)' }}>
-              {t('mock.noEndpoints')}
+              {kind === 'sse'
+                ? t('mock.noStreams')
+                : kind === 'ai'
+                  ? t('mock.noChatEndpoints')
+                  : t('mock.noEndpoints')}
             </div>
           ) : (
             endpoints.map((ep) => (
@@ -343,7 +396,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
                 className="flex cursor-pointer items-center gap-2 border-b px-3 py-2 text-xs"
                 style={{
                   borderColor: 'var(--border)',
-                  background: activeId === ep.id ? 'var(--accentLight)' : 'transparent',
+                  background: activeId === ep.id ? 'var(--accent-light)' : 'transparent',
                 }}
               >
                 <span
@@ -377,6 +430,7 @@ function EndpointsTab({ serverId }: { serverId: string }) {
         {activeId && endpoints.find((e) => e.id === activeId) ? (
           <EndpointEditor
             key={activeId}
+            kind={kind}
             serverId={serverId}
             endpoint={endpoints.find((e) => e.id === activeId)!}
           />
@@ -401,21 +455,31 @@ function EndpointsTab({ serverId }: { serverId: string }) {
   )
 }
 
+/** Method pill — the app-wide `--mb-*` method tokens, so dark mode follows. ANY → neutral. */
+const TOKEN_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'QUERY'])
 function methodStyle(method: string): React.CSSProperties {
-  const map: Record<string, { bg: string; color: string; border: string }> = {
-    GET: { bg: '#e8f4ff', color: '#0066cc', border: '#b3d4f5' },
-    POST: { bg: '#e8f9f1', color: '#1a7a4a', border: '#b3e5cc' },
-    PUT: { bg: '#fff4e0', color: '#b35a00', border: '#f5d4a0' },
-    PATCH: { bg: '#f0faf5', color: '#0a7a5a', border: '#a0e0c8' },
-    DELETE: { bg: '#fff0f0', color: '#cc2200', border: '#f5b3b3' },
+  if (!TOKEN_METHODS.has(method)) {
+    return { background: 'var(--surface)', color: 'var(--text)', border: '1px solid var(--border)' }
   }
-  const m = map[method] ?? { bg: '#eee', color: '#333', border: '#ccc' }
-  return { background: m.bg, color: m.color, border: `1px solid ${m.border}` }
+  const m = method.toLowerCase()
+  return {
+    background: `var(--mb-${m}-bg)`,
+    color: `var(--mb-${m}-fg)`,
+    border: `1px solid var(--mb-${m}-br)`,
+  }
 }
 
 // ─── Endpoint editor ─────────────────────────────────────────────
 
-function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: MockEndpoint }) {
+function EndpointEditor({
+  serverId,
+  endpoint,
+  kind,
+}: {
+  serverId: string
+  endpoint: MockEndpoint
+  kind: MockServerKind
+}) {
   // Draft-based so the box can be cleared; `Number('') || 0` used to slam a 0
   // back in and the next digit landed beside it.
   const priorityDraft = useNumberDraft({
@@ -489,26 +553,41 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
           />
         </div>
 
-        <FullUrlBar server={server} status={status} endpoint={endpoint} />
+        <FullUrlBar
+          server={server}
+          status={status}
+          endpoint={endpoint}
+          streams={responses.some((r) => r.bodyType === 'sse')}
+          llm={llmProviderOf(responses)}
+        />
 
-        <div className="mt-2 flex items-center gap-2 text-xs">
-          <label style={{ color: 'var(--muted)' }}>{t('mock.pathMode')}:</label>
-          <select
-            value={endpoint.pathMode}
-            onChange={(e) =>
-              updateEndpoint(endpoint.id, { pathMode: e.target.value as MockPathMode })
-            }
-            className="rounded border px-2 py-1"
-            style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
-          >
-            {PATH_MODES.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
+        {/* Wraps in a narrow editor; no label breaks inside (issue #226). */}
+        <div
+          data-testid="mock-endpoint-options-row"
+          className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1.5 text-xs"
+        >
           <label
-            className="ml-3 flex items-center gap-1.5 cursor-pointer"
+            className="flex items-center gap-1.5 whitespace-nowrap"
+            style={{ color: 'var(--muted)' }}
+          >
+            {t('mock.pathMode')}:
+            <select
+              value={endpoint.pathMode}
+              onChange={(e) =>
+                updateEndpoint(endpoint.id, { pathMode: e.target.value as MockPathMode })
+              }
+              className="rounded border px-2 py-1"
+              style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
+            >
+              {PATH_MODES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label
+            className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap"
             style={{ color: 'var(--text)' }}
           >
             <input
@@ -518,20 +597,11 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
             />
             {t('mock.enabled')}
           </label>
-          <label className="ml-3 flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
-            {t('mock.priority')}:
-            <input
-              type="number"
-              {...priorityDraft.inputProps}
-              className="rounded border px-2 py-1"
-              style={{
-                width: 60,
-                background: 'var(--white)',
-                borderColor: 'var(--border)',
-                color: 'var(--text)',
-              }}
-            />
-          </label>
+          <OptionNumber
+            label={t('mock.priority')}
+            testId="mock-endpoint-priority"
+            draft={priorityDraft}
+          />
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-3">
@@ -590,8 +660,8 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
                   className="rounded border px-2 py-0.5 text-xs"
                   style={{
                     borderColor: activeRespId === r.id ? 'var(--accent)' : 'var(--border)',
-                    background: activeRespId === r.id ? 'var(--accentLight)' : 'var(--white)',
-                    color: activeRespId === r.id ? 'var(--accentText)' : 'var(--text)',
+                    background: activeRespId === r.id ? 'var(--accent-light)' : 'var(--white)',
+                    color: activeRespId === r.id ? 'var(--accent-text)' : 'var(--text)',
                   }}
                 >
                   {r.name || `${r.statusCode}`} ({r.statusCode})
@@ -603,6 +673,7 @@ function EndpointEditor({ serverId, endpoint }: { serverId: string; endpoint: Mo
                 key={activeRespId}
                 response={responses.find((r) => r.id === activeRespId)!}
                 endpointId={endpoint.id}
+                kind={kind}
                 projectId={server?.projectId}
               />
             )}
@@ -619,10 +690,16 @@ function FullUrlBar({
   server,
   status,
   endpoint,
+  streams,
+  llm,
 }: {
   server: MockServer | null
   status: string
   endpoint: MockEndpoint
+  /** The endpoint has an `sse` response → offer "Open in SSE tab" (issue #221). */
+  streams: boolean
+  /** Provider of the endpoint's `llm` response → an LLM chat cURL (issue #221). */
+  llm: MockLlmProvider | null
 }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState<'' | 'url' | 'curl'>('')
@@ -638,7 +715,7 @@ function FullUrlBar({
     (endpoint.method === 'GET' || endpoint.method === 'ANY') &&
     endpoint.pathMode === 'exact'
 
-  const curl = buildCurl(server, endpoint)
+  const curl = buildMockCurl(server, endpoint, llm)
 
   async function copy(kind: 'url' | 'curl', text: string): Promise<void> {
     try {
@@ -655,95 +732,122 @@ function FullUrlBar({
     window.open(url, '_blank', 'noopener')
   }
 
+  // Narrow editor (issue #226): the URL box keeps a minimum width and
+  // truncates; the buttons are one group that wraps onto the next line as a
+  // whole, each label on one line.
   return (
     <div
-      className="mt-2 flex items-center gap-2 rounded border px-2 py-1.5"
+      data-testid="mock-endpoint-url-bar"
+      className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5 rounded border px-2 py-1.5"
       style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
     >
-      <span
-        className="text-[10px] font-semibold uppercase tracking-wide"
-        style={{ color: 'var(--muted)' }}
+      <div
+        data-testid="mock-endpoint-url-box"
+        className="flex min-w-[12rem] flex-1 items-center gap-2"
       >
-        URL
-      </span>
-      <code
-        className="flex-1 truncate font-mono text-xs"
-        style={{ color: 'var(--text)' }}
-        title={fullUrl}
-        data-testid="mock-endpoint-url"
-      >
-        {fullUrl}
-      </code>
-      {status !== 'running' && (
         <span
-          className="rounded px-1.5 py-0.5 text-[10px]"
-          style={{ background: '#cc220015', color: '#cc2200', border: '1px solid #cc220040' }}
-          title={t('mock.startServerToTest')}
+          className="text-[10px] font-semibold uppercase tracking-wide"
+          style={{ color: 'var(--muted)' }}
         >
-          {t('mock.notRunning')}
+          URL
         </span>
-      )}
-      <button
-        onClick={() => copy('url', fullUrl)}
-        className="rounded border px-2 py-0.5 text-[11px]"
-        style={{
-          borderColor: 'var(--border)',
-          color: copied === 'url' ? '#1a7a4a' : 'var(--muted)',
-          background: 'var(--white)',
-        }}
-        title={t('mock.copyUrl')}
+        <code
+          className="min-w-0 flex-1 truncate font-mono text-xs"
+          style={{ color: 'var(--text)' }}
+          title={fullUrl}
+          data-testid="mock-endpoint-url"
+        >
+          {fullUrl}
+        </code>
+      </div>
+      <div
+        data-testid="mock-endpoint-url-actions"
+        className="flex max-w-full min-w-0 flex-wrap items-center gap-2"
       >
-        {copied === 'url' ? '✓' : '⧉'} {t('mock.copyUrl')}
-      </button>
-      <button
-        onClick={() => copy('curl', curl)}
-        className="rounded border px-2 py-0.5 text-[11px]"
-        style={{
-          borderColor: 'var(--border)',
-          color: copied === 'curl' ? '#1a7a4a' : 'var(--muted)',
-          background: 'var(--white)',
-        }}
-        title={t('mock.copyCurl')}
-      >
-        {copied === 'curl' ? '✓' : '⧉'} cURL
-      </button>
-      <button
-        onClick={open}
-        disabled={!canOpen}
-        className="rounded border px-2 py-0.5 text-[11px]"
-        style={{
-          borderColor: 'var(--border)',
-          color: canOpen ? 'var(--accentText)' : 'var(--hint)',
-          background: 'var(--white)',
-          opacity: canOpen ? 1 : 0.5,
-          cursor: canOpen ? 'pointer' : 'not-allowed',
-        }}
-        title={
-          !canOpen
-            ? endpoint.pathMode !== 'exact'
-              ? t('mock.openHintPath')
-              : endpoint.method !== 'GET' && endpoint.method !== 'ANY'
-                ? t('mock.openHintMethod')
-                : t('mock.openHintRunning')
-            : t('mock.openInBrowser')
-        }
-      >
-        ↗ {t('mock.openInBrowser')}
-      </button>
+        {status !== 'running' && (
+          <span
+            data-testid="mock-endpoint-not-running"
+            className="whitespace-nowrap rounded px-1.5 py-0.5 text-[10px]"
+            style={{
+              background: 'var(--mb-delete-bg)',
+              color: 'var(--red)',
+              border: '1px solid var(--mb-delete-br)',
+            }}
+            title={t('mock.startServerToTest')}
+          >
+            {t('mock.notRunning')}
+          </span>
+        )}
+        <button
+          onClick={() => copy('url', fullUrl)}
+          className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
+          style={{
+            borderColor: 'var(--border)',
+            color: copied === 'url' ? 'var(--green)' : 'var(--muted)',
+            background: 'var(--white)',
+          }}
+          title={t('mock.copyUrl')}
+        >
+          {copied === 'url' ? '✓' : '⧉'} {t('mock.copyUrl')}
+        </button>
+        <button
+          data-testid="mock-copy-curl"
+          onClick={() => copy('curl', curl)}
+          className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
+          style={{
+            borderColor: 'var(--border)',
+            color: copied === 'curl' ? 'var(--green)' : 'var(--muted)',
+            background: 'var(--white)',
+          }}
+          title={t('mock.copyCurl')}
+        >
+          {copied === 'curl' ? '✓' : '⧉'} cURL
+        </button>
+        <button
+          onClick={open}
+          disabled={!canOpen}
+          className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
+          style={{
+            borderColor: 'var(--border)',
+            color: canOpen ? 'var(--accent-text)' : 'var(--hint)',
+            background: 'var(--white)',
+            opacity: canOpen ? 1 : 0.5,
+            cursor: canOpen ? 'pointer' : 'not-allowed',
+          }}
+          title={
+            !canOpen
+              ? endpoint.pathMode !== 'exact'
+                ? t('mock.openHintPath')
+                : endpoint.method !== 'GET' && endpoint.method !== 'ANY'
+                  ? t('mock.openHintMethod')
+                  : t('mock.openHintRunning')
+              : t('mock.openInBrowser')
+          }
+        >
+          ↗ {t('mock.openInBrowser')}
+        </button>
+        {streams && <MockEndpointOpenInSse server={server} endpoint={endpoint} status={status} />}
+      </div>
     </div>
   )
 }
 
-function buildCurl(server: MockServer, endpoint: MockEndpoint): string {
-  const url = `http://${server.host}:${server.port}${server.basePath}${endpoint.path}`
-  const method = endpoint.method === 'ANY' ? 'GET' : endpoint.method
-  const parts = [`curl -X ${method} '${url}'`]
-  // For methods that typically carry a body, hint at a placeholder content-type + body.
-  if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-    parts.push(`-H 'Content-Type: application/json'`)
-    parts.push(`-d '{}'`)
-  }
-  return parts.join(' \\\n  ')
+/** Provider of the first `llm` response of an endpoint, or null (cURL shape, issue #221). */
+function llmProviderOf(responses: readonly MockResponse[]): MockLlmProvider | null {
+  const r = responses.find((x) => x.bodyType === 'llm')
+  return r ? normalizeLlmConfig(r.streamConfig).provider : null
+}
+
+/**
+ * The settings a response gets when its body type changes (issue #221):
+ * the new type's defaults, in the SAME update as the type — `stream_config`
+ * means something else per type, and a leftover of the old type would be
+ * read (or rejected) as the new one's.
+ */
+function freshStreamConfig(bodyType: MockBodyType): MockResponse['streamConfig'] {
+  if (bodyType === 'sse') return normalizeStreamConfig(null)
+  if (bodyType === 'llm') return normalizeLlmConfig(null)
+  return null
 }
 
 // ─── Response editor ─────────────────────────────────────────────
@@ -751,10 +855,13 @@ function buildCurl(server: MockServer, endpoint: MockEndpoint): string {
 function ResponseEditor({
   response,
   endpointId,
+  kind,
   projectId,
 }: {
   response: MockResponse
   endpointId: string
+  /** Server kind — picks the body types offered (issue #221). */
+  kind: MockServerKind
   /** Lets the JWKS fill offer the project's saved certificate rows. */
   projectId?: string
 }) {
@@ -797,12 +904,22 @@ function ResponseEditor({
       className="rounded border p-3"
       style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
     >
-      <div className="mb-2 grid grid-cols-[140px_1fr_140px_auto] gap-2">
+      {/*
+        Status / name / body type / delete. Every track has a fixed rem minimum
+        — a plain `1fr` track's minimum is `auto`, the input's intrinsic width,
+        which pushed the select and the delete button out of a narrow editor
+        (issue #226). At a normal width the tracks are 140 px / rest / 140 px
+        as before; in a narrow one all three shrink toward their minimums.
+      */}
+      <div
+        data-testid="mock-response-row"
+        className="mb-2 grid grid-cols-[minmax(4.5rem,140px)_minmax(6rem,1fr)_minmax(6rem,140px)_auto] gap-2"
+      >
         <input
           type="number"
           {...statusDraft.inputProps}
           data-testid="mock-response-status"
-          className="rounded border px-2 py-1 text-sm"
+          className="w-full min-w-0 rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         />
         <input
@@ -810,18 +927,21 @@ function ResponseEditor({
           value={response.name}
           onChange={(e) => updateResponse(response.id, { name: e.target.value })}
           placeholder={t('mock.responseName')}
-          className="rounded border px-2 py-1 text-sm"
+          data-testid="mock-response-name"
+          className="w-full min-w-0 rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         />
         <select
           value={response.bodyType}
-          onChange={(e) =>
-            updateResponse(response.id, { bodyType: e.target.value as MockBodyType })
-          }
-          className="rounded border px-2 py-1 text-xs"
+          onChange={(e) => {
+            const bodyType = e.target.value as MockBodyType
+            updateResponse(response.id, { bodyType, streamConfig: freshStreamConfig(bodyType) })
+          }}
+          data-testid="mock-response-body-type"
+          className="w-full min-w-0 rounded border px-2 py-1 text-xs"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         >
-          {BODY_TYPES.map((b) => (
+          {bodyTypeOptions(kind, response.bodyType).map((b) => (
             <option key={b} value={b}>
               {b}
             </option>
@@ -831,25 +951,20 @@ function ResponseEditor({
           onClick={() => {
             if (confirm(t('mock.confirmDeleteResponse'))) deleteResponse(endpointId, response.id)
           }}
+          data-testid="mock-response-delete"
+          title={t('mock.deleteResponse')}
+          aria-label={t('mock.deleteResponse')}
           className="rounded border px-2 py-1 text-xs"
-          style={{ borderColor: 'var(--border)', color: '#cc2200', background: 'var(--white)' }}
+          style={{ borderColor: 'var(--border)', color: 'var(--red)', background: 'var(--white)' }}
         >
           <Trash2 size={12} />
         </button>
       </div>
 
-      <div className="mb-2 flex items-center gap-3 text-xs">
-        <label style={{ color: 'var(--muted)' }}>
-          {t('mock.delayMs')}:
-          <input
-            type="number"
-            {...delayDraft.inputProps}
-            className="ml-1 rounded border px-2 py-1"
-            style={{ width: 70, background: 'var(--white)', borderColor: 'var(--border)' }}
-          />
-        </label>
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-xs">
+        <OptionNumber label={t('mock.delayMs')} testId="mock-response-delay" draft={delayDraft} />
         <label
-          className="flex cursor-pointer items-center gap-1.5"
+          className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap"
           style={{ color: 'var(--text)' }}
         >
           <input
@@ -860,6 +975,9 @@ function ResponseEditor({
           {t('mock.enabled')}
         </label>
       </div>
+
+      {response.bodyType === 'sse' && <MockSseOptions response={response} />}
+      {response.bodyType === 'llm' && <MockLlmOptions response={response} />}
 
       <div className="mb-2">
         <label
@@ -916,6 +1034,10 @@ function ResponseEditor({
         <div className="mt-1 text-[11px]" style={{ color: 'var(--muted)' }}>
           {t('mock.bodyHint')}
         </div>
+        {response.bodyType === 'sse' && <MockSseBodyNotes body={response.body} />}
+        {response.bodyType === 'llm' && (
+          <MockLlmBodyNotes provider={normalizeLlmConfig(response.streamConfig).provider} />
+        )}
       </div>
 
       <div>
@@ -949,7 +1071,7 @@ function ResponseEditor({
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
         />
         {condError && (
-          <div className="mt-1 text-xs" style={{ color: '#cc2200' }}>
+          <div className="mt-1 text-xs" style={{ color: 'var(--red)' }}>
             {condError}
           </div>
         )}
@@ -1011,7 +1133,7 @@ function SnippetPicker({
       style={{
         background: 'var(--white)',
         borderColor: 'var(--border)',
-        color: 'var(--accentText)',
+        color: 'var(--accent-text)',
         maxWidth: 220,
       }}
       title={label}
@@ -1033,6 +1155,7 @@ function HeadersTable({
   headers: { name: string; value: string }[]
   onChange: (h: { name: string; value: string }[]) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="space-y-1">
       {headers.map((h, i) => (
@@ -1043,7 +1166,7 @@ function HeadersTable({
             onChange={(e) =>
               onChange(headers.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
             }
-            placeholder="Name"
+            placeholder={t('mock.name')}
             className="rounded border px-2 py-1 text-xs"
             style={{ width: 200, background: 'var(--white)', borderColor: 'var(--border)' }}
           />
@@ -1053,7 +1176,7 @@ function HeadersTable({
             onChange={(e) =>
               onChange(headers.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)))
             }
-            placeholder="Value"
+            placeholder={t('kv.value')}
             className="flex-1 rounded border px-2 py-1 text-xs"
             style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
           />
@@ -1071,11 +1194,11 @@ function HeadersTable({
         className="rounded border px-2 py-1 text-xs"
         style={{
           borderColor: 'var(--border)',
-          color: 'var(--accentText)',
+          color: 'var(--accent-text)',
           background: 'var(--white)',
         }}
       >
-        + Add header
+        {t('kv.addHeader')}
       </button>
     </div>
   )
@@ -1083,7 +1206,7 @@ function HeadersTable({
 
 // ─── Settings tab ────────────────────────────────────────────────
 
-function SettingsTab({ server }: { server: MockServer }) {
+function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKind }) {
   const { t } = useTranslation()
   const updateServer = useMockStore((s) => s.updateServer)
   const [draft, setDraft] = useState(server)
@@ -1145,7 +1268,7 @@ function SettingsTab({ server }: { server: MockServer }) {
               <option value="0.0.0.0">0.0.0.0 ({t('mock.allInterfaces')})</option>
             </select>
             {draft.host === '0.0.0.0' && (
-              <div className="mt-1 text-xs" style={{ color: '#b35a00' }}>
+              <div className="mt-1 text-xs" style={{ color: 'var(--orange)' }}>
                 ⚠ {t('mock.publicWarning')}
               </div>
             )}
@@ -1175,6 +1298,16 @@ function SettingsTab({ server }: { server: MockServer }) {
             className="w-full rounded border px-2 py-1 font-mono text-sm"
             style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
           />
+          {/* AI: the SDK base URL the header shows, and that auth is off by default (§D.3.3). */}
+          {kind === 'ai' && (
+            <div
+              className="mt-1 text-[11px]"
+              style={{ color: 'var(--muted)' }}
+              data-testid="mock-settings-ai-hint"
+            >
+              {t('mock.aiSettingsHint').replace('{url}', mockSdkBaseUrl(server))}
+            </div>
+          )}
         </Field>
         <Field label="">
           <label
@@ -1425,7 +1558,7 @@ function JsonConfigField({
         style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
       />
       {error && (
-        <div className="mt-1 text-xs" style={{ color: '#cc2200' }}>
+        <div className="mt-1 text-xs" style={{ color: 'var(--red)' }}>
           {error}
         </div>
       )}
@@ -1479,7 +1612,7 @@ function LogsTab({ serverId }: { serverId: string }) {
           className="flex items-center justify-between border-b px-3 py-2"
           style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
         >
-          <span className="text-xs" style={{ color: 'var(--muted)' }}>
+          <span data-testid="mock-log-count" className="text-xs" style={{ color: 'var(--muted)' }}>
             {logs.length} {t('mock.entries')}
           </span>
           <div className="flex gap-1">
@@ -1488,13 +1621,18 @@ function LogsTab({ serverId }: { serverId: string }) {
               className="rounded border px-2 py-0.5 text-xs"
               style={{ borderColor: 'var(--border)', background: 'var(--white)' }}
               title={t('mock.refresh')}
+              aria-label={t('mock.refresh')}
             >
               <RefreshCw size={11} />
             </button>
             <button
               onClick={() => clearLogs(serverId)}
               className="rounded border px-2 py-0.5 text-xs"
-              style={{ borderColor: 'var(--border)', background: 'var(--white)', color: '#cc2200' }}
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--white)',
+                color: 'var(--red)',
+              }}
             >
               {t('mock.clear')}
             </button>
@@ -1513,31 +1651,31 @@ function LogsTab({ serverId }: { serverId: string }) {
                     className="border-b px-2 py-1 text-left"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Time
+                    {t('mock.logTime')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-left"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Method
+                    {t('mock.logMethod')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-left"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Path
+                    {t('mock.logPath')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-right"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Status
+                    {t('mock.logStatus')}
                   </th>
                   <th
                     className="border-b px-2 py-1 text-right"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Latency
+                    {t('mock.logLatency')}
                   </th>
                 </tr>
               </thead>
@@ -1548,10 +1686,13 @@ function LogsTab({ serverId }: { serverId: string }) {
                   .map((log) => (
                     <tr
                       key={log.id}
+                      data-testid="mock-log-row"
+                      // One row per stream: "open" until its closed entry replaces it (issue #226).
+                      data-streaming={isOpenStreamEntry(log) ? 'true' : 'false'}
                       onClick={() => setSelectedId(log.id)}
                       style={{
                         cursor: 'pointer',
-                        background: selectedId === log.id ? 'var(--accentLight)' : 'transparent',
+                        background: selectedId === log.id ? 'var(--accent-light)' : 'transparent',
                       }}
                     >
                       <td
@@ -1579,10 +1720,11 @@ function LogsTab({ serverId }: { serverId: string }) {
                         {log.statusCode}
                       </td>
                       <td
+                        data-testid="mock-log-latency"
                         className="border-b px-2 py-1 text-right"
                         style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                       >
-                        {log.latencyMs}ms
+                        <LogLatency log={log} />
                       </td>
                     </tr>
                   ))}
@@ -1610,7 +1752,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               </div>
               <details>
                 <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                  Headers
+                  {t('mock.headers')}
                 </summary>
                 <pre
                   className="m-0 mt-1 rounded border p-2"
@@ -1622,7 +1764,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               {selected.request.body && (
                 <details>
                   <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                    Body
+                    {t('mock.body')}
                   </summary>
                   <pre
                     className="m-0 mt-1 rounded border p-2"
@@ -1641,11 +1783,11 @@ function LogsTab({ serverId }: { serverId: string }) {
                 {t('mock.response')}
               </div>
               <div className="font-mono text-xs">
-                {selected.statusCode} · {selected.latencyMs}ms
+                {selected.statusCode} · <LogLatency log={selected} />
               </div>
               <details>
                 <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                  Headers
+                  {t('mock.headers')}
                 </summary>
                 <pre
                   className="m-0 mt-1 rounded border p-2"
@@ -1656,7 +1798,7 @@ function LogsTab({ serverId }: { serverId: string }) {
               </details>
               <details open>
                 <summary className="cursor-pointer mt-1" style={{ color: 'var(--muted)' }}>
-                  Body
+                  {t('mock.body')}
                 </summary>
                 <pre
                   className="m-0 mt-1 rounded border p-2 max-h-96 overflow-auto"
@@ -1673,10 +1815,25 @@ function LogsTab({ serverId }: { serverId: string }) {
   )
 }
 
+/** "142ms", or "streaming…" while a stream's closed entry has not arrived (issue #226). */
+function LogLatency({ log }: { log: MockLogEntry }) {
+  const { t } = useTranslation()
+  if (!isOpenStreamEntry(log)) return <>{log.latencyMs}ms</>
+  return (
+    <span
+      className="inline-flex items-center gap-1 whitespace-nowrap"
+      style={{ color: 'var(--green)' }}
+    >
+      <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--green)]" />
+      {t('mock.logStreaming')}
+    </span>
+  )
+}
+
 function statusColor(code: number): string {
   if (code >= 500) return '#7c1fa6'
-  if (code >= 400) return '#cc2200'
-  if (code >= 300) return '#b35a00'
-  if (code >= 200) return '#1a7a4a'
-  return '#0066cc'
+  if (code >= 400) return 'var(--red)'
+  if (code >= 300) return 'var(--orange)'
+  if (code >= 200) return 'var(--green)'
+  return 'var(--blue)'
 }

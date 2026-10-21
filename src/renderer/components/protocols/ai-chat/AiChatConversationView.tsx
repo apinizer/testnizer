@@ -4,7 +4,7 @@ import { useAiChatStore } from '../../../stores/ai-chat.store'
 import { useTranslation } from '../../../lib/i18n'
 import EmptyState from '../../shared/EmptyState'
 import AiChatAssistantTurn from './AiChatAssistantTurn'
-import { isPinnedToBottom } from '../../../lib/ai-chat-view'
+import { awaitingUserKey, isPinnedToBottom, scrollTopToReveal } from '../../../lib/ai-chat-view'
 
 /** The conversation: user bubbles and assistant turns (text, tool calls, metrics). */
 export default function AiChatConversationView({
@@ -27,6 +27,25 @@ export default function AiChatConversationView({
     if (el && pinnedRef.current) el.scrollTop = el.scrollHeight
   }, [messages, pinnedRef])
 
+  // A card that waits for the user (tool approval, stdio trust) is brought
+  // into view inside the conversation, pinned or not — never by focusing it
+  // and never with `scrollIntoView`, which would also scroll the overflow-hidden
+  // ancestors and could push the editor header off screen (issue #228).
+  const awaitKey = awaitingUserKey(messages, pendingResponseId)
+  useEffect(() => {
+    const el = ref.current
+    if (!el || !awaitKey) return
+    // Only the live turn renders markers; the first one is the part the key names.
+    const card = el.querySelector<HTMLElement>('[data-awaiting-user="true"]')
+    if (!card) return
+    const next = scrollTopToReveal(
+      el.getBoundingClientRect(),
+      card.getBoundingClientRect(),
+      el.scrollTop,
+    )
+    if (next !== el.scrollTop) el.scrollTop = next
+  }, [awaitKey])
+
   const onScroll = (e: UIEvent<HTMLDivElement>): void => {
     pinnedRef.current = isPinnedToBottom(e.currentTarget)
   }
@@ -39,7 +58,8 @@ export default function AiChatConversationView({
       ref={ref}
       data-testid="ai-conversation"
       onScroll={onScroll}
-      className="flex-1 overflow-y-auto p-3.5"
+      data-awaiting-user-key={awaitKey ?? undefined}
+      className="min-h-0 flex-1 overflow-y-auto p-3.5"
     >
       {messages.length === 0 && !errorMessage ? (
         <EmptyState

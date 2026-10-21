@@ -25,6 +25,7 @@ export default function SseEditor() {
   const bodyType = useSseStore((s) => s.bodyType)
   const setBodyType = useSseStore((s) => s.setBodyType)
   const connectionState = useSseStore((s) => s.connectionState)
+  const reconnecting = useSseStore((s) => s.reconnecting)
 
   const enabledHeaderCount = customHeaders.filter((h) => h.enabled && h.key.trim()).length
   const bodyDisabled = method === 'GET'
@@ -33,15 +34,10 @@ export default function SseEditor() {
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
       {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
-        <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
-          SSE (Server-Sent Events)
-        </span>
-        {connectionState === 'connected' && (
-          <span
-            className="rounded-full px-2 py-0.5 font-medium"
-            style={{ background: '#e8f9f1', color: '#1a7a4a' }}
-          >
-            Connected
+        <span className="font-medium text-[var(--accent-text)]">{t('sse.title')}</span>
+        {connectionState === 'connected' && !reconnecting && (
+          <span className="rounded-full bg-[var(--green-bg)] px-2 py-0.5 font-medium text-[var(--green)]">
+            {t('mcp.status.connected')}
           </span>
         )}
       </div>
@@ -72,7 +68,7 @@ export default function SseEditor() {
                 data-testid="sse-last-event-id"
                 value={lastEventId}
                 onChange={(e) => setLastEventId(e.target.value)}
-                placeholder="Optional: resume from this event ID"
+                placeholder={t('sse.lastEventIdPlaceholder')}
                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
               />
             </div>
@@ -90,12 +86,14 @@ export default function SseEditor() {
             disabled={bodyDisabled}
             className="flex w-full items-center gap-2 px-3 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)] disabled:cursor-not-allowed"
             style={{ background: 'transparent', border: 'none' }}
-            title={bodyDisabled ? 'Body is only available for non-GET methods' : undefined}
+            title={bodyDisabled ? t('sse.bodyGetOnly') : undefined}
           >
             {bodyExpanded && !bodyDisabled ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <FileCode2 size={14} className="text-[var(--muted)]" />
-            <span>Body</span>
-            {bodyDisabled && <span className="ml-1 text-[var(--muted)]">(disabled for GET)</span>}
+            <span>{t('request.body')}</span>
+            {bodyDisabled && (
+              <span className="ml-1 text-[var(--muted)]">{t('sse.bodyDisabledForGet')}</span>
+            )}
             {!bodyDisabled && body.trim() && (
               <span
                 className="ml-1 rounded-full px-[5px]"
@@ -108,20 +106,20 @@ export default function SseEditor() {
           {bodyExpanded && !bodyDisabled && (
             <div className="border-t border-[var(--border)] p-3">
               <div className="mb-2 flex items-center gap-2">
-                <span className="text-[var(--muted)]">Type:</span>
-                {(['json', 'text'] as SseBodyType[]).map((t) => (
+                <span className="text-[var(--muted)]">{t('sse.bodyType')}</span>
+                {(['json', 'text'] as SseBodyType[]).map((bt) => (
                   <button
-                    key={t}
+                    key={bt}
                     type="button"
-                    onClick={() => setBodyType(t)}
+                    onClick={() => setBodyType(bt)}
                     className="rounded-md border px-2 py-0.5 transition-colors"
                     style={{
-                      background: bodyType === t ? 'var(--accent-light)' : 'transparent',
-                      borderColor: bodyType === t ? 'var(--accent)' : 'var(--border)',
-                      color: bodyType === t ? 'var(--accent-text)' : 'var(--text)',
+                      background: bodyType === bt ? 'var(--accent-light)' : 'transparent',
+                      borderColor: bodyType === bt ? 'var(--accent)' : 'var(--border)',
+                      color: bodyType === bt ? 'var(--accent-text)' : 'var(--text)',
                     }}
                   >
-                    {t.toUpperCase()}
+                    {bt.toUpperCase()}
                   </button>
                 ))}
               </div>
@@ -150,7 +148,7 @@ export default function SseEditor() {
           >
             {headersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <Settings2 size={14} className="text-[var(--muted)]" />
-            <span>Custom Headers</span>
+            <span>{t('sse.customHeaders')}</span>
             {enabledHeaderCount > 0 && (
               <span
                 className="ml-1 rounded-full px-[5px]"

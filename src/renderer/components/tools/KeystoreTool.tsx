@@ -696,7 +696,7 @@ function Pill({ children }: { children: React.ReactNode }) {
   return (
     <span
       className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-      style={{ background: 'var(--accentLight)', color: 'var(--accentText)' }}
+      style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
     >
       {children}
     </span>
@@ -746,7 +746,7 @@ function AddEntryMenu({
         style={{
           borderColor: 'var(--border)',
           background: 'var(--white)',
-          color: 'var(--accentText)',
+          color: 'var(--accent-text)',
         }}
       >
         {t('tools.keystore.generate.addEntry')} ▾

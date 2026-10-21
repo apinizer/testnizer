@@ -54,7 +54,7 @@ uiTest.describe('Tur1 — Mock proxy [MST-169]', () => {
     await addMockResponse(window, { status: 202 })
 
     // Navigate to Settings tab to enable proxy.
-    const settingsTab = window.getByRole('button', { name: /^Settings$/i })
+    const settingsTab = window.getByTestId('mock-tab-settings')
     await expect(settingsTab).toBeVisible({ timeout: 8_000 })
     await settingsTab.click()
 

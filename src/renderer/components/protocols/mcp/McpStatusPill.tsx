@@ -26,19 +26,31 @@ const STATUS_TONE: Record<McpConnectionState, { pill: string; dot: string; key: 
   },
 }
 
-/** Disconnected / Connecting… / Connected / Error, at the left of the MCP bar (issue #171). */
-export default function McpStatusPill({ state }: { state: McpConnectionState }) {
+/**
+ * Disconnected / Connecting… / Connected / Error, at the left of the MCP bar
+ * (issue #171) — and of the SSE bar, which reuses it (`testId="sse-status"`).
+ */
+export default function McpStatusPill({
+  state,
+  testId = 'mcp-status',
+  labelKey,
+}: {
+  state: McpConnectionState
+  testId?: string
+  /** i18n key that replaces the state's own label (the SSE bar's "Reconnecting…"). */
+  labelKey?: string
+}) {
   const { t } = useTranslation()
   const tone = STATUS_TONE[state] ?? STATUS_TONE.disconnected
   return (
     <span
-      data-testid="mcp-status"
+      data-testid={testId}
       data-state={state}
       role="status"
       className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium ${tone.pill}`}
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
-      {t(tone.key)}
+      {t(labelKey ?? tone.key)}
     </span>
   )
 }

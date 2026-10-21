@@ -225,7 +225,7 @@ uiTest.describe('Tur1 — Mock conditional [MST-162..168]', () => {
     await window.waitForTimeout(500)
 
     // Switch to the Logs tab.
-    const logsTab = window.getByRole('button', { name: /^Logs$/i })
+    const logsTab = window.getByTestId('mock-tab-logs')
     await expect(logsTab).toBeVisible({ timeout: 8_000 })
     await logsTab.click()
 

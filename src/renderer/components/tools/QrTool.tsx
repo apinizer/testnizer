@@ -67,10 +67,10 @@ export default function QrTool() {
               onClick={() => setMode(m)}
               className="rounded px-3 py-1 text-xs font-semibold"
               style={{
-                background: mode === m ? 'var(--accentLight)' : 'var(--white)',
-                color: mode === m ? 'var(--accentText)' : 'var(--muted)',
+                background: mode === m ? 'var(--accent-light)' : 'var(--white)',
+                color: mode === m ? 'var(--accent-text)' : 'var(--muted)',
                 border: '1px solid',
-                borderColor: mode === m ? 'var(--accentText)' : 'var(--border)',
+                borderColor: mode === m ? 'var(--accent-text)' : 'var(--border)',
               }}
             >
               {m === 'encode' ? t('tools.qr.modeEncode') : t('tools.qr.modeDecode')}
@@ -125,8 +125,8 @@ export default function QrTool() {
               onDrop={onDrop}
               className="flex flex-1 cursor-pointer flex-col items-center justify-center gap-2 rounded border-2 border-dashed p-6 text-center"
               style={{
-                borderColor: dragOver ? 'var(--accentText)' : 'var(--border)',
-                background: dragOver ? 'var(--accentLight)' : 'var(--surface)',
+                borderColor: dragOver ? 'var(--accent-text)' : 'var(--border)',
+                background: dragOver ? 'var(--accent-light)' : 'var(--surface)',
                 color: 'var(--muted)',
               }}
             >

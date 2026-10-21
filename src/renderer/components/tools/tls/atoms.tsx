@@ -103,7 +103,7 @@ export function FileRow({
         style={{
           borderColor: 'var(--border)',
           background: 'var(--white)',
-          color: 'var(--accentText)',
+          color: 'var(--accent-text)',
         }}
       >
         {label}
