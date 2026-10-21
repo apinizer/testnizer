@@ -1,5 +1,6 @@
 import type { HttpMethod, KeyValuePair, RequestBody, AuthConfig, CodeLanguage } from '../types'
-import { resolveVariables } from './variable-resolver'
+import { resolveAuth, resolveVariables } from './variable-resolver'
+import { snippetVariables } from './secret-variables'
 
 export interface CodeGenRequest {
   method: HttpMethod
@@ -18,6 +19,13 @@ export interface CodeGenOptions {
    * the v1.3.1 §5.10 bug.
    */
   envVars?: Record<string, string>
+  /**
+   * Names of `secret` variables (`activeSecretVariableNames`). They are NOT
+   * substituted — the snippet keeps `{{name}}` — unless `includeSecrets`.
+   */
+  secretNames?: ReadonlySet<string>
+  /** The user's "Include secret values" opt-in (session-only, off by default). */
+  includeSecrets?: boolean
 }
 
 function resolveKvList(list: KeyValuePair[], vars: Record<string, string>): KeyValuePair[] {
@@ -55,15 +63,48 @@ function resolveRequest(req: CodeGenRequest, vars: Record<string, string>): Code
     params: resolveKvList(req.params, vars),
     headers: resolveKvList(req.headers, vars),
     body: resolveBody(req.body, vars),
+    // The Authorization tab too — the same resolver Send uses. Without it a
+    // `{{token}}` typed there stayed literal even with "Include secret values".
+    auth: resolveAuth(req.auth, vars),
   }
 }
 
+/** Query keys the URL's own query string carries (raw, as typed). */
+function urlQueryKeys(url: string): Set<string> {
+  const keys = new Set<string>()
+  const start = url.indexOf('?')
+  if (start === -1) return keys
+  for (const pair of url
+    .slice(start + 1)
+    .split('#')[0]
+    .split('&')) {
+    if (!pair) continue
+    const eq = pair.indexOf('=')
+    keys.add(eq === -1 ? pair : pair.slice(0, eq))
+  }
+  return keys
+}
+
+/** Percent-encode a query part, keeping a `{{name}}` placeholder readable. */
+function encodeQueryPart(s: string): string {
+  return encodeURIComponent(s).replace(/%7B%7B(.+?)%7D%7D/g, (_m, name: string) => {
+    return `{{${decodeURIComponent(name)}}}`
+  })
+}
+
+/**
+ * The URL plus the params table — minus any key the URL's query ALREADY
+ * carries. The request editor keeps URL and Params in sync (issue #22), so
+ * appending every row duplicated the whole query (`?api_key=X&api_key=X`).
+ * Same rule as the HTTP engine (`src/main/protocols/http.engine.ts`, issue
+ * #17): the URL's query wins and stays untouched (a repeated `?id=1&id=2`
+ * survives), only table rows that would duplicate it are dropped.
+ */
 function buildFullUrl(url: string, params: KeyValuePair[]): string {
-  const enabled = params.filter((p) => p.enabled && p.key)
-  if (enabled.length === 0) return url
-  const qs = enabled
-    .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
-    .join('&')
+  const inUrl = urlQueryKeys(url)
+  const extra = params.filter((p) => p.enabled && p.key && !inUrl.has(p.key))
+  if (extra.length === 0) return url
+  const qs = extra.map((p) => `${encodeQueryPart(p.key)}=${encodeQueryPart(p.value)}`).join('&')
   return url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`
 }
 
@@ -98,7 +139,7 @@ function bodyString(body?: RequestBody): string | null {
   if (body.type === 'urlencoded' && body.urlEncoded) {
     return body.urlEncoded
       .filter((p) => p.enabled && p.key)
-      .map((p) => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+      .map((p) => `${encodeQueryPart(p.key)}=${encodeQueryPart(p.value)}`)
       .join('&')
   }
   return null
@@ -432,7 +473,14 @@ export function generateCode(
 ): string {
   const gen = GENERATORS[language]
   if (!gen) return `// Code generation for ${language} is not supported yet.`
-  const effective = options?.envVars ? resolveRequest(req, options.envVars) : req
+  const vars = options?.envVars
+    ? snippetVariables(
+        options.envVars,
+        options.secretNames ?? new Set<string>(),
+        options.includeSecrets === true,
+      )
+    : undefined
+  const effective = vars ? resolveRequest(req, vars) : req
   return gen(effective)
 }
 

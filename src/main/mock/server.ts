@@ -16,6 +16,8 @@ import { matchEndpoint, type MatchableEndpoint } from './matcher'
 import { evaluateCondition } from './condition'
 import { llmRequestShortcuts, renderTemplate, type TemplateContext } from './template'
 import { loadEnvVars } from '../lib/env-vars'
+import { cachedSecretInventory } from '../lib/secret-inventory-cache'
+import { getDb } from '../db/database'
 import { getState, clearState } from './state'
 import { runScript, type ScriptResponse } from './script'
 import { checkAuth, resolveAuthConfig } from './auth'
@@ -56,6 +58,7 @@ import {
 } from './stream/llm'
 import {
   NAME_ONLY,
+  createScrubber,
   maskBodyText,
   maskFreeText,
   maskHeaderRecord,
@@ -889,7 +892,7 @@ class MockServerManager extends EventEmitter {
       error: string | null
     },
   ): void {
-    const scrub = logScrubber(e.reqHeaders, e.query)
+    const scrub = logScrubber(e.reqHeaders, e.query, e.bodyText)
     const qs = new URLSearchParams(e.query).toString()
     const log: MockLogEntry = {
       id: randomUUID(),
@@ -1165,7 +1168,7 @@ class MockServerManager extends EventEmitter {
       // Mask the whole window, THEN clip (`pushLog` masks the clipped text
       // again — harmless): a credential straddling the preview cut is masked
       // before the cut can split it.
-      const scrub = logScrubber(req.reqHeaders, req.query)
+      const scrub = logScrubber(req.reqHeaders, req.query, req.bodyText)
       const windowCut =
         open.logBody !== undefined
           ? open.logBody.length > SSE_LOG_WINDOW_BYTES
@@ -1402,9 +1405,27 @@ function tooManyStreamsMessage(): string {
   return `This mock server already has ${SSE_MAX_OPEN_STREAMS} open or waiting streams`
 }
 
-/** The log's value scrubber: the credential values the request carried by name. */
-function logScrubber(reqHeaders: Record<string, string>, query: Record<string, string>): Scrubber {
-  return withCredentialValues(NAME_ONLY, { headers: reqHeaders, query })
+/**
+ * The log's value scrubber — the same construction as History / the Console:
+ * the values of every variable marked secret (`cachedSecretInventory`, the
+ * Console's cached cross-project inventory — a mock body renders
+ * `{{secretVar}}` from the project env, a client sends one in a neutral
+ * header) plus the credential values the request carried by name (headers,
+ * query, credential-named body fields). No DB (tests, before init) → the
+ * request's own credentials only.
+ */
+function logScrubber(
+  reqHeaders: Record<string, string>,
+  query: Record<string, string>,
+  bodyText: string,
+): Scrubber {
+  let base = NAME_ONLY
+  try {
+    base = createScrubber(cachedSecretInventory(getDb()).values)
+  } catch {
+    /* no database — name rule + the request's own credentials */
+  }
+  return withCredentialValues(base, { headers: reqHeaders, query, body: bodyText })
 }
 
 function headersToRecord(h: http.IncomingHttpHeaders): Record<string, string> {

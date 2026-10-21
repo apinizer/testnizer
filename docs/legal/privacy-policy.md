@@ -1,7 +1,7 @@
 # Testnizer — Privacy Policy
 
 **Effective date:** 2026-05-07
-**Last updated:** 2026-10-10
+**Last updated:** 2026-10-21
 **Applies to:** Testnizer v1.0.3 and later
 
 This Privacy Policy explains how **Testnizer** ("the Software", "we", "our")
@@ -79,7 +79,9 @@ ability to retrieve it.
 |---|---|
 | Database (SQLite) | `<userData>/testnizer.db` |
 | Settings (electron-store) | `<userData>/settings.json` |
-| Secrets (passwords, tokens, certificates) | OS keychain via Electron `safeStorage` (macOS Keychain, Windows DPAPI, libsecret on Linux) |
+| Encrypted secrets: git access tokens, certificate passphrases and keystore passwords, keystores saved to the Keystore library, one-time-password (OTP) secrets, and credential-named settings such as a proxy password | In the database or `<userData>/settings.json`, encrypted via Electron `safeStorage` (macOS Keychain, Windows DPAPI, libsecret on Linux). If `safeStorage` is unavailable on your system (for example Linux without libsecret), these values are stored without encryption on your computer. Two exceptions are never written unencrypted: AI Chat API keys (below) and remembered keystore passwords. |
+| Secret-type variables, mock server tokens and passwords, and credentials typed into an Auth tab | In `<userData>/testnizer.db` as **plain text** — they are **not** encrypted at rest. Anyone who can read your user profile or disk can read them, so use full-disk encryption and your operating system's account protection. They leave your computer only if you send a request that uses them. The **secret** flag on an environment or global variable, and mock server tokens, passwords and API keys, are written as empty values to every project file, git commit or push, and export, so those never carry them. Auth you type into a request or folder is part of that request or folder and does travel with exports and git; use `{{variable}}` references to keep the real value out of them. |
+| Received stream data: SSE events, WebSocket and Socket.IO messages, MCP notifications and the raw message log | The live message lists in the tab are held in memory only while the app is running; they are never written to the database or to disk and are gone when you quit the app. History keeps a record per connection, not per message: for SSE, WebSocket and Socket.IO it stores the connection attempt (URL, headers and options with credentials masked, status, duration, connection id) and never the messages or events. For MCP it stores each tool call, resource read, prompt fetch and input response with its result (a result over 500,000 characters is not stored), with credentials masked. |
 | Logs (if any) | `<userData>/logs/` |
 | AI Chat provider API keys | `<userData>/settings.json`, one key per provider, encrypted via `safeStorage`. If `safeStorage` encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk. |
 | AI Chat tab state and saved AI Chat requests | Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key, and never "Run tools without asking". |
@@ -94,9 +96,39 @@ ability to retrieve it.
 Stored in this directory: workspaces, projects, branches, endpoints,
 environments (with `initialValue` and `value` per variable), request and
 response history, imported collections (OpenAPI / Postman / Insomnia / cURL
-/ HAR / WSDL / Proto), client certificates and keys, application settings,
-your selected language and theme, and any optional master password you have
-enabled for additional local-data protection.
+/ HAR / WSDL / Proto), the settings of your client certificates, application
+settings, your selected language and theme, and the optional app password if
+you have set one.
+
+Client certificate settings hold the file paths you chose for your
+certificate, key and PFX files, not copies of those files; the files stay
+where they are on your disk (their passphrases are encrypted, see the table
+above). Keystores that you save to the Keystore library are stored in the
+database, encrypted with `safeStorage`. The optional app password is a login
+gate only: Testnizer stores a salted scrypt hash of it to check what you type
+at launch. It does not encrypt the database or any other local data.
+
+### 3.1 Mock servers
+
+Testnizer can run mock servers (HTTP, SSE, AI and MCP mocks) on your own
+computer.
+
+- They run inside the app and, by default, listen on `127.0.0.1`, so only
+  your own computer can reach them. They listen on all network interfaces
+  (`0.0.0.0`, reachable from your network) only if you change a server's bind
+  address yourself; the editor then shows a warning.
+- The requests a mock server receives are kept in an in-memory log of the
+  latest 500 entries per server, shown in its Logs tab. The log is never
+  written to disk; it is discarded when the server is restarted or the app is
+  closed.
+- In the HTTP mock log, credential headers and query/body fields, and the
+  credential values the request carried, are masked. The MCP mock log holds
+  the JSON-RPC messages the server received and answered, not HTTP headers.
+- Mock server configuration (endpoints, responses, auth settings) is stored
+  in the local database. Mock auth tokens, passwords and API keys are stored
+  as described in the table above and are written as empty values to project
+  files, git and exports.
+- Nothing a mock server receives is sent to us or to anyone else.
 
 You are the sole controller of this data. There is no cloud sync. You may
 inspect, edit, export, or delete it at any time by manipulating the files
@@ -225,7 +257,10 @@ called that provider's API yourself with `curl`.
   terms — entirely outside our control.
 - You can run AI Chat **fully offline** by selecting the **Custom**
   provider and entering the URL of a locally-hosted, OpenAI-compatible
-  endpoint. In that case no outbound network traffic leaves your machine.
+  endpoint. In that case no outbound network traffic leaves your machine. The
+  AI mock server built into Testnizer (Section 3.1) is such an endpoint: point
+  the Custom provider at its OpenAI-compatible URL to use AI Chat fully
+  offline.
 - **MCP servers as tools:** if you enable MCP servers in an AI Chat
   request's Tools tab, the arguments the model chooses for a tool call are
   sent to that MCP server and the tool's result is sent back to the AI
@@ -330,10 +365,22 @@ organization) are the data controller for that processing.
 
 The Software employs the following defensive practices:
 
-- **Local secret encryption.** Passwords, API keys, OAuth tokens, and
-  client certificates are encrypted at rest via Electron `safeStorage`,
-  which delegates to the OS keychain (macOS Keychain, Windows DPAPI,
-  libsecret on Linux). Plain-text secrets are never written to disk.
+- **Local secret encryption.** AI Chat API keys, git access tokens,
+  certificate passphrases and keystore passwords, saved keystores,
+  one-time-password secrets, and credential-named settings such as a proxy
+  password are encrypted at rest via Electron `safeStorage`, which delegates
+  to the OS keychain (macOS Keychain, Windows DPAPI, libsecret on Linux). If
+  the keychain is unavailable on your system, AI Chat keys and remembered
+  keystore passwords are not saved at all; the other values are then stored
+  without encryption. Secret-type variables, mock server tokens and
+  passwords, and credentials typed into an Auth tab are **not** encrypted at
+  rest: they sit in the local database as plain text, and are blanked in
+  project files, git and exports (Section 3).
+- **No stream messages on disk.** The messages and events received over SSE,
+  WebSocket and Socket.IO, and MCP notifications, are kept in memory only
+  and are not written to disk; History records the connection, not the
+  messages (Section 3). MCP tool, resource and prompt results are recorded in
+  History, masked.
 - **Renderer hardening.** The Renderer process runs with
   `contextIsolation: true`, `nodeIntegration: false`, and a strict Content
   Security Policy of `connect-src 'self'`, which means the UI cannot make

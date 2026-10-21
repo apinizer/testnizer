@@ -396,8 +396,42 @@ function maskBodyFields(text: string, mode: MaskMode, xml: boolean): string {
           ? `<${tag}${attrs ?? ''}>${HISTORY_MASK}</${tag}>`
           : m,
     )
+    out = maskXmlCdataAndAttributes(out, mode)
   }
   return json ? completeJsonMask(out, mode) : maskUrlencodedText(out, mode)
+}
+
+/**
+ * The XML name rule beyond plain leaves: a credential-named element whose
+ * only content is a CDATA section (`<Password><![CDATA[…]]></Password>`) and
+ * a credential-named attribute (`password="…"`, `wsse:ApiKey='…'`), by local
+ * name — masked by NAME, any length, like `XML_LEAF`. The CDATA wrapper and
+ * the quote style are kept. Template mode keeps a `{{var}}` reference.
+ */
+function maskXmlCdataAndAttributes(text: string, mode: MaskMode): string {
+  return text
+    .replace(
+      XML_CDATA_LEAF,
+      (m, tag: string, local: string, attrs: string | undefined, value: string) =>
+        value.trim() && shouldMask(value.trim(), mode) && isCredentialArgName(local)
+          ? `<${tag}${attrs ?? ''}><![CDATA[${HISTORY_MASK}]]></${tag}>`
+          : m,
+    )
+    .replace(XML_START_TAG, (m, attrs: string | undefined) => {
+      if (!attrs) return m
+      const masked = attrs.replace(
+        XML_ATTRIBUTE,
+        (a, local: string, dq: string | undefined, sq: string | undefined) => {
+          const value = dq ?? sq ?? ''
+          if (!value.trim() || !shouldMask(value.trim(), mode) || !isCredentialArgName(local)) {
+            return a
+          }
+          const q = dq !== undefined ? '"' : "'"
+          return `${a.slice(0, a.indexOf(q))}${q}${HISTORY_MASK}${q}`
+        },
+      )
+      return masked === attrs ? m : m.replace(attrs, () => masked)
+    })
 }
 
 /**
@@ -626,14 +660,162 @@ function collectQuery(text: string, out: string[]): void {
   }
 }
 
+/** A credential-named body field's value worth collecting (the body name rule's test). */
+function collectableField(v: string): boolean {
+  return shouldMaskField(v, 'sent') && !TEMPLATE_REF.test(v)
+}
+
+/**
+ * A JSON body VALUE: the same recursive name rule `maskJsonBody` masks with —
+ * a credential-named string leaf at any depth, a `{ key | name, value }` pair
+ * by its name, and a string that is itself a JSON object / array (JSON in
+ * JSON) walked as a body text.
+ */
+function collectJsonFields(value: unknown, out: string[], depth = 0): void {
+  if (typeof value === 'string') {
+    if (looksLikeJsonContainer(value)) collectBodyText(value, out, depth + 1)
+    return
+  }
+  if (depth > MAX_DEPTH || value === null || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (const v of value) collectJsonFields(v, out, depth + 1)
+    return
+  }
+  const rec = value as Json
+  const pairName =
+    typeof rec.key === 'string' ? rec.key : typeof rec.name === 'string' ? rec.name : undefined
+  const isPair = pairName !== undefined && 'value' in rec
+  for (const [k, v] of Object.entries(rec)) {
+    if (isPair && PAIR_NAME_FIELDS.has(k)) continue
+    const name = isPair && k === 'value' ? pairName : k
+    if (typeof v === 'string' && isCredentialArgName(name) && collectableField(v)) {
+      out.push(...credentialForms(v))
+    } else {
+      collectJsonFields(v, out, depth + 1)
+    }
+  }
+}
+
+/** `<x>…</x>` whose only content is one CDATA section (`<Password><![CDATA[…]]></Password>`). */
+const XML_CDATA_LEAF =
+  /<((?:[\w.-]+:)?([\w.-]+))(\s[^<>]*)?>\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*<\/\1\s*>/g
+/** An element start tag's attribute list (`<Login ApiKey="…" …>`). */
+const XML_START_TAG = /<[\w.:-]+(\s[^<>]*?)\/?>/g
+/** One attribute, prefix ignored (`wsse:password="…"`, `token='…'`). */
+const XML_ATTRIBUTE = /(?:[\w.-]+:)?([\w.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+
+const XML_ENTITIES: Record<string, string> = {
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+}
+
+function decodeXmlEntities(v: string): string {
+  return v.replace(/&(amp|lt|gt|quot|apos|#\d+|#x[0-9a-f]+);/gi, (m, e: string) => {
+    if (e[0] !== '#') return XML_ENTITIES[e.toLowerCase()] ?? m
+    const code = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10)
+    return Number.isFinite(code) && code <= 0x10ffff ? String.fromCodePoint(code) : m
+  })
+}
+
+/** A credential-named XML value: as written and, when entity-escaped, decoded. */
+function pushXmlValue(name: string, raw: string, out: string[]): void {
+  if (!isCredentialArgName(name)) return
+  const value = raw.trim()
+  if (!collectableField(value)) return
+  out.push(value)
+  const decoded = decodeXmlEntities(value)
+  if (decoded !== value && collectableField(decoded)) out.push(decoded)
+}
+
+/**
+ * An XML body (a SOAP envelope, WS-Security header): the leaf elements the
+ * request-side name rule masks (`XML_LEAF`, `<wsse:Password>` — prefix
+ * ignored), CDATA-only leaves and attributes, each by its local name with
+ * `isCredentialArgName`. Regex over bounded patterns, as the mask itself.
+ */
+function collectXmlText(text: string, out: string[]): void {
+  for (const m of text.matchAll(XML_LEAF)) pushXmlValue(m[2], m[4], out)
+  for (const m of text.matchAll(XML_CDATA_LEAF)) {
+    const value = m[4].trim()
+    if (isCredentialArgName(m[2]) && collectableField(value)) out.push(value)
+  }
+  for (const tag of text.matchAll(XML_START_TAG)) {
+    for (const a of (tag[1] ?? '').matchAll(XML_ATTRIBUTE)) {
+      pushXmlValue(a[1], a[2] ?? a[3] ?? '', out)
+    }
+  }
+}
+
+/**
+ * A body as text: a JSON object / array (structural size cap), XML (unless
+ * `xml` is false — a SOAP REPLY stays readable, see `maskHistoryRow`), else
+ * urlencoded pairs.
+ */
+function collectBodyText(text: string, out: string[], depth = 0, xml = true): void {
+  if (!text || depth > MAX_DEPTH) return
+  if (parsesAsJsonContainer(text)) {
+    collectJsonFields(JSON.parse(text) as unknown, out, depth + 1)
+    return
+  }
+  if (text.trimStart().startsWith('<')) {
+    if (xml) collectXmlText(text, out)
+    return
+  }
+  const trimmed = text.trim()
+  if (!URLENCODED_BODY.test(trimmed)) return
+  for (const pair of trimmed.split('&')) {
+    const i = pair.indexOf('=')
+    const value = pair.slice(i + 1)
+    if (!isCredentialArgName(decodeName(pair.slice(0, i)))) continue
+    let decoded = value
+    try {
+      decoded = decodeURIComponent(value.replace(/\+/g, ' '))
+    } catch {
+      /* keep the raw form */
+    }
+    if (!collectableField(decoded)) continue
+    out.push(value)
+    if (decoded !== value) out.push(decoded)
+  }
+}
+
+/** A body: text, or a `RequestBody` (`content` / `formData` / `urlEncoded`). */
+function collectBody(body: unknown, out: string[], xml: boolean): void {
+  if (typeof body === 'string') {
+    collectBodyText(body, out, 0, xml)
+    return
+  }
+  if (!isRecord(body)) {
+    collectJsonFields(body, out)
+    return
+  }
+  for (const [k, v] of Object.entries(body)) {
+    if (k === 'content' && typeof v === 'string') collectBodyText(v, out, 0, xml)
+    else if (k === 'formData' || k === 'urlEncoded') collectNamed(v, isCredentialArgName, out)
+    else if (typeof v === 'string' && isCredentialArgName(k) && collectableField(v)) out.push(v)
+    else collectJsonFields(v, out)
+  }
+}
+
 /**
  * Every credential value a SENT request carried by name — credential headers
  * (literal `X-API-Key`, `Authorization`), credential query params, auth
- * fields. Added to the value scrub for the same row / entry, so an echo
- * server (httpbin `/anything`) returning them in the response body does not
- * undo the mask. `configured` (the `{{var}}` template) is skipped.
+ * fields, credential-named body fields (JSON at any depth, form pairs, a
+ * `RequestBody`'s `urlEncoded` / `formData`) and JSON payloads. Added to the
+ * value scrub for the same row / entry, so an echo server (httpbin
+ * `/anything`, a mock template `Body:[{{request.body.client_secret}}]`)
+ * returning them under a neutral name does not undo the mask. `configured`
+ * (the `{{var}}` template) is skipped.
  */
-export function collectCredentialValues(value: unknown, depth = 0): string[] {
+export function collectCredentialValues(
+  value: unknown,
+  depth = 0,
+  opts: { xml?: boolean } = {},
+): string[] {
+  const xml = opts.xml !== false
   const out: string[] = []
   const walk = (v: unknown, d: number): void => {
     if (d > MAX_DEPTH || v === null || typeof v !== 'object') return
@@ -648,6 +830,8 @@ export function collectCredentialValues(value: unknown, depth = 0): string[] {
       else if (k === 'auth') out.push(...authSecretValues(x))
       else if (URL_KEYS.has(k) && typeof x === 'string') collectQuery(x, out)
       else if (CREDENTIAL_KEYS.has(k) && typeof x === 'string') out.push(x)
+      else if (BODY_KEYS.has(k)) collectBody(x, out, xml)
+      else if (PAYLOAD_KEYS.has(k)) collectJsonFields(x, out)
       else walk(x, d + 1)
     }
   }
@@ -803,12 +987,15 @@ export function maskHistoryRow(
   row: { url: string; request_snapshot: string; response_snapshot?: string },
   baseScrub: Scrubber,
 ): { url: string; request_snapshot: string; response_snapshot?: string } {
-  const scrub = withCredentialValues(
-    baseScrub,
-    parsedOrText(row.request_snapshot),
-    { url: row.url },
-    parsedOrText(row.response_snapshot),
-  )
+  // The response's credential-named XML leaves are NOT collected: a SOAP
+  // reply is what the user debugs (`maskResponseBodyText` leaves XML alone
+  // too). The request envelope's are — an echo of them is scrubbed.
+  const extra = [
+    ...collectCredentialValues(parsedOrText(row.request_snapshot)),
+    ...collectCredentialValues({ url: row.url }),
+    ...collectCredentialValues(parsedOrText(row.response_snapshot), 0, { xml: false }),
+  ]
+  const scrub = extra.length === 0 ? baseScrub : createScrubber([...baseScrub.values, ...extra])
   return {
     url: maskUrlText(row.url, scrub),
     request_snapshot: maskHistoryRequestSnapshot(row.request_snapshot, scrub),
@@ -850,6 +1037,7 @@ export function maskConsoleEntry<T extends ConsoleEntryLike>(entry: T, baseScrub
   const scrub = withCredentialValues(baseScrub, {
     url: entry.url,
     requestHeaders: entry.details?.requestHeaders,
+    requestBody: entry.details?.requestBody,
   })
   const out: T = { ...entry }
   if (Array.isArray(entry.scriptLogs)) {
@@ -901,6 +1089,7 @@ export function maskRunResult(result: EndpointRunResult, baseScrub: Scrubber): E
   const scrub = withCredentialValues(baseScrub, {
     url: result.url,
     requestHeaders: result.requestHeaders,
+    requestBody: result.requestBody,
   })
   const out: EndpointRunResult = {
     ...result,

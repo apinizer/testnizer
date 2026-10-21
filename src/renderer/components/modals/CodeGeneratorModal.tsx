@@ -1,11 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { X, Copy, Check, Terminal, Code2, FileCode } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
-import { useRequestStore } from '../../stores/request.store'
-import { useEnvironmentStore } from '../../stores/environment.store'
+import { useTranslation } from '../../lib/i18n'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import Modal from '../shared/Modal'
-import { generateCode, CODE_LANGUAGES } from '../../lib/code-generator'
+import { CODE_LANGUAGES } from '../../lib/code-generator'
+import { useGeneratedCode } from '../shared/use-generated-code'
+import IncludeSecretsToggle from '../shared/IncludeSecretsToggle'
 import type { CodeLanguage } from '../../types'
 
 const LANG_ICONS: Record<string, React.ReactNode> = {
@@ -23,39 +24,20 @@ const LANG_ICONS: Record<string, React.ReactNode> = {
 }
 
 export default function CodeGeneratorModal() {
+  const { t } = useTranslation()
   const show = useUIStore((s) => s.showCodeGenerator)
-  const setShow = useUIStore((s) => s.setShowCodeGenerator)
+  const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
   const [activeLang, setActiveLang] = useState<CodeLanguage>('curl')
   const [copied, setCopied] = useState(false)
 
-  const method = useRequestStore((s) => s.method)
-  const url = useRequestStore((s) => s.url)
-  const params = useRequestStore((s) => s.params)
-  const headers = useRequestStore((s) => s.headers)
-  const body = useRequestStore((s) => s.body)
-  const auth = useRequestStore((s) => s.auth)
-  const getActiveVariables = useEnvironmentStore((s) => s.getActiveVariables)
-  const activeEnvId = useEnvironmentStore((s) => s.activeEnvironmentId)
-  const envState = useEnvironmentStore((s) => s.environments)
-
-  const code = useMemo(() => {
-    return generateCode(
-      activeLang,
-      { method, url, params, headers, body, auth },
-      { envVars: getActiveVariables() },
-    )
-  }, [
-    activeLang,
-    method,
-    url,
-    params,
-    headers,
-    body,
-    auth,
-    getActiveVariables,
-    activeEnvId,
-    envState,
-  ])
+  // Session-only opt-in: a secret variable stays `{{name}}` in the snippet.
+  const [includeSecrets, setIncludeSecrets] = useState(false)
+  const { code } = useGeneratedCode(activeLang, includeSecrets)
+  // The modal stays mounted while hidden — the opt-in must not outlive one opening.
+  function setShow(open: boolean): void {
+    if (!open) setIncludeSecrets(false)
+    setShowCodeGenerator(open)
+  }
 
   const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
 
@@ -68,26 +50,33 @@ export default function CodeGeneratorModal() {
   }
 
   return (
-    <Modal open={show} onOpenChange={setShow} title="Generate Code">
+    <Modal
+      open={show}
+      onOpenChange={setShow}
+      title={t('codeGen.title')}
+      testId="code-generator-modal"
+    >
       <div
         className="flex h-[520px] w-[820px] max-w-[95vw] flex-col overflow-hidden rounded-[14px] bg-[var(--white)]"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
       >
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-3">
-          <div className="font-bold text-[var(--text)]">Generate Code</div>
-          <div className="flex items-center gap-2">
+          <div className="font-bold text-[var(--text)]">{t('codeGen.title')}</div>
+          <div className="flex items-center gap-3">
+            <IncludeSecretsToggle checked={includeSecrets} onChange={setIncludeSecrets} />
             <button
               type="button"
               onClick={handleCopy}
+              data-testid="code-generator-copy"
               className="flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--bg)] px-2.5 py-1 text-[var(--muted)] transition-colors hover:bg-[var(--surface)]"
             >
               {copied ? <Check size={13} className="text-[var(--green)]" /> : <Copy size={13} />}
-              {copied ? 'Copied!' : 'Copy'}
+              {copied ? t('codeGen.copied') : t('codeGen.copy')}
             </button>
             <button
               type="button"
-              aria-label="Close"
+              aria-label={t('a11y.closeDialog')}
               onClick={() => setShow(false)}
               className="cursor-pointer p-1 text-[var(--hint)] hover:text-[var(--text)]"
               style={{ background: 'transparent', border: 'none' }}
@@ -100,11 +89,16 @@ export default function CodeGeneratorModal() {
         {/* Body */}
         <div className="flex flex-1 overflow-hidden">
           {/* Language sidebar */}
-          <div className="w-[200px] shrink-0 overflow-auto border-r border-[var(--border)] bg-[var(--bg)] py-1">
+          <div
+            role="group"
+            aria-label={t('codeGen.languages')}
+            className="w-[200px] shrink-0 overflow-auto border-r border-[var(--border)] bg-[var(--bg)] py-1"
+          >
             {CODE_LANGUAGES.map((lang) => (
               <button
                 key={lang.id}
                 type="button"
+                aria-pressed={activeLang === lang.id}
                 onClick={() => setActiveLang(lang.id)}
                 className="flex w-full cursor-pointer items-center gap-2.5 px-4 py-2 text-left transition-colors"
                 style={{
@@ -135,9 +129,10 @@ export default function CodeGeneratorModal() {
           <button
             type="button"
             onClick={() => setShow(false)}
-            className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
+            data-testid="code-generator-close"
+            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 font-medium text-[var(--text)] hover:opacity-80"
           >
-            Close
+            {t('common.close')}
           </button>
         </div>
       </div>

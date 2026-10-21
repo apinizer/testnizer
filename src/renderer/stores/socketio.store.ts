@@ -93,8 +93,26 @@ function extractState(s: SocketIOStore): TabSioState {
   }
 }
 
+/**
+ * On-disk view of a tab: URL, namespace, subscriptions and the emit draft —
+ * never the event timeline (server output, and resolved outgoing payloads)
+ * or the error text. Both stay in memory for the session. The connection
+ * does not survive a reload, so it is stored as disconnected.
+ */
+function persistableSio(st: TabSioState): TabSioState {
+  const idle = emptyState()
+  return {
+    ...st,
+    events: idle.events,
+    errorMessage: idle.errorMessage,
+    connectionId: idle.connectionId,
+    connectionState: idle.connectionState,
+    _pendingConnectId: undefined,
+  }
+}
+
 const STORAGE_KEY = 'testnizer-socketio'
-const persisted = loadTabbedState<TabSioState>(STORAGE_KEY, emptyState)
+const persisted = loadTabbedState<TabSioState>(STORAGE_KEY, emptyState, persistableSio)
 
 export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   ...persisted.current,
@@ -314,7 +332,10 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
   },
 }))
 
-attachTabbedPersist(useSocketIOStore, STORAGE_KEY, extractState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useSocketIOStore,
+  STORAGE_KEY,
+  extractState,
+  (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
+  persistableSio,
+)

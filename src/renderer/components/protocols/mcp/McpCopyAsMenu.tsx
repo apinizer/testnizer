@@ -7,6 +7,8 @@ import { useTranslation } from '../../../lib/i18n'
 import { useCopy } from '../../../lib/use-copy'
 import { toast } from '../../../lib/toast'
 import { buildJsonRpc, copyTargetOf, curlOf } from '../../../lib/mcp-copy-as'
+import { activeSecretVariableNames, snippetVariables } from '../../../lib/secret-variables'
+import IncludeSecretsToggle from '../../shared/IncludeSecretsToggle'
 import { positionAnchoredMenu, type MenuPosition } from '../../../lib/menu-position'
 import type { McpCapabilityTab } from '../../../types/mcp'
 
@@ -27,6 +29,13 @@ export default function McpCopyAsMenu({ capability }: { capability: McpCapabilit
   const { copied, copy } = useCopy()
   const transport = useMcpStore((s) => s.transport)
   const [open, setOpen] = useState(false)
+  // "Include secret values" — one copy only: every close resets it, so a
+  // later copy keeps `{{name}}` for a secret variable again (Generate Code rule).
+  const [includeSecrets, setIncludeSecrets] = useState(false)
+  const close = (): void => {
+    setOpen(false)
+    setIncludeSecrets(false)
+  }
   const [pos, setPos] = useState<MenuPosition | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
@@ -38,14 +47,18 @@ export default function McpCopyAsMenu({ capability }: { capability: McpCapabilit
       // The menu is a portal, not a DOM child of `ref`: a click on an item is inside.
       if (ref.current?.contains(target) || menuRef.current?.contains(target)) return
       setOpen(false)
+      setIncludeSecrets(false)
     }
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key !== 'Escape') return
+      setOpen(false)
+      setIncludeSecrets(false)
     }
     // A fixed menu would drift from its button — close instead.
     const onMove = (e: Event): void => {
       if (menuRef.current && e.target instanceof Node && menuRef.current.contains(e.target)) return
       setOpen(false)
+      setIncludeSecrets(false)
     }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
@@ -81,9 +94,15 @@ export default function McpCopyAsMenu({ capability }: { capability: McpCapabilit
   }, [open])
 
   const run = (format: 'jsonrpc' | 'curl'): void => {
-    setOpen(false)
+    close()
     const s = useMcpStore.getState()
-    const vars = useEnvironmentStore.getState().getActiveVariables()
+    const env = useEnvironmentStore.getState()
+    // A secret variable stays `{{name}}` unless the user ticked the opt-in.
+    const vars = snippetVariables(
+      env.getActiveVariables(),
+      activeSecretVariableNames(env),
+      includeSecrets,
+    )
     const target = copyTargetOf(s, capability, vars)
     if (!target) {
       toast.error(t('mcp.call.copyInvalid'))
@@ -111,7 +130,7 @@ export default function McpCopyAsMenu({ capability }: { capability: McpCapabilit
         data-testid="mcp-copy-as"
         aria-haspopup="menu"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => (open ? close() : setOpen(true))}
         className="flex h-8 cursor-pointer items-center gap-1 rounded-md border border-[var(--border)] bg-transparent px-2 text-[12px] text-[var(--muted)] hover:bg-[var(--surface)]"
       >
         {copied ? <Check size={12} /> : <Copy size={12} />}
@@ -146,6 +165,13 @@ export default function McpCopyAsMenu({ capability }: { capability: McpCapabilit
             >
               {t('mcp.call.copyCurl')}
             </button>
+            <div className="mt-1 border-t border-[var(--border)] px-2.5 pt-1.5 pb-0.5">
+              <IncludeSecretsToggle
+                checked={includeSecrets}
+                onChange={setIncludeSecrets}
+                testId="mcp-copy-include-secrets"
+              />
+            </div>
           </div>,
           document.body,
         )}

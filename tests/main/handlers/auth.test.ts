@@ -104,10 +104,9 @@ describe('auth:getSession + logout + listUsers', () => {
     expect(out.success).toBe(true)
 
     // Session is gone — getSession now returns success: false.
-    const after = (await harness.invoke(
-      'auth:getSession',
-      setup.data.session.token,
-    )) as { success: boolean }
+    const after = (await harness.invoke('auth:getSession', setup.data.session.token)) as {
+      success: boolean
+    }
     expect(after.success).toBe(false)
   })
 
@@ -139,6 +138,39 @@ describe('auth:changePassword + disablePassword', () => {
       currentPassword: 'newerpass2',
     })) as { success: boolean }
     expect(disable.success).toBe(true)
+  })
+
+  // Issue #240 — the launch gate (LoginScreen → checkHasPassword) shows the
+  // password form only when `auth:hasPassword` is true. After a disable the
+  // next launch must therefore read false and offer no password prompt.
+  it('reports hasPassword=false after disabling, so the next launch has no password prompt', async () => {
+    const setup = (await harness.invoke('auth:setPassword', {
+      password: 'longpass1',
+    })) as { data: { user: { id: string } } }
+    const before = (await harness.invoke('auth:hasPassword')) as {
+      data: { hasPassword: boolean }
+    }
+    expect(before.data.hasPassword).toBe(true)
+
+    const wrong = (await harness.invoke('auth:disablePassword', {
+      userId: setup.data.user.id,
+      currentPassword: 'notthepass1',
+    })) as { success: boolean; error?: string }
+    expect(wrong.success).toBe(false)
+    expect(wrong.error).toMatch(/incorrect/)
+    const still = (await harness.invoke('auth:hasPassword')) as {
+      data: { hasPassword: boolean }
+    }
+    expect(still.data.hasPassword).toBe(true)
+
+    await harness.invoke('auth:disablePassword', {
+      userId: setup.data.user.id,
+      currentPassword: 'longpass1',
+    })
+    const after = (await harness.invoke('auth:hasPassword')) as {
+      data: { hasPassword: boolean }
+    }
+    expect(after.data.hasPassword).toBe(false)
   })
 
   it('rejects changePassword with the wrong current password', async () => {

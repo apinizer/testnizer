@@ -244,6 +244,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'rightPanel.unresolved': 'Unresolved:',
     'rightPanel.unresolvedHint':
       'Define these variables in the active environment so the snippet uses real values',
+    'codeGen.includeSecrets': 'Include secret values',
+    'codeGen.includeSecretsHint':
+      'Secret variables stay as {{name}} placeholders. Include them for a ready-to-run command — the copied text then holds the real values.',
+    'codeGen.secretsHidden': 'Secret values not included:',
+    'codeGen.title': 'Generate Code',
+    'codeGen.languages': 'Languages',
+    'codeGen.copy': 'Copy',
+    'codeGen.copied': 'Copied!',
     'authTab.digestAuth': 'Digest Auth',
     'authTab.wsSecurity': 'WS-Security',
     'authTab.noAuthHelp': 'This request does not use any authorization.',
@@ -770,6 +778,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'settings.system': 'System',
     'settings.turkish': 'Turkish',
     'settings.english': 'English',
+    'settings.appPassword': 'App password',
+    'settings.appPasswordOn': 'On — Testnizer asks for it when it starts',
+    'settings.appPasswordOff': 'Off — Testnizer opens without a password',
+    'settings.appPasswordUnknown': 'Status not known yet',
+    'settings.appPasswordHint':
+      'A lock for opening the app; it does not encrypt your data. Changes here apply immediately, not on Save.',
+    'settings.appPasswordChange': 'Change…',
+    'settings.appPasswordDisable': 'Turn off…',
 
     // Project settings tabs (project-specific)
     'tab.overview': 'Overview',
@@ -1256,6 +1272,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'profile.disableConfirm': 'Confirm Disable',
     'profile.cancel': 'Cancel',
     'profile.passwordDisabled': 'Password protection has been disabled',
+    'profile.newPasswordPlaceholder': 'Min 8 characters, letter + number',
 
     // Login
     'login.welcomeBack': 'Welcome Back',
@@ -1279,6 +1296,29 @@ const translations: Record<Locale, Record<string, string>> = {
     'login.recoveryNote':
       'If you forget this password, you will recover access by entering your computer (OS) login password. The app is fully offline.',
     'login.backToLogin': 'Back to login',
+    'login.tagline': 'Secure, offline API testing platform',
+    'login.featureOffline': 'Works offline',
+    'login.featureOfflineDesc': 'No internet needed — requests go only where you send them',
+    'login.featureLocal': 'Stays on this machine',
+    'login.featureLocalDesc': 'Projects, collections and history are stored locally',
+    'login.featureGit': 'Built-in Git & local database',
+    'login.featureGitDesc': 'Syncs only to a Git remote you add',
+    'login.featureNoTelemetry': 'No telemetry by default',
+    'login.featureNoTelemetryDesc': 'Nothing is sent to us',
+    'login.privacyNote':
+      'Your projects, collections and history stay on this machine. Testnizer sends nothing to us.',
+    'login.or': 'or',
+    'login.welcomeTitle': 'Welcome to Testnizer',
+    'login.welcomeDesc': 'Set a password to lock the app at launch, or start using it right away.',
+    'login.setPasswordOption': 'Set a Password',
+    'login.setPasswordOptionDesc': 'Ask for a password every time Testnizer starts',
+    'login.continueAnonymous': 'Continue Anonymous',
+    'login.continueAnonymousDesc': 'Start with a blank project, no password required',
+    'login.setLaterHint': 'You can set a password later in Settings',
+    'login.ruleLength': 'At least 8 characters',
+    'login.ruleLetter': 'At least one letter',
+    'login.ruleNumber': 'At least one number',
+    'login.confirmPlaceholder': 'Re-enter password',
 
     // Tests Home (runner)
     'testsHome.title': 'Tests',
@@ -2527,6 +2567,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.passwordChanged': 'Password changed',
     'toast.passwordChangeFailed': 'Password change failed',
     'toast.passwordDisabled': 'Password protection disabled',
+    'toast.passwordDisableFailed': 'Password protection could not be turned off',
     'toast.recoveryFailed': 'Recovery failed',
     'toast.loginFailed': 'Login failed',
     'toast.branchCreated': 'Branch "{name}" created',
@@ -3736,6 +3777,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'rightPanel.unresolved': 'Çözümlenmemiş:',
     'rightPanel.unresolvedHint':
       'Kod parçasının gerçek değerleri kullanması için bu değişkenleri etkin ortamda tanımlayın',
+    'codeGen.includeSecrets': 'Gizli değerleri dahil et',
+    'codeGen.includeSecretsHint':
+      'Gizli değişkenler {{name}} yer tutucusu olarak kalır. Doğrudan çalışan bir komut için dahil edin — kopyalanan metin o zaman gerçek değerleri içerir.',
+    'codeGen.secretsHidden': 'Dahil edilmeyen gizli değerler:',
+    'codeGen.title': 'Kod Oluştur',
+    'codeGen.languages': 'Diller',
+    'codeGen.copy': 'Kopyala',
+    'codeGen.copied': 'Kopyalandı!',
     'authTab.digestAuth': 'Digest Auth',
     'authTab.wsSecurity': 'WS-Security',
     'authTab.noAuthHelp': 'Bu istek herhangi bir yetkilendirme kullanmıyor.',
@@ -4261,6 +4310,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'settings.system': 'Sistem',
     'settings.turkish': 'Türkçe',
     'settings.english': 'İngilizce',
+    'settings.appPassword': 'Uygulama şifresi',
+    'settings.appPasswordOn': 'Açık — Testnizer açılırken bu şifreyi sorar',
+    'settings.appPasswordOff': 'Kapalı — Testnizer şifre sormadan açılır',
+    'settings.appPasswordUnknown': 'Durum henüz bilinmiyor',
+    'settings.appPasswordHint':
+      "Uygulamayı açmak için bir kilittir; verilerinizi şifrelemez. Buradaki değişiklikler Kaydet'i beklemeden hemen uygulanır.",
+    'settings.appPasswordChange': 'Değiştir…',
+    'settings.appPasswordDisable': 'Kapat…',
 
     // Project settings tabs (project-specific)
     'tab.overview': 'Genel Bakış',
@@ -4746,6 +4803,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'profile.disableConfirm': 'Kapatmayı Onayla',
     'profile.cancel': 'İptal',
     'profile.passwordDisabled': 'Şifre koruması kapatıldı',
+    'profile.newPasswordPlaceholder': 'En az 8 karakter, harf + rakam',
 
     // Login
     'login.welcomeBack': 'Tekrar Hoş Geldiniz',
@@ -4770,6 +4828,31 @@ const translations: Record<Locale, Record<string, string>> = {
     'login.recoveryNote':
       'Bu şifreyi unutursanız, bilgisayarınızın (işletim sistemi) oturum şifresini girerek erişimi geri alabilirsiniz. Uygulama tamamen çevrimdışıdır.',
     'login.backToLogin': 'Girişe dön',
+    'login.tagline': 'Güvenli, çevrimdışı API test platformu',
+    'login.featureOffline': 'Çevrimdışı çalışır',
+    'login.featureOfflineDesc':
+      'İnternet gerekmez — istekler yalnız sizin gönderdiğiniz yere gider',
+    'login.featureLocal': 'Bu bilgisayarda kalır',
+    'login.featureLocalDesc': 'Projeler, koleksiyonlar ve geçmiş yerelde saklanır',
+    'login.featureGit': 'Yerleşik Git ve yerel veritabanı',
+    'login.featureGitDesc': 'Yalnız sizin eklediğiniz Git uzak deposuyla eşitlenir',
+    'login.featureNoTelemetry': 'Varsayılan olarak telemetri yok',
+    'login.featureNoTelemetryDesc': 'Bize hiçbir şey gönderilmez',
+    'login.privacyNote':
+      'Projeleriniz, koleksiyonlarınız ve geçmişiniz bu bilgisayarda kalır. Testnizer bize hiçbir şey göndermez.',
+    'login.or': 'veya',
+    'login.welcomeTitle': "Testnizer'a Hoş Geldiniz",
+    'login.welcomeDesc':
+      'Uygulamayı açılışta kilitlemek için bir şifre belirleyin ya da hemen kullanmaya başlayın.',
+    'login.setPasswordOption': 'Şifre Belirle',
+    'login.setPasswordOptionDesc': 'Testnizer her açıldığında şifre sorulsun',
+    'login.continueAnonymous': 'Şifresiz Devam Et',
+    'login.continueAnonymousDesc': 'Boş bir projeyle başlayın, şifre gerekmez',
+    'login.setLaterHint': "Şifreyi daha sonra Ayarlar'dan belirleyebilirsiniz",
+    'login.ruleLength': 'En az 8 karakter',
+    'login.ruleLetter': 'En az bir harf',
+    'login.ruleNumber': 'En az bir rakam',
+    'login.confirmPlaceholder': 'Şifreyi tekrar girin',
 
     // Tests Home (runner)
     'testsHome.title': 'Testler',
@@ -6023,6 +6106,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'toast.passwordChanged': 'Parola değiştirildi',
     'toast.passwordChangeFailed': 'Parola değiştirilemedi',
     'toast.passwordDisabled': 'Parola koruması devre dışı',
+    'toast.passwordDisableFailed': 'Şifre koruması kapatılamadı',
     'toast.recoveryFailed': 'Kurtarma başarısız',
     'toast.loginFailed': 'Giriş başarısız',
     'toast.branchCreated': '"{name}" dalı oluşturuldu',

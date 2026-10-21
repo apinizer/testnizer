@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { Loader2, Send, Globe, History as HistoryIcon, Code2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
+import { useScrollStrip } from '../../lib/use-scroll-strip'
 import ResponseBody from './ResponseBody'
 import CookieTab from './CookieTab'
 import HeadersTab from './HeadersTab'
@@ -40,6 +41,8 @@ export default function ResponsePane() {
   }, [savedOwnerKey])
   const savedCount = savedOwnerKey ? savedItems.length : 0
   const [activeTab, setActiveTab] = useState<ResTabKey>('body')
+  // Issue #241: tab row scrolls without a scrollbar; active tab kept in view.
+  const tabStripRef = useScrollStrip<HTMLDivElement>(activeTab)
   const [showNetworkInfo, setShowNetworkInfo] = useState(false)
   const networkBtnRef = useRef<HTMLButtonElement>(null)
   const networkPopRef = useRef<HTMLDivElement>(null)
@@ -272,8 +275,13 @@ export default function ResponsePane() {
             promotes overflow-y from `visible` to `auto` (CSS spec), so a tab
             row whose content is even 1px taller than its 34px box sprouts a
             stray VERTICAL scrollbar (issue #34). Pin Y to hidden; X still
-            scrolls when the tab labels overflow. */}
-        <div className="flex flex-1 items-center gap-0 overflow-x-auto overflow-y-hidden">
+            scrolls when the tab labels overflow. `.scroll-strip` (issue #241)
+            sets both and hides the bar so it never eats the row's height. */}
+        <div
+          ref={tabStripRef}
+          data-testid="res-tab-strip"
+          className="scroll-strip flex min-w-0 flex-1 items-center gap-0"
+        >
           {TABS.map((tab) => {
             const isActive = activeTab === tab.key
             return (
@@ -281,6 +289,7 @@ export default function ResponsePane() {
                 key={tab.key}
                 type="button"
                 data-testid={`res-tab-${tab.key}`}
+                data-active={isActive ? 'true' : 'false'}
                 onClick={() => setActiveTab(tab.key)}
                 className="relative shrink-0 cursor-pointer whitespace-nowrap px-3 transition-colors @max-[61em]:px-2"
                 style={{

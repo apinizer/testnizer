@@ -209,8 +209,26 @@ function extractState(s: GraphQLStore): TabGraphQLState {
   }
 }
 
+/**
+ * On-disk view of a tab: URL, query, variables and headers — never the
+ * response body or subscription events (server output; like the HTTP
+ * response they stay in memory for the session). In-flight and subscription
+ * state does not survive a reload either.
+ */
+function persistableGql(st: TabGraphQLState): TabGraphQLState {
+  const idle = emptyTabState()
+  return {
+    ...st,
+    response: idle.response,
+    isLoading: idle.isLoading,
+    _inflightRequestId: idle._inflightRequestId,
+    subscriptionState: idle.subscriptionState,
+    subscriptionEvents: idle.subscriptionEvents,
+  }
+}
+
 const STORAGE_KEY = 'testnizer-graphql'
-const persisted = loadTabbedState<TabGraphQLState>(STORAGE_KEY, emptyTabState)
+const persisted = loadTabbedState<TabGraphQLState>(STORAGE_KEY, emptyTabState, persistableGql)
 
 export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   ...persisted.current,
@@ -742,7 +760,10 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     }),
 }))
 
-attachTabbedPersist(useGraphQLStore, STORAGE_KEY, extractState, (s) => ({
-  _tabStates: s._tabStates,
-  _currentTabId: s._currentTabId,
-}))
+attachTabbedPersist(
+  useGraphQLStore,
+  STORAGE_KEY,
+  extractState,
+  (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
+  persistableGql,
+)
