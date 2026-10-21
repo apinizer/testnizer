@@ -874,7 +874,7 @@ export default function TreeNodeComponent({
               e.stopPropagation()
               onToggle(node.id)
             }}
-            className="inline-block shrink-0 text-[0.57rem] text-[var(--hint)] transition-transform duration-150"
+            className="inline-flex w-2.5 shrink-0 items-center justify-center text-[0.7rem] leading-none text-[var(--hint)] transition-transform duration-150"
             style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
           >
             {'\u25B6'}
