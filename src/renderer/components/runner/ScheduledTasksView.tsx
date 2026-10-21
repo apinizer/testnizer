@@ -18,6 +18,7 @@ import ProtocolChip from '../shared/ProtocolChip'
 import { protocolChipLabel } from '../../lib/protocol-chip'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
+import { useTranslation } from '../../lib/i18n'
 
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
 
@@ -87,28 +88,39 @@ function methodColor(method: string | null): { bg: string; fg: string } {
   }
 }
 
-const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const INTERVAL_UNIT_KEY: Record<string, string> = {
+  minutes: 'scheduledTasks.unitMinutes',
+  hours: 'scheduledTasks.unitHours',
+  days: 'scheduledTasks.unitDays',
+}
 
-function describeSchedule(task: ScheduledTask): string {
+function describeSchedule(task: ScheduledTask, t: (key: string) => string): string {
   const type: ScheduleType = task.schedule_type || 'interval'
+  const time = task.schedule_time ?? ''
   if (type === 'daily' && task.schedule_time) {
-    return `Daily at ${task.schedule_time}`
+    return t('scheduledTasks.dailyAt').replace('{time}', time)
   }
   if (type === 'weekly' && task.schedule_time && task.schedule_days) {
     try {
+      const weekdays = t('scheduledTasks.weekdays').split(',')
       const days = (JSON.parse(task.schedule_days) as number[])
-        .map((d) => WEEKDAY_SHORT[d])
+        .map((d) => weekdays[d])
         .filter(Boolean)
         .join(', ')
-      return `${days || '—'} at ${task.schedule_time}`
+      return t('scheduledTasks.daysAt')
+        .replace('{days}', days || '—')
+        .replace('{time}', time)
     } catch {
-      return `Weekly at ${task.schedule_time}`
+      return t('scheduledTasks.weeklyAt').replace('{time}', time)
     }
   }
   if (type === 'cron' && task.schedule_cron) {
-    return `Cron: ${task.schedule_cron}`
+    return t('scheduledTasks.cron').replace('{expr}', task.schedule_cron)
   }
-  return `Every ${task.interval_value} ${task.interval_unit}`
+  const unitKey = INTERVAL_UNIT_KEY[task.interval_unit]
+  return t('scheduledTasks.every')
+    .replace('{value}', String(task.interval_value))
+    .replace('{unit}', unitKey ? t(unitKey) : task.interval_unit)
 }
 
 interface TestSuiteRow {
@@ -121,6 +133,7 @@ interface ScheduledTasksViewProps {
 }
 
 export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) {
+  const { t, locale } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [tasks, setTasks] = useState<ScheduledTask[]>([])
   const [suites, setSuites] = useState<TestSuiteRow[]>([])
@@ -194,16 +207,24 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
     const d = new Date(ts)
     const now = new Date()
     const isToday = d.toDateString() === now.toDateString()
-    if (isToday) return 'Today, ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    if (isToday)
+      return t('scheduledTasks.today').replace(
+        '{time}',
+        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      )
     return (
-      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+      d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US', {
+        month: 'short',
+        day: 'numeric',
+      }) +
       ', ' +
       d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     )
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
+    // `lang` so the uppercase section labels use Turkish casing (GEÇMİŞİ, not GEÇMIŞI).
+    <div lang={locale} className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
       {/* Header */}
       <div
         className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4"
@@ -212,6 +233,8 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
         <button
           type="button"
           onClick={onBack}
+          aria-label={t('scheduledTasks.back')}
+          title={t('scheduledTasks.back')}
           className="flex cursor-pointer items-center justify-center rounded-[6px] border-none bg-transparent p-1"
           style={{ color: 'var(--muted)' }}
         >
@@ -219,7 +242,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
         </button>
         <Clock size={16} style={{ color: '#0369a1' }} />
         <span style={{ fontWeight: 600, color: 'var(--text)', fontSize: 15, flex: 1 }}>
-          Scheduled Tasks
+          {t('scheduledTasks.title')}
         </span>
         <NewRunButton suites={suites} mode="schedule" onPickSuite={openSuiteForSchedule} />
       </div>
@@ -229,8 +252,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
         className="shrink-0 border-b border-[var(--border)] px-5 py-3"
         style={{ color: 'var(--muted)' }}
       >
-        Periodic runs scheduled on this application. Tasks will run automatically at the configured
-        interval.
+        {t('scheduledTasks.description')}
       </div>
 
       {/* Table */}
@@ -238,8 +260,8 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
         {tasks.length === 0 ? (
           <EmptyState
             icon={Clock}
-            title="No scheduled tasks yet"
-            description='Use "Schedule runs" in the Runner configuration to create one.'
+            title={t('scheduledTasks.emptyTitle')}
+            description={t('scheduledTasks.emptyDesc')}
             size="md"
           />
         ) : (
@@ -254,7 +276,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
                     color: 'var(--text)',
                   }}
                 >
-                  Upcoming run
+                  {t('scheduledTasks.colUpcoming')}
                 </th>
                 <th
                   style={{
@@ -264,7 +286,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
                     color: 'var(--text)',
                   }}
                 >
-                  Schedule
+                  {t('scheduledTasks.colSchedule')}
                 </th>
                 <th
                   style={{
@@ -274,7 +296,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
                     color: 'var(--text)',
                   }}
                 >
-                  Environment
+                  {t('scheduledTasks.colEnvironment')}
                 </th>
                 <th
                   style={{
@@ -284,7 +306,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
                     color: 'var(--text)',
                   }}
                 >
-                  Endpoints
+                  {t('scheduledTasks.colEndpoints')}
                 </th>
                 <th
                   style={{
@@ -294,7 +316,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
                     color: 'var(--text)',
                   }}
                 >
-                  Actions
+                  {t('scheduledTasks.colActions')}
                 </th>
               </tr>
             </thead>
@@ -317,6 +339,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
         open={!!deleteTarget}
         itemName={deleteTarget?.name || ''}
         itemType="scheduled task"
+        typeLabel={t('deleteConfirm.type.scheduledTask')}
         onConfirm={confirmDeleteTask}
         onCancel={() => setDeleteTarget(null)}
       />
@@ -335,6 +358,7 @@ function TaskRow({
   onToggle: () => void
   onDelete: () => void
 }) {
+  const { t } = useTranslation()
   const [hovered, setHovered] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [history, setHistory] = useState<ScheduledTaskHistoryRow[] | null>(null)
@@ -443,7 +467,11 @@ function TaskRow({
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
-              title={expanded ? 'Hide run history' : 'Show run history'}
+              title={expanded ? t('scheduledTasks.hideHistory') : t('scheduledTasks.showHistory')}
+              aria-label={
+                expanded ? t('scheduledTasks.hideHistory') : t('scheduledTasks.showHistory')
+              }
+              aria-expanded={expanded}
               className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-0.5"
               style={{ color: 'var(--muted)' }}
             >
@@ -452,7 +480,7 @@ function TaskRow({
             {task.enabled && task.next_run_at ? (
               <span>{formatDate(task.next_run_at)}</span>
             ) : (
-              <span style={{ color: 'var(--hint)' }}>Paused</span>
+              <span style={{ color: 'var(--hint)' }}>{t('scheduledTasks.paused')}</span>
             )}
           </div>
         </td>
@@ -460,17 +488,17 @@ function TaskRow({
         {/* Schedule */}
         <td style={{ padding: '12px 16px' }}>
           <div style={{ color: 'var(--text)', fontWeight: 500 }}>{task.name}</div>
-          <div style={{ color: 'var(--muted)', marginTop: 2 }}>{describeSchedule(task)}</div>
+          <div style={{ color: 'var(--muted)', marginTop: 2 }}>{describeSchedule(task, t)}</div>
           {task.last_run_at && (
             <div style={{ color: 'var(--hint)', marginTop: 2 }}>
-              Last run: {formatDate(task.last_run_at)}
+              {t('scheduledTasks.lastRun').replace('{date}', formatDate(task.last_run_at))}
             </div>
           )}
         </td>
 
         {/* Environment */}
         <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>
-          {task.environment_id || 'No Environment'}
+          {task.environment_id || t('scheduledTasks.noEnvironment')}
         </td>
 
         {/* Endpoints */}
@@ -488,7 +516,8 @@ function TaskRow({
                 // useEffect re-fetches once the run lands.
                 setHistory(null)
               }}
-              title="Run now"
+              title={t('scheduledTasks.runNow')}
+              aria-label={t('scheduledTasks.runNow')}
               className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1"
               style={{ color: 'var(--accent)' }}
             >
@@ -497,7 +526,8 @@ function TaskRow({
             <button
               type="button"
               onClick={onToggle}
-              title={task.enabled ? 'Pause' : 'Resume'}
+              title={task.enabled ? t('scheduledTasks.pause') : t('scheduledTasks.resume')}
+              aria-label={task.enabled ? t('scheduledTasks.pause') : t('scheduledTasks.resume')}
               className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1"
               style={{ color: task.enabled ? '#1a7a4a' : '#aaa' }}
             >
@@ -507,7 +537,8 @@ function TaskRow({
               type="button"
               data-testid="scheduled-task-delete"
               onClick={onDelete}
-              title="Delete"
+              title={t('scheduledTasks.delete')}
+              aria-label={t('scheduledTasks.delete')}
               className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1"
               style={{ color: '#cc2200' }}
             >
@@ -529,7 +560,7 @@ function TaskRow({
                 marginBottom: 6,
               }}
             >
-              Endpoints in this task
+              {t('scheduledTasks.endpointsInTask')}
               {endpoints?.source === 'suite' && (
                 <span
                   style={{
@@ -541,7 +572,7 @@ function TaskRow({
                     color: 'var(--hint)',
                   }}
                 >
-                  (from Test Suite)
+                  {t('scheduledTasks.fromSuite')}
                 </span>
               )}
               {endpoints?.source === 'apis' && (
@@ -555,15 +586,17 @@ function TaskRow({
                     color: 'var(--hint)',
                   }}
                 >
-                  (legacy — ad-hoc APIs selection)
+                  {t('scheduledTasks.fromLegacyApis')}
                 </span>
               )}
             </div>
             {endpointsLoading ? (
-              <div style={{ color: 'var(--hint)', fontSize: 12, marginBottom: 14 }}>Loading…</div>
+              <div style={{ color: 'var(--hint)', fontSize: 12, marginBottom: 14 }}>
+                {t('scheduledTasks.loading')}
+              </div>
             ) : !endpoints || endpoints.items.length === 0 ? (
               <div style={{ color: 'var(--hint)', fontSize: 12, marginBottom: 14 }}>
-                No endpoints associated with this task.
+                {t('scheduledTasks.noEndpoints')}
               </div>
             ) : (
               <div
@@ -637,22 +670,30 @@ function TaskRow({
                 marginBottom: 6,
               }}
             >
-              Run history
+              {t('scheduledTasks.runHistory')}
             </div>
             {historyLoading ? (
-              <div style={{ color: 'var(--hint)', fontSize: 12 }}>Loading…</div>
-            ) : !history || history.length === 0 ? (
               <div style={{ color: 'var(--hint)', fontSize: 12 }}>
-                No runs yet — this task hasn't fired since it was created.
+                {t('scheduledTasks.loading')}
               </div>
+            ) : !history || history.length === 0 ? (
+              <div style={{ color: 'var(--hint)', fontSize: 12 }}>{t('scheduledTasks.noRuns')}</div>
             ) : (
               <table className="w-full" style={{ borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ color: 'var(--muted)', textAlign: 'left' }}>
-                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>When</th>
-                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>Result</th>
-                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>Tests</th>
-                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>Duration</th>
+                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {t('scheduledTasks.colWhen')}
+                    </th>
+                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {t('scheduledTasks.colResult')}
+                    </th>
+                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {t('scheduledTasks.colTests')}
+                    </th>
+                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {t('scheduledTasks.colDuration')}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>

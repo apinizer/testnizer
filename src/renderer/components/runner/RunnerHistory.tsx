@@ -6,6 +6,7 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import EmptyState from '../shared/EmptyState'
 import NewRunButton from './NewRunButton'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
+import { useTranslation } from '../../lib/i18n'
 
 interface RunHistoryRow {
   id: string
@@ -43,6 +44,7 @@ interface RunnerHistoryProps {
 }
 
 export default function RunnerHistory({ onBack, onNewRun, onViewReport }: RunnerHistoryProps) {
+  const { t, locale } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [runs, setRuns] = useState<RunHistoryRow[]>([])
   const [total, setTotal] = useState(0)
@@ -193,12 +195,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
   }
 
   const tabDescription =
-    activeTab === 'Scheduled'
-      ? 'Runs triggered automatically via Scheduled Tasks.'
-      : 'Runs triggered for this collection via Collection Runner.'
+    activeTab === 'Scheduled' ? t('runnerHistory.descScheduled') : t('runnerHistory.descFunctional')
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
+    <div lang={locale} className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
       {/* Header */}
       <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-5 py-3">
         <button
@@ -207,10 +207,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           className="flex cursor-pointer items-center gap-1 border-none bg-transparent text-[var(--accent)] hover:underline"
         >
           <ArrowLeft size={14} />
-          Back
+          {t('runnerHistory.back')}
         </button>
         <h2 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', margin: 0, flex: 1 }}>
-          All Runs
+          {t('tests.allRuns')}
         </h2>
         <NewRunButton
           suites={suites}
@@ -239,7 +239,9 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
               marginBottom: -1,
             }}
           >
-            {tab}
+            {tab === 'Scheduled'
+              ? t('runnerHistory.tabScheduled')
+              : t('runnerHistory.tabFunctional')}
           </button>
         ))}
       </div>
@@ -252,21 +254,23 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       {/* Selection bar */}
       {selectedIds.size > 0 && (
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
-          <span className="text-[var(--text)]">{selectedIds.size} item selected</span>
+          <span className="text-[var(--text)]">
+            {t('runnerHistory.selectedCount').replace('{count}', String(selectedIds.size))}
+          </span>
           <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setSelectedIds(new Set())}
               className="cursor-pointer border-none bg-transparent text-[var(--muted)] hover:text-[var(--text)]"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="button"
               onClick={handleDeleteClick}
               className="cursor-pointer rounded-[6px] border-none bg-[#cc2200] px-3 py-1 font-medium text-white hover:opacity-90"
             >
-              Delete
+              {t('common.delete')}
             </button>
           </div>
         </div>
@@ -275,28 +279,32 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       {/* Table */}
       <div className="flex-1 overflow-auto px-5">
         {loading ? (
-          <div className="py-8 text-center text-[var(--hint)]">Loading...</div>
+          <div className="py-8 text-center text-[var(--hint)]">{t('testsHome.loading')}</div>
         ) : loadError ? (
           <div className="py-8 text-center" style={{ color: 'var(--red, #cc2200)' }}>
-            Failed to load history: {loadError}
+            {t('runnerHistory.loadFailed').replace('{error}', loadError)}
             <div className="mt-2">
               <button
                 type="button"
                 onClick={() => loadRuns()}
                 className="cursor-pointer rounded border border-[var(--border)] bg-[var(--white)] px-3 py-1 text-[var(--text)] hover:bg-[var(--surface)]"
               >
-                Retry
+                {t('runnerHistory.retry')}
               </button>
             </div>
           </div>
         ) : runs.length === 0 ? (
           <EmptyState
             icon={Inbox}
-            title={activeTab === 'Scheduled' ? 'No scheduled runs yet' : 'No runs yet'}
+            title={
+              activeTab === 'Scheduled'
+                ? t('runnerHistory.emptyScheduledTitle')
+                : t('runnerHistory.emptyTitle')
+            }
             description={
               activeTab === 'Scheduled'
-                ? 'Create a scheduled task to see runs here.'
-                : 'Start a run to see history here.'
+                ? t('runnerHistory.emptyScheduledDesc')
+                : t('runnerHistory.emptyDesc')
             }
             size="md"
           />
@@ -307,7 +315,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
                 <th className="w-8 py-2">
                   <input
                     type="checkbox"
-                    aria-label="Select all"
+                    aria-label={t('runnerHistory.selectAll')}
                     checked={allSelected}
                     ref={(el) => {
                       if (el) el.indeterminate = !allSelected && someSelected
@@ -317,34 +325,34 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
                   />
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Start time
+                  {t('runnerHistory.colStartTime')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Source
+                  {t('runnerHistory.colSource')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Environment
+                  {t('runnerHistory.colEnvironment')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Iterations
+                  {t('runnerHistory.colIterations')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Duration
+                  {t('runnerHistory.colDuration')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  All tests
+                  {t('runnerHistory.colAllTests')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Passed
+                  {t('runnerHistory.colPassed')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Failed
+                  {t('runnerHistory.colFailed')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Skipped
+                  {t('runnerHistory.colSkipped')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  Avg. Resp. Time
+                  {t('runnerHistory.colAvgResp')}
                 </th>
                 <th className="w-16 py-2" />
               </tr>
@@ -369,7 +377,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       {!loading && total > PAGE_SIZE && (
         <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] px-5 py-2">
           <span style={{ color: 'var(--muted)', fontSize: 13 }}>
-            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+            {t('runnerHistory.showing')
+              .replace('{from}', String(page * PAGE_SIZE + 1))
+              .replace('{to}', String(Math.min((page + 1) * PAGE_SIZE, total)))
+              .replace('{total}', String(total))}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -385,10 +396,12 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
               }}
             >
               <ChevronLeft size={14} />
-              Prev
+              {t('runnerHistory.prev')}
             </button>
             <span style={{ color: 'var(--muted)', fontSize: 13, padding: '0 8px' }}>
-              Page {page + 1} / {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+              {t('runnerHistory.page')
+                .replace('{page}', String(page + 1))
+                .replace('{pages}', String(Math.max(1, Math.ceil(total / PAGE_SIZE))))}
             </span>
             <button
               type="button"
@@ -402,7 +415,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
                 fontSize: 13,
               }}
             >
-              Next
+              {t('runnerHistory.next')}
               <ChevronRight size={14} />
             </button>
           </div>
@@ -411,8 +424,13 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
 
       <DeleteConfirmDialog
         open={showDeleteConfirm}
-        itemName={`${selectedIds.size} run${selectedIds.size > 1 ? 's' : ''}`}
+        itemName={
+          selectedIds.size === 1
+            ? t('deleteConfirm.runCountOne')
+            : t('deleteConfirm.runCount').replace('{count}', String(selectedIds.size))
+        }
         itemType="run history"
+        typeLabel={t('deleteConfirm.type.runHistory')}
         onConfirm={handleDeleteConfirm}
         onCancel={() => setShowDeleteConfirm(false)}
       />
@@ -451,13 +469,18 @@ function HistoryRow({
   onViewReport: () => void
   hasViewReport: boolean
 }) {
+  const { t, locale } = useTranslation()
   const [hovered, setHovered] = useState(false)
   const hasFailed = run.failed_endpoints > 0 || run.failed_tests > 0
 
   const formatDate = (ts: number) => {
     const d = new Date(ts)
     return (
-      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) +
+      d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }) +
       ' ' +
       d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     )
@@ -493,6 +516,7 @@ function HistoryRow({
           type="checkbox"
           checked={isSelected}
           onChange={onToggle}
+          aria-label={t('runnerHistory.selectRun')}
           className="h-[14px] w-[14px] cursor-pointer accent-[var(--accent)]"
         />
       </td>
@@ -522,7 +546,8 @@ function HistoryRow({
               e.stopPropagation()
               onViewReport()
             }}
-            title="View Report"
+            title={t('runnerHistory.viewReport')}
+            aria-label={t('runnerHistory.viewReport')}
             className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1 text-[var(--muted)] hover:text-[var(--accent)]"
           >
             <BarChart2 size={15} />

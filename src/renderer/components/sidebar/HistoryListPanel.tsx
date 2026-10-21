@@ -19,6 +19,7 @@ import RequestBadge from '../shared/RequestBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type { HistoryEntry, ApiResponse } from '../../types'
+import { useTranslation } from '../../lib/i18n'
 
 /**
  * Postman-style request history list for the left panel — individual requests
@@ -27,6 +28,7 @@ import type { HistoryEntry, ApiResponse } from '../../types'
  * and pushed the day's requests down, so it was removed.
  */
 export default function HistoryListPanel() {
+  const { t } = useTranslation()
   const entries = useHistoryStore((s) => s.entries)
   const fetch = useHistoryStore((s) => s.fetch)
   const clear = useHistoryStore((s) => s.clear)
@@ -386,8 +388,9 @@ export default function HistoryListPanel() {
 
       <DeleteConfirmDialog
         open={!!deleteTargetId}
-        itemName="this history entry"
+        itemName={t('deleteConfirm.thisHistoryEntry')}
         itemType="history entry"
+        typeLabel={t('deleteConfirm.type.historyEntry')}
         onConfirm={() => {
           if (deleteTargetId) deleteEntry(deleteTargetId)
           setDeleteTargetId(null)

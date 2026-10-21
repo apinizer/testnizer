@@ -16,7 +16,7 @@ Bir projenin istediği kadar ortamı olabilir. Herhangi bir anda tam olarak bir
 ortam **aktif** durumdadır. Aktif ortamın değişkenleri, istekler tetiklenirken
 içine yerleştirilir.
 
-Sağ kenar çubuğundaki **Ortamlar** → **+ Yeni** seçeneğinden bir ortam oluşturun.
+Sağ kenar çubuğundaki **Ortamlar** → **+ Yeni Ortam** seçeneğinden bir ortam oluşturun.
 
 Her değişkenin şunları vardır:
 
@@ -41,7 +41,7 @@ kişisel geçersiz kılmanızı kullanın (`baseUrl: http://localhost:3000`).
 Çözümleme sırası:
 
 1. Ortam değişkenleri (aktif ortam)
-2. Global değişkenler (**Ayarlar → Globals**'ta yapılandırılır)
+2. Global değişkenler (**Ortamlar → Globaller** bölümünde yapılandırılır)
 3. Dinamik değişkenler (yerleşik, aşağıya bakın)
 4. Olduğu gibi — eşleşme yoksa `{{...}}` yerinde bırakılır
 
@@ -83,7 +83,7 @@ bilgisayarda kalır.
 
 Önerilen kalıp:
 
-1. Token, parola ve API anahtarlarını **secret** olarak işaretleyin (Type
+1. Token, parola ve API anahtarlarını **gizli** olarak işaretleyin (Tür
    sütunu).
 2. Push edin. Ekip arkadaşınızın Pull'u değişkeni boş değerle getirir ve
    Testnizer doldurması gereken kaç gizli değer kaldığını söyler. Her
@@ -98,7 +98,7 @@ token'ları da aynı kurala uyar.
 
 ## İşletim sistemi anahtarlığındaki sırlar
 
-Token ve parolalar için değişkeni **secret** olarak işaretleyin (Type sütunu).
+Token ve parolalar için değişkeni **gizli** olarak işaretleyin (Tür sütunu).
 Geçerli ve başlangıç değeri diskte işletim sistemi anahtarlığıyla (macOS
 Keychain, Windows DPAPI, Linux'ta libsecret) şifrelenir; proje dosyasına, git'e
 ve dışa aktarımlara hiçbir zaman yazılmaz; History ve Console'da maskelenir.

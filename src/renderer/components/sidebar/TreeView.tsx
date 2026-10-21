@@ -131,6 +131,17 @@ function findNodeLabel(nodes: TreeNode[], id: string): string | undefined {
 }
 
 /** Row id of the not-yet-created folder placeholder (issue #68). */
+/** Heading name per node type for the delete confirmation (issue #248). */
+const DELETE_TYPE_LABEL_KEY: Record<TreeNode['type'], string> = {
+  module: 'deleteConfirm.type.module',
+  folder: 'deleteConfirm.type.folder',
+  endpoint: 'deleteConfirm.type.endpoint',
+  schema: 'deleteConfirm.type.schema',
+  component: 'deleteConfirm.type.component',
+  request: 'deleteConfirm.type.request',
+  example: 'deleteConfirm.type.example',
+}
+
 const NEW_FOLDER_DRAFT_ID = '__new-folder-draft__'
 
 /**
@@ -1267,6 +1278,7 @@ export default function TreeView() {
         open={!!deleteTarget}
         itemName={deleteTarget?.label || ''}
         itemType={deleteTarget?.type || 'endpoint'}
+        typeLabel={t(DELETE_TYPE_LABEL_KEY[deleteTarget?.type || 'endpoint'])}
         requireTyping={deleteTarget?.type === 'folder'}
         onConfirm={handleDeleteConfirm}
         onCancel={handleDeleteCancel}
