@@ -173,9 +173,12 @@ panel — and secrets stay on your machine.**
   they live in memory for the session, and what an older build saved is
   cleaned at start. **Generate Code**, the code pane and MCP **Copy as…** keep
   secret variables as `{{name}}` unless you tick "Include secret values".
-  A bearer token typed into a Socket.IO tab is no longer kept in the app's
-  browser storage: a saved request gets it back from the saved request, and an
-  unsaved tab asks you to type it again after a restart. WebSocket, gRPC,
+  Passwords, tokens, API keys and credential headers typed into a request
+  editor — HTTP, MCP, WebSocket, SSE, Socket.IO, GraphQL and gRPC — are no
+  longer kept in the app's browser storage; only `{{variable}}` references
+  are. A saved request gets them back from the saved request (also when you
+  press Send right after a restart), and an unsaved tab asks you to type them
+  again after a restart. WebSocket, gRPC,
   GraphQL, SSE and Socket.IO calls reopen from History in their own editors.
 
 - **Privacy policy and website:** the texts now describe exactly what is
@@ -200,7 +203,9 @@ panel — and secrets stay on your machine.**
   blurred. The response pane is fully translated to Turkish. Small text across
   the app — hints, badges, counters, log rows — now renders at the size it was
   designed for, and code-like values (URLs, paths, tokens, protocol versions)
-  use the monospace font; a global style rule had been overriding both.
+  use the monospace font; a global style rule had been overriding both. The
+  WebSocket and Socket.IO connection bars now look and read like the MCP and
+  SSE bars — themed status, translated labels, dark mode.
 
 - **App password and start screen:** Settings now has an **App password**
   section — see whether one is set, change it, or turn it off with your
@@ -251,11 +256,11 @@ guarantee test that fills every column of every exported table and checks that
 a teammate receives it exactly, apart from a documented list of things that stay
 local by design.
 
-**Still deferred:** some mock follow-ups, connection bars for WebSocket and
-Socket.IO, security scans beyond MCP (HTTP, GraphQL, SOAP, real-time and LLM
-endpoints), credentials typed into the other request editors (still kept in
-the app's browser storage), and the remaining style rules that override
-drop-down font sizes and input colours.
+**Still deferred:** some mock follow-ups, security scans beyond MCP (HTTP,
+GraphQL, SOAP, real-time and LLM endpoints), credentials typed into query
+parameters, bodies, MCP URLs / command lines and the SOAP UsernameToken
+(still kept in the app's browser storage), and the remaining style rules that
+override drop-down font sizes and input colours.
 
 ## v1.5.4
 

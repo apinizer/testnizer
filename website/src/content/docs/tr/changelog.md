@@ -183,10 +183,13 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   mesajları artık diske yazmıyor — oturum boyunca bellekte duruyorlar ve eski
   bir sürümün kaydettikleri açılışta temizleniyor. **Generate Code**, kod paneli
   ve MCP **Copy as…**, "Include secret values" işaretlenmedikçe sır
-  değişkenlerini `{{ad}}` olarak bırakıyor. Bir Socket.IO sekmesine yazılan
-  bearer token artık uygulamanın tarayıcı deposunda tutulmuyor: kaydedilmiş
-  bir istek onu kayıttan geri alıyor, kaydedilmemiş bir sekme ise yeniden
-  başlatmadan sonra token'ı yeniden girmenizi istiyor. WebSocket, gRPC, GraphQL, SSE ve
+  değişkenlerini `{{ad}}` olarak bırakıyor. Bir istek editörüne — HTTP, MCP,
+  WebSocket, SSE, Socket.IO, GraphQL ve gRPC — yazılan parolalar, token'lar,
+  API anahtarları ve kimlik bilgisi başlıkları artık uygulamanın tarayıcı
+  deposunda tutulmuyor; yalnızca `{{değişken}}` referansları tutuluyor.
+  Kaydedilmiş bir istek bunları kayıttan geri alıyor (yeniden başlatmadan
+  hemen sonra Send'e bassanız da), kaydedilmemiş bir sekme ise yeniden
+  başlatmadan sonra bunları yeniden girmenizi istiyor. WebSocket, gRPC, GraphQL, SSE ve
   Socket.IO çağrıları History'den kendi editörlerinde yeniden açılıyor.
 
 - **Gizlilik politikası ve web sitesi:** metinler artık tam olarak neyin
@@ -215,7 +218,9 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   ipuçları, rozetler, sayaçlar, log satırları — artık tasarlandıkları boyutta
   çiziliyor; kod benzeri değerler (URL'ler, yollar, token'lar, protokol
   sürümleri) eş aralıklı yazı tipini kullanıyor. Genel bir stil kuralı ikisini
-  de geçersiz kılıyordu.
+  de geçersiz kılıyordu. WebSocket ve Socket.IO bağlantı çubukları artık MCP
+  ve SSE çubukları gibi görünüyor ve okunuyor — temaya uyan durum göstergesi,
+  çevrilmiş etiketler, koyu tema.
 
 - **Uygulama parolası ve başlangıç ekranı:** Ayarlar'da artık bir **Uygulama
   parolası** bölümü var: parola olup olmadığını görebilir, değiştirebilir ya da
@@ -264,11 +269,12 @@ Git taşınabilirliği, dışa aktarılan her tablonun her kolonunu dolduran ve 
 takım arkadaşının bunu, tasarım gereği yerel kalan belgelenmiş bir liste
 dışında, birebir aldığını doğrulayan bir garanti testine sahip.
 
-**Ertelenenler:** bazı mock iyileştirmeleri, WebSocket ve Socket.IO için
-bağlantı çubukları, MCP dışındaki güvenlik taramaları (HTTP, GraphQL, SOAP,
-gerçek zamanlı ve LLM uç noktaları), diğer istek editörlerine yazılan ve hâlâ
-uygulamanın tarayıcı deposunda tutulan kimlik bilgileri ile açılır liste yazı
-boyutlarını ve giriş alanı renklerini geçersiz kılan kalan stil kuralları.
+**Ertelenenler:** bazı mock iyileştirmeleri, MCP dışındaki güvenlik
+taramaları (HTTP, GraphQL, SOAP, gerçek zamanlı ve LLM uç noktaları), sorgu
+parametrelerine, gövdelere, MCP URL'leri / komut satırlarına ve SOAP
+UsernameToken'a yazılan ve hâlâ uygulamanın tarayıcı deposunda tutulan kimlik
+bilgileri ile açılır liste yazı boyutlarını ve giriş alanı renklerini geçersiz
+kılan kalan stil kuralları.
 
 ## v1.5.4
 
