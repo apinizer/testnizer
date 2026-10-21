@@ -11,6 +11,233 @@ girdiyi karşılığı olan [GitHub Release](https://github.com/apinizer/testniz
 sayfasına aynalar; imzalı yükleyiciler ve SHA-256 sağlama toplamları
 orada eklenir.
 
+## v1.6.0
+
+**MCP tam bir istemciye, mock sunucuya ve güvenlik tarayıcısına dönüştü; mock
+sunucular akış yapmayı öğrendi; AI Chat MCP araçlarını çağırabiliyor; Git'e
+gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
+
+- **MCP istemcisi:** MCP sekmesi artık Postman'in MCP isteğinin yaptığı her
+  şeyi kapsıyor. Tools'a ek olarak **Resources** (şablonlarıyla), **Prompts**
+  ve **Notifications**; el sıkışma dahil hattaki her şeyin ham JSON-RPC frame
+  görünümü, anlaşılan protokol sürümü, sunucu yönergeleri, bağlanırken özel
+  HTTP başlıkları (içlerinde `{{değişkenler}}` çalışır), stdio ortam
+  değişkenleri ve VS Code, Cursor ve Claude Desktop için MCP yapılandırmasını
+  yapıştırma / dışa aktarma var. **Authorization** sekmesi No Auth, Basic,
+  Bearer, API Key ve OAuth 2.1 sunuyor. **2026-07-28** protokolü 2024–2025
+  sürümlerinin yanında destekleniyor: sekme başına seçici (Auto, Legacy ya da
+  sabitlenmiş bir sürüm), bir dönem rozeti ve sunucu çağrı sırasında ek girdi
+  istediğinde üretilen bir form. Tool argümanları aracın şemasından üretilen
+  bir formla giriliyor (JSON geçişi ve satır içi doğrulamayla), çalışan bir
+  çağrı iptal edilebiliyor, Ctrl/Cmd+Enter aktif eylemi çalıştırıyor, sonuç
+  başlığı durum, süre ve boyutu Copy düğmesiyle gösteriyor. Sonuçta Postman'deki
+  gibi bir **JSON | Preview** geçişi var. Uzun tool açıklamaları Show more ile
+  kısaltılıyor; böylece Invoke / Read / Get hiçbir zaman erişilemez bir yere
+  kaymıyor, sürüklenebilir (hatırlanan) ayraçlarla liste, çağrı ve sonucun
+  boyutunu ayarlayabiliyorsunuz. Çağrılar Ctrl+S ile kaydedilebiliyor (seçili
+  tool, argümanlar, resource URI'si, prompt), **Tests** ve **Scripts**
+  sekmeleri (`pm.test`, `pm.expect`, `pm.mcp`) kazanıyor ve History'de
+  görünüyor. Başka bir origin'e yönlendirme artık kimlik bilgisi başlıklarınızı
+  oraya taşımıyor. Sunucunun gönderdiği eksik bir görüntü artık bozuk bir
+  simge yerine bu şekilde bildiriliyor ("The server sent incomplete image
+  data") ve **Download as received** ile alındığı gibi indirilebiliyor.
+
+- **MCP OAuth 2.1 Debugger:** yetkilendirme el sıkışmasının tamamında adım
+  adım ilerleyin — kimliksiz yoklama, protected-resource ve
+  authorization-server metadata, dinamik istemci kaydı, PKCE, tarayıcıda
+  oturum açma, token değişimi ve kimlik doğrulanmış bağlantı — her istek ve
+  yanıt görünür. Connect'te gelen 401 bunu sizin için açıyor. Token'lar, PKCE
+  verifier'ı ve istemci sırrı uygulamanın ana sürecinde kalıyor, arayüz
+  katmanına hiç ulaşmıyor; OAuth'a ait hiçbir şey kaydedilmiyor. Düz HTTP
+  üzerindeki bir yetkilendirme sunucusu, o istek için açıkça izin vermediğiniz
+  sürece reddediliyor; izin verildiğinde sunucunun kendi bildirdiği host'a
+  sabitleniyor.
+
+- **MCP Security Scan:** 30 kontrol üzerinden A–F notlu bir rapor — taşıma,
+  kimlik doğrulama, protokol davranışı, tool açıklamalarında prompt-injection
+  sezgileri, bilgi sızıntısı, CORS ve güvenlik başlıkları; ayrıca isteğe bağlı
+  bir rate-limit yoklaması ve 2026-07-28 sunucuları için başlık doğrulama ile
+  önbellek kapsamı kontrolleri. Kimlik bilgileri her bulgudan temizleniyor;
+  rapor kendi içinde tam bir HTML dosyası olarak dışa aktarılıyor. Test etmeye
+  yetkili olduğunuz sunucular içindir; ekran bunu söylüyor. Tarama artık
+  **Security** sayfasında da listeleniyor ve oradaki aramayla bulunuyor.
+
+- **Runner, Test Suite ve Scheduler'da MCP:** MCP istekleri atlanmak yerine
+  bir koleksiyonda, test suite'inde ya da zamanlanmış görevde çalışıyor; geçti /
+  kaldı kuralları ve `pm.*` script'leri Send ile aynı. Bir koşu etkileşimli
+  bir isteği (oturum açma, sunucudan gelen bir soru) yanıtlayamaz; bu yüzden
+  böyle bir satır açık bir mesajla kalıyor. Bir stdio sunucusunu koşu ancak o
+  komuta bu bilgisayarda bir kez bağlandıysanız başlatıyor — Git'ten çekilen
+  bir proje bir sonraki koşunuzda bilinmeyen bir programı çalıştıramaz.
+
+- **Mock MCP Server:** Mocks panelinde yeni bir mock türü — yerel bir MCP
+  sunucusu (Streamable HTTP ve legacy SSE); hazır şablonlar (Echo, Auth
+  required, Error server, Complex schemas, Slow), JSON Schema'lı tool'lar,
+  resource'lar, prompt'lar, gerçek korumalı bir sunucu gibi davranan bearer
+  kimlik doğrulaması, gecikme ve hata senaryoları (JSON-RPC hatası, `isError`,
+  zaman aşımı, HTTP durumu, her N'inci çağrı). Tek bir endpoint hem 2025 hem
+  2026-07-28 istemcilerine hizmet ediyor ve o akışı test etmek için çağrı
+  sırasında girdi isteyebiliyor. Loglar canlı, **Open in MCP tab** istemciyi
+  önceden dolduruyor. Kaydedilmemiş Tools / Resources / Prompts sekmeleri nokta
+  gösteriyor, dokunulmamış varsayılanları kaydetmeden önce uyarı çıkıyor ve
+  Ctrl+S istek Save diyaloğunu açmak yerine mock'u kaydediyor. New mock server
+  artık her tür için tek diyalog ve HTTP mock'ların da hazır şablonları var.
+
+- **SSE ve AI mock sunucuları:** iki mock türü daha. **SSE** mock'u
+  tanımladığınız olayları akıtıyor (her frame'de `{{stream.seq}}`,
+  `{{stream.iteration}}`, `{{stream.now}}`); aralık, heartbeat, döngü,
+  bağlantıyı açık tutma ve `Last-Event-ID` ile devam etme destekleniyor;
+  şablonlar: Ticker, Finite replay, Notifications feed, Slow / heartbeat.
+  **AI** mock'u OpenAI chat API'sini (ve `/v1/models`) ile Anthropic messages
+  API'sini konuşuyor; istemci isterse akış yapıyor, aksi halde JSON yanıtlıyor
+  ve son parçada token kullanımını veriyor; şablonlar: OpenAI uyumlu chat,
+  Anthropic messages, bir tool-call gidiş-dönüşü (Mock MCP Echo sunucusuyla
+  eşleşir) ve hata yanıtları (`error-429`, `error-500`, `error-401`).
+  **Start & open in SSE tab / AI Chat tab**, Testnizer'ın kendi istemcisini
+  mock'a yönlendiriyor — kayıtlı hiçbir sağlayıcı anahtarını göndermeden — ve
+  AI editörü bir SDK'nın kullanması gereken base URL'yi gösteriyor. Loglarda bir
+  akış, her parça için değil tek satır ("streaming…" kapanana kadar). SSE
+  sekmesi, sunucu akışı bitirip yeniden bağlanmayı reddettiğinde artık "The
+  server closed the stream" diyor ve normal biten bir akış artık hata olarak
+  loglanmıyor. Yeni ekranlar dar pencerelerde ve büyük yazı boyutlarında düzgün
+  satır kırıyor, New mock server diyaloğu ok tuşlarıyla kullanılıyor, boş bir
+  Mocks sayfası New mock server öneriyor ve kenar çubuğu araması tür ve portla
+  da eşleşiyor.
+
+- **AI Chat:** asistan **MCP sunucularını tool olarak** kullanabiliyor —
+  kayıtlı bir MCP isteği ya da anlık bir URL / stdio komutu; sunucu ve tool
+  başına anahtarlarla. Her tool çağrısı varsayılan olarak onayınızı soruyor
+  (Allow once, Allow for this conversation, Deny); "Run tools without asking"
+  yalnızca açık sekme boyunca geçerli, asla kaydedilmiyor. Her yanıt durumunu,
+  ilk token'a kadar geçen süreyi, süreyi ve token kullanımını gösteriyor
+  (sağlayıcı söylemiyorsa "not reported"). Sohbetler yerelde saklanıyor —
+  yeni, geçiş, yeniden adlandırma, silme — hiçbir zaman dışa aktarılmıyor ya
+  da commit edilmiyor ve yazılırken maskeleniyor. Ctrl+S artık AI Chat
+  yapılandırmasını kaydedip geri yüklüyor; API anahtarları işletim sisteminin
+  anahtar deposuyla sağlayıcı başına şifreleniyor, tarayıcı depolamasında
+  tutulmuyor; temperature ve max tokens ayarlanabiliyor. Settings ve Tools
+  birlikte açıkken sohbet ince bir şeride sıkışıp onay düğmelerini kırpıyordu;
+  yapılandırma artık sohbetin üstünde, kendi yeniden boyutlandırılabilir
+  panelinde kayıyor ve sohbet asgari bir yüksekliği koruyor.
+
+- **Git:** dal menüsünde **Commit…**, Pull, Push, Merge ve **Discard all
+  changes** var; ahead / behind sayıları gösteriliyor. Commit paneli neyin
+  değiştiğini (eklenen, değişen, silinen) listeliyor ve commit'e girecek
+  değişiklikleri seçmenize izin veriyor — gerisi projenizde kalıyor — sonra
+  Commit (yerel), Commit and push ya da Discard. Başka bir değişikliğe bağlı
+  olan bir değişiklik (bir istek klasörüne ihtiyaç duyar) onunla birlikte
+  seçiliyor; böylece bir commit asla olmayan bir şeye işaret etmiyor. Push
+  önce commit mesajı soruyor, kaç commit edilmemiş değişikliği içereceğini
+  söylüyor ve yalnızca mevcut commit'leri gönderebiliyor. Bir takım
+  arkadaşının Pull'u artık **projenin tamamını** getiriyor: proje düzeyindeki
+  kimlik doğrulama, ön-istek ve test script'leri, zaman aşımı, SSL, yönlendirme
+  ve TLS ayarları onları ayarlayan makinede kalıyordu; bu yüzden proje
+  kimlik doğrulamasını miras alan istekler karşı tarafta bozuluyordu. İçlerindeki
+  kimlik bilgileri dosyada boşaltılıyor, `{{değişken}}` referansları
+  taşınıyor ve Pull bu makinede kaç sır değerinin hâlâ boş olduğunu söylüyor.
+  Bir takım arkadaşının merge'ünü yeniden içe aldıktan sonra `main`'den ayrılmak
+  artık yerel `main`'inizi uzaktan ayrıştıran yalnızca sıra değişikliği içeren
+  bir "Auto-save" commit'i üretmiyor.
+
+- **Sırlar bu makinede kalıyor:** sır olarak işaretli değişkenler, HTTP mock
+  kimlik doğrulaması, Mock MCP bearer token'ı ve sertifika parolaları
+  uygulamadan çıkan her dosyada — Git, proje dosyaları, dışa aktarımlar —
+  boş değer olarak yazılıyor; bir Pull ya da import yerelde sahip olduğunuz
+  değerin üzerine asla yazmıyor. Bir mock şablonu artık token'ını sunucu
+  açıklamasına kopyalamıyor ve başka biçimlerde saklanan mock kimlik doğrulaması
+  (tek bir `token`, bir API anahtarı değeri, düz bir `password`) da kapsanıyor.
+  Kimlik doğrulaması okunamayan bir mock isteklere geçit veriyordu; artık
+  reddediyor. Dosyaları ya da parolası bu bilgisayarda olmayan bir sertifika
+  devre dışı olarak içe aktarılıyor; böylece host'una giden her isteği
+  bozamıyor. Eski bir sürümün yazdığı dosyayı içe aktarmak yarıda kesilmek
+  yerine yerel klasör kimlik doğrulamanızı ve script'lerinizi koruyor.
+  Yükseltirken: eski bir sürümün Git'e zaten gönderdiği sırlar depo
+  geçmişinde kalır, bu yüzden bunları yenileyin; eski bir sürümdeki bir takım
+  arkadaşı bu sürümün yazdığı bir dosyayı çekerse güncelleyene kadar yerel
+  sır değerlerinin boşaltıldığını görür; ve basic kimlik doğrulamalı, boş
+  parolalı bir mock sunucu artık kimseyi içeri almıyor.
+
+- **History, Console, Runner ve mock logları kimlik bilgilerini gizliyor:**
+  kimlik bilgisi başlıkları, her derinlikteki sorgu ve gövde alanları, URL'deki
+  `user:pass@`, sır değişkenlerinizin değerleri ve yanıtlardaki token alanları
+  bir şey saklanmadan ya da gösterilmeden önce maskeleniyor. History
+  `{{değişken}}` şablonunu koruyor; böylece bir istek yine yeniden
+  gönderilebiliyor; Console varsayılan olarak maskeliyor ve yalnızca oturum
+  boyunca geçerli bir **Show secrets** sunuyor; eski History satırları ilk
+  açılışta bir kez maskeleniyor. v1.6.0 sürüm taraması daha da ileri gitti:
+  istek gövdesinde gönderilen bir kimlik bilgisi (JSON, form, CDATA ve
+  öznitelikleri dahil XML / SOAP), sunucu onu başka bir adla geri yansıtsa bile
+  her yerde maskeleniyor; mock logu sır değişkenlerinizi aynı şekilde
+  maskeliyor; ve WebSocket, Socket.IO, SSE, GraphQL ve gRPC sekmeleri alınan
+  mesajları artık diske yazmıyor — oturum boyunca bellekte duruyorlar ve eski
+  bir sürümün kaydettikleri açılışta temizleniyor. **Generate Code**, kod paneli
+  ve MCP **Copy as…**, "Include secret values" işaretlenmedikçe sır
+  değişkenlerini `{{ad}}` olarak bırakıyor. WebSocket, gRPC, GraphQL, SSE ve
+  Socket.IO çağrıları History'den kendi editörlerinde yeniden açılıyor.
+
+- **Gizlilik politikası ve web sitesi:** metinler artık tam olarak neyin
+  şifrelendiğini, neyin yerelde düz metin olarak saklandığını, mock
+  sunucuların bellekte ne tuttuğunu, History'nin bağlantı protokolleri için ne
+  kaydettiğini ve uygulama parolasının neyi koruduğunu anlatıyor. Metin
+  değiştiği için onu yeniden kabul etmeniz isteniyor.
+
+- **Editör ve günlük kullanım:** yeni bir HTTP isteği ilk kaydedildiğinde URL'sinden
+  adlandırılıyor ("New Endpoint" değil, "users"). Sol panelin görünür bir
+  daraltma düğmesi var ve durumunu hatırlıyor. Headers sekmesi **otomatik
+  üretilen başlıkları** (Accept, User-Agent, Host, Content-Type,
+  Content-Length, auth, cookie'ler) her birinin kaynağıyla listeliyor; auth
+  değerleri maskeli, eklediğiniz bir başlık otomatik olanı geçersiz kılıyor —
+  bu aynı zamanda farklı harf boyutuyla yazılmış bir başlığın motorun
+  değerine yenilmesini de düzeltiyor. Açık her sekme istek alt sekmesini
+  hatırlıyor, Params'a geri sıçramıyor. AI Chat istekleri POST rozeti yerine
+  AI rozeti gösteriyor. Ctrl+S ve Save diyaloğu her protokol için "Request
+  saved" bildirimi gösteriyor. Zaman aşımı, yönlendirme ve SSL ayarları artık
+  istekle birlikte kaydediliyor ve Send ile Run'da aynı davranıyor. Yerel
+  açılır listeler metnini artık kırpmıyor, bildirimler doğru üst üste
+  diziliyor ve kaydetme diyalogları önerilen adın uzantısını koruyor (bir HTML
+  raporu artık `.json` olarak kaydedilmiyor). Diyaloglar 1x monitörlerde net
+  metin çiziyor; eskiden yarım piksele oturup bulanık görünüyorlardı. Yanıt
+  paneli tamamen Türkçeye çevrildi.
+
+- **Dışa aktarma:** bir proje tümüyle **Postman v2.1, OpenAPI 3, Insomnia** ya
+  da Testnizer JSON olarak APIs ağacının kökünden, File → Export'tan,
+  Settings'ten ve Home'daki proje kartından dışa aktarılabiliyor. Ctrl+S ile
+  kaydedilmiş istekler dahil; bir biçimin taşıyamadığı her şey sessizce
+  düşürülmek yerine bir uyarıda listeleniyor.
+
+- **Test Suites çalışma sırası:** birden çok klasörü olan bir koleksiyondan
+  oluşturulan suite "her modülün ilk isteği, sonra her modülün ikincisi"
+  şeklinde çalışıyordu; bu yüzden bir modüldeki login, ona ihtiyaç duyan
+  çağrılardan sonra çalışabiliyordu. Suite'ler yeniden modül modül, APIs
+  klasör Run'ıyla aynı sırada çalışıyor — Run, Quick Run, Scheduler ve üç
+  suite dışa aktarımının hepsinde. Klasör kimlik doğrulaması ve ön / son
+  script'ler APIs'ten oluşturulan bir suite'e taşınıyor, iç içe klasörleri
+  içe aktarmak artık "FOREIGN KEY constraint failed" ile düşmüyor ve Run
+  Sequence'ta bir isteği sürüklemek artık onu klasöründen çıkarmıyor.
+
+- **Türkçe arayüz:** 110 metin düzeltildi; kenar çubuğu, sekme şeridi, istek
+  editörü, Auth sekmesi ve yanıt paneli çevrildi.
+
+**Testler:** süit 502 dosyada 6201 teste ulaştı. Yeni uçtan uca senaryolar SSE
+ve AI mock sunucularını (`tur1/mock-sse`, `tur1/mock-ai`; mock'u her iki
+sağlayıcı için Testnizer'ın kendi AI Chat motoruyla süren bir parite testi ve
+gerçek bir Mock MCP sunucusuna karşı çevrimdışı tool-call gidiş-dönüşü dahil),
+AI Chat düzenini iki pencere boyutunda (her onay düğmesi isabet testine tabi),
+Security sayfasındaki MCP Security Scan girişini, Git Commit / Discard / seçmeli
+commit'i, tester UX düzeltmelerini ve projeyi Postman'e dışa aktarıp geri
+almayı kapsıyor. Sırlar kanarya taramalarıyla kapsanıyor: bir kimlik bilgisinin
+bulunabileceği her yere benzersiz bir işaret değeri konuyor ve her dosya
+sınırının, History'nin, Console'un, Runner'ın ve mock logunun çıktısında o
+değer aranıyor — v1.6.0 taraması yukarıda düzeltilen sızıntıları böyle buldu.
+Git taşınabilirliği, dışa aktarılan her tablonun her kolonunu dolduran ve bir
+takım arkadaşının bunu, tasarım gereği yerel kalan belgelenmiş bir liste
+dışında, birebir aldığını doğrulayan bir garanti testine sahip.
+
+**Ertelenenler:** bazı mock iyileştirmeleri, WebSocket ve Socket.IO için
+bağlantı çubukları, MCP dışındaki güvenlik taramaları (HTTP, GraphQL, SOAP,
+gerçek zamanlı ve LLM uç noktaları) ve sır değişkenleriyle mock belirteçlerinin
+diskte şifrelenmesi — sıralaması karar bekliyor.
+
 ## v1.5.4
 
 **İki makinede ayakta kalan Git senkronu, gerçekten yere inen bir Clone from
