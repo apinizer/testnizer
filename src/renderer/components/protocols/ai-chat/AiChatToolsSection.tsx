@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactElement } from 'react'
+import { useId, useMemo, type ReactElement } from 'react'
 import { AlertTriangle, ChevronDown, ChevronRight, Plus, Wrench } from 'lucide-react'
 import { useAiChatStore } from '../../../stores/ai-chat.store'
 import { useWorkspaceStore } from '../../../stores/workspace.store'
@@ -23,22 +23,34 @@ const NO_SERVERS: AiToolServerConfig[] = []
  * with server and per-tool on/off. "Run tools without asking" is an opt-in
  * with a warning (approval is on by default); it is never saved with the request.
  */
-export default function AiChatToolsSection(): ReactElement {
+export default function AiChatToolsSection({
+  expanded,
+  onToggle,
+}: {
+  /** Owned by the editor: it decides whether the body is split (issue #228). */
+  expanded: boolean
+  onToggle: () => void
+}): ReactElement {
   const { t } = useTranslation()
   const servers = useAiChatStore((s) => s.toolServers) ?? NO_SERVERS
   const autoApprove = useAiChatStore((s) => s.autoApproveTools === true)
   const tree = useWorkspaceStore((s) => s.treeData)
-  const [expanded, setExpanded] = useState(false)
+  const bodyId = useId()
   const candidates = useMemo(() => mcpRequestsOf(tree ?? []), [tree])
   const enabledCount = servers.filter((s) => s.enabled).length
   const sessionOnly = hasSessionOnlyServerCredential(servers)
 
   return (
-    <div className="shrink-0 border-b border-[var(--border)]" data-testid="ai-tools-section">
+    <div
+      className="shrink-0 border-b border-[var(--border)]"
+      data-testid="ai-tools-section"
+      data-expanded={expanded ? 'true' : 'false'}
+    >
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onToggle}
         aria-expanded={expanded}
+        aria-controls={bodyId}
         data-testid="ai-tools-toggle"
         className="flex w-full cursor-pointer items-center gap-2 px-3.5 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
         style={{ background: 'transparent', border: 'none' }}
@@ -61,7 +73,7 @@ export default function AiChatToolsSection(): ReactElement {
         )}
       </button>
       {expanded && (
-        <div className="flex flex-col gap-2 p-3.5 pt-1">
+        <div id={bodyId} data-testid="ai-tools-body" className="flex flex-col gap-2 p-3.5 pt-1">
           <p className="text-[var(--muted)]" style={{ fontSize: 11.5 }}>
             {t('aiChat.tools.hint')}
           </p>

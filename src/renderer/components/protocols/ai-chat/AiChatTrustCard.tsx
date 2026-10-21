@@ -83,6 +83,7 @@ export default function AiChatTrustCard({
     <div
       role="alert"
       data-testid="ai-stdio-trust-card"
+      data-awaiting-user={pending && (onTrust || onSkip) ? 'true' : undefined}
       className="flex flex-col gap-2 rounded-md border px-3 py-2"
       style={{ borderColor: 'var(--orange)', background: 'var(--surface)', fontSize: 12 }}
     >
