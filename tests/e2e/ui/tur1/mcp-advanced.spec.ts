@@ -466,9 +466,16 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
     await expect(eras).toContainText('2026-07-28', { timeout: 10_000 })
     await expect(eras).not.toContainText('2025')
 
-    // A pinned 2025 client is refused (-32022); Auto connects on 2026-07-28.
+    // Open in MCP tab connects at once (PM review #20): Auto lands on 2026-07-28.
     await window.getByTestId('mock-mcp-open-in-mcp').click()
     await expect(window.getByTestId('mcp-url')).toHaveValue(new RegExp(`:${port}/mcp$`))
+    await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, { timeout: 15_000 })
+    await expect(window.getByTestId('mcp-protocol-version')).toHaveText('MCP 2026-07-28')
+    await window.getByTestId('mcp-connect').click()
+    await expect(window.getByTestId('mcp-connect')).not.toHaveText(/Disconnect/i, {
+      timeout: 10_000,
+    })
+    // A pinned 2025 client is refused (-32022); Auto connects on 2026-07-28.
     await window.getByTestId('mcp-protocol').selectOption('2025-11-25')
     await window.getByTestId('mcp-connect').click()
     await expect(window.getByTestId('mcp-error')).toContainText('-32022', { timeout: 15_000 })

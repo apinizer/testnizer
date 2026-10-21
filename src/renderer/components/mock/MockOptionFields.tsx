@@ -139,6 +139,7 @@ export function OptionText({
   maxLength,
   width = '12rem',
   mono,
+  grow,
 }: {
   label: string
   testId: string
@@ -149,6 +150,12 @@ export function OptionText({
   /** CSS width of the box (rem, so it follows the app font size). */
   width?: string
   mono?: boolean
+  /**
+   * Take the rest of the row (and a row of its own when the row is narrow):
+   * for free text a fixed box clips — a long default message or JSON data
+   * (PM review #18). `width` is then the box's minimum.
+   */
+  grow?: boolean
 }) {
   const [state, setState] = useState({ base: value, text: value })
   const text = state.base === value ? state.text : value
@@ -157,8 +164,9 @@ export function OptionText({
   }
   return (
     <label
-      className="flex min-w-0 items-center gap-1.5 whitespace-nowrap"
-      style={{ color: 'var(--muted)' }}
+      className={`flex min-w-0 items-center gap-1.5 whitespace-nowrap ${grow ? 'flex-1' : ''}`}
+      style={{ color: 'var(--muted)', ...(grow ? { flexBasis: width } : {}) }}
+      data-grow={grow ? 'true' : undefined}
     >
       {label}:
       <input
@@ -166,14 +174,15 @@ export function OptionText({
         data-testid={testId}
         value={text}
         placeholder={placeholder}
+        title={text || placeholder}
         maxLength={maxLength}
         onChange={(e) => setState({ base: value, text: e.target.value })}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') commit()
         }}
-        className={`min-w-0 rounded border px-2 py-1 ${mono ? 'font-mono' : ''}`}
-        style={{ ...NUMBER_COLORS, width, maxWidth: '100%' }}
+        className={`min-w-0 rounded border px-2 py-1 ${mono ? 'font-mono' : ''} ${grow ? 'flex-1' : ''}`}
+        style={{ ...NUMBER_COLORS, ...(grow ? {} : { width }), maxWidth: '100%' }}
       />
     </label>
   )

@@ -257,7 +257,7 @@ describe('issue #248 — Scheduled Tasks in Turkish', () => {
     })
     await screen.findByText('Çalıştırma geçmişi')
     await screen.findByText('Henüz çalıştırma yok — bu görev oluşturulduğundan beri tetiklenmedi.')
-    await screen.findByText('Bu görevle ilişkili endpoint yok.')
+    await screen.findByText('Bu görevle ilişkili uç nokta yok.')
 
     expect(englishLeftovers()).toEqual([])
 

@@ -125,10 +125,54 @@ describe('keychain unavailable: "stored unencrypted" note', () => {
   it('Settings → App password shows it (TR wording)', async () => {
     lang('tr')
     secureStorage(false)
-    render(<SettingsAppPasswordSection onLeaveSettings={() => {}} />)
+    render(<SettingsAppPasswordSection />)
     expect(await screen.findByTestId('secret-storage-unencrypted')).toHaveTextContent(
       UNENCRYPTED_TR,
     )
+  })
+})
+
+describe('review #22: the unencrypted note says what to do', () => {
+  for (const [locale, fix] of [
+    ['en', /(GNOME Keyring or KWallet).*restart Testnizer/],
+    ['tr', /(GNOME Keyring veya KWallet).*yeniden başlatın/],
+  ] as const) {
+    it(`names the remedy and that values still work (${locale})`, async () => {
+      lang(locale)
+      secureStorage(false)
+      mountEnvModal([])
+      const note = await screen.findByTestId('secret-storage-unencrypted')
+      const hint = screen.getByTestId('secret-storage-unencrypted-fix')
+      expect(note).toContainElement(hint)
+      expect(hint.textContent).toMatch(fix)
+      expect(hint.textContent).toMatch(locale === 'en' ? /still work/ : /yine çalışır/)
+    })
+  }
+})
+
+describe('review #12: empty variable list is not "no match"', () => {
+  for (const [locale, title] of [
+    ['en', 'No variables yet'],
+    ['tr', 'Henüz değişken yok'],
+  ] as const) {
+    it(`an empty environment says so and points at Add Variable (${locale})`, () => {
+      lang(locale)
+      secureStorage(true)
+      mountEnvModal([])
+      expect(screen.queryByTestId('env-var-no-match')).toBeNull()
+      const empty = screen.getByTestId('env-var-empty')
+      expect(empty.textContent).toContain(title)
+      expect(empty.textContent).toContain('{{variable}}')
+      expect(screen.getByTestId('env-var-add')).toBeInTheDocument()
+    })
+  }
+
+  it('empty Globals (the reported case) shows the same empty state, not "no match"', () => {
+    secureStorage(true)
+    mountEnvModal([{ id: 'v1', key: 'host', value: 'x', enabled: true } as EnvironmentVariable])
+    fireEvent.click(screen.getByTestId('env-globals-nav'))
+    expect(screen.queryByTestId('env-var-no-match')).toBeNull()
+    expect(screen.getByTestId('env-var-empty').textContent).toContain('No variables yet')
   })
 })
 

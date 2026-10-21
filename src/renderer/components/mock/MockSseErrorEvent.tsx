@@ -65,6 +65,7 @@ export default function MockSseErrorEvent({
               value={ev.data}
               maxLength={SSE_ERROR_DATA_MAX_CHARS}
               width="18rem"
+              grow
               mono
               onCommit={(data) => patch({ data })}
             />

@@ -81,7 +81,8 @@ export default function MockLlmStreamError({
               value={err.message ?? ''}
               placeholder={defaults.message}
               maxLength={LLM_MAX_ERROR_MESSAGE_CHARS}
-              width="16rem"
+              width="18rem"
+              grow
               onCommit={(v) => patch({ message: v === '' ? undefined : v })}
             />
           </>

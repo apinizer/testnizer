@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { Unplug, Trash2 } from 'lucide-react'
 import { useGraphQLStore } from '../../stores/graphql.store'
+import { useTranslation } from '../../lib/i18n'
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts)
@@ -29,6 +30,7 @@ function truncate(str: string, max: number): string {
 }
 
 export default function GraphQLSubscriptionLog() {
+  const { t, locale } = useTranslation()
   const events = useGraphQLStore((s) => s.subscriptionEvents)
   const clearEvents = useGraphQLStore((s) => s.clearSubscriptionEvents)
   const unsubscribe = useGraphQLStore((s) => s.unsubscribe)
@@ -44,18 +46,18 @@ export default function GraphQLSubscriptionLog() {
   }, [events, autoScroll])
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]" lang={locale}>
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3.5 py-2">
         <div className="flex items-center gap-2">
           <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
-            Subscription Events
+            {t('graphql.subscriptionEvents')}
           </span>
           <span
             className="rounded-full px-2 py-0.5 font-medium"
             style={{ background: '#e8f9f1', color: '#1a7a4a' }}
           >
-            Live
+            {t('graphql.live')}
           </span>
         </div>
         <button
@@ -65,7 +67,7 @@ export default function GraphQLSubscriptionLog() {
           style={{ background: '#cc2200', border: 'none' }}
         >
           <Unplug size={12} />
-          Unsubscribe
+          {t('graphql.unsubscribe')}
         </button>
       </div>
 
@@ -73,7 +75,7 @@ export default function GraphQLSubscriptionLog() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {events.length === 0 ? (
           <div className="flex h-full items-center justify-center text-[var(--hint)]">
-            Waiting for subscription events...
+            {t('graphql.waitingEvents')}
           </div>
         ) : (
           events.map((event) => {
@@ -112,7 +114,9 @@ export default function GraphQLSubscriptionLog() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]">
-          {events.length} event{events.length !== 1 ? 's' : ''}
+          {events.length === 1
+            ? t('sse.eventCountOne')
+            : t('sse.eventCount').replace('{count}', String(events.length))}
         </span>
         <div className="flex items-center gap-3">
           <label className="flex cursor-pointer items-center gap-1.5">
@@ -122,7 +126,7 @@ export default function GraphQLSubscriptionLog() {
               onChange={(e) => setAutoScroll(e.target.checked)}
               className="accent-[var(--accent)]"
             />
-            <span className="text-[var(--muted)]">Auto-scroll</span>
+            <span className="text-[var(--muted)]">{t('console.autoScroll')}</span>
           </label>
           <button
             type="button"
@@ -131,7 +135,7 @@ export default function GraphQLSubscriptionLog() {
             style={{ background: 'transparent', border: 'none' }}
           >
             <Trash2 size={11} />
-            Clear
+            {t('console.clear')}
           </button>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Lock, Eye, EyeOff } from 'lucide-react'
-import { useRequestStore } from '../../stores/request.store'
+import { HTTP_CREDENTIALS, useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -9,6 +9,7 @@ import { toast } from '../../lib/toast'
 import SoapSecuritySection from '../protocols/SoapSecuritySection'
 import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { useTranslation } from '../../lib/i18n'
+import { hasLiteralAuthCredential } from '../../lib/credential-withhold'
 import type { AuthType } from '../../types'
 
 const AUTH_TYPE_TEST_IDS: Partial<Record<AuthType, string>> = {
@@ -51,12 +52,15 @@ function PasswordInput({
   placeholder,
   dataTestId,
   toggleTestId,
+  describedBy,
 }: {
   value: string
   onChange: (v: string) => void
   placeholder?: string
   dataTestId?: string
   toggleTestId?: string
+  /** The restart hint's id while it is shown. */
+  describedBy?: string
 }) {
   const { t } = useTranslation()
   const [show, setShow] = useState(false)
@@ -70,7 +74,7 @@ function PasswordInput({
         style={{ color: 'var(--text)', paddingRight: 36 }}
         placeholder={placeholder || t('authPane.password')}
         data-testid={dataTestId}
-        aria-describedby={RESTART_HINT_ID}
+        aria-describedby={describedBy}
       />
       <button
         type="button"
@@ -91,6 +95,11 @@ export default function AuthTab() {
   const setAuth = useRequestStore((s) => s.setAuth)
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const isSoap = activeTab?.protocol === 'soap'
+  // Issues #244 / review #8: the restart hint only while a literal credential
+  // of the active type is typed — the rule of the key/value hints. An empty
+  // field or `{{token}}` loses nothing after a restart.
+  const showRestartHint = auth.type !== 'wsse' && hasLiteralAuthCredential(auth, HTTP_CREDENTIALS)
+  const hintId = showRestartHint ? RESTART_HINT_ID : undefined
   const [fetchingToken, setFetchingToken] = useState(false)
 
   // "Get New Access Token" — resolve {{vars}} in the OAuth2 config against the
@@ -211,7 +220,7 @@ export default function AuthTab() {
               style={{ color: 'var(--text)' }}
               placeholder="{{token}}"
               data-testid="auth-bearer-token"
-              aria-describedby={RESTART_HINT_ID}
+              aria-describedby={hintId}
             />
             <button
               type="button"
@@ -259,6 +268,7 @@ export default function AuthTab() {
               {t('authPane.password')}
             </div>
             <PasswordInput
+              describedBy={hintId}
               value={auth.basic?.password || ''}
               onChange={(v) =>
                 setAuth({ ...auth, basic: { username: auth.basic?.username || '', password: v } })
@@ -318,7 +328,7 @@ export default function AuthTab() {
               style={{ color: 'var(--text)' }}
               placeholder="api-key-value"
               data-testid="auth-apikey-value"
-              aria-describedby={RESTART_HINT_ID}
+              aria-describedby={hintId}
             />
           </div>
           <div>
@@ -456,6 +466,7 @@ export default function AuthTab() {
                 {t('authTab.clientSecret')}
               </div>
               <PasswordInput
+                describedBy={hintId}
                 value={auth.oauth2?.clientSecret || ''}
                 onChange={(v) => setAuth({ ...auth, oauth2: { ...auth.oauth2!, clientSecret: v } })}
                 placeholder="your-client-secret"
@@ -488,6 +499,7 @@ export default function AuthTab() {
                   {t('authPane.password')}
                 </div>
                 <PasswordInput
+                  describedBy={hintId}
                   value={auth.oauth2?.password || ''}
                   onChange={(v) =>
                     setAuth({
@@ -586,6 +598,7 @@ export default function AuthTab() {
               {t('authPane.password')}
             </div>
             <PasswordInput
+              describedBy={hintId}
               value={auth.digest?.password || ''}
               onChange={(v) =>
                 setAuth({ ...auth, digest: { username: auth.digest?.username || '', password: v } })
@@ -628,6 +641,7 @@ export default function AuthTab() {
               {t('authPane.password')}
             </div>
             <PasswordInput
+              describedBy={hintId}
               value={auth.ntlm?.password || ''}
               onChange={(v) =>
                 setAuth({
@@ -695,7 +709,7 @@ export default function AuthTab() {
       )}
 
       {/* Issue #244: literal credentials are not kept in the tab snapshot. */}
-      {auth.type !== 'none' && auth.type !== 'inherit' && auth.type !== 'wsse' && (
+      {showRestartHint && (
         <CredentialRestartHint id={RESTART_HINT_ID} testId="auth-credential-restart-hint" />
       )}
     </div>

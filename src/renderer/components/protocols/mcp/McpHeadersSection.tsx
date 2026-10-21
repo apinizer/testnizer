@@ -2,6 +2,7 @@ import { useMcpStore } from '../../../stores/mcp.store'
 import { STANDARD_HTTP_HEADERS } from '../../../lib/http-headers'
 import { useTranslation } from '../../../lib/i18n'
 import McpKvSection from './McpKvSection'
+import { mcpUrlHasLiteralCredential } from './config-ui'
 
 /**
  * Headers panel of the MCP config tab strip (issue #137) — API-gateway
@@ -11,6 +12,7 @@ import McpKvSection from './McpKvSection'
  */
 export default function McpHeadersSection() {
   const { t } = useTranslation()
+  const urlHint = useMcpStore((s) => mcpUrlHasLiteralCredential(s.transport, s.url))
   const customHeaders = useMcpStore((s) => s.customHeaders)
   const addHeader = useMcpStore((s) => s.addHeader)
   const updateHeader = useMcpStore((s) => s.updateHeader)
@@ -25,6 +27,7 @@ export default function McpHeadersSection() {
       onAdd={addHeader}
       addLabel={t('mcp.headers.add')}
       keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
+      hideRestartHint={urlHint}
     />
   )
 }

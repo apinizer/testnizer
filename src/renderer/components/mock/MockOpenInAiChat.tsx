@@ -42,6 +42,7 @@ function useOpenInAiChat(
     starting,
     open: (path: string): void => {
       void startAndOpenMockInAiChatTab({
+        serverId: server.id,
         name: server.name,
         url: mockEndpointUrl(server, path),
         provider,

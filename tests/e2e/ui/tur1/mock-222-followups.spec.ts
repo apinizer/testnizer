@@ -124,12 +124,28 @@ uiTest.describe('Tur1 — mock follow-ups [issue #222]', () => {
       await expect(window.getByTestId('mcp-url')).toHaveValue(new RegExp(`:${port}/mcp$`), {
         timeout: 10_000,
       })
-      await expect(activeTab(window)).toHaveAttribute('data-tab-name', name)
+      // PM review #20: titled apart from the editor tab, and connected at once.
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', `${name} · client`)
+      await expect(window.getByTestId('mcp-connect')).toHaveText(/Disconnect/i, {
+        timeout: 15_000,
+      })
       await navigateSidebar(window, 'mocks')
       await expect(row(window, 'mcp', name).getByTestId('mock-mcp-row-status')).toHaveText(
         /running/i,
         { timeout: 10_000 },
       )
+
+      // A second click focuses the same MCP tab — no duplicate.
+      await window.locator(`[data-testid="endpoint-tab"][data-tab-name="${name}"]`).click()
+      await expect(editor).toBeVisible({ timeout: 10_000 })
+      await editor.getByTestId('mock-mcp-open-in-mcp').click()
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', `${name} · client`, {
+        timeout: 10_000,
+      })
+      await expect(
+        window.locator(`[data-testid="endpoint-tab"][data-tab-name="${name} · client"]`),
+      ).toHaveCount(1)
+      await window.getByTestId('mcp-connect').click()
     },
   )
 
@@ -156,7 +172,9 @@ uiTest.describe('Tur1 — mock follow-ups [issue #222]', () => {
       await window.getByTestId('mock-settings-type-http').click()
       const confirm = window.getByTestId('mock-settings-type-confirm')
       await expect(confirm).toBeVisible({ timeout: 10_000 })
-      await expect(confirm).toContainText('sse')
+      // PM review #21: a real singular and the body type's label.
+      await expect(confirm).toContainText('1 response uses')
+      await expect(confirm).toContainText('(SSE stream)')
       await expect(confirm).toContainText('Nothing is deleted')
       await window.getByTestId('mock-settings-type-confirm-ok').click()
       await expect(confirm).toBeHidden()
@@ -207,7 +225,9 @@ uiTest.describe('Tur1 — mock follow-ups [issue #222]', () => {
       await expect(open).toHaveText(/Start & open in AI Chat \(Anthropic\)/, { timeout: 10_000 })
       await open.click()
 
-      await expect(activeTab(window)).toHaveAttribute('data-tab-name', name, { timeout: 10_000 })
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', `${name} · client`, {
+        timeout: 10_000,
+      })
       await expect(window.getByText('Anthropic · mock-model')).toBeVisible({ timeout: 10_000 })
       await expect(window.getByPlaceholder(/chat completions endpoint/)).toHaveValue(
         `http://127.0.0.1:${port}/v1/messages`,

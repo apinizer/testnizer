@@ -29,13 +29,14 @@ import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mo
 import MockEditorHeader, { MockStartStopButton, MockUrlLine } from './MockEditorHeader'
 import { MockEditorTabButton } from '../mock-mcp/MockMcpEditorTabs'
 import { mockSdkBaseUrl, mockServerUrl } from './mock-http-tabs'
-import { bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
+import { bodyTypeLabel, bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
 import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
 import MockLlmOptions, { MockLlmBodyNotes } from './MockLlmOptions'
 import { OptionNumber } from './MockOptionFields'
 import { MockAiChatAnthropicButton, MockAiChatHeaderButton } from './MockOpenInAiChat'
 import MockServerTypeField from './MockServerTypeField'
+import MockEndpointRequestChecks from './MockEndpointRequestChecks'
 import { tickerResponse } from './mock-sse-presets'
 import { chatResponse } from './mock-ai-presets'
 import { buildMockCurl } from './mock-curl'
@@ -608,32 +609,39 @@ function EndpointEditor({
           />
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <JsonConfigField
-            label={t('mock.endpointAuthOverride')}
-            value={endpoint.authOverride}
-            onCommit={(v) =>
-              updateEndpoint(endpoint.id, {
-                authOverride: (v ?? null) as MockEndpoint['authOverride'],
-              })
-            }
-            hint={t('mock.endpointAuthOverrideHint')}
-            rows={4}
-            allowEmpty
-          />
-          <JsonConfigField
-            label={t('mock.endpointSchemaValidation')}
-            value={endpoint.schemaValidation}
-            onCommit={(v) =>
-              updateEndpoint(endpoint.id, {
-                schemaValidation: (v ?? null) as MockEndpoint['schemaValidation'],
-              })
-            }
-            hint={t('mock.endpointSchemaValidationHint')}
-            rows={4}
-            allowEmpty
-          />
-        </div>
+        <MockEndpointRequestChecks
+          kind={kind}
+          configured={
+            !!endpoint.authOverride || !!endpoint.schemaValidation || !!endpoint.authDecryptFailed
+          }
+        >
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <JsonConfigField
+              label={t('mock.endpointAuthOverride')}
+              value={endpoint.authOverride}
+              onCommit={(v) =>
+                updateEndpoint(endpoint.id, {
+                  authOverride: (v ?? null) as MockEndpoint['authOverride'],
+                })
+              }
+              hint={t('mock.endpointAuthOverrideHint')}
+              rows={4}
+              allowEmpty
+            />
+            <JsonConfigField
+              label={t('mock.endpointSchemaValidation')}
+              value={endpoint.schemaValidation}
+              onCommit={(v) =>
+                updateEndpoint(endpoint.id, {
+                  schemaValidation: (v ?? null) as MockEndpoint['schemaValidation'],
+                })
+              }
+              hint={t('mock.endpointSchemaValidationHint')}
+              rows={4}
+              allowEmpty
+            />
+          </div>
+        </MockEndpointRequestChecks>
         {endpoint.authDecryptFailed && (
           <SecretLockedNote testId="mock-endpoint-auth-decrypt-failed" className="mt-1" />
         )}
@@ -915,12 +923,13 @@ function ResponseEditor({
         Status / name / body type / delete. Every track has a fixed rem minimum
         — a plain `1fr` track's minimum is `auto`, the input's intrinsic width,
         which pushed the select and the delete button out of a narrow editor
-        (issue #226). At a normal width the tracks are 140 px / rest / 140 px
-        as before; in a narrow one all three shrink toward their minimums.
+        (issue #226). Status is capped at 6rem and the type at 10rem so the name —
+        the free text — gets the room (PM review #18); in a narrow editor all
+        three shrink toward their minimums.
       */}
       <div
         data-testid="mock-response-row"
-        className="mb-2 grid grid-cols-[minmax(4.5rem,140px)_minmax(6rem,1fr)_minmax(6rem,140px)_auto] gap-2"
+        className="mb-2 grid grid-cols-[minmax(4.5rem,6rem)_minmax(7rem,1fr)_minmax(7rem,10rem)_auto] gap-2"
       >
         <input
           type="number"
@@ -934,6 +943,7 @@ function ResponseEditor({
           value={response.name}
           onChange={(e) => updateResponse(response.id, { name: e.target.value })}
           placeholder={t('mock.responseName')}
+          title={response.name || undefined}
           data-testid="mock-response-name"
           className="w-full min-w-0 rounded border px-2 py-1 text-sm"
           style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
@@ -950,7 +960,7 @@ function ResponseEditor({
         >
           {bodyTypeOptions(kind, response.bodyType).map((b) => (
             <option key={b} value={b}>
-              {b}
+              {bodyTypeLabel(t, b)}
             </option>
           ))}
         </select>
@@ -1014,7 +1024,9 @@ function ResponseEditor({
           </label>
           {/* Only offered where a JWKS could actually live: on an XML or text
               response the button would replace the body with JSON. */}
-          {response.bodyType === 'json' && (
+          {/* HTTP servers only, like "Serve JWKS" (PM review #17): an SSE side
+              endpoint or an AI error body has no use for a key set. */}
+          {response.bodyType === 'json' && showsHttpEndpointTools(kind) && (
             <JwksFillButton
               body={response.body}
               projectId={projectId}

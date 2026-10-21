@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import type { ComponentProps } from 'react'
 import { useEditorVisible } from '../../lib/editor-visibility'
+import { useTranslation } from '../../lib/i18n'
 
 // Lazy-load the heavy Monaco-based implementation. Splitting it out keeps
 // `monaco-editor` (~5–6 MB) out of the initial renderer chunk; it gets fetched
@@ -17,8 +18,9 @@ function MonacoFallback({
   height = '100%',
   className,
 }: Pick<MonacoWrapperProps, 'height' | 'className'>) {
+  const { t } = useTranslation()
   return (
-    <div className={className} style={{ height }} aria-busy="true" aria-label="Loading editor">
+    <div className={className} style={{ height }} aria-busy="true" aria-label={t('editor.loading')}>
       <div
         style={{
           height: '100%',

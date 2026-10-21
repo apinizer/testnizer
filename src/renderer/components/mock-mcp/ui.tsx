@@ -41,7 +41,7 @@ export function PrimaryButton({
     <button
       type="button"
       {...props}
-      className={`flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-none bg-[var(--accent)] px-3 text-[12px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`flex h-7 shrink-0 whitespace-nowrap cursor-pointer items-center gap-1.5 rounded-md border-none bg-[var(--accent)] px-3 text-[12px] font-semibold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     />
   )
 }
@@ -51,7 +51,7 @@ export function GhostButton({ className = '', ...props }: ButtonHTMLAttributes<H
     <button
       type="button"
       {...props}
-      className={`flex h-7 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] bg-transparent px-2.5 text-[12px] text-[var(--text)] transition-colors hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`flex h-7 shrink-0 whitespace-nowrap cursor-pointer items-center gap-1.5 rounded-md border border-[var(--border)] bg-transparent px-2.5 text-[12px] text-[var(--text)] transition-colors hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
     />
   )
 }

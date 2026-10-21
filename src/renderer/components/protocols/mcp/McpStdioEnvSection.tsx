@@ -1,6 +1,7 @@
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
 import McpKvSection from './McpKvSection'
+import { mcpUrlHasLiteralCredential } from './config-ui'
 
 /**
  * Environment panel of the MCP config tab strip (issue #139): extra env vars
@@ -10,6 +11,7 @@ import McpKvSection from './McpKvSection'
  */
 export default function McpStdioEnvSection() {
   const { t } = useTranslation()
+  const urlHint = useMcpStore((s) => mcpUrlHasLiteralCredential(s.transport, s.url))
   const envVars = useMcpStore((s) => s.envVars)
   const addEnvVar = useMcpStore((s) => s.addEnvVar)
   const updateEnvVar = useMcpStore((s) => s.updateEnvVar)
@@ -24,6 +26,7 @@ export default function McpStdioEnvSection() {
       onAdd={addEnvVar}
       addLabel={t('mcp.env.add')}
       hint={t('mcp.env.hint')}
+      hideRestartHint={urlHint}
     />
   )
 }

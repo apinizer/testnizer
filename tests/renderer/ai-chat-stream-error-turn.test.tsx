@@ -10,7 +10,7 @@
  * `tests/main/handlers/ai-chat-stream-error.test.ts`.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import React from 'react'
 
 const api = vi.hoisted(() => ({
@@ -113,5 +113,47 @@ describe('AI Chat turn after a mid-stream error', () => {
     render(React.createElement(AiChatAssistantTurn, { turn, streaming: false }))
     expect(screen.getByText(/one two/)).toBeTruthy()
     expect(screen.getByTestId('ai-turn-error').textContent).toBe(error)
+    // PM review #11: a 200 whose stream broke is not a green success chip,
+    // and the TTFB the call measured is shown (not "—").
+    const status = screen.getByTestId('ai-metrics-status')
+    expect(status.getAttribute('data-status')).toBe('interrupted')
+    expect(status.textContent).toBe('200 · interrupted')
+    expect(status.getAttribute('style')).toContain('var(--orange)')
+    expect(screen.getByTestId('ai-metrics').textContent).toContain('TTFB 5')
+  })
+
+  it('a clean 200 keeps the green chip; an HTTP error stays red', () => {
+    cleanup()
+    const metrics = {
+      calls: [{ status: 200, ttfbMs: 5, durationMs: 40, usageReported: false }],
+      status: 200,
+      ttfbMs: 5,
+      durationMs: 40,
+      usageReported: false,
+    }
+    const ok = render(
+      React.createElement(AiChatAssistantTurn, {
+        turn: { id: 'a', role: 'assistant', content: 'x', metrics, timestamp: 1 },
+        streaming: false,
+      }),
+    )
+    expect(screen.getByTestId('ai-metrics-status').getAttribute('data-status')).toBe('ok')
+    expect(screen.getByTestId('ai-metrics-status').textContent).toBe('200')
+    ok.unmount()
+    render(
+      React.createElement(AiChatAssistantTurn, {
+        turn: {
+          id: 'b',
+          role: 'assistant',
+          content: '',
+          error: 'HTTP 429',
+          metrics: { ...metrics, status: 429, calls: [{ ...metrics.calls[0], status: 429 }] },
+          timestamp: 1,
+        },
+        streaming: false,
+      }),
+    )
+    expect(screen.getByTestId('ai-metrics-status').getAttribute('data-status')).toBe('error')
+    expect(screen.getByTestId('ai-metrics-status').textContent).toBe('429')
   })
 })

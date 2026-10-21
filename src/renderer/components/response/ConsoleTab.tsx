@@ -19,6 +19,7 @@ import {
   type ConsoleLogEntry,
 } from '../../stores/console.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useTranslation } from '../../lib/i18n'
 import EmptyState from '../shared/EmptyState'
 import ConsoleSecretsToggle from './ConsoleSecretsToggle'
 
@@ -43,6 +44,7 @@ export interface ConsoleTabProps {
 }
 
 export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
+  const { t, locale } = useTranslation()
   const entries = useConsoleStore((s) => s.entries)
   const filter = useConsoleStore((s) => s.filter)
   const setFilter = useConsoleStore((s) => s.setFilter)
@@ -77,7 +79,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
   )
 
   const FILTER_OPTIONS: Array<{ key: ConsoleLogFilter; label: string }> = [
-    { key: 'all', label: 'All Logs' },
+    { key: 'all', label: t('console.filter.all') },
     { key: 'http', label: 'HTTP' },
     { key: 'soap', label: 'SOAP' },
     { key: 'graphql', label: 'GraphQL' },
@@ -87,8 +89,8 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
     { key: 'socketio', label: 'Socket.IO' },
     { key: 'mcp', label: 'MCP' },
     { key: 'ai', label: 'AI Chat' },
-    { key: 'warn', label: 'Warnings' },
-    { key: 'error', label: 'Errors' },
+    { key: 'warn', label: t('console.filter.warn') },
+    { key: 'error', label: t('console.filter.error') },
   ]
 
   // ── Virtualization ──────────────────────────────────────────
@@ -116,7 +118,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
   const onClear = useCallback(() => clear(), [clear])
 
   return (
-    <div className="flex h-full flex-col bg-[var(--white)]">
+    <div className="flex h-full flex-col bg-[var(--white)]" lang={locale}>
       {/* ── Top bar ── */}
       <div
         className="flex shrink-0 items-center gap-3 pl-3"
@@ -138,7 +140,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           style={{ color: isOnline ? 'var(--green)' : 'var(--muted)' }}
         >
           <Wifi size={13} />
-          Online
+          {t(isOnline ? 'console.online' : 'console.offline')}
         </span>
 
         <button
@@ -152,7 +154,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           }}
         >
           <SearchIcon size={13} />
-          Find
+          {t('console.find')}
         </button>
 
         <span
@@ -168,7 +170,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           }}
         >
           <Terminal size={13} />
-          Console
+          {t('console.title')}
           <span style={{ color: 'var(--muted)', fontWeight: 400 }}>{filtered.length}</span>
         </span>
 
@@ -180,7 +182,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           type="button"
           onClick={() => setAutoScroll(!autoScroll)}
           className="flex cursor-pointer items-center gap-1 rounded px-2 py-1"
-          title="Auto-scroll"
+          title={t('console.autoScroll')}
           style={{
             background: autoScroll ? 'var(--accent-light)' : 'transparent',
             border: '1px solid var(--border)',
@@ -188,7 +190,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           }}
         >
           {autoScroll ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
-          Auto
+          {t('console.auto')}
         </button>
 
         {errorCount > 0 && (
@@ -210,7 +212,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
               color: 'var(--text)',
             }}
           >
-            {FILTER_OPTIONS.find((o) => o.key === filter)?.label || 'All Logs'}
+            {FILTER_OPTIONS.find((o) => o.key === filter)?.label || t('console.filter.all')}
             <ChevronDown size={11} />
           </button>
           {filterOpen && (
@@ -262,7 +264,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
             color: 'var(--text)',
           }}
         >
-          Clear
+          {t('console.clear')}
         </button>
       </div>
 
@@ -277,7 +279,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
             autoFocus
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Find in console..."
+            placeholder={t('console.findPlaceholder')}
             className="flex-1 outline-none"
             style={{
               background: 'var(--white)',
@@ -307,12 +309,12 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
           entries.length === 0 ? (
             <EmptyState
               icon={Terminal}
-              title="No console entries yet"
-              description="Send a request to see it here."
+              title={t('console.emptyTitle')}
+              description={t('console.emptyDesc')}
               size="sm"
             />
           ) : (
-            <EmptyState icon={SearchIcon} title="No entries match your filter." size="sm" />
+            <EmptyState icon={SearchIcon} title={t('console.emptyFiltered')} size="sm" />
           )
         ) : (
           <div
@@ -407,6 +409,7 @@ function ConsoleEntryRow({
   expanded: boolean
   onToggle: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div style={{ borderBottom: '1px solid var(--border-split)' }}>
       <div
@@ -474,7 +477,7 @@ function ConsoleEntryRow({
           style={{ color: 'var(--text)', fontSize: 12 }}
         >
           {entry.details?.error && (
-            <Section title="Error" defaultOpen>
+            <Section title={t('console.section.error')} defaultOpen>
               <div style={{ color: 'var(--red)' }}>{entry.details.error.message}</div>
               {entry.details.error.stack && (
                 <pre className="m-0 mt-1 whitespace-pre-wrap" style={{ color: 'var(--muted)' }}>
@@ -484,23 +487,29 @@ function ConsoleEntryRow({
             </Section>
           )}
 
-          <Section title="Network">
-            {entry.method && <KV k="Method" v={entry.method} />}
+          <Section title={t('console.section.network')}>
+            {entry.method && <KV k={t('console.kv.method')} v={entry.method} />}
             {entry.url && <KV k="URL" v={entry.url} />}
-            <KV k="Protocol" v={entry.protocol} />
-            <KV k="Category" v={entry.category} />
+            <KV k={t('console.kv.protocol')} v={entry.protocol} />
+            <KV k={t('console.kv.category')} v={entry.category} />
             {entry.status != null && (
               <KV
-                k="Status"
+                k={t('console.kv.status')}
                 v={String(entry.status)}
                 valueColor={statusColor(entry.status, entry.level)}
               />
             )}
-            {entry.statusText && <KV k="Status Text" v={entry.statusText} />}
-            {entry.durationMs != null && <KV k="Duration" v={`${entry.durationMs} ms`} />}
-            {entry.sizeBytes != null && <KV k="Size" v={`${entry.sizeBytes} B`} />}
-            {entry.details?.direction && <KV k="Direction" v={entry.details.direction} />}
-            {entry.details?.eventName && <KV k="Event" v={entry.details.eventName} />}
+            {entry.statusText && <KV k={t('console.kv.statusText')} v={entry.statusText} />}
+            {entry.durationMs != null && (
+              <KV k={t('console.kv.duration')} v={`${entry.durationMs} ms`} />
+            )}
+            {entry.sizeBytes != null && <KV k={t('console.kv.size')} v={`${entry.sizeBytes} B`} />}
+            {entry.details?.direction && (
+              <KV k={t('console.kv.direction')} v={entry.details.direction} />
+            )}
+            {entry.details?.eventName && (
+              <KV k={t('console.kv.event')} v={entry.details.eventName} />
+            )}
             {entry.details?.meta &&
               Object.entries(entry.details.meta).map(([k, v]) => (
                 <KV key={k} k={k} v={String(v)} />
@@ -508,12 +517,12 @@ function ConsoleEntryRow({
           </Section>
 
           {entry.details?.requestHeaders && (
-            <Section title="Request Headers" defaultOpen>
+            <Section title={t('console.section.requestHeaders')} defaultOpen>
               {renderHeaders(entry.details.requestHeaders)}
             </Section>
           )}
           {entry.details?.requestBody && (
-            <Section title="Request Body">
+            <Section title={t('console.section.requestBody')}>
               <pre
                 className="m-0 max-h-[240px] overflow-auto whitespace-pre-wrap"
                 style={{ color: 'var(--json-string, #b35a00)' }}
@@ -523,12 +532,12 @@ function ConsoleEntryRow({
             </Section>
           )}
           {entry.details?.responseHeaders && (
-            <Section title="Response Headers">
+            <Section title={t('console.section.responseHeaders')}>
               {renderHeaders(entry.details.responseHeaders)}
             </Section>
           )}
           {entry.details?.responseBody && (
-            <Section title="Response Body">
+            <Section title={t('console.section.responseBody')}>
               <pre
                 className="m-0 max-h-[240px] overflow-auto whitespace-pre-wrap"
                 style={{ color: 'var(--text)' }}
@@ -538,7 +547,7 @@ function ConsoleEntryRow({
             </Section>
           )}
           {entry.scriptLogs && entry.scriptLogs.length > 0 && (
-            <Section title="Script Logs" defaultOpen>
+            <Section title={t('console.section.scriptLogs')} defaultOpen>
               {entry.scriptLogs.map((l, i) => (
                 <div
                   key={i}
@@ -618,13 +627,18 @@ function renderHeaders(headers?: Record<string, string>) {
  * between the user-resized height and a near-fullscreen maximised view.
  */
 function ConsoleLayoutToggle({ inResponsePane }: { inResponsePane: boolean }) {
+  const { t } = useTranslation()
   const setShowConsolePanel = useUIStore((s) => s.setShowConsolePanel)
   const maximized = useUIStore((s) => s.consolePanelMaximized)
   const toggleMaximized = useUIStore((s) => s.toggleConsolePanelMaximized)
 
   const handleClick = inResponsePane ? () => setShowConsolePanel(true) : () => toggleMaximized()
 
-  const title = inResponsePane ? 'Open in bottom panel' : maximized ? 'Restore' : 'Maximize'
+  const title = inResponsePane
+    ? t('console.openInBottomPanel')
+    : maximized
+      ? t('console.restore')
+      : t('console.maximize')
 
   return (
     <button

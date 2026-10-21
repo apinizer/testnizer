@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
+import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { ChangePasswordForm, DisablePasswordForm } from '../auth/AppPasswordForms'
+import SetPasswordForm from '../auth/SetPasswordForm'
 import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 
 /**
@@ -10,25 +12,32 @@ import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
  * Home avatar. This section shows the status and drives the same forms and
  * store actions as Profile. The actions apply immediately — they are not part
  * of the Settings dialog's Save. Turning the password off keeps the current
- * session; later launches open straight into the app.
+ * session; later launches open straight into the app. Setting one is an
+ * inline form too (review #13) — it used to sign out to the start screen
+ * without warning; now the session continues and the next launch asks.
  */
-type Mode = 'idle' | 'change' | 'disable'
+type Mode = 'idle' | 'set' | 'change' | 'disable'
 
 const GHOST_BTN_CLS =
   'cursor-pointer rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[var(--text)] transition-colors hover:bg-[var(--bg)]'
 
-export default function SettingsAppPasswordSection({
-  onLeaveSettings,
-}: {
-  /** Closes the Settings dialog before the set-password step (start screen). */
-  onLeaveSettings: () => void
-}) {
+export default function SettingsAppPasswordSection() {
   const { t } = useTranslation()
   const hasPasswordSet = useAuthStore((s) => s.hasPasswordSet)
   const isGuest = useAuthStore((s) => s.isGuest)
   const user = useAuthStore((s) => s.user)
-  const logout = useAuthStore((s) => s.logout)
-  const [mode, setMode] = useState<Mode>('idle')
+  // The header session menu opens Settings straight at the Set form.
+  const [mode, setMode] = useState<Mode>(() =>
+    useUIStore.getState().settingsFocus === 'appPasswordSet' && hasPasswordSet === false
+      ? 'set'
+      : 'idle',
+  )
+  const rootRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (useUIStore.getState().settingsFocus !== 'appPasswordSet') return
+    useUIStore.setState({ settingsFocus: null })
+    rootRef.current?.scrollIntoView?.({ block: 'nearest' })
+  }, [])
 
   // null = not checked yet: say so instead of guessing "off".
   const state: 'on' | 'off' | 'unknown' =
@@ -44,7 +53,7 @@ export default function SettingsAppPasswordSection({
         : t('settings.appPasswordUnknown')
 
   return (
-    <div data-testid="settings-app-password">
+    <div ref={rootRef} data-testid="settings-app-password">
       <div className="mb-1.5 font-medium text-[var(--muted)]">{t('settings.appPassword')}</div>
       <div className="flex items-center justify-between gap-3">
         <span
@@ -80,12 +89,7 @@ export default function SettingsAppPasswordSection({
               <button
                 type="button"
                 data-testid="settings-app-password-set"
-                onClick={() => {
-                  // Same route as the header session menu: back to the start
-                  // screen, whose set-password step owns that flow.
-                  onLeaveSettings()
-                  void logout()
-                }}
+                onClick={() => setMode('set')}
                 className={GHOST_BTN_CLS}
               >
                 {t('userMenu.setPassword')}
@@ -102,7 +106,9 @@ export default function SettingsAppPasswordSection({
 
       {mode !== 'idle' && (
         <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">
-          {mode === 'change' ? (
+          {mode === 'set' ? (
+            <SetPasswordForm onCancel={() => setMode('idle')} onDone={() => setMode('idle')} />
+          ) : mode === 'change' ? (
             <ChangePasswordForm
               onCancel={() => setMode('idle')}
               onChanged={() => setMode('idle')}

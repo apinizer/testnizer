@@ -19,11 +19,16 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 import { useAiChatStore } from '../../stores/ai-chat.store'
 import { activateTabStores } from '../../lib/activate-tab'
-import { makeTabId } from '../../lib/utils'
 import { toast } from '../../lib/toast'
 import type { MockEndpoint, MockMethod, MockServer } from '../../types'
 import { mockServerUrl } from './mock-http-tabs'
 import { MOCK_LLM_MODEL } from './mock-ai-presets'
+import {
+  focusMockClientTab,
+  mockClientTabKey,
+  mockClientTabName,
+  newMockClientTabId,
+} from './mock-client-tab'
 
 const SSE_METHODS: readonly SseHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
@@ -84,25 +89,51 @@ export function mockEndpointUrl(
 }
 
 export interface OpenMockSseTarget {
+  /** The mock server — with the method and path, the key of its one client tab. */
+  serverId: string
   name: string
   url: string
   method: SseHttpMethod
+  /** The endpoint path: header and per-endpoint buttons of one endpoint share a tab. */
+  path: string
 }
 
-/** Open a new SSE request tab prefilled with the mock's URL and method. Returns the tab id. */
+/**
+ * Open the SSE request tab of a mock endpoint, prefilled with its URL and
+ * method, and connect it (PM review #20 — "Open in SSE tab" used to leave it
+ * Disconnected). A second click focuses that tab instead of opening another
+ * (its config is left as the user has it) and reconnects it when it is not
+ * connected. Returns the tab id.
+ */
 export function openMockInSseTab(o: OpenMockSseTarget): string {
-  const id = makeTabId()
-  useTabsStore.getState().openTab({ id, name: o.name, protocol: 'sse', url: '' })
+  const key = mockClientTabKey('sse', o.serverId, `${o.method} ${o.path}`)
+  const open = focusMockClientTab(key)
+  if (open) {
+    connectSseIfIdle()
+    return open
+  }
+  const id = newMockClientTabId(key)
+  useTabsStore.getState().openTab({ id, name: mockClientTabName(o.name), protocol: 'sse', url: '' })
   activateTabStores(id)
   const sse = useSseStore.getState()
   sse.setMethod(o.method)
   sse.setUrl(o.url)
   // A prefilled scratch tab holds nothing the user typed — no dirty dot.
   useTabsStore.getState().markDirty(id, false)
+  connectSseIfIdle()
   return id
 }
 
+/** Connect the ACTIVE SSE tab unless it is connected or connecting already. */
+function connectSseIfIdle(): void {
+  const sse = useSseStore.getState()
+  if (sse.connectionState === 'connected' || sse.connectionState === 'connecting') return
+  void sse.connect()
+}
+
 export interface OpenMockAiChatTarget {
+  /** The mock server — with the provider, the key of its one AI Chat tab. */
+  serverId: string
   name: string
   /** The full chat endpoint URL — the provider posts to it as it is. */
   url: string
@@ -130,8 +161,13 @@ export interface OpenMockAiChatTarget {
  * URL with the provider's default (`api.anthropic.com`).
  */
 export function openMockInAiChatTab(o: OpenMockAiChatTarget): string {
-  const id = makeTabId()
-  useTabsStore.getState().openTab({ id, name: o.name, protocol: 'ai', url: '' })
+  // One tab per server and provider (PM review #20): a second click focuses
+  // it — its conversation and settings stay as they are.
+  const key = mockClientTabKey('ai', o.serverId, `${o.provider ?? 'custom'} ${o.url}`)
+  const open = focusMockClientTab(key)
+  if (open) return open
+  const id = newMockClientTabId(key)
+  useTabsStore.getState().openTab({ id, name: mockClientTabName(o.name), protocol: 'ai', url: '' })
   activateTabStores(id)
   const ai = useAiChatStore.getState()
   ai.setSavedKeyDisabled(true)
@@ -173,13 +209,27 @@ export async function startThenOpen(o: StartThenOpen, open: () => string): Promi
 export function startAndOpenMockInSseTab(
   o: OpenMockSseTarget & StartThenOpen,
 ): Promise<string | null> {
-  return startThenOpen(o, () => openMockInSseTab({ name: o.name, url: o.url, method: o.method }))
+  return startThenOpen(o, () =>
+    openMockInSseTab({
+      serverId: o.serverId,
+      name: o.name,
+      url: o.url,
+      method: o.method,
+      path: o.path,
+    }),
+  )
 }
 
 export function startAndOpenMockInAiChatTab(
   o: OpenMockAiChatTarget & StartThenOpen,
 ): Promise<string | null> {
   return startThenOpen(o, () =>
-    openMockInAiChatTab({ name: o.name, url: o.url, model: o.model, provider: o.provider }),
+    openMockInAiChatTab({
+      serverId: o.serverId,
+      name: o.name,
+      url: o.url,
+      model: o.model,
+      provider: o.provider,
+    }),
   )
 }

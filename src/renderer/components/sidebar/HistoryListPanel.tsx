@@ -28,7 +28,7 @@ import { useTranslation } from '../../lib/i18n'
  * and pushed the day's requests down, so it was removed.
  */
 export default function HistoryListPanel() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const entries = useHistoryStore((s) => s.entries)
   const fetch = useHistoryStore((s) => s.fetch)
   const clear = useHistoryStore((s) => s.clear)
@@ -68,7 +68,7 @@ export default function HistoryListPanel() {
     )
   }, [entries, searchTerm])
 
-  const groups = useMemo(() => groupByDate(filtered), [filtered])
+  const groups = useMemo(() => groupByDate(filtered, t, locale), [filtered, t, locale])
 
   function handleOpenInTab(entry: HistoryEntry) {
     // SOAP reads the snapshot directly: values main masked (issue #195) come
@@ -248,14 +248,16 @@ export default function HistoryListPanel() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" lang={locale}>
       {/* Header */}
       <div
         className="flex shrink-0 items-center gap-2 px-3 py-2"
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <Clock size={13} style={{ color: 'var(--accent)' }} />
-        <span style={{ color: 'var(--text)', fontSize: 13, fontWeight: 600 }}>History</span>
+        <span style={{ color: 'var(--text)', fontSize: 13, fontWeight: 600 }}>
+          {t('sidebar.history')}
+        </span>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>{entries.length}</span>
         <div className="flex-1" />
         <button
@@ -268,9 +270,9 @@ export default function HistoryListPanel() {
             color: 'var(--muted)',
             fontSize: 13,
           }}
-          title="Clear all history"
+          title={t('history.clearAllTitle')}
         >
-          Clear
+          {t('history.clear')}
         </button>
       </div>
 
@@ -287,7 +289,7 @@ export default function HistoryListPanel() {
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Filter history..."
+            placeholder={t('history.filterPlaceholder')}
             className="w-full border-none bg-transparent outline-none"
             style={{ color: 'var(--text)', fontSize: 13, fontFamily: 'inherit' }}
           />
@@ -299,8 +301,8 @@ export default function HistoryListPanel() {
         {groups.length === 0 && (
           <EmptyState
             icon={HistoryIcon}
-            title="No history yet."
-            description="Send a request to see it appear here."
+            title={t('history.emptyTitle')}
+            description={t('history.emptyDesc')}
             variant="compact"
             size="sm"
           />
@@ -362,7 +364,7 @@ export default function HistoryListPanel() {
                   </span>
                 )}
                 <span className="shrink-0" style={{ color: 'var(--hint)', fontSize: 13 }}>
-                  {formatTime(entry.executed_at)}
+                  {formatTime(entry.executed_at, locale)}
                 </span>
                 <button
                   type="button"
@@ -403,7 +405,11 @@ export default function HistoryListPanel() {
 
 // ── Helpers ──────────────────────────────────────────────────
 
-function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: HistoryEntry[] }> {
+function groupByDate(
+  entries: HistoryEntry[],
+  t: (key: string) => string,
+  locale: string,
+): Array<{ label: string; items: HistoryEntry[] }> {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
   const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000
@@ -419,7 +425,8 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
       yesterday.push(e)
     } else {
       const d = new Date(e.executed_at)
-      const key = d.toLocaleDateString(undefined, {
+      // EN keeps the system's date format; TR always reads Turkish.
+      const key = d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : undefined, {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -430,16 +437,19 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
   }
 
   const out: Array<{ label: string; items: HistoryEntry[] }> = []
-  if (today.length) out.push({ label: 'Today', items: today })
-  if (yesterday.length) out.push({ label: 'Yesterday', items: yesterday })
+  if (today.length) out.push({ label: t('history.today'), items: today })
+  if (yesterday.length) out.push({ label: t('history.yesterday'), items: yesterday })
   for (const [label, items] of earlierBuckets) {
     out.push({ label, items })
   }
   return out
 }
 
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+function formatTime(ts: number, locale: string): string {
+  return new Date(ts).toLocaleTimeString(locale === 'tr' ? 'tr-TR' : undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
 }
 
 function shortUrl(url: string): string {

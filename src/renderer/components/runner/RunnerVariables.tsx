@@ -180,7 +180,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                             '••••••••'
                           ) : (
                             <span className="italic" style={{ color: 'var(--hint)' }}>
-                              Enter value
+                              {t('runnerVars.enterValue')}
                             </span>
                           )}
                         </span>
@@ -188,7 +188,7 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                         v.value ||
                         v.initialValue || (
                           <span className="italic" style={{ color: 'var(--hint)' }}>
-                            Enter value
+                            {t('runnerVars.enterValue')}
                           </span>
                         )
                       )}

@@ -7,6 +7,7 @@ import EmptyState from '../shared/EmptyState'
 import NewRunButton from './NewRunButton'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
+import { displayRunSourceLabel } from '../../lib/runner-source-label'
 
 interface RunHistoryRow {
   id: string
@@ -529,7 +530,9 @@ function HistoryRow({
           {formatDate(run.started_at)}
         </div>
       </td>
-      <td className="py-2.5 pr-4 text-[var(--text)]">{run.source_label || run.source}</td>
+      <td className="py-2.5 pr-4 text-[var(--text)]">
+        {run.source_label ? displayRunSourceLabel(run.source_label, t) : run.source}
+      </td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.environment_name || '-'}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.iterations}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{formatDuration(run.duration_ms)}</td>

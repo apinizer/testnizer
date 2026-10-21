@@ -399,9 +399,12 @@ describe('MockServerEditor — AI kind (issue #221, Faz 2b)', () => {
         streamConfig: { ...LLM_DEFAULTS, chunkIntervalMs: 50, provider: 'anthropic' },
       }),
     )
-    expect(await screen.findByTestId('mock-llm-anthropic-hint')).toHaveTextContent(
-      'saved Anthropic key',
-    )
+    const hint = await screen.findByTestId('mock-llm-anthropic-hint')
+    expect(hint).toHaveTextContent('saved Anthropic key')
+    // PM review #19: the note names both paths — Open in AI Chat never sends
+    // the saved key; a tab set up by hand on the Anthropic provider does.
+    expect(hint).toHaveTextContent(/Open in AI Chat \(Anthropic\).{0,3} never sends your saved/)
+    expect(hint).toHaveTextContent(/yourself, on the Anthropic provider, does send your saved key/)
 
     fireEvent.change(screen.getByTestId('mock-llm-usage'), { target: { value: 'custom' } })
     await waitFor(() =>

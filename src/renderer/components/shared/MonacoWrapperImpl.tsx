@@ -4,6 +4,7 @@ import * as monaco from 'monaco-editor'
 import type { editor } from 'monaco-editor'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useTranslation } from '../../lib/i18n'
 
 /** CSS class name used by Monaco decorations to colorize {{variables}} */
 const VARIABLE_DECO_CLASS = 'monaco-variable-highlight'
@@ -84,6 +85,8 @@ interface MonacoWrapperProps {
   height?: string | number
   className?: string
   wordWrap?: boolean
+  /** Accessible name for the editor. Defaults to the translated "Editor content". */
+  ariaLabel?: string
 }
 
 /** Track registered disposables so we don't register multiple providers */
@@ -189,7 +192,9 @@ export default function MonacoWrapperImpl({
   height = '100%',
   className,
   wordWrap = true,
+  ariaLabel,
 }: MonacoWrapperProps) {
+  const { t } = useTranslation()
   const theme = useUIStore((s) => s.theme)
   const fontSize = useUIStore((s) => s.fontSize)
   const resolvedTheme =
@@ -261,6 +266,9 @@ export default function MonacoWrapperImpl({
         onMount={handleEditorMount}
         options={{
           minimap: { enabled: false },
+          // Monaco's built-in default is the English "Editor content"; screen
+          // readers announce it, so it follows the UI language.
+          ariaLabel: ariaLabel ?? t('editor.ariaLabel'),
           // Monaco's own menu offers a Paste that calls
           // `document.execCommand('paste')`, which Chromium refuses in a
           // renderer — it looked available and did nothing (issue #113). The

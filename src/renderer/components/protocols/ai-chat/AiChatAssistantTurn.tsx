@@ -123,7 +123,13 @@ export default function AiChatAssistantTurn({
               {turn.error}
             </div>
           )}
-          {!streaming && <AiChatMetricsRow metrics={turn.metrics} timestamp={turn.timestamp} />}
+          {!streaming && (
+            <AiChatMetricsRow
+              metrics={turn.metrics}
+              timestamp={turn.timestamp}
+              interrupted={!!turn.error}
+            />
+          )}
         </div>
       </div>
     </div>

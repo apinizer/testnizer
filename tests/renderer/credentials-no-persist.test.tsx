@@ -640,10 +640,11 @@ describe('credential restart hint (issue #244)', () => {
     it(`renders under the HTTP Auth tab and the MCP Authorization tab in ${locale}`, () => {
       useUIStore.setState({ locale })
       setLocale(locale)
-      useRequestStore.setState({ auth: { type: 'bearer', bearer: { token: '' } } })
+      useRequestStore.setState({ auth: { type: 'bearer', bearer: { token: 'sk-live-1' } } })
       useMcpStore.setState({
         transport: 'http',
-        auth: { type: 'basic', basic: { username: '', password: '' } },
+        url: 'https://mcp.example.com/mcp',
+        auth: { type: 'basic', basic: { username: 'u', password: 'p4ss' } },
       })
 
       render(React.createElement(AuthTab))
@@ -665,6 +666,57 @@ describe('credential restart hint (issue #244)', () => {
       reset()
     })
   }
+
+  // Review #8: the hint used to show for any auth type, even with an empty
+  // field or a `{{var}}` (the very advice it gives) — the key/value hints
+  // only show for a literal value. Same rule now.
+  for (const [label, token] of [
+    ['empty', ''],
+    ['{{var}} only', '{{api_token}}'],
+    ['blank', '   '],
+  ] as const) {
+    it(`no hint when the token is ${label} (HTTP + MCP)`, () => {
+      useRequestStore.setState({ auth: { type: 'bearer', bearer: { token } } })
+      render(React.createElement(AuthTab))
+      expect(screen.queryByTestId('auth-credential-restart-hint')).toBeNull()
+      cleanup()
+      useMcpStore.setState({
+        transport: 'http',
+        url: 'https://mcp.example.com/mcp',
+        auth: { type: 'basic', basic: { username: 'u', password: token } },
+      })
+      render(React.createElement(McpAuthSection))
+      expect(screen.queryByTestId('mcp-auth-restart-hint')).toBeNull()
+      expect(
+        screen.getByTestId('mcp-auth-basic-password').getAttribute('aria-describedby'),
+      ).toBeNull()
+      reset()
+    })
+  }
+
+  it('only the ACTIVE auth type counts (a stale basic password under Bearer does not)', () => {
+    useRequestStore.setState({
+      auth: { type: 'bearer', bearer: { token: '' }, basic: { username: 'u', password: 'old' } },
+    })
+    render(React.createElement(AuthTab))
+    expect(screen.queryByTestId('auth-credential-restart-hint')).toBeNull()
+    reset()
+  })
+
+  it('MCP shows the line once: a literal in the URL and in Auth → only the bar hint', () => {
+    useMcpStore.setState({
+      transport: 'http',
+      url: 'https://mcp.example.com/mcp?api_key=abc123',
+      auth: { type: 'basic', basic: { username: 'u', password: 'p4ss' } },
+    })
+    render(React.createElement(McpAuthSection))
+    expect(screen.queryByTestId('mcp-auth-restart-hint')).toBeNull()
+    // The password field still points at the line on screen (the bar's).
+    expect(screen.getByTestId('mcp-auth-basic-password').getAttribute('aria-describedby')).toBe(
+      'mcp-url-restart-hint-text',
+    )
+    reset()
+  })
 
   it('no hint when the request has no own credential (none / inherit)', () => {
     useRequestStore.setState({ auth: { type: 'inherit' } })

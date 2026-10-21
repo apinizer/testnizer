@@ -515,16 +515,22 @@ export class AiHttpError extends Error {
   readonly status: number
   readonly errorType?: string
   readonly midStream: boolean
+  /**
+   * Mid-stream only: when the first text / tool-call fragment arrived, so the
+   * call's TTFB is real even though the call failed (null = nothing came).
+   */
+  readonly firstContentAt: number | null
   constructor(
     status: number,
     message: string,
-    opts: { errorType?: string; midStream?: boolean } = {},
+    opts: { errorType?: string; midStream?: boolean; firstContentAt?: number | null } = {},
   ) {
     super(message)
     this.name = 'AiHttpError'
     this.status = status
     if (opts.errorType !== undefined) this.errorType = opts.errorType
     this.midStream = opts.midStream === true
+    this.firstContentAt = opts.firstContentAt ?? null
   }
 }
 
@@ -919,7 +925,11 @@ export async function* streamChatRound(
             streamError.type
               ? `Mid-stream error (${streamError.type}): ${streamError.message}`
               : `Mid-stream error: ${streamError.message}`,
-            { ...(streamError.type ? { errorType: streamError.type } : {}), midStream: true },
+            {
+              ...(streamError.type ? { errorType: streamError.type } : {}),
+              midStream: true,
+              firstContentAt,
+            },
           )
         }
 

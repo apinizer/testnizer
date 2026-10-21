@@ -6,10 +6,12 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import GraphQLSchemaExplorer from './GraphQLSchemaExplorer'
 import EmptyState from '../shared/EmptyState'
 import { extractGraphQLErrors } from '../../lib/graphql-errors'
+import { useTranslation } from '../../lib/i18n'
 
 type TabId = 'response' | 'schema'
 
 export default function GraphQLResponsePane() {
+  const { t, locale } = useTranslation()
   const [activeTab, setActiveTab] = useState<TabId>('response')
   const response = useResponseStore((s) => s.response)
   const isLoading = useResponseStore((s) => s.isLoading)
@@ -17,12 +19,12 @@ export default function GraphQLResponsePane() {
   const introspectError = useGraphQLStore((s) => s.introspectError)
 
   const tabs: { id: TabId; label: string }[] = [
-    { id: 'response', label: 'Response' },
-    { id: 'schema', label: 'Schema Explorer' },
+    { id: 'response', label: t('graphql.tabResponse') },
+    { id: 'schema', label: t('graphql.tabSchema') },
   ]
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]" lang={locale}>
       {/* Tab bar */}
       <div className="flex shrink-0 items-center border-b border-[var(--border)] bg-[var(--white)]">
         {tabs.map((tab) => (
@@ -65,22 +67,23 @@ function ResponseTab({
   response: ReturnType<typeof useResponseStore.getState>['response']
   isLoading: boolean
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center text-[var(--muted)]">
-        Running query...
+        {t('graphql.runningQuery')}
       </div>
     )
   }
 
   if (!response) {
-    return <EmptyState icon={Send} title="Run a query to see the response" size="md" />
+    return <EmptyState icon={Send} title={t('graphql.emptyResponse')} size="md" />
   }
 
   if (response.error && !response.body) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4">
-        <span className="font-medium text-red-500">Error</span>
+        <span className="font-medium text-red-500">{t('console.section.error')}</span>
         <span className="text-center text-[var(--muted)]">{response.error}</span>
       </div>
     )
@@ -129,7 +132,7 @@ function ResponseTab({
           }}
         >
           <div className="font-medium" style={{ color: '#cc2200' }}>
-            GraphQL errors ({gqlErrors.length})
+            {t('graphql.errorsTitle').replace('{count}', String(gqlErrors.length))}
           </div>
           <ul className="mt-1 space-y-0.5">
             {gqlErrors.slice(0, 5).map((err, i) => (
@@ -142,7 +145,7 @@ function ResponseTab({
             ))}
             {gqlErrors.length > 5 && (
               <li className="text-[var(--muted)] italic">
-                +{gqlErrors.length - 5} more — see body
+                {t('graphql.moreErrors').replace('{count}', String(gqlErrors.length - 5))}
               </li>
             )}
           </ul>

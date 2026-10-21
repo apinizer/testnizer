@@ -132,6 +132,8 @@ describe('streamChatRound raises the mid-stream error after the partial text', (
       errorType: 'server_error',
       message: 'Mid-stream error (server_error): The server had an error',
     })
+    // Text came before the error: the failed call still has a TTFB (review #11).
+    expect(typeof (r.error as AiHttpError).firstContentAt).toBe('number')
   })
 
   it('anthropic: event: error overloaded_error after a text delta', async () => {

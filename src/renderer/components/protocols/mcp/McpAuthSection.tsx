@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react'
-import { useMcpStore } from '../../../stores/mcp.store'
+import { MCP_CREDENTIALS, useMcpStore } from '../../../stores/mcp.store'
 import { MCP_AUTH_TYPES } from '../../../stores/mcp-auth.slice'
 import type { McpAuthType } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
@@ -11,7 +11,11 @@ import {
   McpBearerAuthFields,
 } from './McpAuthFields'
 import CredentialRestartHint from '../../shared/CredentialRestartHint'
-import { sentAsPreview } from './config-ui'
+import { mcpUrlHasLiteralCredential, sentAsPreview } from './config-ui'
+import { hasLiteralAuthCredential } from '../../../lib/credential-withhold'
+
+/** The connection bar's restart hint (`McpConnectionBar`). */
+const URL_HINT_ID = 'mcp-url-restart-hint-text'
 
 const TYPE_KEYS: Record<McpAuthType, string> = {
   none: 'mcp.auth.type.none',
@@ -44,7 +48,15 @@ export default function McpAuthSection() {
   const setAuth = useMcpStore((s) => s.setAuth)
   const transport = useMcpStore((s) => s.transport)
   const isStdio = transport === 'stdio'
+  const url = useMcpStore((s) => s.url)
   const preview = sentAsPreview(auth)
+  // Issue #244 / review #8: only while a literal credential is typed (the
+  // key/value hints' rule), and once per MCP tab — when the URL already
+  // shows the same line in the bar above, this one stays away.
+  const authLiteral = hasLiteralAuthCredential(auth, MCP_CREDENTIALS)
+  const urlHint = mcpUrlHasLiteralCredential(transport, url)
+  const showHint = authLiteral && !urlHint
+  const hintId = showHint ? MCP_AUTH_RESTART_HINT_ID : authLiteral ? URL_HINT_ID : undefined
 
   return (
     <div
@@ -58,7 +70,7 @@ export default function McpAuthSection() {
             value={auth.type}
             onChange={(e) => setAuth({ ...auth, type: e.target.value as McpAuthType })}
             data-testid="mcp-auth-type"
-            className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
           >
             {MCP_AUTH_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -93,7 +105,9 @@ export default function McpAuthSection() {
                 {t('mcp.auth.desc.none')}
               </div>
             )}
-            {auth.type === 'basic' && <McpBasicAuthFields auth={auth} onChange={setAuth} />}
+            {auth.type === 'basic' && (
+              <McpBasicAuthFields auth={auth} onChange={setAuth} describedBy={hintId} />
+            )}
             {auth.type === 'bearer' && <McpBearerAuthFields auth={auth} onChange={setAuth} />}
             {auth.type === 'api-key' && <McpApiKeyAuthFields auth={auth} onChange={setAuth} />}
             {auth.type === 'oauth2' && <McpOAuthSection embedded />}
@@ -107,7 +121,7 @@ export default function McpAuthSection() {
               </div>
             )}
             {/* Issue #244: literal credentials are not kept in the tab snapshot. */}
-            {(auth.type === 'basic' || auth.type === 'bearer' || auth.type === 'api-key') && (
+            {showHint && (
               <CredentialRestartHint id={MCP_AUTH_RESTART_HINT_ID} testId="mcp-auth-restart-hint" />
             )}
             {auth.type === 'api-key' && auth.apiKey?.in === 'query' && transport === 'sse' && (

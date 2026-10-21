@@ -136,7 +136,7 @@ describe('Response row and option rows at a narrow width (issue #226)', () => {
     const row = screen.getByTestId('mock-response-row')
     // Fixed rem minimums on every track — never `1fr` (= `minmax(auto, 1fr)`).
     expect(row.className).toMatch(
-      /grid-cols-\[minmax\([\d.]+rem,140px\)_minmax\([\d.]+rem,1fr\)_minmax\([\d.]+rem,140px\)_auto\]/,
+      /grid-cols-\[minmax\([\d.]+rem,[\d.]+rem\)_minmax\([\d.]+rem,1fr\)_minmax\([\d.]+rem,[\d.]+rem\)_auto\]/,
     )
     for (const id of ['mock-response-status', 'mock-response-name', 'mock-response-body-type']) {
       expect(screen.getByTestId(id)).toHaveClass('min-w-0', 'w-full')

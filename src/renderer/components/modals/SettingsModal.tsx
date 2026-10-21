@@ -350,7 +350,7 @@ export default function SettingsModal() {
           </div>
 
           {/* App password (issue #240) — applies immediately, not on Save */}
-          <SettingsAppPasswordSection onLeaveSettings={() => setShow(false)} />
+          <SettingsAppPasswordSection />
         </div>
 
         {(saveError || loadError) && (

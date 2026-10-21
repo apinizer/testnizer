@@ -10,7 +10,7 @@ import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { scrubJsonCredentials } from '../../lib/credential-text'
 
 export default function GraphQLQueryPane() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const url = useGraphQLStore((s) => s.url)
   const setUrl = useGraphQLStore((s) => s.setUrl)
   const query = useGraphQLStore((s) => s.query)
@@ -39,7 +39,7 @@ export default function GraphQLQueryPane() {
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim()).length
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]" lang={locale}>
       {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
         <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
@@ -53,7 +53,7 @@ export default function GraphQLQueryPane() {
               color: isConnected ? '#1a7a4a' : 'var(--accent-text)',
             }}
           >
-            {isConnected ? 'Subscribed' : 'Subscription'}
+            {isConnected ? t('graphql.subscribed') : t('graphql.subscription')}
           </span>
         )}
       </div>
@@ -81,7 +81,7 @@ export default function GraphQLQueryPane() {
             style={{ background: isConnected ? '#cc2200' : 'var(--accent)', border: 'none' }}
           >
             <Play size={13} />
-            {isConnected ? 'Unsubscribe' : 'Subscribe'}
+            {isConnected ? t('graphql.unsubscribe') : t('graphql.subscribe')}
           </button>
         ) : (
           <button
@@ -93,7 +93,7 @@ export default function GraphQLQueryPane() {
             style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}
           >
             <Play size={13} />
-            {isLoading ? 'Cancel' : 'Run'}
+            {isLoading ? t('common.cancel') : t('graphql.run')}
           </button>
         )}
 
@@ -107,7 +107,7 @@ export default function GraphQLQueryPane() {
           style={{ background: 'transparent' }}
         >
           <Search size={13} />
-          {isIntrospecting ? 'Loading...' : 'Introspect'}
+          {isIntrospecting ? t('graphql.loading') : t('graphql.introspect')}
         </button>
       </div>
 
@@ -127,7 +127,7 @@ export default function GraphQLQueryPane() {
             style={{ background: 'transparent', border: 'none' }}
           >
             {variablesExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            <span>Variables</span>
+            <span>{t('graphql.variables')}</span>
           </button>
           {variablesExpanded && (
             <div className="h-[120px] border-t border-[var(--border)]">
@@ -160,7 +160,7 @@ export default function GraphQLQueryPane() {
           >
             {headersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <Settings2 size={14} className="text-[var(--muted)]" />
-            <span>Headers</span>
+            <span>{t('request.headers')}</span>
             {enabledHeaderCount > 0 && (
               <span
                 className="ml-1 rounded-full px-[5px]"

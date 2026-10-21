@@ -62,8 +62,6 @@ interface RunnerConfigProps {
   onSaveConfig?: () => Promise<boolean>
 }
 
-const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
 export default function RunnerConfig({
   delay,
   setDelay,
@@ -94,7 +92,9 @@ export default function RunnerConfig({
   canSchedule = true,
   onSaveConfig,
 }: RunnerConfigProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
+  // Same day names the Scheduled Tasks list prints, so both screens agree.
+  const weekdayLabels = t('scheduledTasks.weekdays').split(',')
   const [isSavingConfig, setIsSavingConfig] = useState(false)
 
   const handleSaveConfig = async () => {
@@ -168,27 +168,27 @@ export default function RunnerConfig({
     }
     const expr = scheduleCron.trim()
     if (!expr) {
-      setCronError('Cron expression is empty')
+      setCronError(t('runnerConfig.cronEmpty'))
       return
     }
     let cancelled = false
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       window.api?.scheduler
         ?.validateCron(expr)
         .then((res) => {
           if (cancelled) return
           const valid = (res as { success?: boolean; data?: { valid?: boolean } })?.data?.valid
-          setCronError(valid ? null : 'Invalid cron — expected 5 fields (m h dom mon dow)')
+          setCronError(valid ? null : t('runnerConfig.cronInvalid'))
         })
         .catch(() => {
-          if (!cancelled) setCronError('Could not validate cron expression')
+          if (!cancelled) setCronError(t('runnerConfig.cronValidateFailed'))
         })
     }, 300)
     return () => {
       cancelled = true
-      window.clearTimeout(t)
+      window.clearTimeout(timer)
     }
-  }, [scheduleCron, scheduleType])
+  }, [scheduleCron, scheduleType, t])
 
   const toggleDay = (dow: number) => {
     setScheduleDays((prev) =>
@@ -202,11 +202,11 @@ export default function RunnerConfig({
       // needs at least one weekday, cron must parse. Local feedback only
       // — the main process re-validates too.
       if ((scheduleType === 'daily' || scheduleType === 'weekly') && !scheduleTime) {
-        setScheduleError('Pick a time of day')
+        setScheduleError(t('runnerConfig.pickTime'))
         return
       }
       if (scheduleType === 'weekly' && scheduleDays.length === 0) {
-        setScheduleError('Pick at least one weekday')
+        setScheduleError(t('runnerConfig.pickWeekday'))
         return
       }
       if (scheduleType === 'cron' && cronError) {
@@ -229,7 +229,7 @@ export default function RunnerConfig({
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }}>
+    <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }} lang={locale}>
       {/* Content */}
       <div className="flex-1 overflow-auto px-5 py-4">
         {/* Choose how to run. When the runner is sourced from APIs (not a
@@ -238,7 +238,7 @@ export default function RunnerConfig({
         {canSchedule ? (
           <>
             <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
-              Choose how to run your collection
+              {t('runnerConfig.chooseHow')}
             </h3>
             <div style={{ marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8 }}>
               <label
@@ -252,7 +252,7 @@ export default function RunnerConfig({
                   onChange={() => setRunMode('manual')}
                   className="accent-[#e86826]"
                 />
-                Run manually
+                {t('runnerConfig.runManually')}
               </label>
               <label
                 className="flex cursor-pointer items-center gap-2"
@@ -265,7 +265,7 @@ export default function RunnerConfig({
                   onChange={() => setRunMode('schedule')}
                   className="accent-[#e86826]"
                 />
-                Schedule runs
+                {t('runnerConfig.scheduleRuns')}
               </label>
             </div>
           </>
@@ -278,7 +278,7 @@ export default function RunnerConfig({
             style={{ background: 'var(--surface)' }}
           >
             <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 10 }}>
-              Schedule Configuration
+              {t('runnerConfig.scheduleConfig')}
             </div>
 
             {/* Schedule type selector — four mutually exclusive modes. We
@@ -299,10 +299,10 @@ export default function RunnerConfig({
             >
               {(
                 [
-                  { id: 'interval', label: 'Interval' },
-                  { id: 'daily', label: 'Daily' },
-                  { id: 'weekly', label: 'Weekly' },
-                  { id: 'cron', label: 'Cron' },
+                  { id: 'interval', label: t('runnerConfig.typeInterval') },
+                  { id: 'daily', label: t('runnerConfig.typeDaily') },
+                  { id: 'weekly', label: t('runnerConfig.typeWeekly') },
+                  { id: 'cron', label: t('runnerConfig.typeCron') },
                 ] as { id: ScheduleType; label: string }[]
               ).map((opt) => {
                 const active = scheduleType === opt.id
@@ -330,7 +330,7 @@ export default function RunnerConfig({
 
             {scheduleType === 'interval' && (
               <div className="flex items-center gap-2">
-                <span style={{ color: 'var(--muted)' }}>Run every</span>
+                <span style={{ color: 'var(--muted)' }}>{t('runnerConfig.runEvery')}</span>
                 <input
                   type="number"
                   min={1}
@@ -345,16 +345,16 @@ export default function RunnerConfig({
                   className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none"
                   style={{ fontSize: 13 }}
                 >
-                  <option value="minutes">minutes</option>
-                  <option value="hours">hours</option>
-                  <option value="days">days</option>
+                  <option value="minutes">{t('scheduledTasks.unitMinutes')}</option>
+                  <option value="hours">{t('scheduledTasks.unitHours')}</option>
+                  <option value="days">{t('scheduledTasks.unitDays')}</option>
                 </select>
               </div>
             )}
 
             {scheduleType === 'daily' && (
               <div className="flex items-center gap-2">
-                <span style={{ color: 'var(--muted)' }}>Every day at</span>
+                <span style={{ color: 'var(--muted)' }}>{t('runnerConfig.everyDayAt')}</span>
                 <input
                   type="time"
                   value={scheduleTime}
@@ -362,14 +362,16 @@ export default function RunnerConfig({
                   className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   style={{ fontSize: 13 }}
                 />
-                <span style={{ color: 'var(--hint)', fontSize: 12 }}>(local time)</span>
+                <span style={{ color: 'var(--hint)', fontSize: 12 }}>
+                  {t('runnerConfig.localTime')}
+                </span>
               </div>
             )}
 
             {scheduleType === 'weekly' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div className="flex items-center gap-2">
-                  <span style={{ color: 'var(--muted)' }}>At</span>
+                  <span style={{ color: 'var(--muted)' }}>{t('runnerConfig.at')}</span>
                   <input
                     type="time"
                     value={scheduleTime}
@@ -377,10 +379,12 @@ export default function RunnerConfig({
                     className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                     style={{ fontSize: 13 }}
                   />
-                  <span style={{ color: 'var(--hint)', fontSize: 12 }}>(local time)</span>
+                  <span style={{ color: 'var(--hint)', fontSize: 12 }}>
+                    {t('runnerConfig.localTime')}
+                  </span>
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {WEEKDAY_LABELS.map((label, idx) => {
+                  {weekdayLabels.map((label, idx) => {
                     const active = scheduleDays.includes(idx)
                     return (
                       <button
@@ -410,7 +414,7 @@ export default function RunnerConfig({
                   type="text"
                   value={scheduleCron}
                   onChange={(e) => setScheduleCron(e.target.value)}
-                  placeholder="m h dom mon dow  (e.g. 0 9 * * 1-5)"
+                  placeholder={t('runnerConfig.cronPlaceholder')}
                   className="rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   style={{ fontSize: 13, fontFamily: 'ui-monospace, monospace' }}
                 />
@@ -418,8 +422,8 @@ export default function RunnerConfig({
                   <div style={{ color: '#cc2200', fontSize: 12 }}>{cronError}</div>
                 ) : (
                   <div style={{ color: 'var(--hint)', fontSize: 12 }}>
-                    5 fields, local time. Supports <code>*</code>, <code>a-b</code>,{' '}
-                    <code>*/n</code>, lists <code>a,b,c</code>.
+                    {t('runnerConfig.cronHintFields')} <code>*</code>, <code>a-b</code>,{' '}
+                    <code>*/n</code>, {t('runnerConfig.cronHintLists')} <code>a,b,c</code>.
                   </div>
                 )}
               </div>
@@ -433,12 +437,12 @@ export default function RunnerConfig({
 
         {/* Run configuration */}
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
-          Run configuration
+          {t('runnerConfig.runConfiguration')}
         </h3>
         <div className="mb-4 flex gap-4">
           <div className="flex-1">
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
-              Iterations
+              {t('runnerHistory.colIterations')}
             </label>
             <input
               type="number"
@@ -463,14 +467,14 @@ export default function RunnerConfig({
               was ambiguous.
             */}
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
-              Delay between requests
+              {t('runnerConfig.delayRequests')}
             </label>
             <div className="flex items-center gap-1.5">
               <input
                 type="number"
                 min={0}
                 step={100}
-                title="Applied after each request, including between iterations"
+                title={t('runnerConfig.delayRequestsHint')}
                 {...delayDraft.inputProps}
                 onFocus={(e) => {
                   delayDraft.inputProps.onFocus()
@@ -492,7 +496,7 @@ export default function RunnerConfig({
               underneath says by how much.
             */}
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
-              Delay between iterations
+              {t('runnerConfig.delayIterations')}
             </label>
             <div className="flex items-center gap-1.5">
               <input
@@ -500,7 +504,7 @@ export default function RunnerConfig({
                 min={0}
                 step={100}
                 data-testid="runner-iteration-delay"
-                title="Extra pause after a full iteration finishes, before the next one starts"
+                title={t('runnerConfig.delayIterationsHint')}
                 {...iterationDelayDraft.inputProps}
                 onFocus={(e) => {
                   iterationDelayDraft.inputProps.onFocus()
@@ -518,15 +522,18 @@ export default function RunnerConfig({
             label became a bug report in the first place. */}
         {iterations > 1 && iterationDelay > 0 && (
           <div className="mb-4" style={{ fontSize: 12, color: 'var(--hint)', marginTop: -8 }}>
-            {`Between iterations the runner waits ${delay + iterationDelay} ms (${delay} + ${iterationDelay}).`}
+            {t('runnerConfig.delayTotal')
+              .replace('{total}', String(delay + iterationDelay))
+              .replace('{delay}', String(delay))
+              .replace('{iterationDelay}', String(iterationDelay))}
           </div>
         )}
 
         {/* Iteration Data */}
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
-          Iteration Data
+          {t('runnerConfig.iterationData')}
           <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--muted)', marginLeft: 8 }}>
-            (Postman/Insomnia compatible — overrides Iterations)
+            {t('runnerConfig.iterationDataNote')}
           </span>
         </h3>
         <IterationDataPicker
@@ -567,21 +574,21 @@ export default function RunnerConfig({
 
         {/* Advanced Settings */}
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
-          Advanced Settings
+          {t('runnerConfig.advancedSettings')}
         </h3>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <Chk
-            label="Persist responses for a session"
+            label={t('runnerConfig.persistResponses')}
             checked={persistResponses}
             onChange={setPersistResponses}
           />
           <Chk
-            label="Stop run if an error occurs"
+            label={t('runnerConfig.stopOnError')}
             checked={stopOnError}
             onChange={setStopOnError}
           />
           <Chk
-            label="Keep variable values"
+            label={t('runnerConfig.keepVariables')}
             checked={keepVariableValues}
             onChange={setKeepVariableValues}
           />
@@ -597,7 +604,7 @@ export default function RunnerConfig({
             className="flex cursor-pointer items-center gap-2 rounded-[6px] border-none px-5 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: '#e86826', fontSize: 13 }}
           >
-            {runMode === 'schedule' ? 'Schedule run' : 'Start run'}
+            {runMode === 'schedule' ? t('runnerConfig.scheduleRun') : t('runnerConfig.startRun')}
             <svg
               width="14"
               height="14"
@@ -671,6 +678,7 @@ function IterationDataPicker({
   rows: Record<string, string>[]
   onChange: (rows: Record<string, string>[]) => void
 }) {
+  const { t } = useTranslation()
   const [error, setError] = useState<string | null>(null)
   const [filename, setFilename] = useState<string | null>(null)
 
@@ -685,7 +693,7 @@ function IterationDataPicker({
       setFilename(file.name)
       try {
         const text = await file.text()
-        const parsed = parseIterationData(text, file.name)
+        const parsed = parseIterationData(text, file.name, t)
         onChange(parsed)
         setError(null)
       } catch (e) {
@@ -708,11 +716,16 @@ function IterationDataPicker({
           className="cursor-pointer rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] hover:bg-[var(--bg)]"
           style={{ fontSize: 13 }}
         >
-          Select Data File…
+          {t('runnerConfig.selectDataFile')}
         </button>
         {filename && (
           <span style={{ color: 'var(--muted)', fontSize: 12 }}>
-            {filename} · {rows.length} iteration{rows.length === 1 ? '' : 's'}
+            {filename} ·{' '}
+            {t(
+              rows.length === 1
+                ? 'runnerConfig.iterationCountOne'
+                : 'runnerConfig.iterationCountOther',
+            ).replace('{count}', String(rows.length))}
           </span>
         )}
         {rows.length > 0 && (
@@ -725,7 +738,7 @@ function IterationDataPicker({
             className="cursor-pointer text-[var(--muted)] hover:text-[var(--text)]"
             style={{ fontSize: 12, background: 'transparent', border: 'none' }}
           >
-            Clear
+            {t('runnerConfig.clearData')}
           </button>
         )}
       </div>
@@ -734,8 +747,7 @@ function IterationDataPicker({
       )}
       {!filename && !error && (
         <div style={{ color: 'var(--hint)', fontSize: 12, marginTop: 6 }}>
-          Provide a JSON array (Postman test data) or CSV. Each row becomes one iteration; access
-          values via <code>pm.iterationData.get(&apos;key&apos;)</code>.
+          {t('runnerConfig.iterationDataHint')} <code>pm.iterationData.get(&apos;key&apos;)</code>.
         </div>
       )}
     </div>
@@ -743,14 +755,18 @@ function IterationDataPicker({
 }
 
 /** Parse iteration data from a Postman-compatible JSON array or a CSV. */
-function parseIterationData(text: string, filename: string): Record<string, string>[] {
+function parseIterationData(
+  text: string,
+  filename: string,
+  t: (key: string) => string,
+): Record<string, string>[] {
   const lower = filename.toLowerCase()
   if (lower.endsWith('.json')) {
     const parsed = JSON.parse(text) as unknown
-    if (!Array.isArray(parsed)) throw new Error('JSON data must be an array of row objects')
+    if (!Array.isArray(parsed)) throw new Error(t('runnerConfig.dataNotArray'))
     return parsed.map((row, i) => {
       if (!row || typeof row !== 'object') {
-        throw new Error(`Row ${i} is not an object`)
+        throw new Error(t('runnerConfig.dataRowNotObject').replace('{index}', String(i)))
       }
       const out: Record<string, string> = {}
       for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
@@ -761,7 +777,7 @@ function parseIterationData(text: string, filename: string): Record<string, stri
   }
   if (lower.endsWith('.csv')) {
     const lines = text.split(/\r?\n/).filter((l) => l.length > 0)
-    if (lines.length < 2) throw new Error('CSV must have a header row and at least one data row')
+    if (lines.length < 2) throw new Error(t('runnerConfig.csvTooShort'))
     const headers = parseCsvRow(lines[0])
     return lines.slice(1).map((line) => {
       const cells = parseCsvRow(line)
@@ -772,7 +788,7 @@ function parseIterationData(text: string, filename: string): Record<string, stri
       return out
     })
   }
-  throw new Error('Unsupported file format — use .json or .csv')
+  throw new Error(t('runnerConfig.dataUnsupported'))
 }
 
 function parseCsvRow(line: string): string[] {

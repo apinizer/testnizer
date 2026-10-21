@@ -2,12 +2,14 @@ import { Plug, Unplug, X } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import { useTranslation } from '../../lib/i18n'
 import McpStatusPill from './mcp/McpStatusPill'
+import { CB_ERROR_BOX, CB_ROW, CB_TARGET, CB_URL, cbPrimaryButton } from './connection-bar-ui'
 
 /**
  * WebSocket connection bar — the MCP / SSE bars' anatomy (issue #224): the
  * shared token status pill, the same Connect / Cancel / Disconnect button and
  * the same red token error box, so all connection protocols look and read the
- * same in light / dark and EN / TR. globals.css tokens only, no hex.
+ * same in light / dark and EN / TR. globals.css tokens only, no hex. Sizes and
+ * the wrap rule are the shared `connection-bar-ui.ts` set.
  */
 export default function WsConnectionBar() {
   const { t } = useTranslation()
@@ -25,43 +27,49 @@ export default function WsConnectionBar() {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
+      <div data-testid="ws-connection-row" className={CB_ROW}>
         <McpStatusPill state={connectionState} testId="ws-status" />
 
-        <input
-          type="text"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          disabled={busy}
-          data-testid="ws-url"
-          placeholder="wss://echo.websocket.org"
-          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)] disabled:opacity-60"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !busy) connect()
-          }}
-        />
+        <div className={CB_TARGET}>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            disabled={busy}
+            data-testid="ws-url"
+            placeholder="wss://echo.websocket.org"
+            className={CB_URL}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !busy) connect()
+            }}
+          />
 
-        {/* Connect / Cancel / Disconnect — same tokens as the MCP / SSE bars' button. */}
-        <button
-          type="button"
-          onClick={() => void (busy ? disconnect() : connect())}
-          disabled={!busy && !url.trim()}
-          data-testid={isConnected ? 'ws-disconnect' : isConnecting ? 'ws-cancel' : 'ws-connect'}
-          className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border-none px-4 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${
-            busy ? 'bg-[var(--mb-delete-fg)]' : 'bg-[var(--accent)]'
-          }`}
-        >
-          {isConnecting ? <X size={14} /> : isConnected ? <Unplug size={14} /> : <Plug size={14} />}
-          {isConnecting ? t('common.cancel') : isConnected ? t('mcp.disconnect') : t('mcp.connect')}
-        </button>
+          {/* Connect / Cancel / Disconnect — same tokens as the MCP / SSE bars' button. */}
+          <button
+            type="button"
+            onClick={() => void (busy ? disconnect() : connect())}
+            disabled={!busy && !url.trim()}
+            data-testid={isConnected ? 'ws-disconnect' : isConnecting ? 'ws-cancel' : 'ws-connect'}
+            className={cbPrimaryButton(busy)}
+          >
+            {isConnecting ? (
+              <X size={14} />
+            ) : isConnected ? (
+              <Unplug size={14} />
+            ) : (
+              <Plug size={14} />
+            )}
+            {isConnecting
+              ? t('common.cancel')
+              : isConnected
+                ? t('mcp.disconnect')
+                : t('mcp.connect')}
+          </button>
+        </div>
       </div>
 
       {showError && (
-        <div
-          data-testid="ws-error"
-          role="alert"
-          className="rounded-lg border border-[var(--mb-delete-br)] bg-[var(--mb-delete-bg)] px-3 py-2 text-[var(--red)]"
-        >
+        <div data-testid="ws-error" role="alert" className={CB_ERROR_BOX}>
           {errorMessage}
         </div>
       )}

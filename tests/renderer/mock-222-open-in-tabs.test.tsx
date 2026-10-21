@@ -77,6 +77,7 @@ const settle = async (): Promise<void> => {
 }
 
 const ANTHROPIC_URL = 'http://127.0.0.1:3300/v1/messages'
+
 let stub: BridgeStub
 
 beforeEach(() => {
@@ -139,6 +140,31 @@ describe('issue #222 (1) — Mock MCP "Start & open in MCP tab"', () => {
     expect(useTabsStore.getState().tabs).toHaveLength(0)
   })
 
+  it('PM review #20: connects the new tab, titles it "<name> · client", and a second click focuses it', () => {
+    useMockMcpStore.setState({ stateByServer: { m1: runningState('m1', 3100) } })
+    const original = useMcpStore.getState().connect
+    const connect = vi.fn(async () => {})
+    useMcpStore.setState({ connect, connectionState: 'disconnected' })
+    try {
+      render(header())
+      fireEvent.click(screen.getByTestId('mock-mcp-open-in-mcp'))
+      const [tab] = useTabsStore.getState().tabs
+      expect(tab).toMatchObject({ protocol: 'mcp', name: 'Echo MCP · client' })
+      expect(connect).toHaveBeenCalledTimes(1)
+      expect(useMcpStore.getState()._currentTabId).toBe(tab.id)
+
+      // Connected now; the user switches away and clicks Open again.
+      useMcpStore.setState({ connectionState: 'connected' })
+      useTabsStore.getState().openTab({ id: 'other', name: 'Other', protocol: 'http' })
+      fireEvent.click(screen.getByTestId('mock-mcp-open-in-mcp'))
+      expect(useTabsStore.getState().tabs.filter((t) => t.protocol === 'mcp')).toHaveLength(1)
+      expect(useTabsStore.getState().activeTabId).toBe(tab.id)
+      expect(connect).toHaveBeenCalledTimes(1)
+    } finally {
+      useMcpStore.setState({ connect: original })
+    }
+  })
+
   it('running → "Open in MCP tab", opens without starting', () => {
     useMockMcpStore.setState({ stateByServer: { m1: runningState('m1', 3100) } })
     render(header())
@@ -177,7 +203,12 @@ describe('issue #222 (3) — the AI Chat tab opened from a mock never carries a 
 
   it('Anthropic: provider anthropic, the mock URL, no key — and none is sent', async () => {
     await anthropicTabElsewhere()
-    const id = openMockInAiChatTab({ name: 'Chat API', url: ANTHROPIC_URL, provider: 'anthropic' })
+    const id = openMockInAiChatTab({
+      serverId: 'ai-1',
+      name: 'Chat API',
+      url: ANTHROPIC_URL,
+      provider: 'anthropic',
+    })
     let ai = useAiChatStore.getState()
     expect(ai._currentTabId).toBe(id)
     expect(ai.provider).toBe('anthropic')
@@ -198,7 +229,12 @@ describe('issue #222 (3) — the AI Chat tab opened from a mock never carries a 
 
   it('a key typed into the mock tab is used there only — never persisted, never over the saved key', async () => {
     await anthropicTabElsewhere()
-    const id = openMockInAiChatTab({ name: 'Chat API', url: ANTHROPIC_URL, provider: 'anthropic' })
+    const id = openMockInAiChatTab({
+      serverId: 'ai-1',
+      name: 'Chat API',
+      url: ANTHROPIC_URL,
+      provider: 'anthropic',
+    })
     useAiChatStore.getState().setApiKey('sk-typed-for-mock')
     await flushAiKeyWrites()
     expect(aiChatApi.setKey).not.toHaveBeenCalled()
@@ -219,7 +255,12 @@ describe('issue #222 (3) — the AI Chat tab opened from a mock never carries a 
   })
 
   it('"Use saved key" turns the mark off and loads the saved key', async () => {
-    openMockInAiChatTab({ name: 'Chat API', url: ANTHROPIC_URL, provider: 'anthropic' })
+    openMockInAiChatTab({
+      serverId: 'ai-1',
+      name: 'Chat API',
+      url: ANTHROPIC_URL,
+      provider: 'anthropic',
+    })
     await settle()
     expect(useAiChatStore.getState().apiKey).toBe('')
     useAiChatStore.getState().setSavedKeyDisabled(false)
@@ -228,14 +269,23 @@ describe('issue #222 (3) — the AI Chat tab opened from a mock never carries a 
   })
 
   it('the OpenAI-compatible button uses the same mark (one rule for both)', () => {
-    openMockInAiChatTab({ name: 'Chat API', url: 'http://127.0.0.1:3300/v1/chat/completions' })
+    openMockInAiChatTab({
+      serverId: 'ai-1',
+      name: 'Chat API',
+      url: 'http://127.0.0.1:3300/v1/chat/completions',
+    })
     const ai = useAiChatStore.getState()
     expect(ai.provider).toBe('custom')
     expect(ai.savedKeyDisabled).toBe(true)
   })
 
   it('the mark survives the snapshot and a saved request; a normal tab saves no mark', async () => {
-    const id = openMockInAiChatTab({ name: 'Chat API', url: ANTHROPIC_URL, provider: 'anthropic' })
+    const id = openMockInAiChatTab({
+      serverId: 'ai-1',
+      name: 'Chat API',
+      url: ANTHROPIC_URL,
+      provider: 'anthropic',
+    })
     const st = readAiTab(id)!
     expect(sanitizeAiTabState(st).savedKeyDisabled).toBe(true)
     const saved = savedAiConfigOf(st)
@@ -314,7 +364,12 @@ describe('issue #222 (3) — the Anthropic header button', () => {
 
 describe('issue #222 (3) — the key field says the saved key is not sent', () => {
   it('shows the note on a mock tab; "Use saved key" brings the saved key back', async () => {
-    openMockInAiChatTab({ name: 'Chat API', url: ANTHROPIC_URL, provider: 'anthropic' })
+    openMockInAiChatTab({
+      serverId: 'ai-1',
+      name: 'Chat API',
+      url: ANTHROPIC_URL,
+      provider: 'anthropic',
+    })
     render(<AiChatApiKeyField />)
     expect(screen.getByTestId('ai-saved-key-disabled-note')).toHaveTextContent(
       /saved API key is not sent/,

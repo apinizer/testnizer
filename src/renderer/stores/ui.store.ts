@@ -51,6 +51,11 @@ interface UIStore {
   importModalInitialFormatId: string | null
   showEnvironmentModal: boolean
   showSettingsModal: boolean
+  /**
+   * A Settings section to open with (the header session menu's "Set a
+   * password…" → the App password form). Consumed once by the section.
+   */
+  settingsFocus: 'appPasswordSet' | null
   showCodeGenerator: boolean
   showUpdateModal: boolean
   showSaveModal: boolean
@@ -112,6 +117,8 @@ interface UIStore {
   setShowImportModal: (show: boolean, initialFormatId?: string | null) => void
   setShowEnvironmentModal: (show: boolean) => void
   setShowSettingsModal: (show: boolean) => void
+  /** Opens Settings at a section (`settingsFocus`). */
+  openSettingsAt: (focus: 'appPasswordSet') => void
   setShowCodeGenerator: (show: boolean) => void
   setShowUpdateModal: (show: boolean) => void
   setShowSaveModal: (show: boolean) => void
@@ -199,6 +206,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   importModalInitialFormatId: null,
   showEnvironmentModal: false,
   showSettingsModal: false,
+  settingsFocus: null,
   showCodeGenerator: false,
   showUpdateModal: false,
   showSaveModal: false,
@@ -389,7 +397,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
       importModalInitialFormatId: show ? (initialFormatId ?? null) : null,
     }),
   setShowEnvironmentModal: (show) => set({ showEnvironmentModal: show }),
-  setShowSettingsModal: (show) => set({ showSettingsModal: show }),
+  setShowSettingsModal: (show) =>
+    set(show ? { showSettingsModal: true } : { showSettingsModal: false, settingsFocus: null }),
+  openSettingsAt: (focus) => set({ showSettingsModal: true, settingsFocus: focus }),
   setShowCodeGenerator: (show) => set({ showCodeGenerator: show }),
   setShowUpdateModal: (show) => set({ showUpdateModal: show }),
   setShowSaveModal: (show) => set({ showSaveModal: show }),

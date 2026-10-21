@@ -58,6 +58,7 @@ export default function MockMcpEditorHeader({
   const openInMcp = (): void => {
     void startThenOpen(openGate.gate, () =>
       openMockInMcpTab({
+        serverId: server.id,
         name: server.name,
         // Read after the start: the live URL the server just reported.
         url: connectUrl(server, useMockMcpStore.getState().stateByServer[server.id]?.url),

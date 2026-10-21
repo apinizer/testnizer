@@ -1,8 +1,10 @@
 import { Send } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import { useTranslation } from '../../lib/i18n'
 
 export default function WsComposer() {
+  const { t, locale } = useTranslation()
   const composerContent = useWebSocketStore((s) => s.composerContent)
   const setComposerContent = useWebSocketStore((s) => s.setComposerContent)
   const composerMode = useWebSocketStore((s) => s.composerMode)
@@ -13,9 +15,11 @@ export default function WsComposer() {
   const isConnected = connectionState === 'connected'
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" lang={locale}>
       <div className="flex items-center justify-between">
-        <label className="font-medium uppercase tracking-widest text-[var(--muted)]">Message</label>
+        <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
+          {t('ws.message')}
+        </label>
         <div className="flex rounded-lg border border-[var(--border)]">
           <button
             type="button"
@@ -41,7 +45,7 @@ export default function WsComposer() {
               borderRadius: composerMode === 'text' ? '7px' : '0',
             }}
           >
-            Text
+            {t('ws.modeText')}
           </button>
         </div>
       </div>
@@ -64,7 +68,7 @@ export default function WsComposer() {
         style={{ background: 'var(--accent)', border: 'none' }}
       >
         <Send size={14} />
-        Send Message
+        {t('ws.sendMessage')}
       </button>
     </div>
   )

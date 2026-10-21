@@ -154,6 +154,30 @@ function valueAt(state: unknown, path: string): unknown {
   return rowsOf(state, row.list)?.find((r) => r.id === row.id)?.value
 }
 
+// ─── Restart hint condition ─────────────────────────────────────────────
+
+/** Auth type → the key its fields live under (`auth.apiKey.value`). */
+const AUTH_FIELD_KEY: Readonly<Record<string, string>> = {
+  'api-key': 'apiKey',
+  'aws-signature': 'awsSignature',
+}
+
+/**
+ * Whether the ACTIVE auth type holds a literal credential that the snapshot
+ * withholds — one of `spec.fields` under `auth.<type>.` with a value that is
+ * not blank and not only `{{variable}}` references. The restart hint under
+ * the Auth fields shows on exactly this (the rule of `CredentialRowsHint`):
+ * an empty field or `{{token}}` loses nothing after a restart.
+ */
+export function hasLiteralAuthCredential(
+  auth: { type?: string } | undefined,
+  spec: CredentialSpec,
+): boolean {
+  if (!auth?.type) return false
+  const prefix = `auth.${AUTH_FIELD_KEY[auth.type] ?? auth.type}.`
+  return spec.fields.some((p) => p.startsWith(prefix) && isLiteralCredential(getPath({ auth }, p)))
+}
+
 // ─── Snapshot sanitizer ─────────────────────────────────────────────────
 
 /**

@@ -78,7 +78,7 @@ export default function UpdateModal() {
           <span className="text-lg font-bold text-[var(--text)]">{t('settings.autoUpdate')}</span>
           <button
             type="button"
-            aria-label="Close"
+            aria-label={t('common.close')}
             onClick={() => setShow(false)}
             className="cursor-pointer text-[var(--hint)] hover:text-[var(--text)]"
             style={{ background: 'transparent', border: 'none' }}

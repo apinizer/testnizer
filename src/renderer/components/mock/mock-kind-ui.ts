@@ -46,6 +46,38 @@ export function bodyTypesNotOffered(
   return [...new Set(bodyTypes.filter((b) => !kindOffersBodyType(kind, b)))].sort()
 }
 
+/** i18n keys of the body types' human labels (the select and the type-change confirm). */
+const BODY_TYPE_LABEL_KEYS: Record<MockBodyType, string> = {
+  json: 'mock.bodyTypeLabel.json',
+  xml: 'mock.bodyTypeLabel.xml',
+  text: 'mock.bodyTypeLabel.text',
+  html: 'mock.bodyTypeLabel.html',
+  sse: 'mock.bodyTypeLabel.sse',
+  llm: 'mock.bodyTypeLabel.llm',
+}
+
+/** "AI reply" for `llm`, "SSE stream" for `sse`, … — never the raw stored value. */
+export function bodyTypeLabel(t: (key: string) => string, bodyType: MockBodyType): string {
+  const key = BODY_TYPE_LABEL_KEYS[bodyType]
+  return key ? t(key) : bodyType
+}
+
+/**
+ * The "Change the server type?" body (PM review #21): a real singular /
+ * plural ("1 response uses …", "4 responses use …") and the body types by
+ * their labels, not the stored `llm` / `sse`.
+ */
+export function serverTypeConfirmBody(
+  t: (key: string) => string,
+  o: { count: number; kind: string; types: readonly MockBodyType[] },
+): string {
+  const key = o.count === 1 ? 'mock.serverTypeConfirmBodyOne' : 'mock.serverTypeConfirmBody'
+  return t(key)
+    .replace('{count}', String(o.count))
+    .replace('{kind}', o.kind)
+    .replace('{types}', o.types.map((b) => bodyTypeLabel(t, b)).join(', '))
+}
+
 /** OpenAPI / Postman import and "Serve JWKS" only make sense on an HTTP server. */
 export function showsHttpEndpointTools(kind: unknown): boolean {
   return normalizeMockServerKind(kind) === 'http'

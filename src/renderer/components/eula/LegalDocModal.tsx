@@ -39,7 +39,7 @@ export default function LegalDocModal({ open, doc, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common.close')}
             className="flex cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-1"
             style={{ color: 'var(--muted)' }}
           >

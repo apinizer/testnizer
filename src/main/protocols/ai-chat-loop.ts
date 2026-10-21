@@ -333,6 +333,10 @@ export async function runAiTurn(
       if (signal.aborted) return finish('cancelled', round - 1)
       const started = now()
       let roundText = ''
+      // First streamed text of this call — the TTFB of a call that fails
+      // mid-stream (the engine's own `firstContentAt` also counts tool-call
+      // fragments and wins when present).
+      let firstTextAt: number | null = null
       let end: Extract<AiRoundEvent, { type: 'end' }> | null = null
       try {
         for await (const ev of deps.streamRound({
@@ -343,6 +347,7 @@ export async function runAiTurn(
         })) {
           if (signal.aborted) break
           if (ev.type === 'text') {
+            if (firstTextAt === null && ev.delta) firstTextAt = now()
             roundText += ev.delta
             turn = applyTextDelta(turn, ev.delta)
             io.onText(ev.delta)
@@ -359,9 +364,16 @@ export async function runAiTurn(
             ? (err as { status: number }).status
             : null
         const aborted = isAbortError(err, signal)
+        const errFirst =
+          err &&
+          typeof err === 'object' &&
+          typeof (err as { firstContentAt?: unknown }).firstContentAt === 'number'
+            ? (err as { firstContentAt: number }).firstContentAt
+            : null
+        const firstAt = errFirst ?? firstTextAt
         const metrics: AiCallMetrics = {
           status,
-          ttfbMs: null,
+          ttfbMs: firstAt !== null ? Math.max(0, firstAt - started) : null,
           durationMs: now() - started,
           usageReported: false,
           ...(aborted ? {} : { error: err instanceof Error ? err.message : String(err) }),

@@ -14,8 +14,16 @@ import {
 import { useTranslation } from '../../lib/i18n'
 import { useNumberDraft } from '../../lib/number-draft'
 
+/** Lower-case unit name shown after "Assuming unit". */
+const UNIT_NAME_KEY: Record<EpochUnit, string> = {
+  seconds: 'tools.epoch.unitName.seconds',
+  milliseconds: 'tools.epoch.unitName.milliseconds',
+  microseconds: 'tools.epoch.unitName.microseconds',
+  nanoseconds: 'tools.epoch.unitName.nanoseconds',
+}
+
 export default function EpochTool() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
 
   // Live ticker for the "current epoch" header.
@@ -163,17 +171,24 @@ export default function EpochTool() {
                 value={
                   <span style={{ color: 'var(--accent-text)' }}>
                     {tsUnit === 'auto'
-                      ? `${detectedUnit} ${t('tools.epoch.autoDetected')}`
-                      : decoded.unit}
+                      ? `${detectedUnit ? t(UNIT_NAME_KEY[detectedUnit]) : ''} ${t('tools.epoch.autoDetected')}`
+                      : t(UNIT_NAME_KEY[decoded.unit])}
                   </span>
                 }
               />
-              <Row label="GMT" value={formatUtc(decoded.date)} copy={decoded.date.toISOString()} />
+              <Row
+                label="GMT"
+                value={formatUtc(decoded.date, locale)}
+                copy={decoded.date.toISOString()}
+              />
               <Row
                 label={`${t('tools.epoch.yourZone')} (${localTzLabel()})`}
-                value={formatLocal(decoded.date)}
+                value={formatLocal(decoded.date, locale)}
               />
-              <Row label={t('tools.epoch.relative')} value={relative(decoded.date)} />
+              <Row
+                label={t('tools.epoch.relative')}
+                value={relative(decoded.date, new Date(), locale)}
+              />
               <Row
                 label="ISO 8601"
                 value={decoded.date.toISOString()}
@@ -189,12 +204,32 @@ export default function EpochTool() {
             {t('tools.epoch.dateParts')}
           </label>
           <div className="mb-3 flex flex-wrap items-end gap-2 text-xs">
-            <NumberField label="Yr" value={yr} setValue={setYr} width={70} />
-            <NumberField label="Mon" value={mo} setValue={setMo} width={50} />
-            <NumberField label="Day" value={day} setValue={setDay} width={50} />
-            <NumberField label="Hr" value={hr} setValue={setHr} width={50} />
-            <NumberField label="Min" value={mi} setValue={setMi} width={50} />
-            <NumberField label="Sec" value={se} setValue={setSe} width={50} />
+            <NumberField label={t('tools.epoch.partYear')} value={yr} setValue={setYr} width={70} />
+            <NumberField
+              label={t('tools.epoch.partMonth')}
+              value={mo}
+              setValue={setMo}
+              width={50}
+            />
+            <NumberField
+              label={t('tools.epoch.partDay')}
+              value={day}
+              setValue={setDay}
+              width={50}
+            />
+            <NumberField label={t('tools.epoch.partHour')} value={hr} setValue={setHr} width={50} />
+            <NumberField
+              label={t('tools.epoch.partMinute')}
+              value={mi}
+              setValue={setMi}
+              width={50}
+            />
+            <NumberField
+              label={t('tools.epoch.partSecond')}
+              value={se}
+              setValue={setSe}
+              width={50}
+            />
             <label htmlFor={zoneId} className="sr-only">
               {t('tools.epoch.localZone')}
             </label>
@@ -253,10 +288,10 @@ export default function EpochTool() {
               copy={String(composedMs)}
               mono
             />
-            <Row label="GMT" value={formatUtc(composed)} />
+            <Row label="GMT" value={formatUtc(composed, locale)} />
             <Row
               label={`${t('tools.epoch.yourZone')} (${localTzLabel()})`}
-              value={formatLocal(composed)}
+              value={formatLocal(composed, locale)}
             />
             <Row
               label="ISO 8601"

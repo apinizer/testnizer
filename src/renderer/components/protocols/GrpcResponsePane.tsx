@@ -4,6 +4,7 @@ import { useGrpcStore } from '../../stores/grpc.store'
 import { useResponseStore } from '../../stores/response.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import EmptyState from '../shared/EmptyState'
+import { useTranslation } from '../../lib/i18n'
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts)
@@ -61,10 +62,11 @@ function UnaryView({
   isLoading: boolean
   error: string | null
 }) {
+  const { t } = useTranslation()
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center bg-[var(--white)] text-[var(--muted)]">
-        Calling gRPC method...
+        {t('grpc.response.calling')}
       </div>
     )
   }
@@ -72,7 +74,7 @@ function UnaryView({
   if (error && !response) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--white)] p-4">
-        <span className="font-medium text-red-500">Error</span>
+        <span className="font-medium text-red-500">{t('console.section.error')}</span>
         <span className="text-center text-[var(--muted)]">{error}</span>
       </div>
     )
@@ -81,7 +83,7 @@ function UnaryView({
   if (!response) {
     return (
       <div className="flex h-full items-center justify-center bg-[var(--white)]">
-        <EmptyState icon={Send} title="Execute a gRPC call to see the response" size="md" />
+        <EmptyState icon={Send} title={t('grpc.response.empty')} size="md" />
       </div>
     )
   }
@@ -96,8 +98,8 @@ function UnaryView({
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--white)] p-4">
         <span className="font-medium text-red-500">
           {typeof response.status === 'number'
-            ? `gRPC error (code ${response.status})`
-            : 'gRPC error'}
+            ? t('grpc.response.errorCode').replace('{code}', String(response.status))
+            : t('grpc.response.error')}
         </span>
         <span className="max-w-[600px] text-center text-[var(--muted)]">{response.error}</span>
         {response.statusText && response.statusText !== response.error && (
@@ -114,7 +116,7 @@ function UnaryView({
       {/* Meta bar */}
       <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-3.5 py-2">
         <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
-          Response
+          {t('graphql.tabResponse')}
         </span>
         {response.status !== undefined && (
           <span
@@ -125,7 +127,9 @@ function UnaryView({
               color: response.status === 0 ? '#1a7a4a' : '#cc2200',
             }}
           >
-            {response.status === 0 ? 'OK' : `Code ${response.status}`}
+            {response.status === 0
+              ? 'OK'
+              : t('grpc.response.code').replace('{code}', String(response.status))}
           </span>
         )}
         <span className="text-[var(--muted)]">{response.timing.total}ms</span>
@@ -149,6 +153,7 @@ function UnaryView({
 // ─── Stream View ─────────────────────────────────────────────
 
 function StreamView() {
+  const { t, locale } = useTranslation()
   const streamEvents = useGrpcStore((s) => s.streamEvents)
   const isStreaming = useGrpcStore((s) => s.isStreaming)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -162,18 +167,18 @@ function StreamView() {
   }, [streamEvents, autoScroll])
 
   return (
-    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
+    <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]" lang={locale}>
       {/* Header */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3.5 py-2">
         <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
-          Stream Events
+          {t('grpc.response.streamEvents')}
         </span>
         {isStreaming && (
           <span
             className="rounded-full px-2 py-0.5 font-medium"
             style={{ background: '#e8f9f1', color: '#1a7a4a' }}
           >
-            Streaming
+            {t('grpc.response.streaming')}
           </span>
         )}
       </div>
@@ -181,7 +186,7 @@ function StreamView() {
       {/* Event list */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {streamEvents.length === 0 ? (
-          <EmptyState icon={Radio} title="Waiting for stream events..." size="md" />
+          <EmptyState icon={Radio} title={t('grpc.response.waitingStream')} size="md" />
         ) : (
           streamEvents.map((event) => {
             const isExpanded = expandedId === event.id
@@ -219,7 +224,9 @@ function StreamView() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]">
-          {streamEvents.length} event{streamEvents.length !== 1 ? 's' : ''}
+          {streamEvents.length === 1
+            ? t('sse.eventCountOne')
+            : t('sse.eventCount').replace('{count}', String(streamEvents.length))}
         </span>
         <label className="flex cursor-pointer items-center gap-1.5">
           <input
@@ -228,7 +235,7 @@ function StreamView() {
             onChange={(e) => setAutoScroll(e.target.checked)}
             className="accent-[var(--accent)]"
           />
-          <span className="text-[var(--muted)]">Auto-scroll</span>
+          <span className="text-[var(--muted)]">{t('console.autoScroll')}</span>
         </label>
       </div>
     </div>

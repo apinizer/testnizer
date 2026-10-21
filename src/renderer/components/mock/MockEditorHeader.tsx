@@ -88,16 +88,29 @@ export default function MockEditorHeader({
   children?: ReactNode
 }) {
   const { t } = useTranslation()
+  // Narrow window / font 16 / Turkish (PM review #4): the title block keeps a
+  // rem minimum and the actions wrap — first onto a row of their own under
+  // the title, then button by button. The actions used to be `shrink-0`, so
+  // at 1024 px the name collapsed to 0 and the buttons overlapped the badge.
   return (
-    <div className="flex shrink-0 items-start gap-3 border-b border-[var(--border)] bg-[var(--white)] px-4 py-2">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
+    <div
+      data-testid={`${testIdPrefix}-header`}
+      className="flex shrink-0 flex-wrap items-start gap-x-3 gap-y-2 border-b border-[var(--border)] bg-[var(--white)] px-4 py-2"
+    >
+      <div className="flex min-w-[min(100%,18rem)] flex-1 basis-[18rem] flex-col gap-1">
         <div className="flex min-w-0 items-center gap-2">
           <MockKindBadge kind={kind} testId="mock-kind-badge" />
-          <h2 className="m-0 truncate text-[15px] font-semibold text-[var(--heading)]">{name}</h2>
+          <h2
+            data-testid={`${testIdPrefix}-header-name`}
+            title={name}
+            className="m-0 min-w-0 truncate text-[15px] font-semibold text-[var(--heading)]"
+          >
+            {name}
+          </h2>
           <span
             data-testid={`${testIdPrefix}-status`}
             data-status={status}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text)]"
+            className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded border border-[var(--border)] px-2 py-0.5 text-[11px] text-[var(--text)]"
           >
             <StatusDot status={status} />
             {t(STATUS_KEYS[status])}
@@ -111,7 +124,12 @@ export default function MockEditorHeader({
           </div>
         )}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{actions}</div>
+      <div
+        data-testid={`${testIdPrefix}-header-actions`}
+        className="flex min-w-0 max-w-full flex-wrap items-center gap-2"
+      >
+        {actions}
+      </div>
     </div>
   )
 }

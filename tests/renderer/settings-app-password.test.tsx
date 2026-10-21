@@ -28,6 +28,7 @@ vi.mock('../../src/renderer/lib/toast', () => ({
 
 import SettingsModal from '../../src/renderer/components/modals/SettingsModal'
 import ProfileModal from '../../src/renderer/components/modals/ProfileModal'
+import UserMenu from '../../src/renderer/components/layout/UserMenu'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
 import { useAuthStore } from '../../src/renderer/stores/auth.store'
 
@@ -94,9 +95,11 @@ describe('Settings → App password status', () => {
     expect(screen.getByTestId('settings-app-password-status')).toHaveAttribute('data-state', 'off')
     expect(screen.queryByTestId('settings-app-password-disable')).toBeNull()
     fireEvent.click(screen.getByTestId('settings-app-password-set'))
-    // Same route as the header session menu: back to the start screen.
-    expect(logout).toHaveBeenCalledTimes(1)
-    expect(useUIStore.getState().showSettingsModal).toBe(false)
+    // Review #13: an inline form like Change… / Turn off… — it used to sign
+    // out to the start screen without a word.
+    expect(screen.getByTestId('password-set-form')).toBeInTheDocument()
+    expect(logout).not.toHaveBeenCalled()
+    expect(useUIStore.getState().showSettingsModal).toBe(true)
   })
 
   it('does not guess "off" before the status is known', () => {
@@ -172,6 +175,105 @@ describe('Settings → App password → Turn off', () => {
     fireEvent.click(screen.getByTestId('password-disable-cancel'))
     expect(screen.queryByTestId('password-disable-form')).toBeNull()
     expect(disablePassword).not.toHaveBeenCalled()
+  })
+})
+
+describe('Settings → App password → Set (review #13)', () => {
+  function fillSet(pw: string, confirm: string): void {
+    fireEvent.click(screen.getByTestId('settings-app-password-set'))
+    fireEvent.change(screen.getByTestId('password-set-new'), { target: { value: pw } })
+    fireEvent.change(screen.getByTestId('password-set-confirm'), { target: { value: confirm } })
+  }
+
+  it('with the real store action: the session continues signed in, Settings shows On, no loader', async () => {
+    const ipcSet = vi.fn(async () => ({
+      success: true,
+      data: { user: USER, session: { token: 'tok-1' } },
+    }))
+    ;(window as unknown as { api: Record<string, unknown> }).api = {
+      settings: {
+        getAll: vi.fn(async () => ({ success: true, data: {} })),
+        setAll: vi.fn(async () => ({ success: true })),
+        set: vi.fn(async () => ({ success: true })),
+      },
+      auth: { setPassword: ipcSet },
+    }
+    useAuthStore.setState({ user: null, isGuest: true, hasPasswordSet: false, isLoading: false })
+    const loading: boolean[] = []
+    const unsub = useAuthStore.subscribe((st) => loading.push(st.isLoading))
+    render(<SettingsModal />)
+    fillSet('Secret123', 'Secret123')
+    fireEvent.click(screen.getByTestId('password-set-submit'))
+    await waitFor(() =>
+      expect(screen.getByTestId('settings-app-password-status')).toHaveAttribute(
+        'data-state',
+        'on',
+      ),
+    )
+    unsub()
+    expect(ipcSet).toHaveBeenCalledWith({ password: 'Secret123' })
+    // AppShell swaps the whole app for a loader while isLoading is true.
+    expect(loading).not.toContain(true)
+    expect(logout).not.toHaveBeenCalled()
+    expect(useUIStore.getState().showSettingsModal).toBe(true)
+    const st = useAuthStore.getState()
+    expect(st.isGuest).toBe(false)
+    expect(st.user?.id).toBe('u1')
+    expect(toastSuccess).toHaveBeenCalled()
+    // Change / Turn off are available right away.
+    expect(screen.getByTestId('settings-app-password-disable')).toBeInTheDocument()
+  })
+
+  it('submit stays disabled for a weak or mismatched password; mismatch is an inline alert', () => {
+    useAuthStore.setState({ user: null, isGuest: true, hasPasswordSet: false })
+    render(<SettingsModal />)
+    fillSet('short1', 'short1')
+    expect(screen.getByTestId('password-set-submit')).toBeDisabled()
+    fireEvent.change(screen.getByTestId('password-set-new'), { target: { value: 'Secret123' } })
+    fireEvent.change(screen.getByTestId('password-set-confirm'), { target: { value: 'Secret124' } })
+    expect(screen.getByTestId('password-set-submit')).toBeDisabled()
+    expect(screen.getByTestId('password-set-error')).toHaveAttribute('role', 'alert')
+  })
+
+  it('a refused password stays in the form as an inline error; Cancel closes it', async () => {
+    useAuthStore.setState({
+      user: null,
+      isGuest: true,
+      hasPasswordSet: false,
+      enablePassword: vi.fn(async () => ({ success: false, error: 'Nope' })),
+    })
+    render(<SettingsModal />)
+    fillSet('Secret123', 'Secret123')
+    fireEvent.click(screen.getByTestId('password-set-submit'))
+    expect((await screen.findByTestId('password-set-error')).textContent).toBe('Nope')
+    fireEvent.click(screen.getByTestId('password-set-cancel'))
+    expect(screen.queryByTestId('password-set-form')).toBeNull()
+  })
+})
+
+describe('header session menu → Set a password… (review #13 sibling)', () => {
+  it('opens Settings at the inline Set form instead of signing out', () => {
+    useUIStore.setState({ showSettingsModal: false })
+    useAuthStore.setState({ user: null, isGuest: true, hasPasswordSet: false })
+    render(
+      <>
+        <UserMenu />
+        <SettingsModal />
+      </>,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Session' }))
+    fireEvent.click(screen.getByTestId('user-menu-set-password'))
+    expect(logout).not.toHaveBeenCalled()
+    expect(useUIStore.getState().showSettingsModal).toBe(true)
+    expect(screen.getByTestId('password-set-form')).toBeInTheDocument()
+    // consumed once: a later plain open of Settings starts idle
+    expect(useUIStore.getState().settingsFocus).toBeNull()
+  })
+
+  it('closing Settings drops a pending focus', () => {
+    useUIStore.getState().openSettingsAt('appPasswordSet')
+    useUIStore.getState().setShowSettingsModal(false)
+    expect(useUIStore.getState().settingsFocus).toBeNull()
   })
 })
 

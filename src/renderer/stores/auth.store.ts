@@ -61,6 +61,13 @@ interface AuthState {
   checkHasPassword: () => Promise<void>
   login: (password: string) => Promise<boolean>
   setPassword: (password: string, recoveryEmail?: string) => Promise<boolean>
+  /**
+   * Settings → App password → Set (review #13): turns the password on from
+   * inside a password-less session and keeps that session — no start screen
+   * and no `isLoading` flip (AppShell swaps the whole app for a loader while
+   * it is true, which would unmount Settings mid-form).
+   */
+  enablePassword: (password: string) => Promise<{ success: boolean; error?: string }>
   continueAsGuest: () => void
   logout: () => Promise<void>
   changePassword: (
@@ -164,6 +171,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } catch (e) {
       set({ isLoading: false, error: (e as Error).message })
       return false
+    }
+  },
+
+  enablePassword: async (password: string) => {
+    try {
+      const result = await window.api.auth.setPassword({ password })
+      if (result?.success && result.data) {
+        localStorage.setItem(SESSION_TOKEN_KEY, result.data.session.token)
+        localStorage.removeItem(GUEST_MODE_KEY)
+        set({
+          user: result.data.user,
+          isAuthenticated: true,
+          isGuest: false,
+          error: null,
+          hasPasswordSet: true,
+        })
+        markWelcomeDone()
+        return { success: true }
+      }
+      return { success: false, error: result?.error || 'Failed to set password' }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
     }
   },
 

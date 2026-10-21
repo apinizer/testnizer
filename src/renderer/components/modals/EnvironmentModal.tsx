@@ -12,6 +12,7 @@ import {
   Download,
   Upload,
   Search,
+  Variable,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -799,7 +800,20 @@ function VarTable({
           />
         ))}
 
-        {shown.length === 0 && (
+        {/* Review #12: "no match" only for an actual search; an empty list is
+            its own state (the Add Variable button right below is the action). */}
+        {variables.length === 0 && (
+          <div data-testid="env-var-empty">
+            <EmptyState
+              icon={Variable}
+              title={t('env.noVariables')}
+              description={t('env.noVariablesHint')}
+              variant="compact"
+              size="sm"
+            />
+          </div>
+        )}
+        {shown.length === 0 && variables.length > 0 && (
           <div
             data-testid="env-var-no-match"
             className="px-5 py-6 text-center"

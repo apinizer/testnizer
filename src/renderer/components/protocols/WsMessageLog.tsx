@@ -3,6 +3,7 @@ import { ArrowUp, ArrowDown, Trash2, MessageSquare } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import EmptyState from '../shared/EmptyState'
 import type { WsMessage } from '../../types'
+import { useTranslation } from '../../lib/i18n'
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts)
@@ -34,6 +35,7 @@ function truncate(str: string, max: number): string {
 }
 
 export default function WsMessageLog() {
+  const { t, locale } = useTranslation()
   const messages = useWebSocketStore((s) => s.messages)
   const clearMessages = useWebSocketStore((s) => s.clearMessages)
   const autoScroll = useWebSocketStore((s) => s.autoScroll)
@@ -48,14 +50,17 @@ export default function WsMessageLog() {
   }, [messages, autoScroll])
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)]">
+    <div
+      className="flex flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border)]"
+      lang={locale}
+    >
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
           <EmptyState
             icon={MessageSquare}
-            title="No messages yet"
-            description="Connect and send a message to begin."
+            title={t('ws.emptyTitle')}
+            description={t('ws.emptyDesc')}
             size="md"
           />
         ) : (
@@ -112,9 +117,13 @@ export default function WsMessageLog() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]" data-testid="ws-message-counts">
-          {messages.length} message{messages.length !== 1 ? 's' : ''} (
-          {messages.filter((m) => m.direction === 'sent').length} sent,{' '}
-          {messages.filter((m) => m.direction === 'received').length} received)
+          {t(messages.length === 1 ? 'ws.countsOne' : 'ws.countsOther')
+            .replace('{count}', String(messages.length))
+            .replace('{sent}', String(messages.filter((m) => m.direction === 'sent').length))
+            .replace(
+              '{received}',
+              String(messages.filter((m) => m.direction === 'received').length),
+            )}
         </span>
         <div className="flex items-center gap-3">
           <label className="flex cursor-pointer items-center gap-1.5">
@@ -124,7 +133,7 @@ export default function WsMessageLog() {
               onChange={(e) => setAutoScroll(e.target.checked)}
               className="accent-[var(--accent)]"
             />
-            <span className="text-[var(--muted)]">Auto-scroll</span>
+            <span className="text-[var(--muted)]">{t('console.autoScroll')}</span>
           </label>
           <button
             type="button"
@@ -133,7 +142,7 @@ export default function WsMessageLog() {
             style={{ background: 'transparent', border: 'none' }}
           >
             <Trash2 size={11} />
-            Clear
+            {t('console.clear')}
           </button>
         </div>
       </div>

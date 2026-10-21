@@ -26,7 +26,7 @@ import {
   type MockServerKind,
 } from '../../../shared/mock-kind'
 import MockKindSegmented from './MockKindSegmented'
-import { bodyTypesNotOffered, KIND_BADGE } from './mock-kind-ui'
+import { bodyTypesNotOffered, KIND_BADGE, serverTypeConfirmBody } from './mock-kind-ui'
 import { MOCK_KIND_HINT_KEYS } from './new-mock-server'
 
 /** Every response body type of the server, read fresh from main. */
@@ -114,10 +114,7 @@ function ConfirmTypeChange({
   const { t } = useTranslation()
   const kind = KIND_BADGE[pending.kind]
   const title = t('mock.serverTypeConfirmTitle').replace('{kind}', kind)
-  const body = t('mock.serverTypeConfirmBody')
-    .replace('{count}', String(pending.count))
-    .replace('{kind}', kind)
-    .replace('{types}', pending.types.join(', '))
+  const body = serverTypeConfirmBody(t, { count: pending.count, kind, types: pending.types })
   return (
     <Modal
       open

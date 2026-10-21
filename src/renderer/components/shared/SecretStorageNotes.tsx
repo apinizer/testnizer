@@ -40,10 +40,16 @@ export function SecretStorageUnencryptedNote({ className = '' }: { className?: s
     <div
       data-testid="secret-storage-unencrypted"
       role="note"
-      className={`flex items-center gap-1.5 text-[11px] text-[var(--orange)] ${className}`}
+      className={`flex items-start gap-1.5 text-[11px] text-[var(--orange)] ${className}`}
     >
-      <ShieldAlert size={12} className="shrink-0" aria-hidden="true" />
-      <span>{t('secret.storedUnencrypted')}</span>
+      <ShieldAlert size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+      <span>
+        {t('secret.storedUnencrypted')}{' '}
+        {/* What to do about it (review #22): the values still work, locally. */}
+        <span data-testid="secret-storage-unencrypted-fix" className="text-[var(--muted)]">
+          {t('secret.storedUnencryptedFix')}
+        </span>
+      </span>
     </div>
   )
 }

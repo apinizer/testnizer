@@ -1,4 +1,5 @@
 import { useTranslation } from '../../../lib/i18n'
+import { CB_HEIGHT } from '../connection-bar-ui'
 
 type McpConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -30,6 +31,8 @@ const STATUS_TONE: Record<McpConnectionState, { pill: string; dot: string; key: 
  * Disconnected / Connecting… / Connected / Error, at the left of the MCP bar
  * (issue #171) — and of the SSE, WebSocket and Socket.IO bars, which reuse it
  * (`testId="sse-status" | "ws-status" | "socketio-status"`, issue #224).
+ * Bar height and a base − 1px label (`text-xs`), so it grows with the font
+ * size like the URL next to it (`connection-bar-ui.ts`).
  */
 export default function McpStatusPill({
   state,
@@ -48,7 +51,7 @@ export default function McpStatusPill({
       data-testid={testId}
       data-state={state}
       role="status"
-      className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] font-medium ${tone.pill}`}
+      className={`flex ${CB_HEIGHT} shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-xs font-medium ${tone.pill}`}
     >
       <span className={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} />
       {t(labelKey ?? tone.key)}

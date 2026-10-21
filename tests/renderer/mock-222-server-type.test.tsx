@@ -80,8 +80,10 @@ describe('issue #222 (2) — Settings "Server type"', () => {
     render(<Harness />)
     fireEvent.click(screen.getByTestId('mock-settings-type-http'))
     const dialog = await screen.findByTestId('mock-settings-type-confirm')
-    expect(dialog).toHaveTextContent(/1 response\(s\)/)
-    expect(dialog).toHaveTextContent(/\(sse\)/)
+    // PM review #21: a real singular and the body type's label, not "(s)" / raw `sse`.
+    expect(dialog).toHaveTextContent(/1 response uses a body type/)
+    expect(dialog).not.toHaveTextContent(/\(s\)/)
+    expect(dialog).toHaveTextContent(/\(SSE stream\)/)
     expect(dialog).toHaveTextContent(/Nothing is deleted/)
     expect(httpBridge.server.update).not.toHaveBeenCalled()
 

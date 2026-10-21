@@ -38,9 +38,11 @@ function useOpenInSse(server: MockServer, status: string) {
     starting,
     open: (path: string, method: SseHttpMethod): void => {
       void startAndOpenMockInSseTab({
+        serverId: server.id,
         name: server.name,
         url: mockEndpointUrl(server, path),
         method,
+        path,
         ...gate,
       })
     },
