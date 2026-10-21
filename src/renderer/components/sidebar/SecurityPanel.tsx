@@ -1,9 +1,17 @@
 import { useState } from 'react'
 import { useTabsStore } from '../../stores/tabs.store'
+import { MCP_SECURITY_SECTION, useMcpStore } from '../../stores/mcp.store'
 import { useTranslation } from '../../lib/i18n'
-import { SECURITY_TOOLS } from '../../lib/tools-catalog'
+import { SECURITY_ACTIONS, SECURITY_TOOLS, type SecurityActionId } from '../../lib/tools-catalog'
+import { openMcpSecurityScan } from '../../lib/open-mcp-security'
 import { T } from '../../styles/tokens'
 import LeftPanelCollapseButton from '../layout/LeftPanelCollapseButton'
+import SecurityRow from './SecurityRow'
+
+/** What each Security-page action row does (issue #229). */
+const RUN_ACTION: Record<SecurityActionId, () => void> = {
+  'mcp-scan': () => void openMcpSecurityScan(),
+}
 
 /**
  * The Security left-panel — Testnizer's differentiator, grouping all
@@ -12,7 +20,9 @@ import LeftPanelCollapseButton from '../layout/LeftPanelCollapseButton'
  *     certificates); populated as Keystore Studio (#59) and the Key Material
  *     Provider (#60) land.
  *   • Tools — the security tools (Keystore Studio, JWK, JOSE/JWT, WS-Security,
- *     TLS Inspector, OTP, Password Generator), sourced from `SECURITY_TOOLS`.
+ *     TLS Inspector, OTP, Password Generator), sourced from `SECURITY_TOOLS`,
+ *     then the action rows of `SECURITY_ACTIONS` (MCP Security Scan, #229) —
+ *     same row, but they run an action instead of opening a tool tab.
  * Mirrors ToolsPanel so the two panels stay visually consistent.
  */
 export default function SecurityPanel() {
@@ -22,12 +32,19 @@ export default function SecurityPanel() {
     const active = s.tabs.find((tab) => tab.id === s.activeTabId)
     return active?.protocol ?? null
   })
+  const activeTabId = useTabsStore((s) => s.activeTabId)
+  // The MCP live slice is the active tab's once Workbench has activated it.
+  const mcpShowsSecurity = useMcpStore(
+    (s) => s._currentTabId === activeTabId && s.section === MCP_SECURITY_SECTION,
+  )
   const [query, setQuery] = useState('')
 
   const q = query.trim().toLowerCase()
-  const tools = q
-    ? SECURITY_TOOLS.filter((tool) => t(tool.labelKey).toLowerCase().includes(q))
-    : SECURITY_TOOLS
+  const matches = (labelKey: string) => !q || t(labelKey).toLowerCase().includes(q)
+  const tools = SECURITY_TOOLS.filter((tool) => matches(tool.labelKey))
+  const actions = SECURITY_ACTIONS.filter((action) => matches(action.labelKey))
+  const isActionActive = (id: SecurityActionId) =>
+    id === 'mcp-scan' && activeTabProtocol === 'mcp' && mcpShowsSecurity
 
   return (
     <div className="flex h-full flex-col">
@@ -100,50 +117,32 @@ export default function SecurityPanel() {
 
         {/* Tools section. */}
         {!q && <SectionHeader label={t('security.tools')} />}
-        {tools.map((tool) => {
-          const isActive = activeTabProtocol === tool.protocol
-          return (
-            <button
-              key={tool.protocol}
-              type="button"
-              onClick={() => openToolTab(tool.protocol, t(tool.labelKey))}
-              aria-current={isActive ? 'page' : undefined}
-              className="group flex w-full cursor-pointer items-center gap-2.5 rounded-lg transition-colors"
-              style={{
-                background: isActive ? T.accentBg : 'transparent',
-                border: 'none',
-                padding: '8px 10px',
-                textAlign: 'left',
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) (e.currentTarget as HTMLElement).style.background = T.surface
-              }}
-              onMouseLeave={(e) => {
-                ;(e.currentTarget as HTMLElement).style.background = isActive
-                  ? T.accentBg
-                  : 'transparent'
-              }}
-            >
-              <div
-                aria-hidden="true"
-                className="flex shrink-0 items-center justify-center rounded-md"
-                style={{ width: 28, height: 28, background: tool.bg }}
-              >
-                <tool.Icon size={15} style={{ color: tool.color }} strokeWidth={2} />
-              </div>
-              <span
-                style={{
-                  fontSize: 13,
-                  color: isActive ? T.accentText : T.text,
-                  fontWeight: isActive ? 600 : 500,
-                }}
-              >
-                {t(tool.labelKey)}
-              </span>
-            </button>
-          )
-        })}
-        {tools.length === 0 && (
+        {tools.map((tool) => (
+          <SecurityRow
+            key={tool.protocol}
+            testId={tool.protocol}
+            Icon={tool.Icon}
+            label={t(tool.labelKey)}
+            bg={tool.bg}
+            color={tool.color}
+            isActive={activeTabProtocol === tool.protocol}
+            onSelect={() => openToolTab(tool.protocol, t(tool.labelKey))}
+          />
+        ))}
+        {actions.map((action) => (
+          <SecurityRow
+            key={action.id}
+            testId={action.id}
+            Icon={action.Icon}
+            label={t(action.labelKey)}
+            hint={t(action.hintKey)}
+            bg={action.bg}
+            color={action.color}
+            isActive={isActionActive(action.id)}
+            onSelect={RUN_ACTION[action.id]}
+          />
+        ))}
+        {tools.length + actions.length === 0 && (
           <div style={{ padding: 12, fontSize: 12, color: T.ghost, textAlign: 'center' }}>—</div>
         )}
       </div>
