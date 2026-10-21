@@ -11,7 +11,7 @@ import {
 } from '../../stores/ai-chat-conversations'
 import { useTranslation } from '../../lib/i18n'
 import { autoRequestName } from '../../lib/endpoint-name'
-import { ensureWithheldCredentialsLoaded } from '../../lib/withheld-credentials'
+import { ensureWithheldCredentialsLoaded, isTabUnloaded } from '../../lib/withheld-credentials'
 import {
   requestSettingsFor,
   savedRequestMetadata,
@@ -170,7 +170,9 @@ export default function EndpointSaveModal() {
       // over the stored values.
       if (activeTab) {
         const reload = await ensureWithheldCredentialsLoaded(activeTab)
-        if (!reload.ok && isUpdate && existingSavedRequestId) {
+        // A tab whose state was never loaded from its row (dropped from the
+        // tab cache) would be copied empty — refused for a new row as well.
+        if (!reload.ok && ((isUpdate && existingSavedRequestId) || isTabUnloaded(activeTab.id))) {
           setSaveError(reload.error)
           return
         }

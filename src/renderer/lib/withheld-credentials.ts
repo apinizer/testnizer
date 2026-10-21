@@ -15,6 +15,11 @@
 // Unsaved draft tabs have no row: their literal credentials are gone after a
 // restart, which the Auth / MCP Authorization / Socket.IO hints say. Run reads
 // the DB and is unaffected.
+//
+// The same read rehydrates a tab whose whole state is missing — dropped by the
+// request store's cache cap or absent from the startup snapshot (`unloaded` /
+// `unloadedProtocol`, P0 data loss: Ctrl+S used to write the empty state over
+// the row). Such a tab is treated as fully withheld; see "Not-loaded tabs".
 
 import { useRequestStore } from '../stores/request.store'
 import { useMcpStore } from '../stores/mcp.store'
@@ -28,7 +33,21 @@ import { HTTP_CREDENTIALS } from '../stores/request.store'
 import { MCP_CREDENTIALS } from '../stores/mcp.store'
 import { GQL_CREDENTIALS } from '../stores/graphql.store'
 import { restoreWithheld, type CredentialSpec, type WithheldState } from './credential-withhold'
-import type { Tab } from '../types'
+import { useTabsStore } from '../stores/tabs.store'
+import {
+  requestStoreSettings,
+  restoreProtocolFromMetadata,
+  restoreRequestSettings,
+} from './save-active-request'
+import { readRequestSettings } from '../../shared/request-settings'
+import type {
+  AuthConfig,
+  HttpMethod,
+  KeyValuePair,
+  RequestBody,
+  Tab,
+  TestAssertion,
+} from '../types'
 
 type BoundTab = Pick<Tab, 'id' | 'protocol' | 'endpointId' | 'savedRequestId' | 'testSuiteItemId'>
 
@@ -94,19 +113,37 @@ export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | und
   try {
     if (tab.testSuiteItemId) {
       const res = (await api?.testSuiteItem?.get(tab.testSuiteItemId)) as
-        | IpcEnvelope<{ request_schema?: string; url?: string }>
+        | IpcEnvelope<{
+            request_schema?: string
+            url?: string | null
+            method?: string | null
+            assertions?: string | null
+          }>
         | undefined
       if (!res?.success || !res.data) return null
-      return fromSchema(res.data.request_schema, res.data.url)
+      const row = fromSchema(res.data.request_schema, res.data.url ?? undefined)
+      // A suite item keeps its method and assertions in columns of their own.
+      const assertions = parseColumn(res.data.assertions)
+      if (!row || !assertions.ok) return null
+      if (typeof res.data.method === 'string' && row.request.method === undefined) {
+        row.request = { ...row.request, method: res.data.method }
+      }
+      if (assertions.value !== undefined)
+        row.request = { ...row.request, assertions: assertions.value }
+      return row
     }
     if (tab.savedRequestId) {
       const res = (await api?.savedRequest?.get(tab.savedRequestId)) as
         | IpcEnvelope<{
             url?: string
+            method?: string
             params?: string
             body?: string | null
             headers?: string
             auth?: string
+            pre_script?: string | null
+            post_script?: string | null
+            assertions?: string | null
             metadata?: string | null
           }>
         | undefined
@@ -115,23 +152,36 @@ export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | und
       const body = parseColumn(res.data.body)
       const headers = parseColumn(res.data.headers)
       const auth = parseColumn(res.data.auth)
+      const assertions = parseColumn(res.data.assertions)
       const meta = parseObject(res.data.metadata)
-      if (!params.ok || !body.ok || !headers.ok || !auth.ok || !meta) return null
+      if (!params.ok || !body.ok || !headers.ok || !auth.ok || !assertions.ok || !meta) return null
       const request: Record<string, unknown> = {
+        // Timeout / redirects / SSL ride at the top of `metadata` on this
+        // table (#185) — lifted here so `request` reads like a request_schema.
+        ...readRequestSettings(meta),
         params: params.value,
         body: body.value,
         headers: headers.value,
         auth: auth.value,
+        preScript: res.data.pre_script ?? '',
+        postScript: res.data.post_script ?? '',
+        assertions: assertions.value,
       }
       if (typeof res.data.url === 'string') request.url = res.data.url
+      if (typeof res.data.method === 'string') request.method = res.data.method
       return { request, meta }
     }
     if (tab.endpointId) {
       const res = (await api?.endpoint?.get(tab.endpointId)) as
-        | IpcEnvelope<{ request_schema?: string }>
+        | IpcEnvelope<{ request_schema?: string; path?: string; method?: string }>
         | undefined
       if (!res?.success || !res.data) return null
-      return fromSchema(res.data.request_schema)
+      const row = fromSchema(res.data.request_schema, res.data.path)
+      // Same fallback as `openEndpointTab`: the row's method when the schema has none.
+      if (row && row.request.method === undefined && typeof res.data.method === 'string') {
+        row.request = { ...row.request, method: res.data.method }
+      }
+      return row
     }
   } catch {
     return null
@@ -143,12 +193,12 @@ export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | und
 
 interface WithheldAdapter {
   /** Names what could not be reloaded, in the refusal message. */
-  label: string
+  label: string | ((tabId: string) => string)
   /** Only tabs of this protocol; omitted = every tab. */
   protocol?: string
   pending: (tabId: string) => boolean
   /** Put the row's values back (`undefined` = no row: forget the marker). */
-  restore: (tabId: string, row: BoundRow | undefined) => void
+  restore: (tab: BoundTab, row: BoundRow | undefined) => void
 }
 
 interface TabbedStore<T extends WithheldState> {
@@ -178,7 +228,7 @@ function tabbedAdapter<T extends WithheldState>(
     label,
     protocol,
     pending: (tabId) => (slice(tabId)?.withheldCredentials?.length ?? 0) > 0,
-    restore: (tabId, row) => {
+    restore: ({ id: tabId }, row) => {
       const s = store.getState()
       const src = row ? source(row) : undefined
       if (s._currentTabId === tabId) {
@@ -204,16 +254,97 @@ function asTabbed<T extends WithheldState>(store: unknown): TabbedStore<T> {
   return store as TabbedStore<T>
 }
 
+// ─── Not-loaded tabs ────────────────────────────────────────────────────
+//
+// A tab bound to a saved row whose request-store slice was dropped by the
+// cache cap, or was missing from the snapshot at startup, is `unloaded`; one
+// whose protocol store slice was missing at startup is `unloadedProtocol`
+// (request.store / activate-tab.ts). It is a fully withheld tab: the same one
+// row read puts it all back. Until then an in-place save is refused.
+
+type RequestSlice = {
+  unloaded?: boolean
+  unloadedProtocol?: boolean
+}
+
+function requestSlice(tabId: string): RequestSlice | undefined {
+  const s = useRequestStore.getState()
+  return s._currentTabId === tabId ? s : s._tabStates.get(tabId)
+}
+
+/** The tab's state was never loaded from its saved row. */
+export function isTabUnloaded(tabId: string): boolean {
+  const slice = requestSlice(tabId)
+  return !!(slice?.unloaded || slice?.unloadedProtocol)
+}
+
+const arrayOr = <T>(v: unknown, fallback: T[]): T[] => (Array.isArray(v) ? (v as T[]) : fallback)
+const objectOr = <T>(v: unknown, fallback: T): T => (isRecord(v) ? (v as T) : fallback)
+const stringOr = (v: unknown, fallback: string): string => (typeof v === 'string' ? v : fallback)
+
+/**
+ * Fill the not-loaded parts of `tab` from `row` — the request store (same
+ * defaults as `openEndpointTab`) and/or the protocol store. Only on the live
+ * slice of the active tab: both restores write whatever tab is live, so after
+ * a switch away the flags stay and the next activation reloads.
+ */
+function reloadUnloadedTab(tab: BoundTab, row: BoundRow | undefined): void {
+  const req = useRequestStore.getState()
+  if (!row) {
+    // No row (an unsaved draft): nothing to load, nothing to protect.
+    if (req._currentTabId === tab.id)
+      useRequestStore.setState({ unloaded: false, unloadedProtocol: false })
+    return
+  }
+  if (req._currentTabId !== tab.id || useTabsStore.getState().activeTabId !== tab.id) return
+  const protocol = (tab.protocol ?? 'http') as string
+  const r = row.request
+  const settings = readRequestSettings(r)
+  if (req.unloaded) {
+    req.loadFromEndpoint(
+      {
+        method: stringOr(r.method, 'GET') as HttpMethod,
+        url: stringOr(r.url, ''),
+        params: arrayOr<KeyValuePair>(r.params, []),
+        headers: arrayOr<KeyValuePair>(r.headers, []),
+        body: objectOr<RequestBody>(r.body, { type: 'none' }),
+        auth: objectOr<AuthConfig>(r.auth, { type: 'none' }),
+        preScript: stringOr(r.preScript, ''),
+        postScript: stringOr(r.postScript, ''),
+        assertions: arrayOr<TestAssertion>(r.assertions, []),
+        ...requestStoreSettings(settings),
+      },
+      // Nothing on the slice to keep — it was never loaded.
+      { force: true },
+    )
+  }
+  if (useRequestStore.getState().unloadedProtocol) {
+    restoreRequestSettings(protocol, settings)
+    restoreProtocolFromMetadata(protocol, row.meta)
+  }
+  useRequestStore.setState({ unloaded: false, unloadedProtocol: false })
+}
+
+const requestTabbed = tabbedAdapter(
+  'request credentials',
+  undefined,
+  asTabbed(useRequestStore),
+  (row) => row.request,
+  HTTP_CREDENTIALS,
+)
+
 const ADAPTERS: WithheldAdapter[] = [
   // The request store backs every tab — Ctrl+S writes its auth + headers for
-  // every protocol — so it is not gated on HTTP.
-  tabbedAdapter(
-    'request credentials',
-    undefined,
-    asTabbed(useRequestStore),
-    (row) => row.request,
-    HTTP_CREDENTIALS,
-  ),
+  // every protocol — so it is not gated on HTTP. It also carries the
+  // not-loaded flags: a not-loaded tab is reloaded whole, which covers its
+  // withheld values too.
+  {
+    label: (tabId) => (isTabUnloaded(tabId) ? 'request' : 'request credentials'),
+    protocol: undefined,
+    pending: (tabId) => isTabUnloaded(tabId) || requestTabbed.pending(tabId),
+    restore: (tab, row) =>
+      isTabUnloaded(tab.id) ? reloadUnloadedTab(tab, row) : requestTabbed.restore(tab, row),
+  },
   tabbedAdapter('MCP credentials', 'mcp', asTabbed(useMcpStore), metaBlock('mcp'), MCP_CREDENTIALS),
   tabbedAdapter(
     'WebSocket credentials',
@@ -258,7 +389,7 @@ const ADAPTERS: WithheldAdapter[] = [
     label: 'Socket.IO bearer token',
     protocol: 'socketio',
     pending: (tabId) => useSocketIOStore.getState().isTokenWithheld(tabId),
-    restore: (tabId, row) => {
+    restore: ({ id: tabId }, row) => {
       const sio = row?.meta.socketio
       const token = isRecord(sio) && typeof sio.bearerToken === 'string' ? sio.bearerToken : ''
       useSocketIOStore.getState().applyRestoredToken(tabId, token)
@@ -272,6 +403,9 @@ function adaptersFor(tab: BoundTab): WithheldAdapter[] {
 }
 
 export type WithheldReload = { ok: true } | { ok: false; error: string }
+
+/** The refusal when a not-loaded tab is still not loaded (in-place save guard). */
+export const NOT_LOADED_ERROR = 'Could not reload the saved request; the request was not saved.'
 
 const inflight = new Map<string, Promise<WithheldReload>>()
 
@@ -293,13 +427,18 @@ export function ensureWithheldCredentialsLoaded(tab: BoundTab): Promise<Withheld
     const waiting = adaptersFor(tab)
     if (row === null) {
       if (waiting.length === 0) return { ok: true }
-      const what = waiting.map((a) => a.label).join(', ')
+      const what = waiting
+        .map((a) => (typeof a.label === 'function' ? a.label(tab.id) : a.label))
+        .join(', ')
       return {
         ok: false,
         error: `Could not reload the saved ${what}; the request was not saved.`,
       }
     }
-    for (const a of waiting) a.restore(tab.id, row)
+    for (const a of waiting) a.restore(tab, row)
+    // A not-loaded tab is reloaded only while it is the live one; the user
+    // switched away during the read — the next activation retries.
+    if (isTabUnloaded(tab.id)) return { ok: false, error: NOT_LOADED_ERROR }
     return { ok: true }
   })().finally(() => inflight.delete(tab.id))
   inflight.set(tab.id, run)

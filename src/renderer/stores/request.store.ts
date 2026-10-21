@@ -7,8 +7,9 @@ import type {
   TestAssertion,
   ApiResponse,
   ConsoleLog,
+  Tab,
 } from '../types'
-import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { loadTabbedState, attachTabbedPersist, storedBoundTabs } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
 import {
   credentialRows,
@@ -119,6 +120,17 @@ interface TabRequestState extends WithheldState {
   maxRedirects: number
   sslVerification: boolean
   requestTimeout: number | null
+  /**
+   * The tab is bound to a saved row (endpoint / saved request / suite item)
+   * but this slice was never filled from it: the cache cap dropped it, or the
+   * snapshot read at startup did not hold it. Like a withheld credential
+   * (#244) the row is read back — on activation and before Ctrl+S / Save As /
+   * Send (`lib/withheld-credentials.ts`); until then an in-place save is
+   * refused, never written empty over the row.
+   */
+  unloaded: boolean
+  /** Same, for the tab's protocol store (WebSocket, MCP, …) — its slice was lost. */
+  unloadedProtocol: boolean
 }
 
 function emptyTabState(): TabRequestState {
@@ -140,7 +152,14 @@ function emptyTabState(): TabRequestState {
     sslVerification: true,
     requestTimeout: null,
     withheldCredentials: [],
+    unloaded: false,
+    unloadedProtocol: false,
   }
+}
+
+/** Bound to a saved row — the tabs an in-place save writes to. */
+function isBoundTab(t: Pick<Tab, 'endpointId' | 'savedRequestId' | 'testSuiteItemId'>): boolean {
+  return !!(t.endpointId || t.savedRequestId || t.testSuiteItemId)
 }
 
 /**
@@ -249,21 +268,30 @@ interface RequestStore extends TabRequestState {
   sendRequest: () => Promise<void>
   /** Abort the in-flight HTTP request, if any. No-op when nothing is in flight. */
   cancelRequest: () => Promise<void>
-  loadFromEndpoint: (data: {
-    method: HttpMethod
-    url: string
-    params?: KeyValuePair[]
-    headers?: KeyValuePair[]
-    body?: RequestBody
-    auth?: AuthConfig
-    preScript?: string
-    postScript?: string
-    assertions?: TestAssertion[]
-    followRedirects?: boolean
-    maxRedirects?: number
-    sslVerification?: boolean
-    requestTimeout?: number | null
-  }) => void
+  loadFromEndpoint: (
+    data: {
+      method: HttpMethod
+      url: string
+      params?: KeyValuePair[]
+      headers?: KeyValuePair[]
+      body?: RequestBody
+      auth?: AuthConfig
+      preScript?: string
+      postScript?: string
+      assertions?: TestAssertion[]
+      followRedirects?: boolean
+      maxRedirects?: number
+      sslVerification?: boolean
+      requestTimeout?: number | null
+    },
+    opts?: {
+      /**
+       * Apply even over a dirty tab. Only for rehydrating a tab whose slice was
+       * never loaded (`unloaded`) — there are no edits to keep.
+       */
+      force?: boolean
+    },
+  ) => void
 
   /** Switch active tab — saves current state and loads target tab state */
   switchToTab: (tabId: string) => void
@@ -293,12 +321,59 @@ function extractState(s: RequestStore): TabRequestState {
     sslVerification: s.sslVerification,
     requestTimeout: s.requestTimeout,
     withheldCredentials: s.withheldCredentials,
+    unloaded: s.unloaded,
+    unloadedProtocol: s.unloadedProtocol,
   }
 }
 
 // ─── Persistence ──────────────────────────────────────────────
 const STORAGE_KEY = 'testnizer-request'
 const persisted = loadTabbedState<TabRequestState>(STORAGE_KEY, emptyTabState, persistableRequest)
+
+/**
+ * The per-tab cache keeps at most this many states. Only an idle tab bound to
+ * a saved row is dropped (it is reloaded from the row when it comes back);
+ * dirty tabs and unsaved drafts — whose state exists nowhere else — never are.
+ */
+const MAX_CACHED_TAB_STATES = 20
+
+/**
+ * Bound tabs whose slice is gone: dropped by the cap this session, or absent
+ * from the snapshot read at startup. `switchToTab` turns the id into the
+ * slice's `unloaded` flag (persisted with it) and forgets it here.
+ */
+const unloadedTabIds = startupUnloadedTabIds()
+
+function startupUnloadedTabIds(): Set<string> {
+  const present = (id: string): boolean =>
+    persisted._tabStates.has(id) || persisted._currentTabId === id
+  return new Set(
+    storedBoundTabs()
+      .map((t) => t.id)
+      .filter((id) => !present(id)),
+  )
+}
+
+/**
+ * Drop the oldest idle cached states beyond the cap. Idle: a tab in the open
+ * tab set, bound to a saved row, not dirty, not the incoming one. The cap
+ * counts idle states only — the rest are never dropped (a draft or a dirty
+ * tab exists nowhere else; an id not in the open set is another project's tab
+ * and may be one), so counting them would make every switch drop the tab
+ * just left. Mutates `tabStates`.
+ */
+function evictIdleTabStates(tabStates: Map<string, TabRequestState>, incoming: string): void {
+  if (tabStates.size <= MAX_CACHED_TAB_STATES) return
+  const open = new Map(useTabsStore.getState().tabs.map((t) => [t.id, t]))
+  const idle = [...tabStates.keys()].filter((id) => {
+    const tab = open.get(id)
+    return id !== incoming && !!tab && !tab.isDirty && isBoundTab(tab)
+  })
+  for (const id of idle.slice(0, Math.max(0, idle.length - MAX_CACHED_TAB_STATES))) {
+    tabStates.delete(id)
+    unloadedTabIds.add(id)
+  }
+}
 
 export const useRequestStore = create<RequestStore>((set, get) => ({
   ...persisted.current,
@@ -440,28 +515,28 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const state = get()
     const tabStates = new Map(state._tabStates)
 
-    // Save current tab state
+    // Save current tab state — re-inserted, so the cache's insertion order is
+    // least-recently-left first and the cap drops the longest-idle tab.
     if (state._currentTabId) {
+      tabStates.delete(state._currentTabId)
       tabStates.set(state._currentTabId, extractState(state))
     }
 
-    // Cap the cache at MAX_CACHED_TAB_STATES entries to keep idle memory
-    // bounded. v1.3.1 M16 reported ~560 MB resident with 7 endpoints + 1
-    // mock — most of which was per-tab Monaco state + cached request state
-    // that never got evicted. We drop the oldest entry (insertion order)
-    // when we exceed the cap, skipping the incoming tab so a brand-new
-    // switch never thrashes its own state out.
-    const MAX_CACHED_TAB_STATES = 20
-    while (tabStates.size > MAX_CACHED_TAB_STATES) {
-      const oldest = tabStates.keys().next().value
-      if (oldest === tabId || oldest === undefined) break
-      tabStates.delete(oldest)
-    }
+    // Cap the cache to keep idle memory bounded (v1.3.1 M16: ~560 MB resident
+    // with 7 endpoints + 1 mock). Only idle saved tabs are dropped — the P0
+    // data loss was a dropped tab coming back empty and Ctrl+S writing that
+    // over its row; a dropped tab is now marked and reloaded from the row.
+    evictIdleTabStates(tabStates, tabId)
 
     // Load target tab state (or empty for new tabs). Merge over emptyTabState
     // so fields added later (per-request settings #24-27) default cleanly when
-    // restoring a cache entry persisted before those fields existed.
-    const target = { ...emptyTabState(), ...tabStates.get(tabId) }
+    // restoring a cache entry persisted before those fields existed. A bound
+    // tab whose state was dropped comes back marked `unloaded`.
+    const cached = tabStates.get(tabId)
+    const target = cached
+      ? { ...emptyTabState(), ...cached }
+      : { ...emptyTabState(), unloaded: unloadedTabIds.has(tabId) }
+    unloadedTabIds.delete(tabId)
 
     set({
       ...target,
@@ -471,6 +546,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
 
   removeTabState: (tabId) => {
+    unloadedTabIds.delete(tabId)
     const tabStates = new Map(get()._tabStates)
     tabStates.delete(tabId)
     set({ _tabStates: tabStates })
@@ -502,13 +578,17 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       // the copy (its row is a copy of the source's), so Ctrl+S on the copy
       // reloads it instead of writing the empty field.
       withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], rowIds),
+      // The copy is a new draft: there is no row to reload it from.
+      unloaded: false,
+      unloadedProtocol: false,
     })
     set({ _tabStates: tabStates })
   },
 
   sendRequest: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    // A saved tab whose state was dropped from the cache is reloaded from its row.
+    if (get().withheldCredentials.length > 0 || get().unloaded) await reloadWithheldBeforeSend()
     const { method, url, params, headers, body, auth, preScript } = get()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
@@ -1018,7 +1098,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     })
   },
 
-  loadFromEndpoint: (data) => {
+  loadFromEndpoint: (data, opts) => {
     const state = get()
     // Don't clobber a tab's unsaved working copy. The tree click / open-tab
     // paths run `openPreviewTab → switchToTab → loadFromEndpoint`; when the
@@ -1030,7 +1110,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // DB reload is skipped; a clean tab (fresh open, or post-Save) loads
     // normally. Gated on the tab being backed by a saved request / endpoint —
     // matching `markActiveTabDirty`, the only thing that sets the flag.
-    if (state._currentTabId) {
+    if (state._currentTabId && !opts?.force) {
       const activeTab = useTabsStore.getState().tabs.find((t) => t.id === state._currentTabId)
       if (activeTab?.isDirty && (activeTab.endpointId || activeTab.savedRequestId)) {
         return
@@ -1052,6 +1132,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       requestTimeout: data.requestTimeout ?? null,
       // Fresh from the row — nothing is waiting for a withheld value (#244).
       withheldCredentials: [] as string[],
+      unloaded: false,
     }
     // ALSO refresh the per-tab cache for the current tab. Without this,
     // closing and reopening a test-suite item (or any tab) would restore
