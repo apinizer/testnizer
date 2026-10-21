@@ -2,7 +2,7 @@
  * Pure view helpers of the AI Chat editor (no React): scroll pinning, the
  * metrics hover text (issue #198) and the saved-MCP-request picker (#180).
  */
-import type { AiCallMetrics, AiTurnMetrics } from '../../shared/ai-chat-types'
+import type { AiCallMetrics, AiTurn, AiTurnMetrics } from '../../shared/ai-chat-types'
 import type { TreeNode } from '../types'
 
 /**
@@ -87,4 +87,63 @@ export function mcpRequestsOf(tree: readonly TreeNode[]): McpRequestRef[] {
   }
   walk(tree)
   return out
+}
+
+/**
+ * Issue #228 — the Settings + Tools area and the conversation share the editor
+ * body through a drag divider (the MCP editor's split, #211), remembered per
+ * user. The floors are pixels: the config side keeps both section headers, the
+ * conversation keeps room for a whole approval card.
+ */
+export const AI_CHAT_SPLIT_ID = 'ai-chat-config-transcript'
+export const AI_CONFIG_PANEL_ID = 'ai-chat-config-panel'
+export const AI_TRANSCRIPT_PANEL_ID = 'ai-chat-transcript-panel'
+export const AI_CONFIG_MIN_PX = 80
+export const AI_TRANSCRIPT_MIN_PX = 220
+
+/**
+ * What the live turn is waiting on the user for — a tool call's approval or an
+ * stdio server's trust — as a stable key (`call:<id>` / `trust:<id>`), or null.
+ * A new key is the moment the card has to be brought into view.
+ */
+export function awaitingUserKey(
+  messages: readonly AiTurn[],
+  pendingResponseId: string | null | undefined,
+): string | null {
+  if (!pendingResponseId) return null
+  const turn = messages.find((m) => m.id === pendingResponseId)
+  if (!turn || turn.role !== 'assistant') return null
+  for (const p of turn.parts ?? []) {
+    if (p.type === 'tool_call' && p.status === 'pending-approval') return `call:${p.id}`
+    if (
+      p.type === 'notice' &&
+      p.kind === 'stdio-untrusted' &&
+      (p.status ?? 'pending') === 'pending'
+    )
+      return `trust:${p.id}`
+  }
+  return null
+}
+
+interface VerticalBox {
+  top: number
+  bottom: number
+}
+
+/**
+ * The `scrollTop` that brings `target` fully inside `view` (both viewport
+ * rects), moving as little as possible; a target taller than the view is
+ * aligned to its bottom edge — an approval card ends with its buttons.
+ */
+export function scrollTopToReveal(
+  view: VerticalBox,
+  target: VerticalBox,
+  scrollTop: number,
+  margin = 8,
+): number {
+  const top = view.top + margin
+  const bottom = view.bottom - margin
+  if (target.bottom > bottom) return Math.max(0, scrollTop + (target.bottom - bottom))
+  if (target.top < top) return Math.max(0, scrollTop - (top - target.top))
+  return scrollTop
 }

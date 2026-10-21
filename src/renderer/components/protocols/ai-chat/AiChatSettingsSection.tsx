@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useId, useState, type ReactElement } from 'react'
 import { ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
 import {
   useAiChatStore,
@@ -19,7 +19,14 @@ const INPUT =
   'rounded-md border border-[var(--border)] bg-[var(--white)] px-2 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]'
 
 /** The collapsible Settings section: provider, model, URL, key, system prompt, parameters, headers. */
-export default function AiChatSettingsSection(): ReactElement {
+export default function AiChatSettingsSection({
+  expanded,
+  onToggle,
+}: {
+  /** Owned by the editor: it decides whether the body is split (issue #228). */
+  expanded: boolean
+  onToggle: () => void
+}): ReactElement {
   const { t } = useTranslation()
   const provider = useAiChatStore((s) => s.provider)
   const customUrl = useAiChatStore((s) => s.customUrl)
@@ -35,17 +42,24 @@ export default function AiChatSettingsSection(): ReactElement {
   const removeHeader = useAiChatStore((s) => s.removeHeader)
   const setHeaders = useAiChatStore((s) => s.setHeaders)
 
-  const [expanded, setExpanded] = useState(true)
+  const bodyId = useId()
   const [headersExpanded, setHeadersExpanded] = useState(false)
   const enabledHeaderCount = (customHeaders ?? []).filter((h) => h.enabled && h.key.trim()).length
   const models = PROVIDER_MODELS[provider]
   const providerInfo = AI_PROVIDERS.find((p) => p.id === provider) ?? AI_PROVIDERS[0]
 
   return (
-    <div className="shrink-0 border-b border-[var(--border)]">
+    <div
+      className="shrink-0 border-b border-[var(--border)]"
+      data-testid="ai-settings-section"
+      data-expanded={expanded ? 'true' : 'false'}
+    >
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        data-testid="ai-settings-toggle"
         className="flex w-full cursor-pointer items-center gap-2 px-3.5 py-2 text-left font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
         style={{ background: 'transparent', border: 'none' }}
       >
@@ -60,7 +74,12 @@ export default function AiChatSettingsSection(): ReactElement {
         </span>
       </button>
       {expanded && (
-        <div className="grid gap-3 p-3.5 pt-1" style={{ gridTemplateColumns: '1fr 1fr' }}>
+        <div
+          id={bodyId}
+          data-testid="ai-settings-body"
+          className="grid gap-3 p-3.5 pt-1"
+          style={{ gridTemplateColumns: '1fr 1fr' }}
+        >
           <label className="flex flex-col gap-1">
             <span className={LABEL} style={{ fontSize: 12 }}>
               {t('aiChat.provider')}

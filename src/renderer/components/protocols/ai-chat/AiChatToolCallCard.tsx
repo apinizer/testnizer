@@ -100,6 +100,7 @@ export default function AiChatToolCallCard({
               className="flex flex-col gap-2 rounded-md border px-2 py-2"
               style={{ borderColor: 'var(--orange)' }}
               data-testid="ai-tool-approval"
+              data-awaiting-user="true"
             >
               <span className="text-[var(--text)]">{t('aiChat.approval.question')}</span>
               <div className="flex flex-wrap gap-2">
