@@ -187,6 +187,20 @@ panel — and secrets stay on your machine.**
   render crisp text on 1x monitors; they used to sit on a half pixel and look
   blurred. The response pane is fully translated to Turkish.
 
+- **App password and start screen:** Settings now has an **App password**
+  section — see whether one is set, change it, or turn it off with your
+  current password. With no password, Testnizer opens straight into your
+  projects after the first launch, and turning the password off keeps you in
+  the app. The start screen's text is translated and now says what is true:
+  the app password is a lock on launch, not database encryption, and
+  Testnizer sends nothing to us.
+
+- **Tab strips:** when the open tabs or the request sub-tabs no longer fit,
+  their scrollbar no longer pushes the editor down; the strips keep their
+  height, scroll sideways with the mouse wheel and keep the active tab in
+  view. The Generate Code dialog is translated and its Close button is
+  readable in dark mode.
+
 - **Export:** a whole project exports as **Postman v2.1,
   OpenAPI 3, Insomnia** or Testnizer JSON from the APIs tree root, File →
   Export, Settings and the project card on Home. Requests saved with Ctrl+S are

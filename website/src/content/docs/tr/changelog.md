@@ -199,6 +199,19 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   metin çiziyor; eskiden yarım piksele oturup bulanık görünüyorlardı. Yanıt
   paneli tamamen Türkçeye çevrildi.
 
+- **Uygulama parolası ve başlangıç ekranı:** Ayarlar'da artık bir **Uygulama
+  parolası** bölümü var: parola olup olmadığını görebilir, değiştirebilir ya da
+  mevcut parolanla kapatabilirsin. Parola yoksa Testnizer ilk açılıştan sonra
+  doğrudan projelerine açılır; parolayı kapatınca uygulamadan çıkmazsın.
+  Başlangıç ekranının metni Türkçeye çevrildi ve artık doğruyu söylüyor:
+  uygulama parolası açılışta bir kilittir, veritabanını şifrelemez; Testnizer
+  bize hiçbir şey göndermez.
+
+- **Sekme şeritleri:** açık sekmeler ya da isteğin alt sekmeleri sığmadığında
+  çıkan kaydırma çubuğu artık editörü aşağı itmiyor; şeritler yüksekliğini
+  korur, fare tekerleğiyle yana kayar ve etkin sekmeyi görünür tutar. Kod
+  Oluştur penceresi Türkçeye çevrildi, Kapat düğmesi koyu temada okunur oldu.
+
 - **Dışa aktarma:** bir proje tümüyle **Postman v2.1, OpenAPI 3, Insomnia** ya
   da Testnizer JSON olarak APIs ağacının kökünden, File → Export'tan,
   Settings'ten ve Home'daki proje kartından dışa aktarılabiliyor. Ctrl+S ile
