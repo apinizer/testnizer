@@ -12,6 +12,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
+import { urlCredentialText } from '../lib/credential-text'
 import { makeId } from '../lib/utils'
 import { t } from '../lib/i18n'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
@@ -158,7 +159,12 @@ function extractState(s: SseStore): TabSseState {
  * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
  * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
  */
-const SSE_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('customHeaders')] }
+// Issue #247: `?token=…` / `user:pass@` in the stream URL too.
+export const SSE_CREDENTIALS: CredentialSpec = {
+  fields: [],
+  rows: [credentialRows('customHeaders')],
+  texts: [urlCredentialText('url')],
+}
 
 function persistableSse(st: TabSseState): TabSseState {
   const idle = emptyTabState()
@@ -570,4 +576,4 @@ attachTabbedPersist(
   persistableSse,
 )
 // Issue #244: a user edit to a withheld value drops its marker.
-trackCredentialEdits(useSseStore)
+trackCredentialEdits(useSseStore, SSE_CREDENTIALS)

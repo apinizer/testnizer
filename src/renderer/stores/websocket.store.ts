@@ -12,6 +12,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
+import { urlCredentialText } from '../lib/credential-text'
 import { makeId } from '../lib/utils'
 import { wsMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
@@ -127,7 +128,12 @@ function extractState(s: WebSocketStore): TabWsState {
  * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
  * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
  */
-const WS_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('customHeaders')] }
+// Issue #247: `?token=…` / `user:pass@` in the connection URL too.
+export const WS_CREDENTIALS: CredentialSpec = {
+  fields: [],
+  rows: [credentialRows('customHeaders')],
+  texts: [urlCredentialText('url')],
+}
 
 function persistableWs(st: TabWsState): TabWsState {
   const idle = emptyTabState()
@@ -531,4 +537,4 @@ attachTabbedPersist(
   persistableWs,
 )
 // Issue #244: a user edit to a withheld value drops its marker.
-trackCredentialEdits(useWebSocketStore)
+trackCredentialEdits(useWebSocketStore, WS_CREDENTIALS)

@@ -68,6 +68,8 @@ export interface CredentialText {
   scrub: (value: string, state: unknown) => string
   /** The saved credential parts put back into the blank parts of `live`. */
   fill: (live: string, saved: string, state: unknown) => string
+  /** Dot path of the saved value in the restore source when it differs (`call.toolArgs`). */
+  source?: string
 }
 
 export interface CredentialSpec {
@@ -305,9 +307,9 @@ export function restoreWithheld<T extends WithheldState>(
       continue
     }
     const live = getPath(work, path)
-    const value = getPath(source, path)
-    if (typeof value !== 'string') continue
     const text = textOf(spec, path)
+    const value = getPath(source, text?.source ?? path)
+    if (typeof value !== 'string') continue
     if (text) {
       if (typeof live !== 'string') continue
       const next = text.scrub(value, work) === live ? value : text.fill(live, value, work)

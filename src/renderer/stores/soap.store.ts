@@ -17,6 +17,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
+import { urlCredentialText } from '../lib/credential-text'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
@@ -210,13 +211,23 @@ function emptySoapTabState(): TabSoapState {
 
 /**
  * Issue #247: the WS-Security UsernameToken password (and the legacy
- * single-mode `password`) never reach the tab snapshot as typed; a
+ * single-mode `password`), pasted private keys and URL credentials of the
+ * endpoint / WSDL URL never reach the tab snapshot as typed; a
  * `{{var}}`-only value is kept. The saved row keeps it (`meta.soap.wsSecurity`)
  * — `lib/withheld-credentials.ts` reloads it after a restart.
  */
 export const SOAP_CREDENTIALS: CredentialSpec = {
-  fields: ['wsSecurity.usernameToken.password', 'wsSecurity.password'],
+  fields: [
+    'wsSecurity.usernameToken.password',
+    'wsSecurity.password',
+    // Private key material never sits in localStorage (the keystore-bridge
+    // rule): a pasted signing key, the inline key of a key source. The
+    // certificates are public and stay.
+    'wsSecurity.sign.privateKeyPem',
+    'wsSecurity.sign.keySource.keyPem',
+  ],
   rows: [],
+  texts: [urlCredentialText('endpointUrl'), urlCredentialText('wsdlUrl')],
 }
 
 /**
@@ -276,6 +287,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   },
 
   parseWsdl: async () => {
+    // Issue #247: a WSDL URL credential still withheld after a restart.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const rawUrl = get().wsdlUrl.trim()
     if (!rawUrl) return
 
@@ -725,7 +738,7 @@ attachTabbedPersist(
   persistableSoap,
 )
 // Issue #247: a user edit to a withheld value drops its marker.
-trackCredentialEdits(useSoapStore)
+trackCredentialEdits(useSoapStore, SOAP_CREDENTIALS)
 
 function flattenSchema(schema: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {}

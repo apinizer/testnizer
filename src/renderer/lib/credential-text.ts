@@ -29,6 +29,7 @@
 import { isTemplateOnlyValue } from './ai-chat-config'
 import { isCredentialArgName } from '../../shared/credential-headers'
 import { joinCommandLine, tokenizeCommandLine } from '../../shared/mcp-call'
+import type { CredentialText } from './credential-withhold'
 
 /** A non-empty value that is not only `{{var}}` references. */
 export const isLiteralText = (v: string): boolean => v.trim() !== '' && !isTemplateOnlyValue(v)
@@ -337,4 +338,26 @@ export function scrubTabCredentials<T extends { url?: string }>(tab: T): T {
   if (!tab || typeof tab.url !== 'string') return tab
   const url = scrubTargetCredentials(tab.url)
   return url === tab.url ? tab : { ...tab, url }
+}
+
+// ─── Spec entries (issue #247) ──────────────────────────────────────────
+
+/** A store field holding a URL: `?token=` / `user:pass@` withheld. */
+export function urlCredentialText(path: string, source?: string): CredentialText {
+  return {
+    path,
+    source,
+    scrub: (v) => scrubUrlCredentials(v),
+    fill: (live, saved) => fillUrlCredentials(live, saved),
+  }
+}
+
+/** A store field holding JSON text: credential-named string members withheld. */
+export function jsonCredentialText(path: string, source?: string): CredentialText {
+  return {
+    path,
+    source,
+    scrub: (v) => scrubJsonCredentials(v),
+    fill: (live, saved) => fillJsonCredentials(live, saved),
+  }
 }

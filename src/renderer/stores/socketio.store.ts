@@ -10,6 +10,13 @@ import { socketioMaskedSendError } from '../lib/masked-send-guard'
 // the unsaved-change indicator works for Socket.IO, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
 import { isTemplateOnlyValue } from '../lib/ai-chat-config'
+import {
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
+import { urlCredentialText } from '../lib/credential-text'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -24,7 +31,7 @@ function getSioApi() {
   return window.api?.socketio
 }
 
-interface TabSioState {
+interface TabSioState extends WithheldState {
   url: string
   namespace: string
   bearerToken: string
@@ -84,6 +91,7 @@ function emptyState(): TabSioState {
     namespace: '/',
     bearerToken: '',
     bearerTokenWithheld: false,
+    withheldCredentials: [],
     connectionId: null,
     connectionState: 'disconnected',
     errorMessage: null,
@@ -102,6 +110,7 @@ function extractState(s: SocketIOStore): TabSioState {
     namespace: s.namespace,
     bearerToken: s.bearerToken,
     bearerTokenWithheld: s.bearerTokenWithheld,
+    withheldCredentials: s.withheldCredentials,
     connectionId: s.connectionId,
     connectionState: s.connectionState,
     errorMessage: s.errorMessage,
@@ -131,7 +140,10 @@ function persistableSio(st: TabSioState): TabSioState {
   const idle = emptyState()
   const literalToken = st.bearerToken !== '' && !isTemplateOnlyValue(st.bearerToken)
   return {
-    ...st,
+    // Issue #247: `?token=…` / `user:pass@` in the connection URL — the
+    // generic marker (`lib/credential-withhold.ts`); the bearer token keeps
+    // its own flag (issue #243).
+    ...withholdCredentials(st, SIO_CREDENTIALS),
     bearerToken: literalToken ? '' : st.bearerToken,
     // Still withheld when a restored tab is written again before its token
     // came back from the saved row.
@@ -142,6 +154,12 @@ function persistableSio(st: TabSioState): TabSioState {
     connectionState: idle.connectionState,
     _pendingConnectId: undefined,
   }
+}
+
+export const SIO_CREDENTIALS: CredentialSpec = {
+  fields: [],
+  rows: [],
+  texts: [urlCredentialText('url')],
 }
 
 const STORAGE_KEY = 'testnizer-socketio'
@@ -183,7 +201,9 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
 
   connect: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().bearerTokenWithheld) await reloadWithheldBeforeSend()
+    if (get().bearerTokenWithheld || get().withheldCredentials.length > 0) {
+      await reloadWithheldBeforeSend()
+    }
     const { url, namespace, bearerToken } = get()
     if (!url.trim()) return
     // Issue #195: a History mask left in a credential field is never sent.
@@ -298,6 +318,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
       namespace: cur.namespace,
       bearerToken: cur.bearerToken,
       bearerTokenWithheld: cur.bearerTokenWithheld,
+      withheldCredentials: cur.withheldCredentials,
       emitEvent: cur.emitEvent,
       emitPayload: cur.emitPayload,
       subscriptions: cur.subscriptions,
@@ -394,3 +415,5 @@ attachTabbedPersist(
   (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
   persistableSio,
 )
+// Issue #247: a user edit to a withheld URL drops its marker.
+trackCredentialEdits(useSocketIOStore, SIO_CREDENTIALS)

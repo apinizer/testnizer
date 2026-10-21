@@ -104,7 +104,7 @@ describe('issue #187 — credential header kept for this session only: inline no
     expect(screen.getByTestId('ai-headers-session-only-note').textContent).toMatch(
       /yalnızca bu oturum boyunca tutulur ve kaydedilmez/,
     )
-    expect(screen.getByTestId('ai-headers-session-only-note').textContent).toContain('{{değişken}}')
+    expect(screen.getByTestId('ai-headers-session-only-note').textContent).toContain('{{variable}}')
 
     act(() => useAiChatStore.setState({ customHeaders: [row('Authorization', 'Bearer {{token}}')] }))
     expect(screen.queryByTestId('ai-headers-session-only-note')).toBeNull()

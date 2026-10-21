@@ -14,7 +14,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
-import { fillJsonCredentials, scrubJsonCredentials } from '../lib/credential-text'
+import { jsonCredentialText, urlCredentialText } from '../lib/credential-text'
 import { makeId } from '../lib/utils'
 import { graphqlMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
@@ -236,13 +236,7 @@ function extractState(s: GraphQLStore): TabGraphQLState {
 export const GQL_CREDENTIALS: CredentialSpec = {
   fields: [],
   rows: [credentialRows('headers')],
-  texts: [
-    {
-      path: 'variables',
-      scrub: (v) => scrubJsonCredentials(v),
-      fill: (live, saved) => fillJsonCredentials(live, saved),
-    },
-  ],
+  texts: [jsonCredentialText('variables'), urlCredentialText('url')],
 }
 
 function persistableGql(st: TabGraphQLState): TabGraphQLState {

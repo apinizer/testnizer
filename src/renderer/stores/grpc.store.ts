@@ -325,7 +325,10 @@ function extractState(s: GrpcStore): TabGrpcState {
  * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
  * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
  */
-const GRPC_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('metadata')] }
+// Issue #247: the server address is `host:port` only (scheme stripped on
+// input, path and query dropped at send) — no place for a credential, so it
+// has no `texts` entry.
+export const GRPC_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('metadata')] }
 
 function persistableGrpc(st: TabGrpcState): TabGrpcState {
   const idle = emptyTabState()
@@ -1015,4 +1018,4 @@ attachTabbedPersist(
   persistableGrpc,
 )
 // Issue #244: a user edit to a withheld value drops its marker.
-trackCredentialEdits(useGrpcStore)
+trackCredentialEdits(useGrpcStore, GRPC_CREDENTIALS)

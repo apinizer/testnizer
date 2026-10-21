@@ -41,6 +41,7 @@ import {
   fillCommandLineCredentials,
   fillUrlCredentials,
   hasLiteralUrlUserinfo,
+  jsonCredentialText,
   scrubCommandLineCredentials,
   scrubUrlCredentials,
 } from '../lib/credential-text'
@@ -555,6 +556,9 @@ export const MCP_CREDENTIALS: CredentialSpec = {
       fill: (live, saved, st) =>
         isStdio(st) ? fillCommandLineCredentials(live, saved) : fillUrlCredentials(live, saved),
     },
+    // The tool-call arguments JSON: credential-named members (`"api_key": ""`);
+    // the saved row keeps them under `call.toolArgs`.
+    jsonCredentialText('toolArgs', 'call.toolArgs'),
   ],
 }
 
@@ -1764,6 +1768,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   callTool: async (opts) => {
+    // Issue #247: tool arguments still withheld after a restart are reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { connectionId, selectedTool, toolArgs, tools, toolCallId, url } = get()
     const tabId = get()._currentTabId
     if (!connectionId || !selectedTool || toolCallId) return

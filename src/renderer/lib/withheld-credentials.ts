@@ -18,11 +18,11 @@
 
 import { useRequestStore } from '../stores/request.store'
 import { useMcpStore } from '../stores/mcp.store'
-import { useWebSocketStore } from '../stores/websocket.store'
-import { useSseStore } from '../stores/sse.store'
+import { useWebSocketStore, WS_CREDENTIALS } from '../stores/websocket.store'
+import { useSseStore, SSE_CREDENTIALS } from '../stores/sse.store'
 import { useGraphQLStore } from '../stores/graphql.store'
-import { useGrpcStore } from '../stores/grpc.store'
-import { useSocketIOStore } from '../stores/socketio.store'
+import { useGrpcStore, GRPC_CREDENTIALS } from '../stores/grpc.store'
+import { useSocketIOStore, SIO_CREDENTIALS } from '../stores/socketio.store'
 import { useSoapStore, SOAP_CREDENTIALS } from '../stores/soap.store'
 import { HTTP_CREDENTIALS } from '../stores/request.store'
 import { MCP_CREDENTIALS } from '../stores/mcp.store'
@@ -216,12 +216,13 @@ const ADAPTERS: WithheldAdapter[] = [
   ),
   tabbedAdapter('MCP credentials', 'mcp', asTabbed(useMcpStore), metaBlock('mcp'), MCP_CREDENTIALS),
   tabbedAdapter(
-    'WebSocket header values',
+    'WebSocket credentials',
     'websocket',
     asTabbed(useWebSocketStore),
     metaBlock('websocket'),
+    WS_CREDENTIALS,
   ),
-  tabbedAdapter('SSE header values', 'sse', asTabbed(useSseStore), metaBlock('sse')),
+  tabbedAdapter('SSE credentials', 'sse', asTabbed(useSseStore), metaBlock('sse'), SSE_CREDENTIALS),
   tabbedAdapter(
     'GraphQL credentials',
     'graphql',
@@ -229,16 +230,30 @@ const ADAPTERS: WithheldAdapter[] = [
     metaBlock('graphql'),
     GQL_CREDENTIALS,
   ),
-  tabbedAdapter('gRPC metadata values', 'grpc', asTabbed(useGrpcStore), metaBlock('grpc')),
-  // WS-Security UsernameToken password (issue #247).
   tabbedAdapter(
-    'SOAP WS-Security password',
+    'gRPC credentials',
+    'grpc',
+    asTabbed(useGrpcStore),
+    metaBlock('grpc'),
+    GRPC_CREDENTIALS,
+  ),
+  // WS-Security UsernameToken password, pasted private keys, the URLs (issue #247).
+  tabbedAdapter(
+    'SOAP credentials',
     'soap',
     asTabbed(useSoapStore),
     metaBlock('soap'),
     SOAP_CREDENTIALS,
   ),
-  // Socket.IO keeps its own single-field marker (issue #243).
+  // The connection URL (issue #247) — the generic marker.
+  tabbedAdapter(
+    'Socket.IO URL',
+    'socketio',
+    asTabbed(useSocketIOStore),
+    metaBlock('socketio'),
+    SIO_CREDENTIALS,
+  ),
+  // The bearer token keeps its own single-field marker (issue #243).
   {
     label: 'Socket.IO bearer token',
     protocol: 'socketio',
