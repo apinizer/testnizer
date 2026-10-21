@@ -1,5 +1,6 @@
 import { useRequestStore } from '../../stores/request.store'
 import { useTranslation } from '../../lib/i18n'
+import { useScrollStrip } from '../../lib/use-scroll-strip'
 import { useTabSubTab } from '../../lib/use-tab-sub-tab'
 import ParamsTab from './ParamsTab'
 import AuthTab from './AuthTab'
@@ -31,6 +32,10 @@ export default function RequestEditor() {
   // Remembered per open request tab (issue #205): Workbench remounts this
   // editor on every tab switch, so plain useState reset to Params each time.
   const [activeTab, setActiveTab] = useTabSubTab<ReqTabKey>('request', REQ_TAB_KEYS, 'params')
+  // Issue #241: this row had no fixed height, so the overflow scrollbar grew it
+  // and pushed the editor down. `.scroll-strip` hides the bar; the hook keeps
+  // wheel scrolling and the active sub-tab in view.
+  const tabStripRef = useScrollStrip<HTMLDivElement>(activeTab)
   const params = useRequestStore((s) => s.params)
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
@@ -79,7 +84,9 @@ export default function RequestEditor() {
     <div className="flex h-full flex-col overflow-hidden" style={{ background: 'var(--white)' }}>
       {/* Tab bar — Postman style */}
       <div
-        className="flex shrink-0 items-center overflow-x-auto"
+        ref={tabStripRef}
+        data-testid="req-tab-strip"
+        className="scroll-strip flex shrink-0 items-center"
         style={{
           borderBottom: '1px solid var(--border)',
           background: 'var(--white)',

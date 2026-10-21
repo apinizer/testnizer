@@ -4,6 +4,7 @@ import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import { Eye, EyeOff, Loader2, Lock, Shield, Check, X, Zap, KeyRound } from 'lucide-react'
 import appIcon from '../../assets/icon.png'
+import { SECURITY_FEATURES } from './login-copy'
 
 // ─── Password strength validation ────────────────────────────
 function validatePassword(pw: string): {
@@ -19,13 +20,14 @@ function validatePassword(pw: string): {
 }
 
 function PasswordRules({ password }: { password: string }) {
+  const { t } = useTranslation()
   const { hasLength, hasLetter, hasNumber } = validatePassword(password)
   if (!password) return null
 
   const rules = [
-    { label: 'At least 8 characters', met: hasLength },
-    { label: 'At least one letter', met: hasLetter },
-    { label: 'At least one number', met: hasNumber },
+    { label: t('login.ruleLength'), met: hasLength },
+    { label: t('login.ruleLetter'), met: hasLetter },
+    { label: t('login.ruleNumber'), met: hasNumber },
   ]
 
   return (
@@ -44,13 +46,7 @@ function PasswordRules({ password }: { password: string }) {
   )
 }
 
-// ─── Security features for the branding panel ─────────────────
-const SECURITY_FEATURES = [
-  { icon: 'shield', label: '100% Offline', desc: 'No internet connection required' },
-  { icon: 'lock', label: 'Local Storage Only', desc: 'All data stays on your machine' },
-  { icon: 'db', label: 'Internal Git & Local DB', desc: 'Version control without cloud' },
-  { icon: 'eye', label: 'Zero Data Leakage', desc: 'Nothing is ever sent externally' },
-]
+// Branding-panel features (issue #240) live in ./login-copy.ts.
 
 function SecurityIcon({ type }: { type: string }) {
   const props = {
@@ -97,6 +93,7 @@ function SecurityIcon({ type }: { type: string }) {
 // ─── Main LoginScreen ─────────────────────────────────────────
 
 export default function LoginScreen() {
+  const { t } = useTranslation()
   const error = useAuthStore((s) => s.error)
   const clearError = useAuthStore((s) => s.clearError)
   const hasPasswordSet = useAuthStore((s) => s.hasPasswordSet)
@@ -197,7 +194,7 @@ export default function LoginScreen() {
               fontWeight: 500,
             }}
           >
-            Secure, Offline API Testing Platform
+            {t('login.tagline')}
           </div>
 
           {/* Security-first messaging */}
@@ -213,7 +210,11 @@ export default function LoginScreen() {
           >
             <div className="flex flex-col gap-3">
               {SECURITY_FEATURES.map((feat) => (
-                <div key={feat.label} className="flex items-start gap-3">
+                <div
+                  key={feat.label}
+                  data-testid="login-feature"
+                  className="flex items-start gap-3"
+                >
                   <div
                     className="flex shrink-0 items-center justify-center rounded-md"
                     style={{
@@ -227,10 +228,10 @@ export default function LoginScreen() {
                   </div>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.95)' }}>
-                      {feat.label}
+                      {t(feat.label)}
                     </div>
                     <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 1 }}>
-                      {feat.desc}
+                      {t(feat.desc)}
                     </div>
                   </div>
                 </div>
@@ -239,6 +240,7 @@ export default function LoginScreen() {
           </div>
 
           <div
+            data-testid="login-privacy-note"
             style={{
               fontSize: 12,
               color: 'rgba(255,255,255,0.5)',
@@ -248,8 +250,7 @@ export default function LoginScreen() {
               marginTop: 4,
             }}
           >
-            Your data never leaves your machine. All API requests, collections, and credentials are
-            stored locally in an encrypted database.
+            {t('login.privacyNote')}
           </div>
         </div>
 
@@ -392,7 +393,7 @@ function PasswordLoginForm() {
       {/* Divider */}
       <div className="flex items-center gap-3">
         <div className="flex-1" style={{ height: 1, background: 'var(--border)' }} />
-        <span style={{ fontSize: 13, color: 'var(--hint)' }}>or</span>
+        <span style={{ fontSize: 13, color: 'var(--hint)' }}>{t('login.or')}</span>
         <div className="flex-1" style={{ height: 1, background: 'var(--border)' }} />
       </div>
 
@@ -579,7 +580,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
               type={showNew ? 'text' : 'password'}
               value={newPw}
               onChange={(e) => setNewPw(e.target.value)}
-              placeholder="Min 8 characters, letter + number"
+              placeholder={t('profile.newPasswordPlaceholder')}
               autoComplete="new-password"
               className="w-full rounded-lg border py-2.5 pl-3.5 pr-10 outline-none transition-colors"
               style={{
@@ -632,7 +633,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
             type={showNew ? 'text' : 'password'}
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
-            placeholder="Re-enter new password"
+            placeholder={t('login.confirmPlaceholder')}
             autoComplete="new-password"
             className="w-full rounded-lg border px-3.5 py-2.5 outline-none transition-colors"
             style={{
@@ -686,6 +687,7 @@ function FirstTimeScreen() {
 /* ── Welcome Options ──────────────────────────────────────── */
 
 function WelcomeOptions({ onSetPassword }: { onSetPassword: () => void }) {
+  const { t } = useTranslation()
   const continueAsGuest = useAuthStore((s) => s.continueAsGuest)
 
   return (
@@ -698,10 +700,10 @@ function WelcomeOptions({ onSetPassword }: { onSetPassword: () => void }) {
           <Shield size={24} style={{ color: 'var(--accent-text)' }} />
         </div>
         <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)' }}>
-          Welcome to Testnizer
+          {t('login.welcomeTitle')}
         </div>
         <div style={{ fontSize: 13, color: 'var(--muted)', textAlign: 'center', maxWidth: 320 }}>
-          You can set a password to protect your data, or start using the app right away.
+          {t('login.welcomeDesc')}
         </div>
       </div>
 
@@ -727,9 +729,11 @@ function WelcomeOptions({ onSetPassword }: { onSetPassword: () => void }) {
           <Lock size={18} style={{ color: 'var(--accent-text)' }} />
         </div>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Set a Password</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+            {t('login.setPasswordOption')}
+          </div>
           <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
-            Protect your projects and data with a password
+            {t('login.setPasswordOptionDesc')}
           </div>
         </div>
       </button>
@@ -770,16 +774,16 @@ function WelcomeOptions({ onSetPassword }: { onSetPassword: () => void }) {
         </div>
         <div>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-            Continue Anonymous
+            {t('login.continueAnonymous')}
           </div>
           <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 2 }}>
-            Start with a blank project, no password required
+            {t('login.continueAnonymousDesc')}
           </div>
         </div>
       </button>
 
       <div style={{ fontSize: 13, color: 'var(--hint)', textAlign: 'center', marginTop: 4 }}>
-        You can set a password later from settings
+        {t('login.setLaterHint')}
       </div>
     </div>
   )
@@ -861,7 +865,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
               type={showPw ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Min 8 characters, letter + number"
+              placeholder={t('profile.newPasswordPlaceholder')}
               autoFocus
               className="w-full rounded-lg border py-2.5 pl-3.5 pr-10 outline-none transition-colors"
               style={{
@@ -913,7 +917,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
             type={showPw ? 'text' : 'password'}
             value={confirmPw}
             onChange={(e) => setConfirmPw(e.target.value)}
-            placeholder="Re-enter password"
+            placeholder={t('login.confirmPlaceholder')}
             className="w-full rounded-lg border px-3.5 py-2.5 outline-none transition-colors"
             style={{
               fontSize: 14,

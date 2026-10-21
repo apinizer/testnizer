@@ -6,6 +6,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useUpdaterStore } from '../../stores/updater.store'
 import { useTranslation } from '../../lib/i18n'
 import Modal from '../shared/Modal'
+import SettingsAppPasswordSection from './SettingsAppPasswordSection'
 import type { Theme, Language } from '../../types'
 
 interface SettingsState {
@@ -180,7 +181,7 @@ export default function SettingsModal() {
   return (
     <Modal open={show} onOpenChange={setShow} title={t('settings.title')} testId="settings-modal">
       <div
-        className="w-[520px] max-w-[95%] rounded-[14px] bg-[var(--white)] p-7"
+        className="max-h-[90vh] w-[520px] max-w-[95%] overflow-y-auto rounded-[14px] bg-[var(--white)] p-7"
         style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}
       >
         {/* Header */}
@@ -347,10 +348,13 @@ export default function SettingsModal() {
               {t('settings.checkForUpdates')}
             </button>
           </div>
+
+          {/* App password (issue #240) — applies immediately, not on Save */}
+          <SettingsAppPasswordSection onLeaveSettings={() => setShow(false)} />
         </div>
 
         {(saveError || loadError) && (
-          <p role="alert" className="mt-4 mb-0 text-xs" style={{ color: '#cc2200' }}>
+          <p role="alert" className="mt-4 mb-0 text-[var(--red)]" style={{ fontSize: 12 }}>
             {saveError ?? `${t('settings.loadFailed')}: ${loadError}`}
           </p>
         )}
@@ -372,7 +376,7 @@ export default function SettingsModal() {
             <button
               type="button"
               onClick={() => setShow(false)}
-              className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[#555] transition-colors hover:bg-[var(--bg)]"
+              className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] transition-colors hover:bg-[var(--bg)]"
             >
               {t('settings.cancel')}
             </button>

@@ -2,6 +2,39 @@ import { create } from 'zustand'
 
 const SESSION_TOKEN_KEY = 'testnizer_session_token'
 const GUEST_MODE_KEY = 'testnizer_guest_mode'
+/**
+ * electron-store key (issue #240): the user has made the first-run choice
+ * (Continue Anonymous / set a password) or turned the password off. With this
+ * set and no password, a launch opens straight into the app instead of the
+ * Welcome screen. Not localStorage: that is per-origin renderer state and the
+ * dev/prod origins differ; settings live with the rest of the app's config.
+ */
+export const WELCOME_DONE_KEY = 'auth.welcomeDone'
+
+function markWelcomeDone(): void {
+  void Promise.resolve(window.api?.settings?.set?.(WELCOME_DONE_KEY, true)).catch(() => {})
+}
+
+async function readWelcomeDone(): Promise<boolean> {
+  try {
+    const res = (await window.api?.settings?.get?.(WELCOME_DONE_KEY)) as
+      | { success?: boolean; data?: unknown }
+      | undefined
+    return res?.success === true && res.data === true
+  } catch {
+    return false
+  }
+}
+
+/** State of a password-less session — the same shape "Continue Anonymous" sets. */
+const GUEST_NO_PASSWORD = {
+  user: null,
+  isAuthenticated: true,
+  isGuest: true,
+  isLoading: false,
+  error: null,
+  hasPasswordSet: false,
+} as const
 
 interface User {
   id: string
@@ -51,9 +84,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   hasPasswordSet: null,
 
   checkSession: async () => {
-    // Always require login on app launch — clear any previous session
+    // A launch never reuses a previous session token — clear it.
     localStorage.removeItem(SESSION_TOKEN_KEY)
     localStorage.removeItem(GUEST_MODE_KEY)
+    // Issue #240: with no app password and the first-run choice already made,
+    // open straight into the app (the "Continue Anonymous" path) instead of
+    // showing the Welcome screen on every launch. Any doubt (IPC error,
+    // password set, fresh profile) falls through to the start screen.
+    try {
+      const [pw, welcomeDone] = await Promise.all([
+        window.api.auth.hasPassword(),
+        readWelcomeDone(),
+      ])
+      if (pw?.success && pw.data?.hasPassword === false && welcomeDone) {
+        localStorage.setItem(GUEST_MODE_KEY, 'true')
+        set({ ...GUEST_NO_PASSWORD })
+        return
+      }
+    } catch {
+      /* fall through to the start screen */
+    }
     set({ isLoading: false, isAuthenticated: false, isGuest: false, user: null })
   },
 
@@ -105,6 +155,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           error: null,
           hasPasswordSet: true,
         })
+        markWelcomeDone()
         return true
       } else {
         set({ isLoading: false, error: result?.error || 'Failed to set password' })
@@ -119,6 +170,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   continueAsGuest: () => {
     localStorage.setItem(GUEST_MODE_KEY, 'true')
     set({ isAuthenticated: true, isGuest: true, user: null, isLoading: false, error: null })
+    markWelcomeDone()
   },
 
   logout: async () => {
@@ -169,17 +221,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         currentPassword,
       })
       if (result?.success) {
-        // Reset local state — app will show the "no password" flow next launch.
+        // Issue #240: the session continues password-less (the same state as
+        // "Continue Anonymous") instead of dropping to the start screen, and
+        // later launches open straight in (WELCOME_DONE_KEY).
         localStorage.removeItem(SESSION_TOKEN_KEY)
-        localStorage.removeItem(GUEST_MODE_KEY)
-        set({
-          user: null,
-          isAuthenticated: false,
-          isGuest: false,
-          isLoading: false,
-          error: null,
-          hasPasswordSet: false,
-        })
+        localStorage.setItem(GUEST_MODE_KEY, 'true')
+        set({ ...GUEST_NO_PASSWORD })
+        markWelcomeDone()
         return { success: true }
       }
       return { success: false, error: result?.error || 'Failed to disable password' }

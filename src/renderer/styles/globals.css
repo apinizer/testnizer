@@ -247,6 +247,22 @@ th {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* ── Scroll strip (issue #241) ──
+   Horizontal strips (the request tab bar, editor sub-tabs, response tabs)
+   scroll with the wheel / trackpad but draw NO scrollbar: a 6px bar appearing
+   on overflow either grew the strip (pushing the editor down) or ate its
+   content box. Pair with `useScrollStrip` (lib/use-scroll-strip.ts), which maps
+   a vertical wheel to horizontal scroll and keeps the active tab in view.
+   Unlayered on purpose so it beats Tailwind's layered overflow utilities. */
+.scroll-strip {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.scroll-strip::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Focus ring (mockup style) ── */
 input:focus,
 textarea:focus,

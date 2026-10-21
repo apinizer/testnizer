@@ -9,6 +9,7 @@ import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import { activateTabStores, switchActiveTab } from '../../lib/activate-tab'
 import { useTranslation } from '../../lib/i18n'
+import { useScrollStrip } from '../../lib/use-scroll-strip'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
 import RequestEditor from '../request/RequestEditor'
@@ -127,6 +128,9 @@ export function EndpointTabBar() {
   const updateTab = useTabsStore((s) => s.updateTab)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
+  // Issue #241: no layout-affecting scrollbar; wheel scrolls sideways and the
+  // active tab is kept in view (overflowing tabs have no other affordance).
+  const stripRef = useScrollStrip<HTMLDivElement>(activeTabId)
 
   const [renamingTabId, setRenamingTabId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
@@ -583,13 +587,15 @@ export function EndpointTabBar() {
 
   return (
     <div
+      ref={stripRef}
+      data-testid="tab-strip"
+      className="scroll-strip"
       style={{
         display: 'flex',
         alignItems: 'center',
         background: T.white,
         borderBottom: `1px solid ${T.border}`,
         flexShrink: 0,
-        overflowX: 'auto',
         height: 32,
       }}
     >
