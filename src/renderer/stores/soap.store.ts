@@ -10,6 +10,13 @@ import type {
 import { useResponseStore } from './response.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { stripWsSecuritySecrets } from '../lib/key-material'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import {
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
@@ -37,7 +44,7 @@ interface SoapEndpointMeta {
 }
 
 /** Snapshot of SOAP state for per-tab caching */
-interface TabSoapState {
+interface TabSoapState extends WithheldState {
   wsdlUrl: string
   parsedWsdl: WsdlParseResult | null
   selectedService: string | null
@@ -63,7 +70,7 @@ interface TabSoapState {
 
 export type SoapMode = 'wsdl' | 'manual'
 
-interface SoapStore {
+interface SoapStore extends WithheldState {
   wsdlUrl: string
   parsedWsdl: WsdlParseResult | null
   isLoading: boolean
@@ -176,6 +183,7 @@ function extractSoapTabState(s: SoapStore): TabSoapState {
     mode: s.mode,
     manualOperationName: s.manualOperationName,
     manualOperationNamespace: s.manualOperationNamespace,
+    withheldCredentials: s.withheldCredentials,
   }
 }
 
@@ -196,11 +204,34 @@ function emptySoapTabState(): TabSoapState {
     mode: 'wsdl',
     manualOperationName: 'Echo',
     manualOperationNamespace: 'http://example.com/echo',
+    withheldCredentials: [],
   }
 }
 
+/**
+ * Issue #247: the WS-Security UsernameToken password (and the legacy
+ * single-mode `password`) never reach the tab snapshot as typed; a
+ * `{{var}}`-only value is kept. The saved row keeps it (`meta.soap.wsSecurity`)
+ * — `lib/withheld-credentials.ts` reloads it after a restart.
+ */
+export const SOAP_CREDENTIALS: CredentialSpec = {
+  fields: ['wsSecurity.usernameToken.password', 'wsSecurity.password'],
+  rows: [],
+}
+
+/**
+ * On-disk view of a tab: the picker's store/key passwords are WRITE-ONLY
+ * (#60) and the UsernameToken password is withheld (#247). Also applied on
+ * load, so a snapshot an older build wrote is cleaned at once.
+ */
+function persistableSoap(st: TabSoapState): TabSoapState {
+  const wsSecurity = stripWsSecuritySecrets(st.wsSecurity)
+  const stripped = wsSecurity === st.wsSecurity ? st : { ...st, wsSecurity }
+  return withholdCredentials(stripped, SOAP_CREDENTIALS)
+}
+
 const STORAGE_KEY = 'testnizer-soap'
-const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState)
+const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState, persistableSoap)
 
 /**
  * Inverse of `soapTransportHeaders`: recover version + action from a stored
@@ -405,6 +436,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   },
 
   sendSoap: async () => {
+    // Issue #247: a password still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { rawXml, wsSecurity, parsedWsdl, manualSoapAction, manualSoapVersion } = get()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
@@ -587,6 +620,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         bodyMode: 'raw',
         formValues: flattenSchema(operation.inputSchema),
         endpointUrl,
+        // Fresh from the row — nothing is waiting for a withheld value (#247).
+        withheldCredentials: [],
       })
     } else {
       // No SOAP metadata at all (rows imported/saved before metadata existed):
@@ -607,6 +642,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         bodyMode: 'raw',
         formValues: {},
         endpointUrl,
+        withheldCredentials: [],
         ...(transport.action !== undefined ? { manualSoapAction: transport.action } : {}),
         ...(transport.version ? { manualSoapVersion: transport.version } : {}),
       })
@@ -656,6 +692,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       bodyMode: 'raw',
       wsSecurity: { ...defaultWsSecurity },
       endpointUrl: '',
+      withheldCredentials: [],
     }),
 
   getSelectedService: () => {
@@ -683,12 +720,12 @@ attachTabbedPersist(
     _currentTabId: s._currentTabId,
   }),
   // #60: the picker's store/key passwords are WRITE-ONLY. They stay in memory
-  // (so a tab switch keeps the session usable) but never reach localStorage.
-  (st) => {
-    const wsSecurity = stripWsSecuritySecrets(st.wsSecurity)
-    return wsSecurity === st.wsSecurity ? st : { ...st, wsSecurity }
-  },
+  // (so a tab switch keeps the session usable) but never reach localStorage;
+  // #247: nor does the UsernameToken password.
+  persistableSoap,
 )
+// Issue #247: a user edit to a withheld value drops its marker.
+trackCredentialEdits(useSoapStore)
 
 function flattenSchema(schema: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {}

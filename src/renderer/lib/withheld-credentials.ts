@@ -23,16 +23,21 @@ import { useSseStore } from '../stores/sse.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useSocketIOStore } from '../stores/socketio.store'
-import { restoreWithheld, type WithheldState } from './credential-withhold'
+import { useSoapStore, SOAP_CREDENTIALS } from '../stores/soap.store'
+import { HTTP_CREDENTIALS } from '../stores/request.store'
+import { MCP_CREDENTIALS } from '../stores/mcp.store'
+import { GQL_CREDENTIALS } from '../stores/graphql.store'
+import { restoreWithheld, type CredentialSpec, type WithheldState } from './credential-withhold'
 import type { Tab } from '../types'
 
 type BoundTab = Pick<Tab, 'id' | 'protocol' | 'endpointId' | 'savedRequestId' | 'testSuiteItemId'>
 
 /**
  * A saved row, normalized across the three tables: `request` holds the
- * request-store fields (`auth`, `headers`, …) — `request_schema` for an
- * endpoint / suite item, the `auth` / `headers` columns for a saved request —
- * and `meta` the protocol blocks (`{ mcp: {…}, websocket: {…} }`).
+ * request-store fields (`url`, `params`, `body`, `auth`, `headers`, …) —
+ * `request_schema` (+ the suite item's `url` column) for an endpoint / suite
+ * item, the matching columns for a saved request — and `meta` the protocol
+ * blocks (`{ mcp: {…}, websocket: {…} }`).
  */
 export interface BoundRow {
   request: Record<string, unknown>
@@ -70,10 +75,12 @@ function parseColumn(raw: unknown): { ok: true; value: unknown } | { ok: false }
   }
 }
 
-function fromSchema(rawSchema: unknown): BoundRow | null {
+function fromSchema(rawSchema: unknown, url?: unknown): BoundRow | null {
   const schema = parseObject(rawSchema)
   if (!schema) return null
-  return { request: schema, meta: isRecord(schema.metadata) ? schema.metadata : {} }
+  // A suite item keeps its URL in a column, not in `request_schema`.
+  const request = typeof url === 'string' && schema.url === undefined ? { ...schema, url } : schema
+  return { request, meta: isRecord(schema.metadata) ? schema.metadata : {} }
 }
 
 /**
@@ -87,21 +94,37 @@ export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | und
   try {
     if (tab.testSuiteItemId) {
       const res = (await api?.testSuiteItem?.get(tab.testSuiteItemId)) as
-        | IpcEnvelope<{ request_schema?: string }>
+        | IpcEnvelope<{ request_schema?: string; url?: string }>
         | undefined
       if (!res?.success || !res.data) return null
-      return fromSchema(res.data.request_schema)
+      return fromSchema(res.data.request_schema, res.data.url)
     }
     if (tab.savedRequestId) {
       const res = (await api?.savedRequest?.get(tab.savedRequestId)) as
-        | IpcEnvelope<{ headers?: string; auth?: string; metadata?: string | null }>
+        | IpcEnvelope<{
+            url?: string
+            params?: string
+            body?: string | null
+            headers?: string
+            auth?: string
+            metadata?: string | null
+          }>
         | undefined
       if (!res?.success || !res.data) return null
+      const params = parseColumn(res.data.params)
+      const body = parseColumn(res.data.body)
       const headers = parseColumn(res.data.headers)
       const auth = parseColumn(res.data.auth)
       const meta = parseObject(res.data.metadata)
-      if (!headers.ok || !auth.ok || !meta) return null
-      return { request: { headers: headers.value, auth: auth.value }, meta }
+      if (!params.ok || !body.ok || !headers.ok || !auth.ok || !meta) return null
+      const request: Record<string, unknown> = {
+        params: params.value,
+        body: body.value,
+        headers: headers.value,
+        auth: auth.value,
+      }
+      if (typeof res.data.url === 'string') request.url = res.data.url
+      return { request, meta }
     }
     if (tab.endpointId) {
       const res = (await api?.endpoint?.get(tab.endpointId)) as
@@ -144,6 +167,8 @@ function tabbedAdapter<T extends WithheldState>(
   protocol: string | undefined,
   store: TabbedStore<T>,
   source: (row: BoundRow) => unknown,
+  /** The store's spec — needed for its `texts` (issue #247). */
+  spec?: CredentialSpec,
 ): WithheldAdapter {
   const slice = (tabId: string): T | undefined => {
     const s = store.getState()
@@ -157,13 +182,13 @@ function tabbedAdapter<T extends WithheldState>(
       const s = store.getState()
       const src = row ? source(row) : undefined
       if (s._currentTabId === tabId) {
-        store.setState(restoreWithheld<T>(s, src))
+        store.setState(restoreWithheld<T>(s, src, spec))
         return
       }
       const cached = s._tabStates.get(tabId)
       if (!cached) return
       const map = new Map(s._tabStates)
-      map.set(tabId, { ...cached, ...restoreWithheld(cached, src) })
+      map.set(tabId, { ...cached, ...restoreWithheld(cached, src, spec) })
       store.setState({ _tabStates: map } as Partial<T> & { _tabStates: Map<string, T> })
     },
   }
@@ -182,8 +207,14 @@ function asTabbed<T extends WithheldState>(store: unknown): TabbedStore<T> {
 const ADAPTERS: WithheldAdapter[] = [
   // The request store backs every tab — Ctrl+S writes its auth + headers for
   // every protocol — so it is not gated on HTTP.
-  tabbedAdapter('request credentials', undefined, asTabbed(useRequestStore), (row) => row.request),
-  tabbedAdapter('MCP credentials', 'mcp', asTabbed(useMcpStore), metaBlock('mcp')),
+  tabbedAdapter(
+    'request credentials',
+    undefined,
+    asTabbed(useRequestStore),
+    (row) => row.request,
+    HTTP_CREDENTIALS,
+  ),
+  tabbedAdapter('MCP credentials', 'mcp', asTabbed(useMcpStore), metaBlock('mcp'), MCP_CREDENTIALS),
   tabbedAdapter(
     'WebSocket header values',
     'websocket',
@@ -192,12 +223,21 @@ const ADAPTERS: WithheldAdapter[] = [
   ),
   tabbedAdapter('SSE header values', 'sse', asTabbed(useSseStore), metaBlock('sse')),
   tabbedAdapter(
-    'GraphQL header values',
+    'GraphQL credentials',
     'graphql',
     asTabbed(useGraphQLStore),
     metaBlock('graphql'),
+    GQL_CREDENTIALS,
   ),
   tabbedAdapter('gRPC metadata values', 'grpc', asTabbed(useGrpcStore), metaBlock('grpc')),
+  // WS-Security UsernameToken password (issue #247).
+  tabbedAdapter(
+    'SOAP WS-Security password',
+    'soap',
+    asTabbed(useSoapStore),
+    metaBlock('soap'),
+    SOAP_CREDENTIALS,
+  ),
   // Socket.IO keeps its own single-field marker (issue #243).
   {
     label: 'Socket.IO bearer token',

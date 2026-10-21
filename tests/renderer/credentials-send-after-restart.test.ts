@@ -27,6 +27,10 @@ const toastMock = vi.hoisted(() => ({
 }))
 vi.mock('../../src/renderer/lib/toast', () => ({ toast: toastMock }))
 
+// Each test re-imports the whole store graph (`vi.resetModules`) — the first
+// cold import can pass vitest's 5 s default when the suite runs in parallel.
+vi.setConfig({ testTimeout: 30_000 })
+
 const SECRET = 'LITERAL-send-244-e5'
 
 type Row = Record<string, unknown>

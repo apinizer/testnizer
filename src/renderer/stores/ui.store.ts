@@ -434,6 +434,11 @@ export const useUIStore = create<UIStore>((set, get) => ({
 
 // Apply initial theme + font defaults. Real values are loaded via hydrateFromSettings()
 // which the app bootstrap invokes once the settings bridge is available.
-applyTheme('light')
-applyFontFamily(DEFAULT_FONT_FAMILY)
-applyFontSize(13)
+// Skipped without a DOM: every protocol store reaches this module through
+// `lib/i18n`, and main-process tests import those stores' pure helpers in a
+// node environment (`tests/main/grpc-engine.test.ts`).
+if (typeof document !== 'undefined') {
+  applyTheme('light')
+  applyFontFamily(DEFAULT_FONT_FAMILY)
+  applyFontSize(13)
+}

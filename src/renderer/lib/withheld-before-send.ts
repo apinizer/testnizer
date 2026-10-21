@@ -10,10 +10,23 @@
 // it statically; it is loaded here with a dynamic import. A row that cannot
 // be read does not block the send — the request goes out with the empty
 // fields, and a warning says so.
+//
+// Every protocol store imports this module, so it imports nothing that needs a
+// DOM at load time: the toast / i18n modules pull in `ui.store`, which touches
+// `document` (theme) when it loads. They are loaded only when a warning is
+// actually shown — the stores stay importable in a node environment (the main
+// process tests import `grpc.store` through the engine fixtures).
 
 import { useTabsStore } from '../stores/tabs.store'
-import { toast } from './toast'
-import { t } from './i18n'
+
+async function warnReloadFailed(): Promise<void> {
+  try {
+    const [{ toast }, { t }] = await Promise.all([import('./toast'), import('./i18n')])
+    toast.warning(t('credentials.reloadFailedSend'))
+  } catch {
+    // No UI to warn in (tests without a DOM): the send still goes.
+  }
+}
 
 export async function reloadWithheldBeforeSend(): Promise<void> {
   const { activeTabId, tabs } = useTabsStore.getState()
@@ -22,8 +35,8 @@ export async function reloadWithheldBeforeSend(): Promise<void> {
   try {
     const { ensureWithheldCredentialsLoaded } = await import('./withheld-credentials')
     const reload = await ensureWithheldCredentialsLoaded(tab)
-    if (!reload.ok) toast.warning(t('credentials.reloadFailedSend'))
+    if (!reload.ok) await warnReloadFailed()
   } catch {
-    toast.warning(t('credentials.reloadFailedSend'))
+    await warnReloadFailed()
   }
 }

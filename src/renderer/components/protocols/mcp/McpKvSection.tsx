@@ -1,5 +1,7 @@
 import type { KeyValuePair } from '../../../types'
 import KeyValueTable from '../../shared/KeyValueTable'
+import CredentialRowsHint from '../../shared/CredentialRowsHint'
+import { hasLiteralUrlUserinfo } from '../../../lib/credential-text'
 
 interface McpKvSectionProps {
   /** `mcp-headers` → `mcp-headers-section` (the panel). The tab carries the toggle / count. */
@@ -39,6 +41,12 @@ export default function McpKvSection({
         onAdd={onAdd}
         addLabel={addLabel}
         keyAutocompleteEntries={keyAutocompleteEntries}
+      />
+      {/* Same rows the tab snapshot withholds (issues #244 / #247). */}
+      <CredentialRowsHint
+        rows={rows}
+        testId={`${testIdPrefix}-restart-hint`}
+        isCredentialValue={hasLiteralUrlUserinfo}
       />
     </div>
   )

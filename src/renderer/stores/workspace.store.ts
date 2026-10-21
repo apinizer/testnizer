@@ -14,6 +14,7 @@ import { useBranchStore } from './branch.store'
 import { useTabsStore } from './tabs.store'
 import { useConsoleStore } from './console.store'
 import { loadJson, saveJson } from '../lib/persist-helpers'
+import { scrubTabCredentials } from '../lib/credential-text'
 
 /**
  * Did a write actually land?
@@ -57,7 +58,16 @@ const tabsByProject = new Map<string, ProjectTabSnapshot>(
 )
 
 function persistTabsByProject(): void {
-  saveJson(TABS_BY_PROJECT_KEY, Object.fromEntries(tabsByProject))
+  // Issue #247: no literal credential in a stashed tab's display `url`.
+  const clean: Record<string, ProjectTabSnapshot> = {}
+  for (const [id, snap] of tabsByProject) {
+    clean[id] = { ...snap, tabs: (snap?.tabs ?? []).map(scrubTabCredentials) }
+  }
+  saveJson(TABS_BY_PROJECT_KEY, clean)
+}
+// A snapshot an older build wrote with a credential in a tab URL is cleaned now.
+if ([...tabsByProject.values()].some((s) => s?.tabs?.some((t) => scrubTabCredentials(t) !== t))) {
+  persistTabsByProject()
 }
 
 /**

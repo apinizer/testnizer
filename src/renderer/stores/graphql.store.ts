@@ -14,6 +14,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
+import { fillJsonCredentials, scrubJsonCredentials } from '../lib/credential-text'
 import { makeId } from '../lib/utils'
 import { graphqlMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
@@ -229,8 +230,20 @@ function extractState(s: GraphQLStore): TabGraphQLState {
  * Issue #244: credential-named GraphQL headers rows never hold a literal value in
  * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
  * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
+ * Issue #247: credential-named members of the `variables` JSON
+ * (`"password": ""`) — blanked in the text, formatting kept.
  */
-const GQL_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('headers')] }
+export const GQL_CREDENTIALS: CredentialSpec = {
+  fields: [],
+  rows: [credentialRows('headers')],
+  texts: [
+    {
+      path: 'variables',
+      scrub: (v) => scrubJsonCredentials(v),
+      fill: (live, saved) => fillJsonCredentials(live, saved),
+    },
+  ],
+}
 
 function persistableGql(st: TabGraphQLState): TabGraphQLState {
   const idle = emptyTabState()
@@ -791,4 +804,4 @@ attachTabbedPersist(
   persistableGql,
 )
 // Issue #244: a user edit to a withheld value drops its marker.
-trackCredentialEdits(useGraphQLStore)
+trackCredentialEdits(useGraphQLStore, GQL_CREDENTIALS)

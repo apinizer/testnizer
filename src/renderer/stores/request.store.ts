@@ -13,11 +13,19 @@ import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
 import {
   credentialRows,
   remapWithheldRows,
+  type CredentialRowList,
   trackCredentialEdits,
   withholdCredentials,
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
+import {
+  fillJsonCredentials,
+  fillTargetCredentials,
+  scrubJsonCredentials,
+  scrubTargetCredentials,
+} from '../lib/credential-text'
+import { isCredentialArgName } from '../../shared/credential-headers'
 import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
@@ -141,10 +149,26 @@ function emptyTabState(): TabRequestState {
  * across a type switch. Usernames, the API key NAME and the AWS access key id
  * are identifiers, not secrets, and stay. The request store backs EVERY tab
  * (Ctrl+S writes its auth + headers for every protocol), so this applies to
- * all of them. Query params and the body are out of scope: a param lives in
- * the URL too, and blanking one would desync the URL bar.
+ * all of them.
+ *
+ * Issue #247 adds the query params and the body: credential-NAMED params,
+ * form-data (text rows only — a file row's value is a file name) and
+ * urlencoded rows use the argument rule (`api_key`, `token`, never `author`).
+ * A param also lives in the URL, so the URL's query value of the same name is
+ * blanked too — the URL bar and the Params tab stay in step — and both come
+ * back from the saved row; `user:pass@` in the URL likewise. The `url` here is
+ * a stdio MCP tab's command line (`--token …`). A JSON body is scrubbed
+ * member by member in the text (`"password": ""`), formatting kept; XML / text
+ * / HTML / JS bodies are free text with no member names to go by and stay as
+ * typed.
  */
-const HTTP_CREDENTIALS: CredentialSpec = {
+const argRows = (list: string, skip?: CredentialRowList['skip']): CredentialRowList => ({
+  list,
+  isCredentialName: isCredentialArgName,
+  skip,
+})
+
+export const HTTP_CREDENTIALS: CredentialSpec = {
   fields: [
     'auth.basic.password',
     'auth.bearer.token',
@@ -159,7 +183,25 @@ const HTTP_CREDENTIALS: CredentialSpec = {
     'auth.awsSignature.secretKey',
     'auth.wsse.password',
   ],
-  rows: [credentialRows('headers')],
+  rows: [
+    credentialRows('headers'),
+    argRows('params'),
+    argRows('body.formData', (r) => r.type === 'file'),
+    argRows('body.urlEncoded'),
+  ],
+  texts: [
+    {
+      path: 'url',
+      scrub: (v) => scrubTargetCredentials(v),
+      fill: (live, saved) => fillTargetCredentials(live, saved),
+    },
+    {
+      path: 'body.content',
+      scrub: (v, st) =>
+        (st as { body?: RequestBody }).body?.type === 'json' ? scrubJsonCredentials(v) : v,
+      fill: (live, saved) => fillJsonCredentials(live, saved),
+    },
+  ],
 }
 
 /** On-disk view of a tab (issue #244); also applied on load. */
@@ -444,21 +486,22 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const tabStates = new Map(state._tabStates)
     // KV/asssertion arrays carry stable ids — re-stamp them so future edits
     // on the duplicate don't accidentally mutate the source via a shared id.
-    const headerIds = new Map<string, string>()
-    const headers = srcState.headers.map((h) => {
+    const rowIds = new Map<string, string>()
+    const restamp = (r: KeyValuePair): KeyValuePair => {
       const id = makeId()
-      headerIds.set(h.id, id)
-      return { ...h, id }
-    })
+      rowIds.set(r.id, id)
+      return { ...r, id }
+    }
+    const headers = srcState.headers.map(restamp)
     tabStates.set(dstTabId, {
       ...srcState,
-      params: srcState.params.map((p) => ({ ...p, id: makeId() })),
+      params: srcState.params.map(restamp),
       headers,
       assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
       // Issue #244: a value still withheld on the source stays withheld on
       // the copy (its row is a copy of the source's), so Ctrl+S on the copy
       // reloads it instead of writing the empty field.
-      withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], headerIds),
+      withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], rowIds),
     })
     set({ _tabStates: tabStates })
   },
@@ -1036,4 +1079,4 @@ attachTabbedPersist(
   persistableRequest,
 )
 // Issue #244: a user edit to a withheld value drops its marker.
-trackCredentialEdits(useRequestStore)
+trackCredentialEdits(useRequestStore, HTTP_CREDENTIALS)

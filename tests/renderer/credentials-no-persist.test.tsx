@@ -649,7 +649,10 @@ describe('credential restart hint (issue #244)', () => {
       render(React.createElement(AuthTab))
       const hint = screen.getByTestId('auth-credential-restart-hint')
       expect(hint.textContent).toMatch(text)
-      expect(hint.textContent).toContain(locale === 'en' ? '{{variable}}' : '{{değişken}}')
+      // The example is the literal syntax in both locales: `{{değişken}}` typed
+      // as shown would resolve nothing.
+      expect(hint.textContent).toContain('{{variable}}')
+      expect(hint.textContent).not.toContain('{{değişken}}')
       expect(screen.getByTestId('auth-bearer-token').getAttribute('aria-describedby')).toBe(hint.id)
       cleanup()
 

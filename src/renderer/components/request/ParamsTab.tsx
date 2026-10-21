@@ -1,6 +1,8 @@
 import { useRequestStore } from '../../stores/request.store'
 import KeyValueTable from '../shared/KeyValueTable'
 import { useTranslation } from '../../lib/i18n'
+import CredentialRowsHint from '../shared/CredentialRowsHint'
+import { isCredentialArgName } from '../../../shared/credential-headers'
 
 export default function ParamsTab() {
   const { t } = useTranslation()
@@ -24,6 +26,12 @@ export default function ParamsTab() {
         addLabel={t('kv.addParameter')}
         flush
         resizable
+      />
+      <CredentialRowsHint
+        rows={params}
+        testId="params-credential-restart-hint"
+        isCredentialName={isCredentialArgName}
+        inset
       />
     </div>
   )

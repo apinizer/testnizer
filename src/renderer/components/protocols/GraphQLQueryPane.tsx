@@ -5,6 +5,9 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 import { useTranslation } from '../../lib/i18n'
+import CredentialRowsHint from '../shared/CredentialRowsHint'
+import CredentialRestartHint from '../shared/CredentialRestartHint'
+import { scrubJsonCredentials } from '../../lib/credential-text'
 
 export default function GraphQLQueryPane() {
   const { t } = useTranslation()
@@ -63,7 +66,7 @@ export default function GraphQLQueryPane() {
           onChange={(e) => setUrl(e.target.value)}
           data-testid="graphql-url"
           placeholder="https://api.example.com/graphql"
-          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
+          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
           onKeyDown={(e) => {
             if (e.key === 'Enter') executeQuery()
           }}
@@ -137,6 +140,14 @@ export default function GraphQLQueryPane() {
               />
             </div>
           )}
+          {variablesExpanded && scrubJsonCredentials(variables) !== variables && (
+            <div className="px-3.5 pb-2">
+              <CredentialRestartHint
+                id="graphql-variables-restart-hint-text"
+                testId="graphql-variables-restart-hint"
+              />
+            </div>
+          )}
         </div>
 
         {/* Headers (collapsible) */}
@@ -169,6 +180,7 @@ export default function GraphQLQueryPane() {
                 addLabel={t('kv.addHeader')}
                 keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
+              <CredentialRowsHint rows={headers} testId="graphql-headers-restart-hint" />
             </div>
           )}
         </div>

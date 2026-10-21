@@ -37,6 +37,13 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
+import {
+  fillCommandLineCredentials,
+  fillUrlCredentials,
+  hasLiteralUrlUserinfo,
+  scrubCommandLineCredentials,
+  scrubUrlCredentials,
+} from '../lib/credential-text'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
@@ -526,10 +533,29 @@ function persistable(s: TabMcpState): TabMcpState {
  * same substring rule as headers, like AI Chat's ad-hoc stdio env (issue #180):
  * `PGPASSWORD` / `GITHUB_TOKEN` must not slip through; an over-matched name
  * (`AUTHOR`) only costs an unsaved draft its value after a restart.
+ *
+ * Issue #247 — the AI Chat rule of issue #180, blanking instead of removing:
+ * the server URL's `user:pass@` password and credential-named query values,
+ * the stdio command line's credential flags (`--token ""`, `--api-key=`) and
+ * URL arguments, and an env value that is a URL with `user:pass@` (the whole
+ * value — the row and its name stay).
  */
-const MCP_CREDENTIALS: CredentialSpec = {
+const isStdio = (st: unknown): boolean => (st as { transport?: string }).transport === 'stdio'
+
+export const MCP_CREDENTIALS: CredentialSpec = {
   fields: ['auth.basic.password', 'auth.bearer.token', 'auth.apiKey.value'],
-  rows: [credentialRows('customHeaders'), credentialRows('envVars')],
+  rows: [
+    credentialRows('customHeaders'),
+    { ...credentialRows('envVars'), isCredentialValue: hasLiteralUrlUserinfo },
+  ],
+  texts: [
+    {
+      path: 'url',
+      scrub: (v, st) => (isStdio(st) ? scrubCommandLineCredentials(v) : scrubUrlCredentials(v)),
+      fill: (live, saved, st) =>
+        isStdio(st) ? fillCommandLineCredentials(live, saved) : fillUrlCredentials(live, saved),
+    },
+  ],
 }
 
 const STORAGE_KEY = 'testnizer-mcp'
@@ -2180,6 +2206,6 @@ attachTabbedPersist(
   persistable,
 )
 // Issue #244: a user edit to a withheld value drops its marker.
-trackCredentialEdits(useMcpStore)
+trackCredentialEdits(useMcpStore, MCP_CREDENTIALS)
 
 ensureMcpEventSubscriptions()

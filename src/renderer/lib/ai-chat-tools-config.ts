@@ -21,6 +21,12 @@ import {
 } from './ai-chat-config'
 import { isCredentialArgName, isCredentialHeaderName } from '../../shared/credential-headers'
 import { joinCommandLine, tokenizeCommandLine } from '../../shared/mcp-call'
+import {
+  URL_USERINFO as USERINFO,
+  decodeQueryName as decodeName,
+  isCredentialFlag,
+  isLiteralText as isLiteral,
+} from './credential-text'
 import { hasUrlCredentials } from '../../shared/ai-stdio-env'
 import type { KeyValuePair } from '../types'
 import type { AiStdioEnvEntry } from '../../shared/ai-chat-types'
@@ -112,18 +118,8 @@ export function serverLabel(s: AiToolServerConfig): string {
 // is not saved with the request nor written to the tab snapshot; a value that
 // is only `{{variable}}` references is kept.
 
-/** A non-empty value that is not only `{{var}}` references. */
-const isLiteral = (v: string): boolean => v.trim() !== '' && !isTemplateOnlyValue(v)
-
-const decodeName = (raw: string): string => {
-  try {
-    return decodeURIComponent(raw.replace(/\+/g, ' '))
-  } catch {
-    return raw
-  }
-}
-
-const USERINFO = /^([a-z][a-z0-9+.-]*:\/\/)([^/\s@?#]*)@/i
+// The predicates (`isLiteral`, `USERINFO`, `isCredentialFlag`) are shared with
+// the tab snapshots, which BLANK instead of remove (`credential-text.ts`, #247).
 
 /**
  * A server URL without literal credentials: `user:pass@` and credential-named
@@ -147,12 +143,6 @@ export function stripUrlCredentials(raw: string): string {
   if (kept.length === query.split('&').length) return url
   const rest = kept.filter(Boolean).join('&')
   return `${url.slice(0, q)}${rest ? `?${rest}` : ''}${hash}`
-}
-
-const FLAG = /^--?[A-Za-z]/
-const isCredentialFlag = (flag: string): boolean => {
-  const name = flag.replace(/^-+/, '')
-  return FLAG.test(flag) && !/^no-/i.test(name) && isCredentialArgName(name)
 }
 
 /**

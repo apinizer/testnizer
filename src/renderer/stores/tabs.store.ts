@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Tab, ToolProtocol } from '../types'
 import { loadJson, saveJson } from '../lib/persist-helpers'
+import { scrubTabCredentials } from '../lib/credential-text'
 import { useMockMcpStore } from './mock-mcp.store'
 import { useTabSubTabStore } from './tab-subtab.store'
 
@@ -60,10 +61,16 @@ function withRestoredDirty(tab: Tab): Tab {
 }
 
 const persisted = loadJson<PersistedTabs>(STORAGE_KEY)
+// Issue #247: a tab's `url` is a display copy of the request's target — a
+// literal credential in it (`?api_key=…`, `--token …`) is never stored, and
+// one an older build stored is cleaned here. The editor stores restore theirs.
 const initialTabs: Tab[] = (persisted?.tabs ?? []).map((t) =>
-  withRestoredDirty({ ...t, isLoading: false }),
+  withRestoredDirty(scrubTabCredentials({ ...t, isLoading: false })),
 )
 const initialActiveTabId = persisted?.activeTabId ?? null
+if ((persisted?.tabs ?? []).some((t, i) => t?.url !== initialTabs[i]?.url)) {
+  saveJson(STORAGE_KEY, { tabs: initialTabs, activeTabId: initialActiveTabId })
+}
 
 /**
  * Which workspace a tab belongs to. Used to scope the preview slot — APIs
@@ -305,7 +312,7 @@ export const useTabsStore = create<TabsStore>((set, get) => ({
 // when the app closed does not come back stuck in a loading spinner.
 useTabsStore.subscribe((state) => {
   saveJson(STORAGE_KEY, {
-    tabs: state.tabs.map((t) => ({ ...t, isLoading: false })),
+    tabs: state.tabs.map((t) => scrubTabCredentials({ ...t, isLoading: false })),
     activeTabId: state.activeTabId,
   })
 })
