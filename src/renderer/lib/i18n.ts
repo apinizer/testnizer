@@ -466,6 +466,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.inputHint': 'Tip: use {{variable}} to substitute environment values.',
     'aiChat.emptyTitle': 'Start a conversation',
     'aiChat.emptyHint': 'Pick a provider, set the endpoint and credentials, then send a prompt.',
+    'socketio.tokenHint':
+      'A typed bearer token is not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep it in the environment instead.',
     'aiChat.headers': 'Custom Headers',
     'aiChat.headersHint':
       'Sent with every request. A header named Authorization replaces the generated Bearer header; the API key is optional when auth is configured here. Credential headers (Authorization, *-Key, *-Token…) are not saved or kept after a restart unless the value is a {{variable}}.',
@@ -3998,6 +4000,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.emptyTitle': 'Yeni bir sohbet başlatın',
     'aiChat.emptyHint':
       'Sağlayıcıyı seçin, uç nokta ve kimlik bilgilerini ayarlayın, sonra bir prompt gönderin.',
+    'socketio.tokenHint':
+      'Yazılan bearer token, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{değişken}} (gizli bir değişken) kullanın.',
     'aiChat.headers': 'Özel Başlıklar',
     'aiChat.headersHint':
       'Her istekle gönderilir. Authorization adlı bir başlık üretilen Bearer başlığının yerine geçer; kimlik doğrulama burada yapılandırılmışsa API anahtarı zorunlu değildir. Kimlik bilgisi taşıyan başlıklar (Authorization, *-Key, *-Token…) değer bir {{değişken}} değilse kaydedilmez ve yeniden başlatmadan sonra korunmaz.',

@@ -11,6 +11,7 @@ import {
 } from '../../stores/ai-chat-conversations'
 import { useTranslation } from '../../lib/i18n'
 import { autoRequestName } from '../../lib/endpoint-name'
+import { ensureSocketioTokenLoaded } from '../../lib/socketio-saved-token'
 import {
   requestSettingsFor,
   savedRequestMetadata,
@@ -168,6 +169,10 @@ export default function EndpointSaveModal() {
       // to persist an empty HTTP request and lose the original protocol
       // payload (v1.4.2 T-12.6/8/9, v1.4.4 §12.8/12.9).
       const protocol = (activeTab?.protocol ?? 'http') as string
+      // Issue #243: "Save As" from a Socket.IO tab restored after a restart —
+      // reload the token its source row holds before copying it. Best effort:
+      // a new row is written either way.
+      if (activeTab) await ensureSocketioTokenLoaded(activeTab)
       const snapshot = activeTab
         ? snapshotProtocol(activeTab)
         : {

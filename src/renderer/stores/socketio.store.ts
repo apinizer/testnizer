@@ -8,6 +8,7 @@ import { socketioMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for Socket.IO, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import { isTemplateOnlyValue } from '../lib/ai-chat-config'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -26,6 +27,14 @@ interface TabSioState {
   url: string
   namespace: string
   bearerToken: string
+  /**
+   * Issue #243: the literal bearer token was left out of the localStorage
+   * snapshot this tab was restored from. Distinct from "the user cleared it":
+   * the token may still be on the saved row, and an untouched empty field
+   * must not overwrite it on Ctrl+S (`lib/socketio-saved-token.ts` reloads it
+   * from the row). Any explicit set clears the flag.
+   */
+  bearerTokenWithheld: boolean
   connectionId: string | null
   connectionState: ConnectionState
   errorMessage: string | null
@@ -57,6 +66,15 @@ interface SocketIOStore extends TabSioState {
   clearEvents: () => void
   switchToTab: (tabId: string) => void
   removeTabState: (tabId: string) => void
+  /** Whether `tabId`'s slice still waits for its withheld token (issue #243). */
+  isTokenWithheld: (tabId: string) => boolean
+  /**
+   * Put a token reloaded from the saved row on `tabId`'s slice (live or
+   * cached) and clear the withheld flag. A no-op when the flag is no longer
+   * set — the user typed (or cleared) the field meanwhile, and that wins.
+   * Not a user edit: the dirty dot is left alone.
+   */
+  applyRestoredToken: (tabId: string, token: string) => void
 }
 
 function emptyState(): TabSioState {
@@ -64,6 +82,7 @@ function emptyState(): TabSioState {
     url: '',
     namespace: '/',
     bearerToken: '',
+    bearerTokenWithheld: false,
     connectionId: null,
     connectionState: 'disconnected',
     errorMessage: null,
@@ -81,6 +100,7 @@ function extractState(s: SocketIOStore): TabSioState {
     url: s.url,
     namespace: s.namespace,
     bearerToken: s.bearerToken,
+    bearerTokenWithheld: s.bearerTokenWithheld,
     connectionId: s.connectionId,
     connectionState: s.connectionState,
     errorMessage: s.errorMessage,
@@ -98,11 +118,23 @@ function extractState(s: SocketIOStore): TabSioState {
  * never the event timeline (server output, and resolved outgoing payloads)
  * or the error text. Both stay in memory for the session. The connection
  * does not survive a reload, so it is stored as disconnected.
+ *
+ * The bearer token is write-only on disk (issue #243), like the key-material
+ * passwords: a literal token stays in memory for the session (a tab switch
+ * keeps it) but is stored as `''` plus `bearerTokenWithheld`. A token that is
+ * only `{{variable}}` references carries no secret and is stored as typed —
+ * the same rule as AI Chat's credential headers. Also applied on load, so a
+ * snapshot an older build wrote with the token is cleaned at once.
  */
 function persistableSio(st: TabSioState): TabSioState {
   const idle = emptyState()
+  const literalToken = st.bearerToken !== '' && !isTemplateOnlyValue(st.bearerToken)
   return {
     ...st,
+    bearerToken: literalToken ? '' : st.bearerToken,
+    // Still withheld when a restored tab is written again before its token
+    // came back from the saved row.
+    bearerTokenWithheld: literalToken || (st.bearerTokenWithheld && st.bearerToken === ''),
     events: idle.events,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -133,7 +165,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
     markActiveTabDirty()
   },
   setBearerToken: (bearerToken) => {
-    set({ bearerToken })
+    set({ bearerToken, bearerTokenWithheld: false })
     markActiveTabDirty()
   },
   setEmitEvent: (emitEvent) => {
@@ -262,6 +294,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
       url: cur.url,
       namespace: cur.namespace,
       bearerToken: cur.bearerToken,
+      bearerTokenWithheld: cur.bearerTokenWithheld,
       emitEvent: cur.emitEvent,
       emitPayload: cur.emitPayload,
       subscriptions: cur.subscriptions,
@@ -328,6 +361,25 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => ({
     }
     const tabStates = new Map(get()._tabStates)
     tabStates.delete(tabId)
+    set({ _tabStates: tabStates })
+  },
+
+  isTokenWithheld: (tabId) => {
+    const state = get()
+    if (state._currentTabId === tabId) return state.bearerTokenWithheld
+    return state._tabStates.get(tabId)?.bearerTokenWithheld ?? false
+  },
+
+  applyRestoredToken: (tabId, token) => {
+    const state = get()
+    if (state._currentTabId === tabId) {
+      if (state.bearerTokenWithheld) set({ bearerToken: token, bearerTokenWithheld: false })
+      return
+    }
+    const cached = state._tabStates.get(tabId)
+    if (!cached?.bearerTokenWithheld) return
+    const tabStates = new Map(state._tabStates)
+    tabStates.set(tabId, { ...cached, bearerToken: token, bearerTokenWithheld: false })
     set({ _tabStates: tabStates })
   },
 }))

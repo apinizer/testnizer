@@ -25,6 +25,7 @@ import { normalizeMcpProtocol } from './mcp-protocol'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import { autoRequestName } from './endpoint-name'
+import { ensureSocketioTokenLoaded } from './socketio-saved-token'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
@@ -605,6 +606,20 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   const tabs = useTabsStore.getState()
   const activeTab = tabs.tabs.find((t) => t.id === tabs.activeTabId)
   if (!activeTab) return { success: false, notApplicable: true }
+
+  // Issue #243: a Socket.IO tab restored after a restart has an empty token
+  // field — the literal token is kept out of localStorage — while the row
+  // still holds it. Read it back before the snapshot; when the row cannot be
+  // read, do not save rather than write the empty field over the token.
+  if (
+    (activeTab.endpointId || activeTab.savedRequestId || activeTab.testSuiteItemId) &&
+    !(await ensureSocketioTokenLoaded(activeTab))
+  ) {
+    return {
+      success: false,
+      error: 'Could not reload the saved Socket.IO bearer token; the request was not saved.',
+    }
+  }
 
   const req = useRequestStore.getState()
   const { effectiveUrl, effectiveMethod, effectiveBody, protocolMeta } = snapshotProtocol(activeTab)

@@ -2,6 +2,7 @@ import { Radio } from 'lucide-react'
 import { useSocketIOStore } from '../../stores/socketio.store'
 import EmptyState from '../shared/EmptyState'
 import { T } from '../../styles/tokens'
+import { useTranslation } from '../../lib/i18n'
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-US', {
@@ -14,6 +15,7 @@ function formatTime(ts: number): string {
 
 export default function SocketIOEditor() {
   const store = useSocketIOStore()
+  const { t } = useTranslation()
   const isConnected = store.connectionState === 'connected'
   const isConnecting = store.connectionState === 'connecting'
 
@@ -80,6 +82,8 @@ export default function SocketIOEditor() {
           value={store.bearerToken}
           onChange={(e) => store.setBearerToken(e.target.value)}
           disabled={isConnected}
+          data-testid="socketio-bearer-token"
+          aria-describedby="socketio-token-hint"
           placeholder="Bearer token (optional)"
           style={{
             width: 160,
@@ -115,6 +119,15 @@ export default function SocketIOEditor() {
           store.errorMessage && (
             <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>
           )}
+        {/* Issue #243: the literal token is never written to localStorage. */}
+        <p
+          id="socketio-token-hint"
+          data-testid="socketio-token-hint"
+          className="m-0 basis-full text-[var(--muted)]"
+          style={{ fontSize: 11 }}
+        >
+          {t('socketio.tokenHint')}
+        </p>
       </div>
 
       {/* ─ Body ─ */}
