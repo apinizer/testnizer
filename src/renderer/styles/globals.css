@@ -1,5 +1,29 @@
 @import 'tailwindcss';
 
+/* ── Type scale (issue #223) ──
+   Tailwind's named sizes are rem-based for a 16px root. This app's root is
+   --font-size-base (13px by default, 13-16px from Project Settings), so the
+   stock scale would make `text-xs` 9.75px. These map the names to what the
+   classes are used for here and keep them moving with the user's setting:
+   xs = secondary / hint text, sm and base = body, lg = dialog title,
+   xl / 3xl = large glyphs. Line heights keep today's line box within ~1px
+   (before #223 the size was dead but these line heights already applied).
+   Arbitrary classes such as `text-[11px]` stay fixed px, like inline fontSize. */
+@theme inline {
+  --text-xs: calc(var(--font-size-base) - 1px);
+  --text-xs--line-height: 1.45;
+  --text-sm: var(--font-size-base);
+  --text-sm--line-height: 1.45;
+  --text-base: var(--font-size-base);
+  --text-base--line-height: 1.5;
+  --text-lg: calc(var(--font-size-base) + 2px);
+  --text-lg--line-height: 1.5;
+  --text-xl: calc(var(--font-size-base) + 4px);
+  --text-xl--line-height: 1.4;
+  --text-3xl: calc(var(--font-size-base) * 2);
+  --text-3xl--line-height: 1.2;
+}
+
 /* ── Light Theme (default) ── */
 :root[data-theme='light'] {
   --bg: #f4f4f6;
@@ -195,34 +219,13 @@ body,
   -webkit-font-smoothing: antialiased;
 }
 
-/* Force consistent font on ALL elements */
-*,
-*::before,
-*::after {
-  font-family: inherit;
-  font-size: inherit;
-}
+/* The font inheritance reset lives in the base layer further down, below the
+   scroll strip (issue #223), so Tailwind's text-* and font-mono utilities win. */
 code,
 pre,
 .mono,
 [data-mono] {
   font-family: var(--font-mono) !important;
-}
-
-/* Standard elements inherit 13px base */
-button,
-input,
-select,
-textarea,
-label,
-a,
-span,
-div,
-p,
-li,
-td,
-th {
-  font-size: inherit;
 }
 
 /* ── Scrollbar (thin) ── */
@@ -261,6 +264,44 @@ th {
 }
 .scroll-strip::-webkit-scrollbar {
   display: none;
+}
+
+/* ── Font inheritance reset (issue #223) ──
+   Every element inherits the app font and the --font-size-base size, so text
+   and form controls match whatever the user picked in Project Settings.
+   This MUST stay inside `@layer base`. Tailwind v4 emits its utilities in
+   `@layer utilities`, and an unlayered rule beats every layered one whatever
+   its specificity: when this reset was unlayered, every `text-[11px]`,
+   `text-xs` and `font-mono` class in the renderer did nothing.
+   tests/renderer/globals-css-layering.test.ts fails if a font rule like this
+   comes back outside a layer. (It sits below `.scroll-strip` because
+   tab-strip-scroll.test.tsx counts the `@layer` blocks written before it.) */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    font-family: inherit;
+    font-size: inherit;
+  }
+
+  button,
+  input,
+  select,
+  textarea,
+  label,
+  a,
+  span,
+  div,
+  p,
+  li,
+  td,
+  th {
+    font-size: inherit;
+  }
+
+  button {
+    font-family: inherit;
+  }
 }
 
 /* ── Focus ring (mockup style) ── */
@@ -362,11 +403,6 @@ select:focus {
 .nav-item-active {
   color: var(--accent);
   background: var(--nav-active-bg);
-}
-
-/* ── Button reset ── */
-button {
-  font-family: inherit;
 }
 
 /* ── Form elements — clean white inputs ── */
