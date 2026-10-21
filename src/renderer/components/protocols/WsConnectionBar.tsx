@@ -1,14 +1,16 @@
 import { Plug, Unplug, X } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
+import { useTranslation } from '../../lib/i18n'
+import McpStatusPill from './mcp/McpStatusPill'
 
-const STATE_INDICATORS: Record<string, { color: string; bg: string; label: string }> = {
-  disconnected: { color: '#888888', bg: '#f0f0f0', label: 'Disconnected' },
-  connecting: { color: '#b38600', bg: '#fff8e0', label: 'Connecting...' },
-  connected: { color: '#1a7a4a', bg: '#e8f9f1', label: 'Connected' },
-  error: { color: '#cc2200', bg: '#fff0f0', label: 'Error' },
-}
-
+/**
+ * WebSocket connection bar — the MCP / SSE bars' anatomy (issue #224): the
+ * shared token status pill, the same Connect / Cancel / Disconnect button and
+ * the same red token error box, so all connection protocols look and read the
+ * same in light / dark and EN / TR. globals.css tokens only, no hex.
+ */
 export default function WsConnectionBar() {
+  const { t } = useTranslation()
   const url = useWebSocketStore((s) => s.url)
   const setUrl = useWebSocketStore((s) => s.setUrl)
   const connectionState = useWebSocketStore((s) => s.connectionState)
@@ -16,84 +18,50 @@ export default function WsConnectionBar() {
   const connect = useWebSocketStore((s) => s.connect)
   const disconnect = useWebSocketStore((s) => s.disconnect)
 
-  const indicator = STATE_INDICATORS[connectionState]
   const isConnected = connectionState === 'connected'
   const isConnecting = connectionState === 'connecting'
+  const busy = isConnected || isConnecting
+  const showError = (connectionState === 'error' || isConnected) && !!errorMessage
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        {/* Status indicator */}
-        <div
-          className="flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5"
-          style={{ background: indicator.bg }}
-        >
-          <div
-            className="h-2 w-2 rounded-full"
-            style={{
-              background: indicator.color,
-              boxShadow: connectionState === 'connected' ? `0 0 6px ${indicator.color}` : 'none',
-            }}
-          />
-          <span className="font-medium" style={{ color: indicator.color }}>
-            {indicator.label}
-          </span>
-        </div>
+        <McpStatusPill state={connectionState} testId="ws-status" />
 
-        {/* URL input */}
         <input
           type="text"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          disabled={isConnected || isConnecting}
+          disabled={busy}
           data-testid="ws-url"
           placeholder="wss://echo.websocket.org"
           className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)] disabled:opacity-60"
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !isConnected) connect()
+            if (e.key === 'Enter' && !busy) connect()
           }}
         />
 
-        {/* Connect / Cancel / Disconnect button */}
-        {isConnected ? (
-          <button
-            type="button"
-            onClick={disconnect}
-            data-testid="ws-disconnect"
-            className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity"
-            style={{ background: '#cc2200', border: 'none' }}
-          >
-            <Unplug size={14} />
-            Disconnect
-          </button>
-        ) : isConnecting ? (
-          <button
-            type="button"
-            onClick={disconnect}
-            className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity"
-            style={{ background: '#cc2200', border: 'none' }}
-          >
-            <X size={14} />
-            Cancel
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={connect}
-            disabled={!url.trim()}
-            data-testid="ws-connect"
-            className="flex shrink-0 cursor-pointer items-center gap-2 rounded-lg px-4 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: 'var(--accent)', border: 'none' }}
-          >
-            <Plug size={14} />
-            Connect
-          </button>
-        )}
+        {/* Connect / Cancel / Disconnect — same tokens as the MCP / SSE bars' button. */}
+        <button
+          type="button"
+          onClick={() => void (busy ? disconnect() : connect())}
+          disabled={!busy && !url.trim()}
+          data-testid={isConnected ? 'ws-disconnect' : isConnecting ? 'ws-cancel' : 'ws-connect'}
+          className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border-none px-4 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${
+            busy ? 'bg-[var(--mb-delete-fg)]' : 'bg-[var(--accent)]'
+          }`}
+        >
+          {isConnecting ? <X size={14} /> : isConnected ? <Unplug size={14} /> : <Plug size={14} />}
+          {isConnecting ? t('common.cancel') : isConnected ? t('mcp.disconnect') : t('mcp.connect')}
+        </button>
       </div>
 
-      {/* Error message */}
-      {(connectionState === 'error' || connectionState === 'connected') && errorMessage && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-600">
+      {showError && (
+        <div
+          data-testid="ws-error"
+          role="alert"
+          className="rounded-lg border border-[var(--mb-delete-br)] bg-[var(--mb-delete-bg)] px-3 py-2 text-[var(--red)]"
+        >
           {errorMessage}
         </div>
       )}

@@ -471,6 +471,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'aiChat.emptyHint': 'Pick a provider, set the endpoint and credentials, then send a prompt.',
     'socketio.tokenHint':
       'A typed bearer token is not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep it in the environment instead.',
+    'credentials.restartHint':
+      'Typed passwords, tokens and keys are not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep them in the environment instead.',
+    'socketio.namespace': 'Namespace',
+    'socketio.namespacePlaceholder': 'Namespace (/)',
     'aiChat.headers': 'Custom Headers',
     'aiChat.headersHint':
       'Sent with every request. A header named Authorization replaces the generated Bearer header; the API key is optional when auth is configured here. Credential headers (Authorization, *-Key, *-Token…) are not saved or kept after a restart unless the value is a {{variable}}.',
@@ -4009,6 +4013,10 @@ const translations: Record<Locale, Record<string, string>> = {
       'Sağlayıcıyı seçin, uç nokta ve kimlik bilgilerini ayarlayın, sonra bir prompt gönderin.',
     'socketio.tokenHint':
       'Yazılan bearer token, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{değişken}} (gizli bir değişken) kullanın.',
+    'credentials.restartHint':
+      'Yazılan parola, token ve anahtarlar, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{değişken}} (gizli bir değişken) kullanın.',
+    'socketio.namespace': 'Namespace',
+    'socketio.namespacePlaceholder': 'Namespace (/)',
     'aiChat.headers': 'Özel Başlıklar',
     'aiChat.headersHint':
       'Her istekle gönderilir. Authorization adlı bir başlık üretilen Bearer başlığının yerine geçer; kimlik doğrulama burada yapılandırılmışsa API anahtarı zorunlu değildir. Kimlik bilgisi taşıyan başlıklar (Authorization, *-Key, *-Token…) değer bir {{değişken}} değilse kaydedilmez ve yeniden başlatmadan sonra korunmaz.',

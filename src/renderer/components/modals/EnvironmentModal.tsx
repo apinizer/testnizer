@@ -693,8 +693,10 @@ function VarTable({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Issue #239: shown only when the OS keychain cannot encrypt secrets. */}
-      <SecretStorageUnencryptedNote className="shrink-0 px-5 pt-2" />
+      {/* Issue #239: shown only when the OS keychain cannot encrypt secrets.
+          `py-2` like the search row below it, so the note never touches the
+          table's column header when there is no search row. */}
+      <SecretStorageUnencryptedNote className="shrink-0 px-5 py-2" />
       {/* Search — only meaningful once there is something to search. */}
       {variables.length > 0 && (
         <div className="shrink-0 px-5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>

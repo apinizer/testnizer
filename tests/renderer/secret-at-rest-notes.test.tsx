@@ -106,9 +106,11 @@ describe('keychain unavailable: "stored unencrypted" note', () => {
   it('Environment editor shows it when status says encrypted:false', async () => {
     secureStorage(false)
     mountEnvModal([])
-    expect(await screen.findByTestId('secret-storage-unencrypted')).toHaveTextContent(
-      UNENCRYPTED_EN,
-    )
+    const note = await screen.findByTestId('secret-storage-unencrypted')
+    expect(note).toHaveTextContent(UNENCRYPTED_EN)
+    // Spacing below too (the search row's py-2): with no variables there is no
+    // search row and the note used to touch the table's column header.
+    expect(note.className).toMatch(/\bpy-2\b/)
   })
 
   it('Environment editor shows nothing when secrets are encrypted', async () => {

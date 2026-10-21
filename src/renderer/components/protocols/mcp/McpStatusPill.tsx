@@ -28,7 +28,8 @@ const STATUS_TONE: Record<McpConnectionState, { pill: string; dot: string; key: 
 
 /**
  * Disconnected / Connecting… / Connected / Error, at the left of the MCP bar
- * (issue #171) — and of the SSE bar, which reuses it (`testId="sse-status"`).
+ * (issue #171) — and of the SSE, WebSocket and Socket.IO bars, which reuse it
+ * (`testId="sse-status" | "ws-status" | "socketio-status"`, issue #224).
  */
 export default function McpStatusPill({
   state,

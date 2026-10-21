@@ -1,8 +1,13 @@
-import { Radio } from 'lucide-react'
+import { Plug, Radio, Unplug, X } from 'lucide-react'
 import { useSocketIOStore } from '../../stores/socketio.store'
 import EmptyState from '../shared/EmptyState'
 import { T } from '../../styles/tokens'
 import { useTranslation } from '../../lib/i18n'
+import McpStatusPill from './mcp/McpStatusPill'
+
+/** The MCP bar's URL field classes (`mcp/McpConnectionBar.tsx` URL_INPUT) — issue #224. */
+const SIO_INPUT =
+  'h-8 rounded-md border border-[var(--border)] px-2.5 font-mono text-[13px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)] disabled:opacity-60'
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-US', {
@@ -29,18 +34,14 @@ export default function SocketIOEditor() {
         overflow: 'hidden',
       }}
     >
-      {/* ─ Connection bar ─ */}
+      {/* ─ Connection bar ─ the MCP / SSE / WebSocket bars' anatomy (issue #224):
+          shared token status pill, translated Connect / Cancel / Disconnect,
+          red token error line — globals.css tokens only, no hex. */}
       <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px',
-          borderBottom: `1px solid ${T.border}`,
-          flexShrink: 0,
-          flexWrap: 'wrap',
-        }}
+        data-testid="socketio-connection-row"
+        className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] px-3.5 py-2.5"
       >
+        <McpStatusPill state={store.connectionState} testId="socketio-status" />
         <input
           type="text"
           value={store.url}
@@ -48,34 +49,17 @@ export default function SocketIOEditor() {
           disabled={isConnected}
           data-testid="socketio-url"
           placeholder="http://localhost:3000"
-          style={{
-            flex: 1,
-            minWidth: 180,
-            height: 32,
-            border: `1px solid ${T.border}`,
-            borderRadius: 6,
-            padding: '0 10px',
-            fontSize: 13,
-            color: T.text,
-            background: isConnected ? 'var(--bg)' : 'var(--white)',
-          }}
+          className={`min-w-[180px] flex-1 ${SIO_INPUT}`}
         />
         <input
           type="text"
           value={store.namespace}
           onChange={(e) => store.setNamespace(e.target.value)}
           disabled={isConnected}
-          placeholder="Namespace (/)"
-          style={{
-            width: 120,
-            height: 32,
-            border: `1px solid ${T.border}`,
-            borderRadius: 6,
-            padding: '0 10px',
-            fontSize: 13,
-            color: T.text,
-            background: isConnected ? 'var(--bg)' : 'var(--white)',
-          }}
+          data-testid="socketio-namespace"
+          aria-label={t('socketio.namespace')}
+          placeholder={t('socketio.namespacePlaceholder')}
+          className={`w-[120px] ${SIO_INPUT}`}
         />
         <input
           type="password"
@@ -99,25 +83,24 @@ export default function SocketIOEditor() {
         <button
           type="button"
           onClick={isConnected || isConnecting ? () => store.disconnect() : () => store.connect()}
+          disabled={!isConnected && !isConnecting && !store.url.trim()}
           data-testid="socketio-connect"
-          style={{
-            height: 32,
-            padding: '0 16px',
-            borderRadius: 6,
-            border: 'none',
-            background: isConnected || isConnecting ? T.DELETE.color : T.accent,
-            color: '#fff',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
+          className={`flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-none px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+            isConnected || isConnecting ? 'bg-[var(--mb-delete-fg)]' : 'bg-[var(--accent)]'
+          }`}
         >
-          {isConnecting ? 'Cancel' : isConnected ? 'Disconnect' : 'Connect'}
+          {isConnecting ? <X size={14} /> : isConnected ? <Unplug size={14} /> : <Plug size={14} />}
+          {isConnecting ? t('common.cancel') : isConnected ? t('mcp.disconnect') : t('mcp.connect')}
         </button>
         {(store.connectionState === 'error' || store.connectionState === 'connected') &&
           store.errorMessage && (
-            <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>
+            <div
+              data-testid="socketio-error"
+              role="alert"
+              className="basis-full break-words rounded-md border border-[var(--mb-delete-br)] bg-[var(--mb-delete-bg)] px-3 py-1.5 text-[12px] text-[var(--red)]"
+            >
+              {store.errorMessage}
+            </div>
           )}
         {/* Issue #243: the literal token is never written to localStorage. */}
         <p
