@@ -16,7 +16,7 @@ export default function McpModalFrame({ title, testId, onClose, children, footer
   const { t } = useTranslation()
   return (
     <Modal open onOpenChange={(o) => !o && onClose()} title={title} testId={testId}>
-      <div className="flex max-h-[80vh] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--white)] text-[13px] text-[var(--text)] shadow-[var(--shadow-modal)]">
+      <div className="flex max-h-[80vh] w-[640px] max-w-[92vw] flex-col overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--white)] text-sm text-[var(--text)] shadow-[var(--shadow-modal)]">
         <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-5 py-3">
           <span className="text-[15px] font-semibold">{title}</span>
           <button

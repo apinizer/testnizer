@@ -77,7 +77,7 @@ function ProjectExportPicker({ target }: { target: ProjectExportTarget }) {
                 }`}
               >
                 <span
-                  className={`text-[13px] font-medium ${selected ? 'text-[var(--accent-text)]' : 'text-[var(--text)]'}`}
+                  className={`text-sm font-medium ${selected ? 'text-[var(--accent-text)]' : 'text-[var(--text)]'}`}
                 >
                   {t(f.labelKey)}
                 </span>

@@ -7,7 +7,7 @@ import McpStatusPill from './mcp/McpStatusPill'
 
 /** The MCP bar's URL field classes (`mcp/McpConnectionBar.tsx` URL_INPUT) — issue #224. */
 const SIO_INPUT =
-  'h-8 rounded-md border border-[var(--border)] px-2.5 font-mono text-[13px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)] disabled:opacity-60'
+  'h-8 rounded-md border border-[var(--border)] px-2.5 font-mono text-sm text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)] disabled:opacity-60'
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-US', {
@@ -75,7 +75,8 @@ export default function SocketIOEditor() {
             border: `1px solid ${T.border}`,
             borderRadius: 6,
             padding: '0 10px',
-            fontSize: 13,
+            // base size, like the URL input and Connect button in this bar
+            fontSize: 'var(--font-size-base)',
             color: T.text,
             background: isConnected ? 'var(--bg)' : 'var(--white)',
           }}
@@ -85,7 +86,7 @@ export default function SocketIOEditor() {
           onClick={isConnected || isConnecting ? () => store.disconnect() : () => store.connect()}
           disabled={!isConnected && !isConnecting && !store.url.trim()}
           data-testid="socketio-connect"
-          className={`flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-none px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={`flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-none px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
             isConnected || isConnecting ? 'bg-[var(--mb-delete-fg)]' : 'bg-[var(--accent)]'
           }`}
         >

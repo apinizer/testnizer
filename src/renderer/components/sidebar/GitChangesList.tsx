@@ -83,7 +83,7 @@ export default function GitChangesList({
                       ? t('gitCommit.requires').replace('{names}', needs.join(', '))
                       : undefined
                   }
-                  className="flex items-center gap-2 rounded px-1 py-0.5 text-[13px] text-[var(--text)]"
+                  className="flex items-center gap-2 rounded px-1 py-0.5 text-sm text-[var(--text)]"
                 >
                   {selection && (
                     <CheckBox

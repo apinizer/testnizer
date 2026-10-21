@@ -131,7 +131,7 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
 
   if (!server || !draft) {
     return (
-      <div className="p-4 text-[13px] text-[var(--muted)]" data-testid="mock-mcp-editor-missing">
+      <div className="p-4 text-sm text-[var(--muted)]" data-testid="mock-mcp-editor-missing">
         {t('mockMcp.notFound')}
       </div>
     )

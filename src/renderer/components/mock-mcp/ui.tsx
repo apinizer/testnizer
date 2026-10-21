@@ -10,13 +10,14 @@ export const INPUT_CLS =
   'h-7 w-full rounded-md border border-[var(--border2)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]'
 
 /**
- * `h-8`, not `h-7` like INPUT_CLS: the unlayered `select` rule in globals.css
- * beats Tailwind utilities and gives every select `min-height: 2rem` (no
- * vertical padding, text centred by the select itself), so `h-8` is simply the
- * height a select gets anyway, the same as the MCP transport picker. For the
- * same reason only `h-8` and `w-full` take effect here: padding, font size,
- * border, radius and background all come from the global rule; the rest of the
- * list mirrors INPUT_CLS.
+ * `h-8`, not `h-7` like INPUT_CLS: the base `select` rule in globals.css gives
+ * every select `min-height: 2rem` (no vertical padding, text centred by the
+ * select itself), so `h-8` is the height a select gets anyway, the same as the
+ * MCP transport picker. Never add `py-*` to a fixed-height select: the line
+ * box would no longer fit and Chromium clips the text
+ * (tests/renderer/select-no-clip.test.ts). Since issue #245 the rest of the
+ * list takes effect like on INPUT_CLS; only the end padding stays 26px for the
+ * chevron (an unlayered rule beats `px-2` there).
  */
 export const SELECT_CLS =
   'h-8 w-full cursor-pointer rounded-md border border-[var(--border2)] bg-[var(--input-bg)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]'

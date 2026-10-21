@@ -52,9 +52,9 @@ export function MockKindBadge({ kind, testId }: { kind: MockRowKind; testId?: st
   return (
     <span
       data-testid={testId}
-      className="inline-flex min-w-[42px] shrink-0 items-center justify-center whitespace-nowrap rounded border border-[var(--accent)] px-1 font-bold text-[var(--accent-text)]"
-      // font-size set inline: globals.css `* { font-size: inherit }` is unlayered and beats text-* utilities
-      style={{ fontSize: 9, lineHeight: '14px' }}
+      // A fixed 9px chip (not the base size). Since issue #223 the font reset is
+      // in `@layer base`, so the text-* utility works and no inline style is needed.
+      className="inline-flex min-w-[42px] shrink-0 items-center justify-center whitespace-nowrap rounded border border-[var(--accent)] px-1 text-[9px] font-bold leading-[14px] text-[var(--accent-text)]"
     >
       {KIND_BADGE[kind]}
     </span>
@@ -95,7 +95,7 @@ export default function MockServerRow(p: MockServerRowProps) {
     >
       <MockKindBadge kind={p.kind} testId={`${p.testIdPrefix}-badge`} />
       <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] font-semibold text-[var(--text)]">{p.name}</div>
+        <div className="truncate text-sm font-semibold text-[var(--text)]">{p.name}</div>
         <div className="flex min-w-0 items-center gap-1.5 text-[11px] text-[var(--muted)]">
           <StatusDot status={p.status} />
           <span data-testid={`${p.testIdPrefix}-row-status`} className="shrink-0">

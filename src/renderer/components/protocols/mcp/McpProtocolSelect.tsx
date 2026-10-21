@@ -23,7 +23,7 @@ export default function McpProtocolSelect({ disabled }: { disabled: boolean }) {
       data-testid="mcp-protocol"
       aria-label={t('mcp.protocol.label')}
       title={t('mcp.protocol.hint')}
-      className="h-8 max-w-[220px] cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+      className="h-8 max-w-[220px] cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
     >
       <option value="auto">{t('mcp.protocol.auto')}</option>
       <option value="legacy">{t('mcp.protocol.legacy')}</option>

@@ -48,10 +48,8 @@ export default function MockMcpBlankItemsDialog({
             <AlertTriangle size={16} aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[13px] font-semibold text-[var(--text)]">
-              {t('mockMcp.blank.title')}
-            </h3>
-            <p className="mt-1 text-[13px] text-[var(--muted)]">{t('mockMcp.blank.body')}</p>
+            <h3 className="text-sm font-semibold text-[var(--text)]">{t('mockMcp.blank.title')}</h3>
+            <p className="mt-1 text-sm text-[var(--muted)]">{t('mockMcp.blank.body')}</p>
             <ul
               data-testid="mock-mcp-blank-list"
               className="mt-2 flex max-h-40 list-none flex-col gap-1 overflow-y-auto p-0"
@@ -71,7 +69,7 @@ export default function MockMcpBlankItemsDialog({
             type="button"
             onClick={onGoBack}
             data-testid="mock-mcp-blank-back"
-            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] hover:opacity-80"
+            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-sm font-medium text-[var(--text)] hover:opacity-80"
           >
             {t('mockMcp.blank.goBack')}
           </button>
@@ -79,7 +77,7 @@ export default function MockMcpBlankItemsDialog({
             type="button"
             onClick={onSaveAnyway}
             data-testid="mock-mcp-blank-save"
-            className="cursor-pointer rounded-md border-none bg-[var(--accent)] px-3.5 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
+            className="cursor-pointer rounded-md border-none bg-[var(--accent)] px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90"
           >
             {t('mockMcp.blank.saveAnyway')}
           </button>

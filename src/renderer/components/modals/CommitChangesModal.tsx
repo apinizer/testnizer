@@ -100,8 +100,8 @@ function CommitForm({
           <GitCommitHorizontal size={16} aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-[13px] font-semibold text-[var(--text)]">{t('gitCommit.title')}</h3>
-          <p className="mt-0.5 text-[13px] text-[var(--muted)]">{t('gitCommit.description')}</p>
+          <h3 className="text-sm font-semibold text-[var(--text)]">{t('gitCommit.title')}</h3>
+          <p className="mt-0.5 text-sm text-[var(--muted)]">{t('gitCommit.description')}</p>
         </div>
       </div>
 
@@ -123,7 +123,7 @@ function CommitForm({
             placeholder={t('push.messagePlaceholder')}
             aria-invalid={blank}
             data-testid="git-commit-message"
-            className="w-full resize-none rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+            className="w-full resize-none rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
           />
           {blank && (
             <p role="alert" className="mt-1 text-[12px] text-[var(--red)]">
@@ -146,7 +146,7 @@ function CommitForm({
           onClick={onDiscard}
           disabled={!hasChanges || busy}
           data-testid="git-commit-discard"
-          className="rounded-md px-2 py-1.5 text-[13px] font-medium text-[var(--red)] enabled:cursor-pointer enabled:hover:bg-[var(--item-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md px-2 py-1.5 text-sm font-medium text-[var(--red)] enabled:cursor-pointer enabled:hover:bg-[var(--item-hover)] disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t('gitCommit.discardAll')}
         </button>
@@ -155,7 +155,7 @@ function CommitForm({
           type="button"
           onClick={onCancel}
           data-testid="git-commit-cancel"
-          className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] hover:opacity-80"
+          className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-sm font-medium text-[var(--text)] hover:opacity-80"
         >
           {t('common.cancel')}
         </button>
@@ -165,7 +165,7 @@ function CommitForm({
           disabled={!canCommitAndPush}
           title={canPush ? undefined : t('gitCommit.noToken')}
           data-testid="git-commit-and-push"
-          className="rounded-md border border-[var(--accent)] bg-[var(--white)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--accent)] enabled:cursor-pointer enabled:hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md border border-[var(--accent)] bg-[var(--white)] px-3.5 py-1.5 text-sm font-medium text-[var(--accent)] enabled:cursor-pointer enabled:hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t('gitCommit.commitAndPush')}
         </button>
@@ -174,7 +174,7 @@ function CommitForm({
           onClick={() => onCommit(trimmed, false, only)}
           disabled={!canCommit}
           data-testid="git-commit-confirm"
-          className="rounded-md bg-[var(--accent)] px-3.5 py-1.5 text-[13px] font-medium text-white enabled:cursor-pointer enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md bg-[var(--accent)] px-3.5 py-1.5 text-sm font-medium text-white enabled:cursor-pointer enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t('gitCommit.commit')}
         </button>

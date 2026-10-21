@@ -61,7 +61,7 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               placeholder="Filter types..."
-              className="w-full border-none bg-transparent text-[var(--text)] outline-none placeholder:text-[var(--hint)]"
+              className="w-full border-none bg-transparent text-[var(--text)] outline-none placeholder:text-[var(--placeholder)]"
             />
           </div>
         </div>

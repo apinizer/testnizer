@@ -115,8 +115,8 @@ function PushCommitForm({
           <ArrowUpCircle size={16} aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <h3 className="text-[13px] font-semibold text-[var(--text)]">{t('push.modalTitle')}</h3>
-          <p className="mt-0.5 text-[13px] text-[var(--muted)]">{t('push.modalDescription')}</p>
+          <h3 className="text-sm font-semibold text-[var(--text)]">{t('push.modalTitle')}</h3>
+          <p className="mt-0.5 text-sm text-[var(--muted)]">{t('push.modalDescription')}</p>
         </div>
       </div>
 
@@ -138,7 +138,7 @@ function PushCommitForm({
           aria-invalid={blank}
           disabled={!commitPending}
           data-testid="push-commit-message"
-          className="w-full rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
+          className="w-full rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-3 py-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:opacity-50"
         />
         {blank && (
           <p role="alert" className="mt-1.5 text-[12px] text-[var(--red)]">
@@ -172,7 +172,7 @@ function PushCommitForm({
           type="button"
           onClick={onCancel}
           data-testid="push-commit-cancel"
-          className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] transition-colors hover:opacity-80"
+          className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-sm font-medium text-[var(--text)] transition-colors hover:opacity-80"
         >
           {t('common.cancel')}
         </button>
@@ -181,7 +181,7 @@ function PushCommitForm({
           onClick={submit}
           disabled={blank}
           data-testid="push-commit-confirm"
-          className="rounded-md bg-[var(--accent)] px-3.5 py-1.5 text-[13px] font-medium text-white transition-colors enabled:cursor-pointer enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-md bg-[var(--accent)] px-3.5 py-1.5 text-sm font-medium text-white transition-colors enabled:cursor-pointer enabled:hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {t(commitPending || pending === 0 ? 'push.confirm' : 'push.confirmPushOnly')}
         </button>

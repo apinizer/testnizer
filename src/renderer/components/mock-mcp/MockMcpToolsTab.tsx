@@ -110,7 +110,7 @@ export default function MockMcpToolsTab({
           onDelete={() => remove(tool.key)}
         />
       ) : (
-        <div className="flex flex-1 items-center justify-center text-[13px] text-[var(--hint)]">
+        <div className="flex flex-1 items-center justify-center text-sm text-[var(--hint)]">
           {t('mockMcp.tools.selectOrAdd')}
         </div>
       )}

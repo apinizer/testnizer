@@ -464,14 +464,17 @@ export default function RunnerResults({
 
         {/* Filter tabs */}
         {results.length > 0 && !isRunning && (
-          <div className="flex shrink-0 items-center border-b border-[var(--border)] px-5">
+          <div
+            data-testid="runner-results-filter-row"
+            className="flex shrink-0 flex-wrap items-center border-b border-[var(--border)] px-5"
+          >
             {FILTER_TABS.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 data-testid={`runner-filter-${tab.key}`}
                 onClick={() => setActiveFilter(tab.key)}
-                className="cursor-pointer border-none bg-transparent px-3 py-2"
+                className="shrink-0 cursor-pointer whitespace-nowrap border-none bg-transparent px-3 py-2"
                 style={{
                   fontSize: 13,
                   color: activeFilter === tab.key ? 'var(--text)' : 'var(--muted)',
@@ -484,14 +487,16 @@ export default function RunnerResults({
                 {tab.label} {tab.count}
               </button>
             ))}
-            <div className="flex-1" />
-
             {/* Search + method narrowing (issue #114). Sits next to the tabs
                 rather than above the list so all four controls read as one
-                filter row. */}
-            <div className="flex items-center gap-2 py-1.5">
+                filter row. Every label is nowrap and the row wraps instead:
+                in a narrow pane (right panel open, TR labels, 16px font) the
+                26px method button used to wrap its label onto three lines and
+                clip it (issue #245); now the controls drop to a second line,
+                right-aligned (`ml-auto`). */}
+            <div className="ml-auto flex min-w-0 items-center gap-2 py-1.5">
               <div
-                className="flex items-center gap-1.5 rounded border px-2"
+                className="flex min-w-0 items-center gap-1.5 rounded border px-2"
                 style={{ borderColor: 'var(--border2)', background: 'var(--white)', height: 26 }}
               >
                 <Search size={13} color="var(--hint)" />
@@ -502,8 +507,8 @@ export default function RunnerResults({
                   placeholder={t('runResults.search')}
                   aria-label={t('runResults.search')}
                   data-testid="runner-results-search"
-                  className="border-none bg-transparent outline-none"
-                  style={{ fontSize: 12, width: 150, color: 'var(--text)' }}
+                  className="w-[150px] min-w-[60px] shrink border-none bg-transparent outline-none"
+                  style={{ fontSize: 12, color: 'var(--text)' }}
                 />
                 {searchText && (
                   <button
@@ -524,7 +529,7 @@ export default function RunnerResults({
                     onClick={() => setMethodMenuOpen((v) => !v)}
                     data-testid="runner-results-method-filter"
                     aria-expanded={methodMenuOpen}
-                    className="flex cursor-pointer items-center gap-1 rounded border px-2"
+                    className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded border px-2"
                     style={{
                       height: 26,
                       fontSize: 12,
@@ -588,7 +593,7 @@ export default function RunnerResults({
                 </div>
               )}
 
-              <div className="flex items-center gap-1.5" style={{ fontSize: 13 }}>
+              <div className="flex shrink-0 items-center gap-1.5" style={{ fontSize: 13 }}>
                 <span style={{ fontWeight: 600, color: 'var(--text)' }}>List</span>
                 <span style={{ color: 'var(--border2)' }}>|</span>
                 <span style={{ color: 'var(--muted)' }}>Grid</span>

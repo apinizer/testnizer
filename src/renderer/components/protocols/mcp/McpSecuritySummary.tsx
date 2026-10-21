@@ -50,7 +50,7 @@ export default function McpSecuritySummary({ report }: { report: McpSecurityRepo
           {report.grade}
         </div>
         <div className="flex min-w-0 flex-col">
-          <span className="text-[13px] font-semibold text-[var(--text)]">
+          <span className="text-sm font-semibold text-[var(--text)]">
             {t('mcp.security.score')}: {report.score}/100
           </span>
           {report.serverInfo && (

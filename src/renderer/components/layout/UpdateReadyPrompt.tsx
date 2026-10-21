@@ -49,7 +49,7 @@ export default function UpdateReadyPrompt() {
       role="status"
       aria-live="polite"
       data-testid="updater-notification"
-      className="fixed right-4 bottom-10 z-[900] w-[360px] max-w-[calc(100vw-2rem)] rounded-[12px] border border-[var(--border)] bg-[var(--white)] p-4 text-[13px] text-[var(--text)]"
+      className="fixed right-4 bottom-10 z-[900] w-[360px] max-w-[calc(100vw-2rem)] rounded-[12px] border border-[var(--border)] bg-[var(--white)] p-4 text-sm text-[var(--text)]"
       style={{ boxShadow: '0 12px 40px rgba(0,0,0,0.18)' }}
     >
       <div className="flex items-start gap-3">

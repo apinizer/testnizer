@@ -91,7 +91,7 @@ export default function McpInputForm({
             <UnsupportedRequest view={view} />
           ) : (
             <>
-              {view.message && <p className="m-0 text-[13px] text-[var(--text)]">{view.message}</p>}
+              {view.message && <p className="m-0 text-sm text-[var(--text)]">{view.message}</p>}
               {view.fields.map((field) => (
                 <McpElicitField
                   key={field.name}

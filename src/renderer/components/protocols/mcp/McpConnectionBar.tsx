@@ -8,9 +8,11 @@ import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import McpConfigMenu from './McpConfigMenu'
 import McpProtocolSelect from './McpProtocolSelect'
 import McpStatusPill from './McpStatusPill'
+import CredentialRestartHint from '../../shared/CredentialRestartHint'
+import { scrubCommandLineCredentials, scrubUrlCredentials } from '../../../lib/credential-text'
 
 const URL_INPUT =
-  'h-8 w-full min-w-0 rounded-md border border-[var(--border)] px-2.5 font-mono text-[13px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]'
+  'h-8 w-full min-w-0 rounded-md border border-[var(--border)] px-2.5 font-mono text-sm text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]'
 
 /**
  * Row 1: status pill, transport, protocol, URL / command (grows, never below
@@ -74,7 +76,7 @@ export default function McpConnectionBar() {
           onChange={(e) => setTransport(e.target.value as McpTransport)}
           disabled={busy}
           data-testid="mcp-transport"
-          className="h-8 shrink-0 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-8 shrink-0 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {transports.map((o) => (
             <option key={o.value} value={o.value}>
@@ -110,7 +112,7 @@ export default function McpConnectionBar() {
           onClick={() => void (busy ? disconnect() : connect())}
           disabled={!busy && !url.trim()}
           data-testid="mcp-connect"
-          className={`flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-none px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={`flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-none px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
             busy ? 'bg-[var(--mb-delete-fg)]' : 'bg-[var(--accent)]'
           }`}
         >
@@ -119,6 +121,11 @@ export default function McpConnectionBar() {
         </button>
         <McpConfigMenu disabled={busy} />
       </div>
+      {/* Issue #247: a literal `--token …` / `?api_key=…` / `user:pass@` is not kept in the tab snapshot. */}
+      {(transport === 'stdio' ? scrubCommandLineCredentials(url) : scrubUrlCredentials(url)) !==
+        url && (
+        <CredentialRestartHint id="mcp-url-restart-hint-text" testId="mcp-url-restart-hint" />
+      )}
       {isConnected && (serverName || protocolVersion) && (
         <div
           data-testid="mcp-server-info"

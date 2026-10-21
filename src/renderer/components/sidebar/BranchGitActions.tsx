@@ -98,7 +98,7 @@ export default function BranchGitActions({
         data-testid="branch-discard"
         disabled={busy || noChanges}
         onClick={onDiscard}
-        className="mt-0.5 flex items-center gap-1 self-start rounded px-2 py-1 text-[13px] text-[var(--red)] enabled:cursor-pointer enabled:hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
+        className="mt-0.5 flex items-center gap-1 self-start rounded px-2 py-1 text-sm text-[var(--red)] enabled:cursor-pointer enabled:hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
       >
         <Undo2 size={13} aria-hidden="true" />
         <span>{t('gitCommit.menuDiscard')}</span>
@@ -131,7 +131,7 @@ function ActionButton({
       disabled={disabled}
       title={title ?? label}
       onClick={onClick}
-      className="flex items-center gap-1 rounded px-2 py-1 text-[13px] text-[var(--text)] enabled:cursor-pointer enabled:hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
+      className="flex items-center gap-1 rounded px-2 py-1 text-sm text-[var(--text)] enabled:cursor-pointer enabled:hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
     >
       {icon}
       <span>{label}</span>
