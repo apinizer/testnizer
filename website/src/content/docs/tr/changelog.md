@@ -157,6 +157,17 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   sır değerlerinin boşaltıldığını görür; ve basic kimlik doğrulamalı, boş
   parolalı bir mock sunucu artık kimseyi içeri almıyor.
 
+- **Sırlar diskte şifreli:** sır olarak işaretli ortam ve global
+  değişkenlerin değerleri, mock sunucu kimlik doğrulaması ve Mock MCP bearer
+  token'ı artık yerel veritabanında işletim sisteminizin anahtarlığıyla
+  şifreleniyor; AI Chat anahtarları ve sertifika parolaları zaten böyle
+  saklanıyordu. Mevcut değerler ilk açılışta bir kez şifreleniyor ve
+  veritabanı sıkıştırılıyor; böylece silinen değerler boş sayfalarda
+  kalmıyor. Bir değer artık çözülemiyorsa — örneğin anahtarlık değiştiyse —
+  silinmiyor ve alan sizden değeri yeniden girmenizi istiyor. Anahtarlığın
+  olmadığı yerlerde (bazı Linux kurulumları) değerler eskisi gibi şifresiz
+  kalıyor; ortam editörü ve Ayarlar bunu belirtiyor.
+
 - **History, Console, Runner ve mock logları kimlik bilgilerini gizliyor:**
   kimlik bilgisi başlıkları, her derinlikteki sorgu ve gövde alanları, URL'deki
   `user:pass@`, sır değişkenlerinizin değerleri ve yanıtlardaki token alanları
@@ -172,7 +183,10 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   mesajları artık diske yazmıyor — oturum boyunca bellekte duruyorlar ve eski
   bir sürümün kaydettikleri açılışta temizleniyor. **Generate Code**, kod paneli
   ve MCP **Copy as…**, "Include secret values" işaretlenmedikçe sır
-  değişkenlerini `{{ad}}` olarak bırakıyor. WebSocket, gRPC, GraphQL, SSE ve
+  değişkenlerini `{{ad}}` olarak bırakıyor. Bir Socket.IO sekmesine yazılan
+  bearer token artık uygulamanın tarayıcı deposunda tutulmuyor: kaydedilmiş
+  bir istek onu kayıttan geri alıyor, kaydedilmemiş bir sekme ise yeniden
+  başlatmadan sonra token'ı yeniden girmenizi istiyor. WebSocket, gRPC, GraphQL, SSE ve
   Socket.IO çağrıları History'den kendi editörlerinde yeniden açılıyor.
 
 - **Gizlilik politikası ve web sitesi:** metinler artık tam olarak neyin
@@ -197,7 +211,11 @@ gerçek bir Commit paneli geldi — ve sırlar makinenizde kalıyor.**
   diziliyor ve kaydetme diyalogları önerilen adın uzantısını koruyor (bir HTML
   raporu artık `.json` olarak kaydedilmiyor). Diyaloglar 1x monitörlerde net
   metin çiziyor; eskiden yarım piksele oturup bulanık görünüyorlardı. Yanıt
-  paneli tamamen Türkçeye çevrildi.
+  paneli tamamen Türkçeye çevrildi. Uygulama genelindeki küçük metinler —
+  ipuçları, rozetler, sayaçlar, log satırları — artık tasarlandıkları boyutta
+  çiziliyor; kod benzeri değerler (URL'ler, yollar, token'lar, protokol
+  sürümleri) eş aralıklı yazı tipini kullanıyor. Genel bir stil kuralı ikisini
+  de geçersiz kılıyordu.
 
 - **Uygulama parolası ve başlangıç ekranı:** Ayarlar'da artık bir **Uygulama
   parolası** bölümü var: parola olup olmadığını görebilir, değiştirebilir ya da
@@ -248,8 +266,9 @@ dışında, birebir aldığını doğrulayan bir garanti testine sahip.
 
 **Ertelenenler:** bazı mock iyileştirmeleri, WebSocket ve Socket.IO için
 bağlantı çubukları, MCP dışındaki güvenlik taramaları (HTTP, GraphQL, SOAP,
-gerçek zamanlı ve LLM uç noktaları) ve sır değişkenleriyle mock belirteçlerinin
-diskte şifrelenmesi — sıralaması karar bekliyor.
+gerçek zamanlı ve LLM uç noktaları), diğer istek editörlerine yazılan ve hâlâ
+uygulamanın tarayıcı deposunda tutulan kimlik bilgileri ile açılır liste yazı
+boyutlarını ve giriş alanı renklerini geçersiz kılan kalan stil kuralları.
 
 ## v1.5.4
 

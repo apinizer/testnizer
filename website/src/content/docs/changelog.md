@@ -150,6 +150,16 @@ panel — and secrets stay on your machine.**
   until they update; and a mock server with basic authentication and an empty
   password no longer lets anyone in.
 
+- **Secrets encrypted at rest:** the values of secret environment and global
+  variables, mock server authentication and the Mock MCP bearer token are now
+  encrypted with your operating system's keychain in the local database, like
+  AI Chat keys and certificate passphrases already were. Existing values are
+  encrypted once on first start, and the database is compacted so deleted
+  values no longer linger in free pages. If a value can no longer be decrypted
+  — for example after the keychain changed — it is kept, and the field asks you
+  to re-enter it. Where no keychain is available (some Linux setups), values
+  stay unencrypted as before and the environment editor and Settings say so.
+
 - **History, Console, Runner and mock logs hide credentials:** credential headers, query and body fields at any depth, URL
   `user:pass@`, the values of your secret variables and token fields in
   responses are masked before anything is stored or shown. History keeps the
@@ -163,8 +173,10 @@ panel — and secrets stay on your machine.**
   they live in memory for the session, and what an older build saved is
   cleaned at start. **Generate Code**, the code pane and MCP **Copy as…** keep
   secret variables as `{{name}}` unless you tick "Include secret values".
-  WebSocket, gRPC, GraphQL, SSE and Socket.IO calls reopen from History in
-  their own editors.
+  A bearer token typed into a Socket.IO tab is no longer kept in the app's
+  browser storage: a saved request gets it back from the saved request, and an
+  unsaved tab asks you to type it again after a restart. WebSocket, gRPC,
+  GraphQL, SSE and Socket.IO calls reopen from History in their own editors.
 
 - **Privacy policy and website:** the texts now describe exactly what is
   encrypted, what is stored locally in plain text, what mock servers keep in
@@ -185,7 +197,10 @@ panel — and secrets stay on your machine.**
   their text, toasts stack correctly, and save dialogs keep the file extension
   of the suggested name (an HTML report no longer lands as `.json`). Dialogs
   render crisp text on 1x monitors; they used to sit on a half pixel and look
-  blurred. The response pane is fully translated to Turkish.
+  blurred. The response pane is fully translated to Turkish. Small text across
+  the app — hints, badges, counters, log rows — now renders at the size it was
+  designed for, and code-like values (URLs, paths, tokens, protocol versions)
+  use the monospace font; a global style rule had been overriding both.
 
 - **App password and start screen:** Settings now has an **App password**
   section — see whether one is set, change it, or turn it off with your
@@ -238,8 +253,9 @@ local by design.
 
 **Still deferred:** some mock follow-ups, connection bars for WebSocket and
 Socket.IO, security scans beyond MCP (HTTP, GraphQL, SOAP, real-time and LLM
-endpoints), and encryption at rest of secret variables and mock tokens — their
-order is a pending decision.
+endpoints), credentials typed into the other request editors (still kept in
+the app's browser storage), and the remaining style rules that override
+drop-down font sizes and input colours.
 
 ## v1.5.4
 
