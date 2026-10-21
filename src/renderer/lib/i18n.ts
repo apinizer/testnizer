@@ -161,6 +161,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.exportEnvironmentSelectHint': 'Select an environment on the left to export it.',
     'env.secretStaysLocal':
       'Secret values stay on this computer. They are not written to the project file or git.',
+    'env.decryptFailed':
+      "Can't decrypt this secret on this computer (OS keychain changed). Enter the value again.",
+    'secret.storedUnencrypted': 'Secrets are stored unencrypted: OS keychain unavailable.',
     'userMenu.title': 'Session',
     'userMenu.protected': 'Protected — local password set',
     'userMenu.guest': 'Quick Test (guest) — no password',
@@ -3696,6 +3699,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.exportEnvironmentSelectHint': 'Dışa aktarmak için soldan bir environment seçin.',
     'env.secretStaysLocal':
       'Gizli (secret) değerler bu bilgisayarda kalır; proje dosyasına ve git’e yazılmaz.',
+    'env.decryptFailed':
+      'Bu gizli değer bu bilgisayarda çözülemiyor (işletim sistemi anahtarlığı değişti). Değeri yeniden girin.',
+    'secret.storedUnencrypted':
+      'Gizli değerler şifrelenmeden saklanıyor: işletim sistemi anahtarlığı kullanılamıyor.',
     'userMenu.title': 'Oturum',
     'userMenu.protected': 'Korumalı — yerel şifre tanımlı',
     'userMenu.guest': 'Hızlı Test (misafir) — şifre yok',

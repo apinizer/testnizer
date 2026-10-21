@@ -60,6 +60,7 @@ vi.mock('electron-store', () => ({ default: FakeStore }))
 
 const { registerGitHandlers } = await import('../../../src/main/ipc/git.handler')
 const { GIT_PUSH_REJECTED_ERROR } = await import('../../../src/main/lib/git-config')
+const { openSecret } = await import('../../../src/main/lib/secret-at-rest')
 
 const PROJECT_NAME = 'Shared APIs'
 const FILE = 'Shared-APIs.json'
@@ -717,7 +718,7 @@ function addBearerMcpMock(m: Machine, token: string): string {
   return id
 }
 
-function secretsOf(m: Machine, varId: string, mcpId: string): Record<string, unknown> {
+function rawSecretsOf(m: Machine, varId: string, mcpId: string): Record<string, unknown> {
   const v = m.db
     .prepare('SELECT value, initial_value FROM environment_variables WHERE id = ?')
     .get(varId) as { value: string; initial_value: string } | undefined
@@ -725,6 +726,17 @@ function secretsOf(m: Machine, varId: string, mcpId: string): Record<string, unk
     | { bearer_token: string }
     | undefined
   return { value: v?.value, initial_value: v?.initial_value, bearer: mcp?.bearer_token }
+}
+
+/** The plaintext each machine holds — sealed at rest since issue #239. */
+function secretsOf(m: Machine, varId: string, mcpId: string): Record<string, unknown> {
+  const raw = rawSecretsOf(m, varId, mcpId)
+  const open = (v: unknown): unknown => (typeof v === 'string' ? openSecret(v).value : v)
+  return {
+    value: open(raw.value),
+    initial_value: open(raw.initial_value),
+    bearer: open(raw.bearer),
+  }
 }
 
 function remoteText(branch: string): string {
@@ -785,6 +797,10 @@ describe('values marked secret stay on each machine (issue #177)', () => {
     await pull(B)
     expect(names(B)).toEqual(['A1', 'A2'])
     expect(secretsOf(B, varId, mcpId)).toEqual(bOwn)
+    // The Pull wrote B's kept values back sealed (issue #239).
+    for (const v of Object.values(rawSecretsOf(B, varId, mcpId))) {
+      expect(String(v)).toMatch(/^enc:v1:/)
+    }
 
     // Switch away and back (replace re-imports): values kept, and leaving
     // `main` commits nothing — the stripped DB equals the stripped file.
@@ -804,6 +820,8 @@ describe('values marked secret stay on each machine (issue #177)', () => {
     addEndpoint(B, 'B1')
     await push(B)
     expect(remoteText('main')).not.toMatch(/B-secret|B-mcp|A-secret|A-mcp-token/)
+    // B's rows are sealed by now (issue #239): no ciphertext reaches the remote.
+    expect(remoteText('main')).not.toMatch(/enc:v1:/)
     await pull(A)
     expect(names(A)).toEqual(['A1', 'A2', 'B1'])
     expect(secretsOf(A, varId, mcpId)).toEqual({

@@ -79,6 +79,9 @@ export function openAndMigrate(dbPath: string): Database.Database {
   try {
     database.pragma('journal_mode = WAL')
     database.pragma('foreign_keys = ON')
+    // Freed pages are zeroed (issue #239): a secret overwritten by its
+    // ciphertext, or a deleted row, does not linger in the file.
+    database.pragma('secure_delete = ON')
     runMigrations(database)
     seedDefaults(database)
     return database

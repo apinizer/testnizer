@@ -80,25 +80,38 @@ need for a token-fetch script entirely).
 
 ## Sharing collections without leaking secrets
 
+The project file you export or commit to Git carries every variable — name,
+type, initial value **and** current value — except the values of variables
+marked **secret**: those are written empty and stay on this computer.
+
 The recommended pattern:
 
-1. Put placeholder values in **initial value** (`{{authToken}}` defaults to
-   `"<paste-here>"` or empty)
-2. Each developer fills their **current value** locally
-3. Commit the project to Git — only initial values travel; current values are
-   stored in a separate, gitignored file
+1. Mark tokens, passwords and API keys as **secret** (Type column).
+2. Push. A teammate's Pull brings the variable with an empty value, and
+   Testnizer tells them how many secret values they still have to fill in.
+   Each developer enters their own; later Pulls and branch switches keep it.
+3. Reference the variable (`{{authToken}}`) from requests and Auth tabs instead
+   of pasting the value — auth typed directly into a request or folder travels
+   with the project.
 
-This is how production-quality teams ship Testnizer projects without
-accidentally pushing a real bearer token to the repo.
+HTTP mock server tokens, passwords and API keys, and Mock MCP bearer tokens,
+follow the same rule.
 
 ## Secrets in the OS keychain
 
-For long-lived credentials (OAuth refresh tokens, certificate passphrases),
-prefer the **Certificate manager** or per-request auth fields rather than
-environment variables. Those values pass through the OS keychain and never
-write plaintext to disk.
+Mark a variable as **secret** (Type column) for tokens and passwords. Its
+current and initial value are encrypted on disk with the OS keychain (macOS
+Keychain, Windows DPAPI, libsecret on Linux), are never written to the project
+file, git or exports, and are masked in History and the Console. HTTP mock
+server tokens, passwords and API keys, and Mock MCP bearer tokens, are stored
+the same way; certificate passphrases are encrypted too.
 
-Environment "current values" are stored in plaintext within your project
-directory — convenient for development, not appropriate for production
-credentials. Always use the keychain-backed paths for tokens that grant
-production access.
+If the keychain is unavailable (for example Linux without libsecret), secret
+values are stored unencrypted and are encrypted on a later launch once it is
+available. A value encrypted on one computer cannot be decrypted on another,
+or after the keychain is reset — enter it again there.
+
+Variables that are not marked secret, and credentials typed directly into a
+request's Auth tab, are stored as plain text in the local database. For tokens
+that grant production access, put the value in a secret variable and reference
+it (`{{token}}`) from the Auth tab.

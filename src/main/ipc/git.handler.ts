@@ -16,6 +16,7 @@ import { projectFileSlug, projectFileName, pickProjectFile } from '../lib/projec
 import { mergeProjectFiles } from '../lib/project-merge'
 import { applySelectedChanges, diffProjectDocs, normaliseExportDoc } from '../lib/project-changes'
 import { stripLocalSecrets } from '../lib/local-secrets'
+import { openSecret } from '../lib/secret-at-rest'
 import { readSharedProjectSettings } from '../lib/project-settings'
 import {
   GIT_MERGE_IN_PROGRESS_ERROR,
@@ -797,18 +798,30 @@ function parseDoc(content: string): Record<string, unknown> | null {
  */
 function countEmptyLocalSecrets(projectId: string): number {
   const db = getDb()
-  const blank = "COALESCE(value, '') = '' AND COALESCE(initial_value, '') = ''"
-  const vars = db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM environment_variables WHERE secret = 1 AND ${blank}
-         AND environment_id IN (SELECT id FROM environments WHERE project_id = ?)`,
-    )
-    .get(projectId) as { n: number }
-  const globals = db
-    .prepare(
-      `SELECT COUNT(*) AS n FROM global_variables WHERE secret = 1 AND ${blank} AND project_id = ?`,
-    )
-    .get(projectId) as { n: number }
+  // Sealed at rest (issue #239): a value this machine cannot decrypt (keychain
+  // reset, restored profile) counts as empty too — the user must re-enter it.
+  const emptyHere = (rows: Array<{ value: string | null; initial_value: string | null }>): number =>
+    rows.filter((r) => openSecret(r.value).value === '' && openSecret(r.initial_value).value === '')
+      .length
+  const vars = {
+    n: emptyHere(
+      db
+        .prepare(
+          `SELECT value, initial_value FROM environment_variables WHERE secret = 1
+             AND environment_id IN (SELECT id FROM environments WHERE project_id = ?)`,
+        )
+        .all(projectId) as Array<{ value: string | null; initial_value: string | null }>,
+    ),
+  }
+  const globals = {
+    n: emptyHere(
+      db
+        .prepare(
+          'SELECT value, initial_value FROM global_variables WHERE secret = 1 AND project_id = ?',
+        )
+        .all(projectId) as Array<{ value: string | null; initial_value: string | null }>,
+    ),
+  }
   const auth = (readSharedProjectSettings(projectId)?.auth ?? null) as Record<
     string,
     unknown

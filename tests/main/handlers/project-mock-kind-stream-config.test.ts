@@ -37,8 +37,14 @@ vi.mock('../../../src/main/db/database', () => ({
 }))
 
 vi.mock('../../../src/main/lib/secure-storage', () => ({
-  encryptSecret: (s: string | null | undefined) => (s ? `enc:${s}` : null),
+  // A consistent stand-in for the safeStorage envelope: idempotent like the
+  // real `encryptSecret`, recognised by `isEncryptedSecret` (issue #239 —
+  // values marked secret are sealed on every write).
+  encryptSecret: (s: string | null | undefined) =>
+    s ? (s.startsWith('enc:') ? s : `enc:${s}`) : null,
   decryptSecret: (s: string | null | undefined) => (s ? s.replace(/^enc:/, '') : null),
+  isEncryptedSecret: (s: unknown): s is string => typeof s === 'string' && s.startsWith('enc:'),
+  isEncryptionAvailable: () => true,
 }))
 
 vi.mock('../../../src/main/ipc/import-export.handler', () => ({

@@ -40,8 +40,14 @@ vi.mock('../../../src/main/db/database', () => ({
 }))
 
 vi.mock('../../../src/main/lib/secure-storage', () => ({
-  encryptSecret: (s: string | null | undefined) => (s ? `enc:${s}` : null),
+  // A consistent stand-in for the safeStorage envelope: idempotent like the
+  // real `encryptSecret`, recognised by `isEncryptedSecret` (issue #239 —
+  // values marked secret are sealed on every write).
+  encryptSecret: (s: string | null | undefined) =>
+    s ? (s.startsWith('enc:') ? s : `enc:${s}`) : null,
   decryptSecret: (s: string | null | undefined) => (s ? s.replace(/^enc:/, '') : null),
+  isEncryptedSecret: (s: unknown): s is string => typeof s === 'string' && s.startsWith('enc:'),
+  isEncryptionAvailable: () => true,
 }))
 
 vi.mock('../../../src/main/ipc/import-export.handler', () => ({
@@ -233,8 +239,19 @@ function blankSecrets(doc: Row, s: Seeded): Row {
   return doc
 }
 
+/**
+ * Values marked secret are sealed at rest (issue #239 — the mock envelope
+ * above is `enc:`); these reads compare the plaintext the machine holds.
+ */
+const plain = (v: unknown): unknown => (typeof v === 'string' ? v.replace(/^enc:/, '') : v)
+const openRow = (r: Row | undefined): Row =>
+  Object.fromEntries(Object.entries(r ?? {}).map(([k, v]) => [k, plain(v)]))
+const openAuth = (json: string): unknown => JSON.parse(json, (_k, v: unknown) => plain(v))
+
 function readVar(db: Database.Database, table: string, id: string): Row {
-  return db.prepare(`SELECT value, initial_value, secret FROM ${table} WHERE id = ?`).get(id) as Row
+  return openRow(
+    db.prepare(`SELECT value, initial_value, secret FROM ${table} WHERE id = ?`).get(id) as Row,
+  )
 }
 
 // ─── Export boundary ─────────────────────────────────────────────
@@ -327,15 +344,15 @@ describe('project file never carries values marked secret (issue #177)', () => {
          WHERE e.project_id = ? AND ev.key = 'token'`,
       )
       .get(copy) as Row
-    expect(v).toEqual({ value: 'cur-secret', initial_value: 'init-secret' })
+    expect(openRow(v)).toEqual({ value: 'cur-secret', initial_value: 'init-secret' })
     const g = testDb
       .prepare(`SELECT value, initial_value FROM global_variables WHERE project_id = ?`)
       .get(copy) as Row
-    expect(g).toEqual({ value: 'g-cur', initial_value: 'g-init' })
+    expect(openRow(g)).toEqual({ value: 'g-cur', initial_value: 'g-init' })
     const m = testDb
       .prepare(`SELECT bearer_token FROM mock_mcp_servers WHERE project_id = ?`)
       .get(copy) as Row
-    expect(m.bearer_token).toBe('mcp-tok')
+    expect(plain(m.bearer_token)).toBe('mcp-tok')
   })
 })
 
@@ -380,7 +397,7 @@ describe('importing a stripped file keeps this machine’s secret values (issue 
         initial_value: 'g-init',
       })
       const mock = (id: string): unknown =>
-        JSON.parse(
+        openAuth(
           (
             testDb.prepare('SELECT auth_config FROM mock_servers WHERE id = ?').get(id) as {
               auth_config: string
@@ -392,7 +409,7 @@ describe('importing a stripped file keeps this machine’s secret values (issue 
       const override = testDb
         .prepare('SELECT auth_override FROM mock_endpoints WHERE id = ?')
         .get(s.mockEndpointId) as { auth_override: string }
-      expect(JSON.parse(override.auth_override)).toEqual({
+      expect(openAuth(override.auth_override)).toEqual({
         type: 'basic',
         users: [
           { username: 'bob', password: 'bob-pw' },
@@ -400,7 +417,11 @@ describe('importing a stripped file keeps this machine’s secret values (issue 
         ],
       })
       expect(
-        testDb.prepare('SELECT name, bearer_token FROM mock_mcp_servers WHERE id = ?').get(s.mcpId),
+        openRow(
+          testDb
+            .prepare('SELECT name, bearer_token FROM mock_mcp_servers WHERE id = ?')
+            .get(s.mcpId) as Row,
+        ),
       ).toEqual({ name: 'MCP mock (renamed)', bearer_token: 'mcp-tok' })
     })
   }

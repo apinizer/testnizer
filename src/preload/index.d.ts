@@ -310,6 +310,15 @@ interface EnvVariableApi {
   delete(id: string): Promise<IpcResult<boolean>>
 }
 
+/**
+ * Issue #239: whether values marked secret are encrypted at rest. `encrypted`
+ * false → the OS keychain is unavailable (or Linux `basic_text`) and they are
+ * stored unencrypted; the UI shows a note.
+ */
+interface SecureStorageApi {
+  status(): Promise<IpcResult<{ encrypted: boolean; backend?: string }>>
+}
+
 interface GlobalVariableApi {
   list(workspaceId: string): Promise<IpcResult<GlobalVariable[]>>
   listByProject(projectId: string): Promise<IpcResult<GlobalVariable[]>>
@@ -2528,6 +2537,8 @@ interface MockMcpServerDto {
   enabled: boolean
   createdAt: number
   updatedAt: number
+  /** Issue #239: the stored bearer token cannot be decrypted on this computer (reads ''). */
+  bearerTokenDecryptFailed?: true
 }
 
 interface MockMcpServerCreateInput {
@@ -3317,6 +3328,7 @@ interface ApiBridge {
   environment: EnvironmentApi
   envVariable: EnvVariableApi
   globalVariable: GlobalVariableApi
+  secureStorage: SecureStorageApi
   history: HistoryApi
   savedResponse: SavedResponseApi
   settings: SettingsApi

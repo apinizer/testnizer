@@ -20,6 +20,7 @@ import type { Environment, EnvironmentVariable, GlobalVariable } from '../../typ
 import DeleteConfirmDialog from './DeleteConfirmDialog'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
+import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 
@@ -635,6 +636,8 @@ interface VarRow {
   initialValue?: string
   enabled: boolean
   secret: boolean
+  /** Issue #239: main could not decrypt the stored secret on this computer. */
+  decryptFailed?: boolean
 }
 
 /**
@@ -690,6 +693,8 @@ function VarTable({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Issue #239: shown only when the OS keychain cannot encrypt secrets. */}
+      <SecretStorageUnencryptedNote className="shrink-0 px-5 pt-2" />
       {/* Search — only meaningful once there is something to search. */}
       {variables.length > 0 && (
         <div className="shrink-0 px-5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -831,6 +836,8 @@ function VarRowView({
   const { t } = useTranslation()
   const [showCurrent, setShowCurrent] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Undecryptable until the user types a new value (issue #239).
+  const locked = !!variable.decryptFailed && !variable.value
 
   const INPUT: React.CSSProperties = {
     width: '100%',
@@ -917,14 +924,23 @@ function VarRowView({
           // value leaked in plain text (issue #13). Mask the placeholder hint
           // for hidden secrets while keeping the inherited-value affordance.
           placeholder={
-            variable.secret && !showCurrent
-              ? variable.initialValue
-                ? '••••••'
-                : '—'
-              : variable.initialValue || '—'
+            locked
+              ? t('env.decryptFailed')
+              : variable.secret && !showCurrent
+                ? variable.initialValue
+                  ? '••••••'
+                  : '—'
+                : variable.initialValue || '—'
           }
-          type={variable.secret && !showCurrent ? 'password' : 'text'}
-          style={{ ...INPUT, color: 'var(--json-string)' }}
+          // Issue #239: the stored secret cannot be decrypted on this computer.
+          title={locked ? t('env.decryptFailed') : undefined}
+          data-decrypt-failed={locked || undefined}
+          type={variable.secret && !showCurrent && !locked ? 'password' : 'text'}
+          style={{
+            ...INPUT,
+            color: 'var(--json-string)',
+            ...(locked ? { boxShadow: 'inset 0 0 0 1px var(--red)' } : {}),
+          }}
         />
         {variable.secret && (
           <button

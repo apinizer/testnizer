@@ -16,6 +16,7 @@
 
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
+import { isUndecryptable, keepUndecryptable, openSecret, sealSecret } from '../lib/secret-at-rest'
 import {
   DEFAULT_ERROR_MODE,
   DEFAULT_LEGACY_MODE,
@@ -120,6 +121,7 @@ function safeJson(text: string | null | undefined): unknown {
 }
 
 export function mockMcpRowToConfig(r: MockMcpServerRow): MockMcpServerConfig {
+  const bearer = openSecret(r.bearer_token)
   return {
     id: r.id,
     projectId: r.project_id,
@@ -130,9 +132,11 @@ export function mockMcpRowToConfig(r: MockMcpServerRow): MockMcpServerConfig {
     path: normalizePath(r.path),
     legacySse: !!r.legacy_sse,
     authMode: r.auth_mode === 'bearer' ? 'bearer' : 'none',
+    // Encrypted at rest (issue #239): opened here, sealed in `configToRow`.
     // Trimmed: a token pasted with a trailing newline never matched the
     // (trimmed) `Authorization` value — rows from import / git included.
-    bearerToken: (r.bearer_token ?? '').trim(),
+    bearerToken: bearer.value.trim(),
+    ...(bearer.failed ? { bearerTokenDecryptFailed: true } : {}),
     latencyMs: Math.max(0, r.latency_ms ?? 0),
     errorMode: normalizeErrorMode(safeJson(r.error_mode)),
     protocolPin: r.protocol_pin || null,
@@ -146,7 +150,11 @@ export function mockMcpRowToConfig(r: MockMcpServerRow): MockMcpServerConfig {
   }
 }
 
-function configToRow(c: MockMcpServerConfig): MockMcpServerRow {
+/**
+ * `previousToken`: the stored `bearer_token` of the row being updated — kept
+ * when the config carries '' for a token this machine cannot decrypt.
+ */
+function configToRow(c: MockMcpServerConfig, previousToken?: string): MockMcpServerRow {
   return {
     id: c.id,
     project_id: c.projectId,
@@ -157,7 +165,7 @@ function configToRow(c: MockMcpServerConfig): MockMcpServerRow {
     path: c.path,
     legacy_sse: c.legacySse ? 1 : 0,
     auth_mode: c.authMode,
-    bearer_token: c.bearerToken,
+    bearer_token: sealSecret(keepUndecryptable(c.bearerToken, previousToken) as string),
     latency_ms: c.latencyMs,
     error_mode: JSON.stringify(c.errorMode),
     protocol_pin: c.protocolPin,
@@ -233,8 +241,11 @@ export function updateMockMcpServer(
   id: string,
   patch: UpdateMockMcpServerInput,
 ): MockMcpServerConfig | null {
-  const cur = getMockMcpServer(id)
-  if (!cur) return null
+  const raw = getDb().prepare('SELECT * FROM mock_mcp_servers WHERE id = ?').get(id) as
+    | MockMcpServerRow
+    | undefined
+  if (!raw) return null
+  const { bearerTokenDecryptFailed: _flag, ...cur } = mockMcpRowToConfig(raw)
   const p = patch ?? {}
   const next: MockMcpServerConfig = {
     ...cur,
@@ -261,8 +272,9 @@ export function updateMockMcpServer(
   const setClause = MOCK_MCP_SERVER_COLUMNS.filter((c) => c !== 'id' && c !== 'project_id')
     .map((c) => `${c} = @${c}`)
     .join(', ')
-  getDb().prepare(`UPDATE mock_mcp_servers SET ${setClause} WHERE id = @id`).run(configToRow(next))
-  return next
+  const stored = configToRow(next, raw.bearer_token)
+  getDb().prepare(`UPDATE mock_mcp_servers SET ${setClause} WHERE id = @id`).run(stored)
+  return isUndecryptable(stored.bearer_token) ? { ...next, bearerTokenDecryptFailed: true } : next
 }
 
 export function deleteMockMcpServer(id: string): boolean {

@@ -381,6 +381,8 @@ export interface KeyValuePair {
 export interface SecretKeyValuePair extends KeyValuePair {
   secret: boolean
   initialValue?: string
+  /** Main could not decrypt the stored value on this machine (issue #239) — re-enter it. */
+  decryptFailed?: boolean
 }
 
 // ─── IPC Result ──────────────────────────────────────────────
@@ -1263,6 +1265,8 @@ export interface MockServer {
   kind: MockServerKind
   createdAt: number
   updatedAt: number
+  /** Issue #239: a credential in `authConfig` cannot be decrypted on this computer (reads ''). */
+  authDecryptFailed?: boolean
 }
 
 export type MockMethod =
@@ -1294,6 +1298,8 @@ export interface MockEndpoint {
   schemaValidation: MockSchemaValidation | null
   createdAt: number
   updatedAt: number
+  /** Issue #239: a credential in `authOverride` cannot be decrypted on this computer. */
+  authDecryptFailed?: boolean
 }
 
 export type MockBodyType = 'json' | 'xml' | 'text' | 'html' | 'sse' | 'llm'

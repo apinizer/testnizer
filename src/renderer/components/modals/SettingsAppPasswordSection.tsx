@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import { ChangePasswordForm, DisablePasswordForm } from '../auth/AppPasswordForms'
+import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 
 /**
  * Settings → App password (issue #240). Turning the password off used to be
@@ -96,6 +97,8 @@ export default function SettingsAppPasswordSection({
       <div className="mt-1 text-[var(--muted)]" style={{ fontSize: 12 }}>
         {t('settings.appPasswordHint')}
       </div>
+      {/* Issue #239: the app password does not encrypt data; secrets use the OS keychain. */}
+      <SecretStorageUnencryptedNote className="mt-1" />
 
       {mode !== 'idle' && (
         <div className="mt-3 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-3">

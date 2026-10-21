@@ -39,6 +39,7 @@ import { tickerResponse } from './mock-sse-presets'
 import { chatResponse } from './mock-ai-presets'
 import { buildMockCurl } from './mock-curl'
 import { uniqueName } from './mock-create-helpers'
+import { SecretLockedNote } from '../shared/SecretStorageNotes'
 import { isOpenStreamEntry } from '../../lib/mock-log-streams'
 import {
   normalizeLlmConfig,
@@ -630,6 +631,9 @@ function EndpointEditor({
             allowEmpty
           />
         </div>
+        {endpoint.authDecryptFailed && (
+          <SecretLockedNote testId="mock-endpoint-auth-decrypt-failed" className="mt-1" />
+        )}
       </div>
 
       <div>
@@ -1398,6 +1402,9 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
           hint={t('mock.authHint')}
           rows={6}
         />
+        {server.authDecryptFailed && (
+          <SecretLockedNote testId="mock-auth-decrypt-failed" className="mt-1" />
+        )}
 
         <hr style={{ borderColor: 'var(--border)', margin: '16px 0 8px' }} />
         <h3 className="m-0 mb-2 text-sm font-semibold" style={{ color: 'var(--heading)' }}>
