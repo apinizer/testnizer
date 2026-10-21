@@ -34,7 +34,8 @@ import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
 import MockLlmOptions, { MockLlmBodyNotes } from './MockLlmOptions'
 import { OptionNumber } from './MockOptionFields'
-import { MockAiChatHeaderButton } from './MockOpenInAiChat'
+import { MockAiChatAnthropicButton, MockAiChatHeaderButton } from './MockOpenInAiChat'
+import MockServerTypeField from './MockServerTypeField'
 import { tickerResponse } from './mock-sse-presets'
 import { chatResponse } from './mock-ai-presets'
 import { buildMockCurl } from './mock-curl'
@@ -123,6 +124,7 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
             />
             {kind === 'sse' && <MockSseHeaderButton server={server} status={status} />}
             {kind === 'ai' && <MockAiChatHeaderButton server={server} status={status} />}
+            {kind === 'ai' && <MockAiChatAnthropicButton server={server} status={status} />}
           </>
         }
       >
@@ -446,6 +448,7 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
         open={!!deleteTarget}
         itemName={deleteTarget?.path ?? ''}
         itemType="endpoint"
+        typeLabel={t('deleteConfirm.type.endpoint')}
         onConfirm={() => {
           if (deleteTarget) deleteEndpoint(serverId, deleteTarget.id)
           setDeleteTarget(null)
@@ -1259,6 +1262,10 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
             className="w-full rounded border px-2 py-1 text-sm"
             style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
           />
+        </Field>
+        {/* Issue #222: the type picked at creation, changeable here. */}
+        <Field label={t('mock.serverType')}>
+          <MockServerTypeField server={server} />
         </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('mock.host')}>

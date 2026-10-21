@@ -8,7 +8,7 @@
  * number boxes are sized in rem — rem follows the app font size, px did not:
  * a 70 px box clipped "15000" to "1500" at font size 16 (issue #226).
  */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useTranslation } from '../../lib/i18n'
 import type { useNumberDraft } from '../../lib/number-draft'
 
@@ -93,6 +93,88 @@ export function OptionSelect<V extends string>(props: {
           </option>
         ))}
       </select>
+    </label>
+  )
+}
+
+/** `[x] Label` — the rows' checkbox (the Stream row's Loop / Resume anatomy). */
+export function OptionCheck({
+  label,
+  testId,
+  checked,
+  onChange,
+}: {
+  label: string
+  testId: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+}) {
+  return (
+    <label
+      className="flex cursor-pointer items-center gap-1.5 whitespace-nowrap"
+      style={{ color: 'var(--text)' }}
+    >
+      <input
+        type="checkbox"
+        data-testid={testId}
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      {label}
+    </label>
+  )
+}
+
+/**
+ * `Label: [text]` — committed on blur / Enter, like the tool-call list: the
+ * typed text is local and reset when the stored value changes (derived
+ * during render). An unchanged text writes nothing.
+ */
+export function OptionText({
+  label,
+  testId,
+  value,
+  onCommit,
+  placeholder,
+  maxLength,
+  width = '12rem',
+  mono,
+}: {
+  label: string
+  testId: string
+  value: string
+  onCommit: (v: string) => void
+  placeholder?: string
+  maxLength?: number
+  /** CSS width of the box (rem, so it follows the app font size). */
+  width?: string
+  mono?: boolean
+}) {
+  const [state, setState] = useState({ base: value, text: value })
+  const text = state.base === value ? state.text : value
+  const commit = (): void => {
+    if (text !== value) onCommit(text)
+  }
+  return (
+    <label
+      className="flex min-w-0 items-center gap-1.5 whitespace-nowrap"
+      style={{ color: 'var(--muted)' }}
+    >
+      {label}:
+      <input
+        type="text"
+        data-testid={testId}
+        value={text}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        onChange={(e) => setState({ base: value, text: e.target.value })}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') commit()
+        }}
+        className={`min-w-0 rounded border px-2 py-1 ${mono ? 'font-mono' : ''}`}
+        style={{ ...NUMBER_COLORS, width, maxWidth: '100%' }}
+      />
     </label>
   )
 }

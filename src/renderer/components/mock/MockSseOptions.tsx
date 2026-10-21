@@ -2,7 +2,8 @@
  * The response editor's SSE parts (issue #221, design §6.5.2 / §6.5.4):
  *
  *  - `MockSseOptions` — the "Stream" row shown while the body type is `sse`:
- *    interval, heartbeat, loop, when finished, resume. Same anatomy as the
+ *    interval, heartbeat, loop, when finished, resume, and the mid-stream
+ *    error event (`MockSseErrorEvent`, issue #222). Same anatomy as the
  *    editor's "Delay (ms) / Enabled" row (label + number box, checkbox
  *    label, plain select) — the field parts are shared with the AI "LLM" row
  *    (`MockOptionFields.tsx`). Every change writes the whole normalized config
@@ -27,6 +28,7 @@ import {
 import { splitSseBlocks } from '../../../shared/mock-sse-blocks'
 import { translateStreamError } from './mock-stream-errors'
 import { useConfigWriter, type ConfigPatch } from './use-config-writer'
+import MockSseErrorEvent from './MockSseErrorEvent'
 import {
   OptionError,
   OptionNumber,
@@ -127,6 +129,7 @@ export default function MockSseOptions({ response }: { response: MockResponse })
           {resumeOff}
         </OptionReason>
       )}
+      <MockSseErrorEvent cfg={cfg} write={write} />
       {error && <OptionError testId="mock-sse-error">{error}</OptionError>}
     </div>
   )

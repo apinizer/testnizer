@@ -28,17 +28,72 @@ const RULES: { re: RegExp; key: string; vars?: string[] }[] = [
     re: /^When the events run out, the stream must either close or stay open/,
     key: 'mockSse.err.onEnd',
   },
+  {
+    re: /^Error event must be an object with afterEvents and data$/,
+    key: 'mockSse.err.errorEvent',
+  },
+  { re: /^Error event: unknown field (.+)$/, key: 'mockSse.err.errorEventField', vars: ['name'] },
+  {
+    re: /^Error event: afterEvents must be a whole number between 0 and (\d+)$/,
+    key: 'mockSse.err.errorEventAfter',
+    vars: ['max'],
+  },
+  {
+    re: /^Error event: data must be text of at most (\d+) characters$/,
+    key: 'mockSse.err.errorEventData',
+    vars: ['max'],
+  },
   // ── AI replies (`llm`) ──
   { re: /^LLM settings must be an object$/, key: 'mockLlm.err.object' },
   { re: /^Unknown LLM setting: (.+)$/, key: 'mockLlm.err.unknown', vars: ['name'] },
   { re: /^Provider must be "openai" or "anthropic"$/, key: 'mockLlm.err.provider' },
-  { re: /^Chunking must be "word", "char" or "sentence"$/, key: 'mockLlm.err.chunking' },
+  {
+    re: /^Chunking must be "word", "char", "sentence", "fixed" or "whole"$/,
+    key: 'mockLlm.err.chunking',
+  },
+  {
+    re: /^Chunk size must be a whole number of characters between 1 and (\d+)$/,
+    key: 'mockLlm.err.chunkSize',
+    vars: ['max'],
+  },
   {
     re: /^Chunk interval must be a whole number of milliseconds between 0 and (\d+)$/,
     key: 'mockLlm.err.interval',
     vars: ['max'],
   },
-  { re: /^Stop reason must be "stop", "length" or "tool_calls"$/, key: 'mockLlm.err.stopReason' },
+  {
+    re: /^Stop reason must be "stop", "length", "tool_calls", "content_filter" or "stop_sequence"$/,
+    key: 'mockLlm.err.stopReason',
+  },
+  {
+    re: /^Stop sequence must be text of 1 to (\d+) characters$/,
+    key: 'mockLlm.err.stopSequence',
+    vars: ['max'],
+  },
+  {
+    re: /^Mid-stream error must be an object with afterChunks, type and message$/,
+    key: 'mockLlm.err.streamError',
+  },
+  {
+    re: /^Mid-stream error: unknown field (.+)$/,
+    key: 'mockLlm.err.streamErrorField',
+    vars: ['name'],
+  },
+  {
+    re: /^Mid-stream error: afterChunks must be a whole number between 0 and (\d+)$/,
+    key: 'mockLlm.err.streamErrorAfter',
+    vars: ['max'],
+  },
+  {
+    re: /^Mid-stream error: type must be text of at most (\d+) characters$/,
+    key: 'mockLlm.err.streamErrorType',
+    vars: ['max'],
+  },
+  {
+    re: /^Mid-stream error: message must be text of at most (\d+) characters$/,
+    key: 'mockLlm.err.streamErrorMessage',
+    vars: ['max'],
+  },
   { re: /^Tool calls must be a list$/, key: 'mockLlm.err.toolCallsList' },
   { re: /^At most (\d+) tool calls per reply$/, key: 'mockLlm.err.toolCallsMax', vars: ['max'] },
   {

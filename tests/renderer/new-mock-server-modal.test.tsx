@@ -167,6 +167,7 @@ describe('New mock server dialog', () => {
       'mock-new-preset-chat',
       'mock-new-preset-anthropic',
       'mock-new-preset-tools',
+      'mock-new-preset-anthropicTools',
       'mock-new-preset-errors',
     ])
     expect(screen.getByTestId('mock-new-preset-chat')).toHaveAttribute('aria-checked', 'true')
@@ -175,6 +176,8 @@ describe('New mock server dialog', () => {
     const names: Record<string, string> = {
       anthropic: 'Messages API',
       tools: 'Tool-call API',
+      // Issue #222 (6): the Anthropic Messages tool_use twin of "Tool-call API".
+      anthropicTools: 'Tool-use Messages API',
       errors: 'Error API',
     }
     for (const [id, name] of Object.entries(names)) {

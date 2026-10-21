@@ -883,8 +883,8 @@ function runMigrations(database: Database.Database): void {
     `ALTER TABLE projects ADD COLUMN shared_settings TEXT`,
     // HTTP mock server kind (issue #221): 'http' | 'sse' | 'ai'
     // (src/shared/mock-kind.ts). Existing servers become 'http' — the editor
-    // and the engine behave exactly as before. Fixed at creation; only a
-    // project file can change it.
+    // and the engine behave exactly as before. Changeable from the editor's
+    // Settings tab since issue #222 (presentation only).
     `ALTER TABLE mock_servers ADD COLUMN kind TEXT NOT NULL DEFAULT 'http'`,
     // Streaming knobs for a mock response (issue #221) — JSON, read by the
     // 'sse' / 'llm' body types. Nullable, no default: NULL reads back as the

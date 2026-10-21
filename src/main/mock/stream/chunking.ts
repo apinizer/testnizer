@@ -9,15 +9,34 @@
  *  - `char`: one code point per chunk;
  *  - `sentence`: up to and including a run of `.` `!` `?` that ends the
  *    sentence (followed by whitespace or the end), or a line break, plus the
- *    whitespace after it.
+ *    whitespace after it;
+ *  - `fixed`: `size` code points per chunk (the last one may be shorter);
+ *  - `whole`: the whole text as one chunk.
  *
  * Any chunk longer than `LLM_MAX_CHUNK_CHARS` is cut further, so one
  * streamed frame always stays far below the SSE writer's frame limit.
  */
-import type { MockLlmChunking } from '../../../shared/mock-stream'
+import {
+  LLM_DEFAULT_CHUNK_SIZE,
+  LLM_MAX_CHUNK_CHARS,
+  type MockLlmChunking,
+} from '../../../shared/mock-stream'
 
 /** Longest chunk (code points). A frame of it is at most ~25 KiB of JSON. */
-export const LLM_MAX_CHUNK_CHARS = 4096
+export { LLM_MAX_CHUNK_CHARS }
+
+/** A `fixed` chunk size, bounded to 1..`LLM_MAX_CHUNK_CHARS`. */
+function sizeOf(size: number | undefined): number {
+  const n = size ?? LLM_DEFAULT_CHUNK_SIZE
+  return Number.isFinite(n) ? Math.min(LLM_MAX_CHUNK_CHARS, Math.max(1, Math.round(n))) : 1
+}
+
+function fixedPieces(text: string, size: number): string[] {
+  const points = Array.from(text)
+  const out: string[] = []
+  for (let i = 0; i < points.length; i += size) out.push(points.slice(i, i + size).join(''))
+  return out
+}
 
 const WORD = /\s*\S+\s*/gu
 const SENTENCE = /[\s\S]*?(?:[.!?]+(?=\s|$)|\n|$)\s*/gu
@@ -38,10 +57,12 @@ function capLength(chunk: string): string[] {
   return out
 }
 
-export function chunkText(text: string, mode: MockLlmChunking): string[] {
+export function chunkText(text: string, mode: MockLlmChunking, size?: number): string[] {
   if (text === '') return []
   let chunks: string[]
   if (mode === 'char') return Array.from(text)
+  if (mode === 'fixed') return fixedPieces(text, sizeOf(size))
+  if (mode === 'whole') return capLength(text)
   chunks = matchAll(text, mode === 'sentence' ? SENTENCE : WORD)
   // Whitespace-only text matches no word: it is one chunk of its own.
   if (chunks.length === 0) chunks = [text]
@@ -67,9 +88,20 @@ function capCount(chunk: string): number {
  * refused). Counting stops as soon as it passes `limit` (the result is then
  * some number above it), so a huge text costs O(limit), not O(text).
  */
-export function countChunks(text: string, mode: MockLlmChunking, limit = Infinity): number {
+export function countChunks(
+  text: string,
+  mode: MockLlmChunking,
+  limit = Infinity,
+  size?: number,
+): number {
   if (text === '') return 0
   if (mode === 'char') return codePoints(text, limit)
+  if (mode === 'fixed') {
+    const n = sizeOf(size)
+    // Counting code points stops past limit × n: the result is then above `limit`.
+    return Math.ceil(codePoints(text, limit * n) / n)
+  }
+  if (mode === 'whole') return capCount(text)
   let n = 0
   for (const m of text.matchAll(mode === 'sentence' ? SENTENCE : WORD)) {
     if (m[0] === '') continue

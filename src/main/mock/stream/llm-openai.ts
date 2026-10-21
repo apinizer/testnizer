@@ -19,10 +19,17 @@
  *     against this mock (real OpenAI sends usage only on the `choices: []`
  *     chunk). Said in the editor's LLM hint (`mockLlm.bodyHint`) too;
  *  6. `data: [DONE]`.
+ *
+ * `finish_reason` is the plan's reason in OpenAI's words
+ * (`LLM_WIRE_STOP_REASON`: `stop` / `length` / `tool_calls` /
+ * `content_filter`). Events are tagged for the mid-stream error cut
+ * (`LlmEvent`): text and argument pieces are `content`, steps 4–6 `finish`.
  */
-import type { SseEvent } from './sse-writer'
-import type { LlmPlan } from './llm'
+import { LLM_WIRE_STOP_REASON } from '../../../shared/mock-stream'
+import type { LlmEvent, LlmPlan } from './llm'
 import { argumentPieces, chunkText } from './chunking'
+
+const finishReason = (plan: LlmPlan): string => LLM_WIRE_STOP_REASON.openai[plan.stopReason]
 
 function usageOf(plan: LlmPlan): Record<string, number> {
   const { inputTokens, outputTokens } = plan.usage
@@ -50,26 +57,28 @@ export function openAiCompletion(plan: LlmPlan): Record<string, unknown> {
     object: 'chat.completion',
     created: plan.created,
     model: plan.model,
-    choices: [{ index: 0, message, logprobs: null, finish_reason: plan.stopReason }],
+    choices: [{ index: 0, message, logprobs: null, finish_reason: finishReason(plan) }],
     usage: usageOf(plan),
   }
 }
 
-export function openAiEvents(plan: LlmPlan): SseEvent[] {
+export function openAiEvents(plan: LlmPlan): LlmEvent[] {
   const base = {
     id: plan.id,
     object: 'chat.completion.chunk',
     created: plan.created,
     model: plan.model,
   }
-  const chunk = (delta: Record<string, unknown>): SseEvent => ({
+  const chunk = (delta: Record<string, unknown>): LlmEvent => ({
     data: JSON.stringify({
       ...base,
       choices: [{ index: 0, delta, logprobs: null, finish_reason: null }],
     }),
   })
-  const events: SseEvent[] = [chunk({ role: 'assistant', content: '' })]
-  for (const piece of chunkText(plan.text, plan.chunking)) events.push(chunk({ content: piece }))
+  const events: LlmEvent[] = [chunk({ role: 'assistant', content: '' })]
+  for (const piece of chunkText(plan.text, plan.chunking, plan.chunkSize)) {
+    events.push({ ...chunk({ content: piece }), content: true, text: piece })
+  }
   plan.toolCalls.forEach((c, index) => {
     events.push(
       chunk({
@@ -79,18 +88,24 @@ export function openAiEvents(plan: LlmPlan): SseEvent[] {
       }),
     )
     for (const piece of argumentPieces(c.arguments)) {
-      events.push(chunk({ tool_calls: [{ index, function: { arguments: piece } }] }))
+      events.push({
+        ...chunk({ tool_calls: [{ index, function: { arguments: piece } }] }),
+        content: true,
+      })
     }
   })
   const usage = usageOf(plan)
   events.push({
     data: JSON.stringify({
       ...base,
-      choices: [{ index: 0, delta: {}, logprobs: null, finish_reason: plan.stopReason }],
+      choices: [{ index: 0, delta: {}, logprobs: null, finish_reason: finishReason(plan) }],
       usage,
     }),
+    finish: true,
   })
-  if (plan.includeUsage) events.push({ data: JSON.stringify({ ...base, choices: [], usage }) })
-  events.push({ data: '[DONE]' })
+  if (plan.includeUsage) {
+    events.push({ data: JSON.stringify({ ...base, choices: [], usage }), finish: true })
+  }
+  events.push({ data: '[DONE]', finish: true })
   return events
 }

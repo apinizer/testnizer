@@ -1260,7 +1260,8 @@ export interface MockServer {
   proxyRecord: boolean
   /**
    * Authoring profile (`src/shared/mock-kind.ts`, issue #221): sidebar section,
-   * presets, offered body types. Fixed at creation; the engine ignores it.
+   * presets, offered body types. Set at creation, changeable in Settings
+   * (issue #222); the engine ignores it.
    */
   kind: MockServerKind
   createdAt: number

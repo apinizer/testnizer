@@ -10,6 +10,12 @@
  * chunk interval is shortened for the test.
  *
  * Fail-before: `mock-ai-presets.ts` did not exist (the dialog had no AI type).
+ * Issue #222: the Anthropic tool-use preset (`anthropicTools`) mirrors the
+ * OpenAI one against AI Chat's Anthropic provider (two rounds, namespaced
+ * name, the full tool loop with Mock MCP Echo); the errors preset's
+ * `error-stream` model sends a mid-stream error on both wires, and AI Chat
+ * keeps the partial text and reports the provider's error. Fail-before: no
+ * `anthropicTools` preset (no tool_use on /v1/messages), no `error-stream`.
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { mockServerManager, type MockResponseDef } from '../../src/main/mock/server'
@@ -132,6 +138,7 @@ describe('AI presets — shape', () => {
       chat: 'Chat API',
       anthropic: 'Messages API',
       tools: 'Tool-call API',
+      anthropicTools: 'Tool-use Messages API',
       errors: 'Error API',
     })
     const routes = (id: MockAiPresetId): string[] =>
@@ -139,7 +146,8 @@ describe('AI presets — shape', () => {
     expect(routes('chat')).toEqual(['POST /v1/chat/completions', 'GET /v1/models'])
     expect(routes('anthropic')).toEqual(['POST /v1/messages'])
     expect(routes('tools')).toEqual(['POST /v1/chat/completions'])
-    expect(routes('errors')).toEqual(['POST /v1/chat/completions'])
+    expect(routes('anthropicTools')).toEqual(['POST /v1/messages'])
+    expect(routes('errors')).toEqual(['POST /v1/chat/completions', 'POST /v1/messages'])
     const chat = buildAiPreset('chat').endpoints[0].responses[0]
     expect(chat.streamConfig).toEqual({
       provider: 'openai',
@@ -155,6 +163,10 @@ describe('AI presets — shape', () => {
     // The tool-call reply says it stops for tools (the editor's select shows it).
     const tool = buildAiPreset('tools').endpoints[0].responses[1]
     expect(tool.streamConfig).toMatchObject({ stopReason: 'tool_calls' })
+    // Every reply of the Anthropic tool preset speaks the Anthropic wire.
+    for (const r of buildAiPreset('anthropicTools').endpoints[0].responses) {
+      expect(r.streamConfig).toMatchObject({ provider: 'anthropic' })
+    }
   })
 })
 
@@ -291,6 +303,119 @@ describe('AI presets served ↔ the AI Chat engine', () => {
     expect(none.text.length).toBeGreaterThan(0)
   })
 
+  // Issue #222 (6): the same round trip on the Anthropic Messages wire —
+  // content_block_start tool_use → input_json_delta → stop_reason tool_use,
+  // then the tool_result turn — read by AI Chat's Anthropic provider.
+  it('anthropicTools: tool_use first, the tool_result turn answers (Anthropic provider)', async () => {
+    const base = await serve('anthropicTools')
+    const url = `${base}/v1/messages`
+    const anthropic = (messages: AiStreamOptions['messages'], tools: AiStreamOptions['tools']) => ({
+      provider: 'anthropic' as const,
+      url,
+      model: 'claude-mock',
+      messages,
+      tools,
+    })
+    const tools = [{ name: 'echo', inputSchema: { type: 'object' } }]
+    const first = await round(anthropic([{ role: 'user', content: 'use the tool' }], tools))
+    expect(first.text).toBe('')
+    expect(first.end.stopReason).toBe('tool_use')
+    expect(first.end.toolCalls).toHaveLength(1)
+    const call = first.end.toolCalls[0]
+    expect(call.name).toBe('echo')
+    expect(call.id).toMatch(/^toolu_/)
+    expect(JSON.parse(call.argsJson)).toEqual({ text: 'hello from the mock LLM' })
+
+    const second = await round(
+      anthropic(
+        [
+          { role: 'user', content: 'use the tool' },
+          { role: 'assistant', content: '', toolCalls: [call] },
+          { role: 'tool', results: [{ id: call.id, content: 'echo: hello', isError: false }] },
+        ],
+        tools,
+      ),
+    )
+    expect(second.text).toBe('Tool said: echo: hello')
+    expect(second.end.stopReason).toBe('end_turn')
+
+    const plain = await round(anthropic([{ role: 'user', content: 'hi' }], undefined))
+    expect(plain.text).toBe('Hello from the mock LLM. You said: hi')
+    expect(plain.end.toolCalls).toEqual([])
+  })
+
+  it('anthropicTools: AI Chat’s namespaced wire name gets a tool_use for that exact name', async () => {
+    const base = await serve('anthropicTools')
+    const table = buildToolNameTable([
+      { serverId: 'srv-weather', server: 'Weather', tool: 'forecast' },
+      { serverId: 'srv-echo', server: 'Echo tools', tool: 'echo' },
+    ])
+    const tools = [
+      ...[...table.keys()].map((name) => ({ name, inputSchema: { type: 'object' } })),
+      { name: 'Other__echoes', inputSchema: { type: 'object' } },
+    ]
+    const first = await round({
+      provider: 'anthropic',
+      url: `${base}/v1/messages`,
+      model: 'claude-mock',
+      messages: [{ role: 'user', content: 'use the tool' }],
+      tools,
+    })
+    expect(first.end.stopReason).toBe('tool_use')
+    expect(first.end.toolCalls.map((c) => c.name)).toEqual(['Echo_tools__echo'])
+
+    const none = await round({
+      provider: 'anthropic',
+      url: `${base}/v1/messages`,
+      model: 'claude-mock',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [{ name: 'Weather__forecast', inputSchema: { type: 'object' } }],
+    })
+    expect(none.end.toolCalls).toEqual([])
+    expect(none.end.stopReason).toBe('end_turn')
+  })
+
+  it('errors: model error-stream sends a few words, then the provider’s mid-stream error (both wires)', async () => {
+    const base = await serve('errors')
+    for (const opts of [
+      custom(`${base}/v1/chat/completions`, 'error-stream', 'x'),
+      {
+        provider: 'anthropic' as const,
+        url: `${base}/v1/messages`,
+        model: 'error-stream',
+        messages: [{ role: 'user' as const, content: 'x' }],
+      },
+    ]) {
+      let text = ''
+      const err = await (async () => {
+        for await (const ev of streamChatRound(opts)) if (ev.type === 'text') text += ev.delta
+      })().catch((e: unknown) => e)
+      expect(text).toBe('Hello from the ')
+      expect(err).toBeInstanceOf(AiHttpError)
+      expect((err as AiHttpError).midStream).toBe(true)
+      expect((err as AiHttpError).errorType).toBe(
+        opts.provider === 'anthropic' ? 'overloaded_error' : 'server_error',
+      )
+    }
+    // Anthropic 529 over HTTP, in Anthropic's error envelope.
+    const overloaded = await round({
+      provider: 'anthropic',
+      url: `${base}/v1/messages`,
+      model: 'error-529',
+      messages: [{ role: 'user', content: 'x' }],
+    }).catch((e: unknown) => e)
+    expect(overloaded).toBeInstanceOf(AiHttpError)
+    expect((overloaded as AiHttpError).status).toBe(529)
+    expect((overloaded as AiHttpError).message).toContain('overloaded_error')
+    const ok = await round({
+      provider: 'anthropic',
+      url: `${base}/v1/messages`,
+      model: 'claude-mock',
+      messages: [{ role: 'user', content: 'fine' }],
+    })
+    expect(ok.text).toBe('Hello from the mock LLM. You said: fine')
+  })
+
   it('errors: the model name picks 429 (+ retry-after), 500 or 401; any other model gets a reply', async () => {
     const base = await serve('errors')
     const url = `${base}/v1/chat/completions`
@@ -341,94 +466,152 @@ describe('Tool-call API preset ↔ AI Chat tool loop ↔ Mock MCP Echo', () => {
     for (const id of mcpIds.splice(0)) await mockMcpServerManager.stop(id)
   })
 
-  it('the model calls Echo MCP__echo, the MCP server answers, the model says "Tool said: …"', async () => {
-    const base = await serve('tools')
-    const preset = buildPresetInput('echo', { projectId: 'p', takenNames: [], takenPorts: [] })
-    const mcpDef: MockMcpServerDef = {
-      id: 'mcp-echo-roundtrip',
-      name: preset.name,
-      description: preset.description ?? '',
-      host: '127.0.0.1',
-      port: 0,
-      path: '/mcp',
-      legacySse: false,
-      authMode: 'none',
-      bearerToken: '',
-      latencyMs: 0,
-      errorMode: { kind: 'none' },
-      protocolPin: null,
-      legacyMode: 'stateless',
-      cacheTtlMs: 0,
-      tools: preset.tools ?? [],
-      resources: [],
-      prompts: [],
-    }
-    const started = await mockMcpServerManager.start(mcpDef)
-    if (!started.ok) throw new Error(started.error)
-    mcpIds.push(mcpDef.id)
+  it.each([
+    { preset: 'tools' as const, provider: 'custom' as const, path: '/v1/chat/completions' },
+    // Issue #222 (6): the same loop on the Anthropic wire and provider.
+    { preset: 'anthropicTools' as const, provider: 'anthropic' as const, path: '/v1/messages' },
+  ])(
+    '$preset ($provider): the model calls Echo MCP__echo, the MCP server answers, the model says "Tool said: …"',
+    async ({ preset: presetId, provider, path }) => {
+      const base = await serve(presetId)
+      const preset = buildPresetInput('echo', { projectId: 'p', takenNames: [], takenPorts: [] })
+      const mcpDef: MockMcpServerDef = {
+        id: 'mcp-echo-roundtrip',
+        name: preset.name,
+        description: preset.description ?? '',
+        host: '127.0.0.1',
+        port: 0,
+        path: '/mcp',
+        legacySse: false,
+        authMode: 'none',
+        bearerToken: '',
+        latencyMs: 0,
+        errorMode: { kind: 'none' },
+        protocolPin: null,
+        legacyMode: 'stateless',
+        cacheTtlMs: 0,
+        tools: preset.tools ?? [],
+        resources: [],
+        prompts: [],
+      }
+      const started = await mockMcpServerManager.start(mcpDef)
+      if (!started.ok) throw new Error(started.error)
+      mcpIds.push(mcpDef.id)
 
-    const calls: Array<{ name: string; args: Record<string, unknown> }> = []
-    const deps: AiLoopDeps = {
-      streamRound: streamChatRound,
-      openSession: (connect, signal, timeoutMs) =>
-        mcpOpenDetachedSession({
-          connect,
-          signal,
-          ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-        }),
-      callTool: (id, name, args, opts) => {
-        calls.push({ name, args })
-        return mcpSessionCallTool(id, name, args, opts)
-      },
-      closeSession: (id) => mcpDisconnect(id),
-      isTrusted: async () => false,
-    }
-    let text = ''
-    const parts: Array<Record<string, unknown>> = []
-    const res = await runAiTurn(
-      {
-        stream: { provider: 'custom', url: `${base}/v1/chat/completions`, model: 'mock-model' },
-        messages: [{ role: 'user', content: 'use the tool' }],
-        tools: {
-          projectId: 'p',
-          servers: [
-            {
-              id: mcpDef.id,
-              name: mcpDef.name,
-              connect: {
-                transport: 'http',
-                url: started.state.url as string,
-                protocol: 'auto',
+      const calls: Array<{ name: string; args: Record<string, unknown> }> = []
+      const deps: AiLoopDeps = {
+        streamRound: streamChatRound,
+        openSession: (connect, signal, timeoutMs) =>
+          mcpOpenDetachedSession({
+            connect,
+            signal,
+            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+          }),
+        callTool: (id, name, args, opts) => {
+          calls.push({ name, args })
+          return mcpSessionCallTool(id, name, args, opts)
+        },
+        closeSession: (id) => mcpDisconnect(id),
+        isTrusted: async () => false,
+      }
+      let text = ''
+      const parts: Array<Record<string, unknown>> = []
+      const res = await runAiTurn(
+        {
+          stream: { provider, url: `${base}${path}`, model: 'mock-model' },
+          messages: [{ role: 'user', content: 'use the tool' }],
+          tools: {
+            projectId: 'p',
+            servers: [
+              {
+                id: mcpDef.id,
+                name: mcpDef.name,
+                connect: {
+                  transport: 'http',
+                  url: started.state.url as string,
+                  protocol: 'auto',
+                },
+                disabledTools: [],
               },
-              disabledTools: [],
-            },
-          ],
-          autoApprove: true,
-          allowedTools: [],
+            ],
+            autoApprove: true,
+            allowedTools: [],
+          },
         },
-      },
-      deps,
-      {
-        signal: new AbortController().signal,
-        onText: (d) => {
-          text += d
+        deps,
+        {
+          signal: new AbortController().signal,
+          onText: (d) => {
+            text += d
+          },
+          onTruncated: () => {},
+          onPart: (p) => parts.push(p as unknown as Record<string, unknown>),
+          onCall: () => {},
+          askApproval: async () => 'once',
+          askStdioTrust: async () => 'skip',
         },
-        onTruncated: () => {},
-        onPart: (p) => parts.push(p as unknown as Record<string, unknown>),
-        onCall: () => {},
-        askApproval: async () => 'once',
-        askStdioTrust: async () => 'skip',
-      },
-    )
-    expect(res.outcome).toBe('done')
-    expect(res.rounds).toBe(2)
-    // The MCP client got the bare MCP name back from the wire name the model used.
-    expect(calls).toEqual([{ name: 'echo', args: { text: 'hello from the mock LLM' } }])
-    expect(parts.find((p) => p.type === 'tool_call')).toMatchObject({
-      server: 'Echo MCP',
-      tool: 'echo',
-    })
-    expect(text).toBe('Tool said: hello from the mock LLM')
-    expect(mcpConnectionIds()).toEqual([])
-  })
+      )
+      expect(res.outcome).toBe('done')
+      expect(res.rounds).toBe(2)
+      // The MCP client got the bare MCP name back from the wire name the model used.
+      expect(calls).toEqual([{ name: 'echo', args: { text: 'hello from the mock LLM' } }])
+      expect(parts.find((p) => p.type === 'tool_call')).toMatchObject({
+        server: 'Echo MCP',
+        tool: 'echo',
+      })
+      expect(text).toBe('Tool said: hello from the mock LLM')
+      expect(mcpConnectionIds()).toEqual([])
+    },
+  )
+})
+
+/**
+ * Issue #222 (5): AI Chat's real loop against the errors preset's
+ * `error-stream` model — the partial text stays on the turn, the turn and the
+ * call metrics carry the provider's error, the outcome is `error`.
+ */
+describe('Error API preset ↔ AI Chat tool loop: a mid-stream error', () => {
+  it.each([
+    { provider: 'custom' as const, path: '/v1/chat/completions', type: 'server_error' },
+    { provider: 'anthropic' as const, path: '/v1/messages', type: 'overloaded_error' },
+  ])(
+    '$provider: partial text kept, error on the turn and in the metrics',
+    async ({ provider, path, type }) => {
+      const base = await serve('errors')
+      const calls: Array<Record<string, unknown>> = []
+      let text = ''
+      const res = await runAiTurn(
+        {
+          stream: { provider, url: `${base}${path}`, model: 'error-stream' },
+          messages: [{ role: 'user', content: 'hi' }],
+        },
+        {
+          streamRound: streamChatRound,
+          openSession: () => Promise.reject(new Error('no MCP servers')),
+          callTool: () => Promise.resolve({ error: 'no MCP servers' }),
+          closeSession: () => Promise.resolve(),
+          isTrusted: async () => false,
+        } as unknown as AiLoopDeps,
+        {
+          signal: new AbortController().signal,
+          onText: (d) => {
+            text += d
+          },
+          onTruncated: () => {},
+          onPart: () => {},
+          onCall: (m) => calls.push(m as unknown as Record<string, unknown>),
+          askApproval: async () => 'once',
+          askStdioTrust: async () => 'skip',
+        },
+      )
+      expect(res.outcome).toBe('error')
+      expect(text).toBe('Hello from the ')
+      expect(res.turn.content).toBe('Hello from the ')
+      expect(res.error).toContain(`Mid-stream error (${type})`)
+      expect(res.turn.error).toBe(res.error)
+      expect(calls).toHaveLength(1)
+      expect(calls[0]).toMatchObject({ status: 200 })
+      expect(String(calls[0].error)).toContain(type)
+    },
+  )
 })

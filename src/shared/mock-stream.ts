@@ -42,7 +42,31 @@ export interface MockSseStreamConfig {
    * — an id rendered from `{{stream.seq}}` cannot be found again.
    */
   resume: boolean
+  /**
+   * Mid-stream error (issue #222): after `afterEvents` events written on the
+   * connection — or when the list runs out first — one `event: error` with
+   * `data` (a template, rendered like any block) is sent and the response
+   * ends. Absent = never. A reconnect counts from zero again.
+   */
+  errorEvent?: MockSseErrorEvent
 }
+
+export interface MockSseErrorEvent {
+  /** Events written before the error (0 = the error is the first event). */
+  afterEvents: number
+  /** The `data:` payload (template); each line becomes its own `data:` line. */
+  data: string
+}
+
+/** Upper bound of `errorEvent.afterEvents` and of the AI `streamError.afterChunks`. */
+export const STREAM_ERROR_MAX_AFTER = 10_000
+/** Longest `errorEvent.data` (characters). */
+export const SSE_ERROR_DATA_MAX_CHARS = 16_384
+/** What a new SSE error event sends. */
+export const SSE_ERROR_EVENT_DEFAULT: Readonly<MockSseErrorEvent> = Object.freeze({
+  afterEvents: 3,
+  data: '{"message": "Mock stream error"}',
+})
 
 export const SSE_STREAM_DEFAULTS: Readonly<MockSseStreamConfig> = Object.freeze({
   intervalMs: 1000,
@@ -69,7 +93,9 @@ const KEYS: readonly (keyof MockSseStreamConfig)[] = [
   'loop',
   'onEnd',
   'resume',
+  'errorEvent',
 ]
+const ERROR_EVENT_KEYS: readonly (keyof MockSseErrorEvent)[] = ['afterEvents', 'data']
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
@@ -82,6 +108,28 @@ function parseMaybeJson(raw: unknown): unknown {
     return JSON.parse(raw)
   } catch {
     return null
+  }
+}
+
+function clampCount(v: unknown, fallback: number, max: number): number {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return fallback
+  return Math.min(max, Math.max(0, Math.round(v)))
+}
+
+/** Tolerant read of `errorEvent`: null when absent or unusable. */
+function normalizeErrorEvent(raw: unknown): MockSseErrorEvent | null {
+  const r = asRecord(raw)
+  if (!r) return null
+  return {
+    afterEvents: clampCount(
+      r.afterEvents,
+      SSE_ERROR_EVENT_DEFAULT.afterEvents,
+      STREAM_ERROR_MAX_AFTER,
+    ),
+    data:
+      typeof r.data === 'string'
+        ? r.data.slice(0, SSE_ERROR_DATA_MAX_CHARS)
+        : SSE_ERROR_EVENT_DEFAULT.data,
   }
 }
 
@@ -101,6 +149,8 @@ export function normalizeStreamConfig(raw: unknown): MockSseStreamConfig {
   const loop = typeof r.loop === 'boolean' ? r.loop : SSE_STREAM_DEFAULTS.loop
   let intervalMs = clampMs(r.intervalMs, SSE_STREAM_DEFAULTS.intervalMs)
   if (loop && intervalMs < SSE_MIN_LOOP_INTERVAL_MS) intervalMs = SSE_MIN_LOOP_INTERVAL_MS
+  // Optional key: present only when set, so a config without it stays byte-identical.
+  const errorEvent = normalizeErrorEvent(r.errorEvent)
   return {
     intervalMs,
     heartbeatMs: clampMs(r.heartbeatMs, SSE_STREAM_DEFAULTS.heartbeatMs),
@@ -109,6 +159,7 @@ export function normalizeStreamConfig(raw: unknown): MockSseStreamConfig {
       ? (r.onEnd as MockSseEndBehaviour)
       : SSE_STREAM_DEFAULTS.onEnd,
     resume: typeof r.resume === 'boolean' ? r.resume : SSE_STREAM_DEFAULTS.resume,
+    ...(errorEvent ? { errorEvent } : {}),
   }
 }
 
@@ -142,7 +193,25 @@ export function validateStreamConfig(raw: unknown): string | null {
   if (r.onEnd !== undefined && !END_BEHAVIOURS.includes(r.onEnd as MockSseEndBehaviour)) {
     return 'When the events run out, the stream must either close or stay open (onEnd: "close" | "keep-open")'
   }
+  if (r.errorEvent !== undefined) {
+    const e = asRecord(r.errorEvent)
+    if (!e) return 'Error event must be an object with afterEvents and data'
+    for (const k of Object.keys(e)) {
+      if (!(ERROR_EVENT_KEYS as readonly string[]).includes(k))
+        return `Error event: unknown field ${k}`
+    }
+    if (!isCount(e.afterEvents, STREAM_ERROR_MAX_AFTER)) {
+      return `Error event: afterEvents must be a whole number between 0 and ${STREAM_ERROR_MAX_AFTER}`
+    }
+    if (typeof e.data !== 'string' || e.data.length > SSE_ERROR_DATA_MAX_CHARS) {
+      return `Error event: data must be text of at most ${SSE_ERROR_DATA_MAX_CHARS} characters`
+    }
+  }
   return null
+}
+
+function isCount(v: unknown, max: number): boolean {
+  return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= max
 }
 
 // ─── AI (`body_type: 'llm'`) ─────────────────────────────────────
@@ -154,17 +223,107 @@ export type MockLlmProvider = 'openai' | 'anthropic'
  * How the assistant text is cut into streamed chunks. `word`: each chunk is
  * a word plus the whitespace after it; `char`: one character (code point)
  * per chunk; `sentence`: up to and including `.`, `!`, `?` (or a line
- * break) and the whitespace after it. Joined back, the chunks are always
- * the original text.
+ * break) and the whitespace after it; `fixed`: `chunkSize` characters per
+ * chunk; `whole`: the whole text in one chunk (still cut at
+ * `LLM_MAX_CHUNK_CHARS` — the frame limit). Joined back, the chunks are
+ * always the original text.
  */
-export type MockLlmChunking = 'word' | 'char' | 'sentence'
+export type MockLlmChunking = 'word' | 'char' | 'sentence' | 'fixed' | 'whole'
 
 /**
- * Why the model stopped, in OpenAI terms (Anthropic: `end_turn`,
- * `max_tokens`, `tool_use`). With tool calls the reply always stops with
- * `tool_calls`; `tool_calls` without any tool call is not a valid setting.
+ * Why the model stopped. One provider-neutral value, written on the wire in
+ * each provider's own words (`LLM_WIRE_STOP_REASON`):
+ *
+ * | value            | OpenAI `finish_reason` | Anthropic `stop_reason` |
+ * |------------------|------------------------|-------------------------|
+ * | `stop`           | `stop`                 | `end_turn`              |
+ * | `length`         | `length`               | `max_tokens`            |
+ * | `tool_calls`     | `tool_calls`           | `tool_use`              |
+ * | `content_filter` | `content_filter`       | `refusal`               |
+ * | `stop_sequence`  | `stop`                 | `stop_sequence`         |
+ *
+ * OpenAI reports a matched stop sequence as `stop` (its `finish_reason`
+ * docs); Anthropic's nearest twin of `content_filter` is `refusal` (a
+ * classifier stop, HTTP 200). The mapping is total, so switching the
+ * provider never leaves a value the other wire cannot say. With tool calls
+ * the reply always stops with `tool_calls`; `tool_calls` without any tool
+ * call is not a valid setting.
  */
-export type MockLlmStopReason = 'stop' | 'length' | 'tool_calls'
+export type MockLlmStopReason =
+  | 'stop'
+  | 'length'
+  | 'tool_calls'
+  | 'content_filter'
+  | 'stop_sequence'
+
+export const LLM_WIRE_STOP_REASON: Readonly<
+  Record<MockLlmProvider, Readonly<Record<MockLlmStopReason, string>>>
+> = Object.freeze({
+  openai: Object.freeze({
+    stop: 'stop',
+    length: 'length',
+    tool_calls: 'tool_calls',
+    content_filter: 'content_filter',
+    stop_sequence: 'stop',
+  }),
+  anthropic: Object.freeze({
+    stop: 'end_turn',
+    length: 'max_tokens',
+    tool_calls: 'tool_use',
+    content_filter: 'refusal',
+    stop_sequence: 'stop_sequence',
+  }),
+})
+
+/** The stop reasons each provider's select offers (`tool_calls` follows the tool calls). */
+export const LLM_PROVIDER_STOP_REASONS: Readonly<
+  Record<MockLlmProvider, readonly MockLlmStopReason[]>
+> = Object.freeze({
+  openai: ['stop', 'length', 'content_filter', 'tool_calls'],
+  anthropic: ['stop', 'length', 'stop_sequence', 'content_filter', 'tool_calls'],
+})
+
+/**
+ * `reason` as `provider` can say it: a value the provider's select does not
+ * offer becomes the one it is sent as (`stop_sequence` → `stop` on OpenAI).
+ */
+export function stopReasonFor(
+  provider: MockLlmProvider,
+  reason: MockLlmStopReason,
+): MockLlmStopReason {
+  return LLM_PROVIDER_STOP_REASONS[provider].includes(reason) ? reason : 'stop'
+}
+
+/**
+ * An error event sent in the middle of a streamed AI reply (issue #222),
+ * after `afterChunks` chunks of output (text pieces and tool-call argument
+ * pieces); the response then ends — no finish chunk / `[DONE]` (OpenAI), no
+ * `message_delta` / `message_stop` (Anthropic). A reply with fewer chunks
+ * sends the error in place of its finish. Only streamed replies (`stream:
+ * true`); a plain JSON reply is unaffected.
+ */
+export interface MockLlmStreamError {
+  afterChunks: number
+  /** Provider error type; empty / absent = the provider's default (`LLM_STREAM_ERROR_DEFAULTS`). */
+  type?: string
+  /** Error message; empty / absent = the provider's default. */
+  message?: string
+}
+
+/**
+ * The error a mid-stream error sends when its type / message are left
+ * empty: what each provider sends itself — OpenAI's 500 text, Anthropic's
+ * documented mid-stream `overloaded_error` (streaming docs, "Error events").
+ */
+export const LLM_STREAM_ERROR_DEFAULTS: Readonly<
+  Record<MockLlmProvider, Readonly<{ type: string; message: string }>>
+> = Object.freeze({
+  openai: Object.freeze({
+    type: 'server_error',
+    message: 'The server had an error while processing your request. Sorry about that!',
+  }),
+  anthropic: Object.freeze({ type: 'overloaded_error', message: 'Overloaded' }),
+})
 
 export interface MockLlmToolCall {
   /** Call id; absent = generated per reply (`call_…` / `toolu_…`). */
@@ -200,7 +359,31 @@ export interface MockLlmConfig {
    * not a real tokenizer. Or fixed numbers.
    */
   usage: 'auto' | MockLlmUsage
+  /** Characters per chunk for `chunking: 'fixed'` (absent = `LLM_DEFAULT_CHUNK_SIZE`). */
+  chunkSize?: number
+  /**
+   * The matched sequence an Anthropic `stop_reason: 'stop_sequence'` reply
+   * names in `stop_sequence` (absent = `LLM_DEFAULT_STOP_SEQUENCE`).
+   */
+  stopSequence?: string
+  /** Mid-stream error (absent = none). */
+  streamError?: MockLlmStreamError
 }
+
+/** Characters per chunk of `fixed` chunking when unset. */
+export const LLM_DEFAULT_CHUNK_SIZE = 8
+/** `stop_sequence` of an Anthropic `stop_sequence` stop when unset. */
+export const LLM_DEFAULT_STOP_SEQUENCE = 'END'
+/** Longest stop sequence (characters). */
+export const LLM_MAX_STOP_SEQUENCE_CHARS = 256
+/** Longest mid-stream error type / message (characters). */
+export const LLM_MAX_ERROR_TYPE_CHARS = 100
+export const LLM_MAX_ERROR_MESSAGE_CHARS = 2000
+/**
+ * Longest chunk (code points) — `fixed` chunk size bound; `whole` is cut at
+ * it too. A frame of it is at most ~25 KiB of JSON.
+ */
+export const LLM_MAX_CHUNK_CHARS = 4096
 
 export const LLM_CONFIG_DEFAULTS: Readonly<MockLlmConfig> = Object.freeze({
   provider: 'openai',
@@ -221,8 +404,14 @@ export const LLM_MAX_TOOL_ARGUMENT_CHARS = 32_000
 export const LLM_MAX_USAGE_TOKENS = 10_000_000
 
 const LLM_PROVIDERS: readonly MockLlmProvider[] = ['openai', 'anthropic']
-const LLM_CHUNKINGS: readonly MockLlmChunking[] = ['word', 'char', 'sentence']
-const LLM_STOP_REASONS: readonly MockLlmStopReason[] = ['stop', 'length', 'tool_calls']
+const LLM_CHUNKINGS: readonly MockLlmChunking[] = ['word', 'char', 'sentence', 'fixed', 'whole']
+const LLM_STOP_REASONS: readonly MockLlmStopReason[] = [
+  'stop',
+  'length',
+  'tool_calls',
+  'content_filter',
+  'stop_sequence',
+]
 
 const LLM_KEYS: readonly (keyof MockLlmConfig)[] = [
   'provider',
@@ -231,7 +420,11 @@ const LLM_KEYS: readonly (keyof MockLlmConfig)[] = [
   'stopReason',
   'toolCalls',
   'usage',
+  'chunkSize',
+  'stopSequence',
+  'streamError',
 ]
+const STREAM_ERROR_KEYS: readonly (keyof MockLlmStreamError)[] = ['afterChunks', 'type', 'message']
 const TOOL_CALL_KEYS: readonly (keyof MockLlmToolCall)[] = ['id', 'name', 'arguments']
 
 function argumentsLength(args: unknown): number {
@@ -254,6 +447,22 @@ function normalizeToolCall(raw: unknown): MockLlmToolCall | null {
   const call: MockLlmToolCall = { name: r.name, arguments: args }
   if (typeof r.id === 'string' && r.id !== '') call.id = r.id
   return call
+}
+
+/** Tolerant read of `streamError`: null when absent or unusable. */
+function normalizeStreamError(raw: unknown): MockLlmStreamError | null {
+  const r = asRecord(raw)
+  if (!r) return null
+  const out: MockLlmStreamError = {
+    afterChunks: clampCount(r.afterChunks, 0, STREAM_ERROR_MAX_AFTER),
+  }
+  if (typeof r.type === 'string' && r.type !== '') {
+    out.type = r.type.slice(0, LLM_MAX_ERROR_TYPE_CHARS)
+  }
+  if (typeof r.message === 'string' && r.message !== '') {
+    out.message = r.message.slice(0, LLM_MAX_ERROR_MESSAGE_CHARS)
+  }
+  return out
 }
 
 function usageCount(v: unknown): number | null {
@@ -291,6 +500,16 @@ export function normalizeLlmConfig(raw: unknown): MockLlmConfig {
     const output = usageCount(u.outputTokens)
     if (input !== null && output !== null) usage = { inputTokens: input, outputTokens: output }
   }
+  // Optional keys: present only when set, so a config without them stays byte-identical.
+  const extra: Pick<MockLlmConfig, 'chunkSize' | 'stopSequence' | 'streamError'> = {}
+  if (typeof r.chunkSize === 'number' && Number.isFinite(r.chunkSize)) {
+    extra.chunkSize = Math.min(LLM_MAX_CHUNK_CHARS, Math.max(1, Math.round(r.chunkSize)))
+  }
+  if (typeof r.stopSequence === 'string' && r.stopSequence !== '') {
+    extra.stopSequence = r.stopSequence.slice(0, LLM_MAX_STOP_SEQUENCE_CHARS)
+  }
+  const streamError = normalizeStreamError(r.streamError)
+  if (streamError) extra.streamError = streamError
   return {
     provider: LLM_PROVIDERS.includes(r.provider as MockLlmProvider)
       ? (r.provider as MockLlmProvider)
@@ -302,6 +521,7 @@ export function normalizeLlmConfig(raw: unknown): MockLlmConfig {
     stopReason,
     toolCalls,
     usage,
+    ...extra,
   }
 }
 
@@ -360,6 +580,33 @@ function toolCallError(raw: unknown, n: number): string | null {
   return null
 }
 
+function streamErrorError(raw: unknown): string | null {
+  if (raw === undefined) return null
+  const e = asRecord(raw)
+  if (!e) return 'Mid-stream error must be an object with afterChunks, type and message'
+  for (const k of Object.keys(e)) {
+    if (!(STREAM_ERROR_KEYS as readonly string[]).includes(k)) {
+      return `Mid-stream error: unknown field ${k}`
+    }
+  }
+  if (!isCount(e.afterChunks, STREAM_ERROR_MAX_AFTER)) {
+    return `Mid-stream error: afterChunks must be a whole number between 0 and ${STREAM_ERROR_MAX_AFTER}`
+  }
+  if (
+    e.type !== undefined &&
+    (typeof e.type !== 'string' || e.type.length > LLM_MAX_ERROR_TYPE_CHARS)
+  ) {
+    return `Mid-stream error: type must be text of at most ${LLM_MAX_ERROR_TYPE_CHARS} characters`
+  }
+  if (
+    e.message !== undefined &&
+    (typeof e.message !== 'string' || e.message.length > LLM_MAX_ERROR_MESSAGE_CHARS)
+  ) {
+    return `Mid-stream error: message must be text of at most ${LLM_MAX_ERROR_MESSAGE_CHARS} characters`
+  }
+  return null
+}
+
 /**
  * Strict save-time check of an `llm` response's settings. `null` /
  * `undefined` = unset (defaults) and is valid; missing keys take the
@@ -376,7 +623,14 @@ export function validateLlmConfig(raw: unknown): string | null {
     return 'Provider must be "openai" or "anthropic"'
   }
   if (r.chunking !== undefined && !LLM_CHUNKINGS.includes(r.chunking as MockLlmChunking)) {
-    return 'Chunking must be "word", "char" or "sentence"'
+    return 'Chunking must be "word", "char", "sentence", "fixed" or "whole"'
+  }
+  const size = r.chunkSize
+  if (
+    size !== undefined &&
+    (typeof size !== 'number' || !Number.isInteger(size) || size < 1 || size > LLM_MAX_CHUNK_CHARS)
+  ) {
+    return `Chunk size must be a whole number of characters between 1 and ${LLM_MAX_CHUNK_CHARS}`
   }
   const ms = r.chunkIntervalMs
   if (
@@ -386,8 +640,17 @@ export function validateLlmConfig(raw: unknown): string | null {
     return `Chunk interval must be a whole number of milliseconds between 0 and ${LLM_MAX_CHUNK_INTERVAL_MS}`
   }
   if (r.stopReason !== undefined && !LLM_STOP_REASONS.includes(r.stopReason as MockLlmStopReason)) {
-    return 'Stop reason must be "stop", "length" or "tool_calls"'
+    return 'Stop reason must be "stop", "length", "tool_calls", "content_filter" or "stop_sequence"'
   }
+  const seq = r.stopSequence
+  if (
+    seq !== undefined &&
+    (typeof seq !== 'string' || seq === '' || seq.length > LLM_MAX_STOP_SEQUENCE_CHARS)
+  ) {
+    return `Stop sequence must be text of 1 to ${LLM_MAX_STOP_SEQUENCE_CHARS} characters`
+  }
+  const streamErr = streamErrorError(r.streamError)
+  if (streamErr) return streamErr
   if (r.toolCalls !== undefined) {
     if (!Array.isArray(r.toolCalls)) return 'Tool calls must be a list'
     if (r.toolCalls.length > LLM_MAX_TOOL_CALLS) {

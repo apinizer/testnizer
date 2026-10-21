@@ -136,8 +136,8 @@ export interface CreateMockServerInput {
   corsEnabled?: boolean
   corsAllowOrigins?: string
   /**
-   * Fixed at creation — `UpdateMockServerInput` has no `kind` (issue #221).
    * Absent → 'http'; anything else that is not a known kind is rejected.
+   * Changeable later through `UpdateMockServerInput.kind` (issue #222).
    */
   kind?: MockServerKind
 }
@@ -240,6 +240,13 @@ export interface UpdateMockServerInput {
   proxyEnabled?: boolean
   proxyTarget?: string
   proxyRecord?: boolean
+  /**
+   * The "Server type" selector (issue #222). Presentation only — the engine
+   * never reads it, endpoints and responses are left as they are. Absent →
+   * the stored value is kept byte-for-byte (even an unknown one); an unknown
+   * value is rejected.
+   */
+  kind?: MockServerKind
 }
 
 export function updateMockServer(id: string, patch: UpdateMockServerInput): MockServerRow | null {
@@ -278,6 +285,7 @@ export function updateMockServer(id: string, patch: UpdateMockServerInput): Mock
       patch.proxyEnabled === undefined ? cur.proxy_enabled : patch.proxyEnabled ? 1 : 0,
     proxy_target: patch.proxyTarget ?? cur.proxy_target,
     proxy_record: patch.proxyRecord === undefined ? cur.proxy_record : patch.proxyRecord ? 1 : 0,
+    kind: patch.kind === undefined ? cur.kind : kindForCreate(patch.kind),
     updated_at: Date.now(),
   }
   const stored = storedServer(next, raw.auth_config)
@@ -291,7 +299,7 @@ export function updateMockServer(id: string, patch: UpdateMockServerInput): Mock
          cors_max_age=@cors_max_age, auth_config=@auth_config, failure_config=@failure_config,
          rate_limit_config=@rate_limit_config, echo_enabled=@echo_enabled,
          proxy_enabled=@proxy_enabled, proxy_target=@proxy_target, proxy_record=@proxy_record,
-         updated_at=@updated_at
+         kind=@kind, updated_at=@updated_at
        WHERE id=@id`,
     )
     .run(stored)

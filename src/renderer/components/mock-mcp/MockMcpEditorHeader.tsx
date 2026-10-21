@@ -8,11 +8,15 @@ import { openMockInMcpTab } from './mock-mcp-tabs'
 import { GhostButton, PrimaryButton } from './ui'
 import { ERA_KEYS, sortEras } from './mock-mcp-format'
 import MockEditorHeader, { MockStartStopButton, MockUrlLine } from '../mock/MockEditorHeader'
+import { useStartThenOpenGate } from '../mock/start-then-open-gate'
+import { startThenOpen } from '../mock/mock-open-in-tab'
 
 /**
  * Editor header: name + live status, connect URL(s), Start/Stop, Open in MCP
  * tab, and Save / Discard for the draft. URLs and "Open in MCP" use the SAVED
- * config (what the live server runs), not unsaved edits.
+ * config (what the live server runs), not unsaved edits. Stopped → "Start &
+ * open in MCP tab": starts first and opens only on success, like the SSE / AI
+ * mocks (issue #222, `useStartThenOpenGate`).
  */
 export default function MockMcpEditorHeader({
   server,
@@ -47,13 +51,19 @@ export default function MockMcpEditorHeader({
   }
   const eras = running ? sortEras(live.eras ?? []) : []
 
+  const openGate = useStartThenOpenGate(live.status, () => startServer(server.id), {
+    open: 'mockMcp.openInMcp',
+    startAndOpen: 'mockMcp.startAndOpenInMcp',
+  })
   const openInMcp = (): void => {
-    if (!running) toast.info(t('mockMcp.notRunningHint'))
-    openMockInMcpTab({
-      name: server.name,
-      url,
-      bearerToken: server.authMode === 'bearer' ? server.bearerToken : undefined,
-    })
+    void startThenOpen(openGate.gate, () =>
+      openMockInMcpTab({
+        name: server.name,
+        // Read after the start: the live URL the server just reported.
+        url: connectUrl(server, useMockMcpStore.getState().stateByServer[server.id]?.url),
+        bearerToken: server.authMode === 'bearer' ? server.bearerToken : undefined,
+      }),
+    )
   }
 
   return (
@@ -90,9 +100,14 @@ export default function MockMcpEditorHeader({
               {t('mockMcp.eras.notify')}
             </GhostButton>
           )}
-          <GhostButton data-testid="mock-mcp-open-in-mcp" onClick={openInMcp}>
+          <GhostButton
+            data-testid="mock-mcp-open-in-mcp"
+            onClick={openInMcp}
+            disabled={openGate.starting}
+            title={openGate.label}
+          >
             <ExternalLink size={12} />
-            {t('mockMcp.openInMcp')}
+            {openGate.label}
           </GhostButton>
           {dirty && (
             <GhostButton

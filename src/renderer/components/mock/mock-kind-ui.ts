@@ -30,6 +30,22 @@ export function bodyTypeOptions(kind: unknown, current: MockBodyType): MockBodyT
   return list
 }
 
+/** Whether a server of `kind` offers `bodyType` in the response editor's list. */
+export function kindOffersBodyType(kind: unknown, bodyType: MockBodyType): boolean {
+  return BODY_TYPES[normalizeMockServerKind(kind)].includes(bodyType)
+}
+
+/**
+ * The body types of `bodyTypes` a server of `kind` does not offer — what the
+ * "Server type" change warns about (issue #222). Sorted, each listed once.
+ */
+export function bodyTypesNotOffered(
+  kind: unknown,
+  bodyTypes: readonly MockBodyType[],
+): MockBodyType[] {
+  return [...new Set(bodyTypes.filter((b) => !kindOffersBodyType(kind, b)))].sort()
+}
+
 /** OpenAPI / Postman import and "Serve JWKS" only make sense on an HTTP server. */
 export function showsHttpEndpointTools(kind: unknown): boolean {
   return normalizeMockServerKind(kind) === 'http'

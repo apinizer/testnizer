@@ -365,13 +365,14 @@ describe('MockServerEditor — AI kind (issue #221, Faz 2b)', () => {
     }
   })
 
-  it('AI without a chat endpoint (Anthropic only): the header button is disabled and says why', async () => {
+  it('AI without a chat endpoint (Anthropic only): the Anthropic button replaces the OpenAI one', async () => {
     await mount(AI_SERVER, {
       endpoints: [httpEndpoint({ serverId: 'srv-1', method: 'POST', path: '/v1/messages' })],
     })
-    const open = screen.getByTestId('mock-open-in-ai-chat')
-    expect(open).toBeDisabled()
-    expect(open.getAttribute('title')).toBe('Add POST /v1/chat/completions first')
+    // Issue #222: no disabled "Add POST /v1/chat/completions first" on an
+    // Anthropic server — "Open in AI Chat (Anthropic)" instead.
+    expect(screen.queryByTestId('mock-open-in-ai-chat')).toBeNull()
+    expect(screen.getByTestId('mock-open-in-ai-chat-anthropic')).toBeEnabled()
     expect(screen.getByTestId('mock-endpoint-path')).toHaveValue('/v1/messages')
   })
 

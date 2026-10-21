@@ -504,14 +504,68 @@ export function isTruncationEvent(provider: AiProvider, parsed: unknown): boolea
 
 const DONE_TOKEN = '[DONE]'
 
-/** An LLM call that got an HTTP error status (metrics keep the status, issue #198). */
+/**
+ * An LLM call that failed with a provider error (metrics keep the status,
+ * issue #198): an HTTP error status, or — `midStream` — an error event the
+ * provider sent after a 2xx response had started streaming (issue #222).
+ * `errorType` is the provider's error type when it sent one
+ * (`overloaded_error`, `server_error`…).
+ */
 export class AiHttpError extends Error {
   readonly status: number
-  constructor(status: number, message: string) {
+  readonly errorType?: string
+  readonly midStream: boolean
+  constructor(
+    status: number,
+    message: string,
+    opts: { errorType?: string; midStream?: boolean } = {},
+  ) {
     super(message)
     this.name = 'AiHttpError'
     this.status = status
+    if (opts.errorType !== undefined) this.errorType = opts.errorType
+    this.midStream = opts.midStream === true
   }
+}
+
+/** The SDKs' own text for an error event without a message. */
+const STREAM_ERROR_FALLBACK = 'An error occurred during streaming'
+
+/**
+ * The error a streamed payload carries, or null — the rules of the official
+ * SDKs, so AI Chat stops where they would raise (issue #222):
+ *  - Anthropic: an `event: error` (anthropic-sdk-typescript
+ *    `core/streaming.ts`: `if (sse.event === 'error') throw new APIError`),
+ *    data `{"type":"error","error":{type, message}}` — also recognised by
+ *    its `type` when the event line is missing;
+ *  - OpenAI-compatible: a payload with a truthy `error` (openai-python
+ *    `_streaming.py`: `if is_mapping(data) and data.get("error"): raise
+ *    APIError`), which also covers gateways that add `choices` with
+ *    `finish_reason: 'error'` to it (OpenRouter), or an `event: error`.
+ */
+export function streamErrorOf(
+  provider: AiProvider,
+  event: string | undefined,
+  parsed: unknown,
+): { type?: string; message: string } | null {
+  const obj = recOf(parsed)
+  const isError =
+    event === 'error' || (provider === 'anthropic' ? obj?.type === 'error' : !!obj?.error)
+  if (!isError) return null
+  const err = recOf(obj?.error)
+  const message =
+    typeof err?.message === 'string' && err.message !== ''
+      ? err.message
+      : typeof obj?.error === 'string' && obj.error !== ''
+        ? obj.error
+        : STREAM_ERROR_FALLBACK
+  const type =
+    typeof err?.type === 'string' && err.type !== ''
+      ? err.type
+      : typeof err?.code === 'string' && err.code !== ''
+        ? err.code
+        : undefined
+  return type !== undefined ? { type, message } : { message }
 }
 
 /** Token usage of one LLM call, as the provider reported it. */
@@ -827,11 +881,14 @@ export async function* streamChatRound(
         buffer = buffer.slice(sepIdx + 2)
         sepIdx = buffer.indexOf('\n\n')
 
-        // Each event is one or more lines; we only care about `data: ...`
+        // Each event is one or more lines: `data: ...` and the `event:` name.
         const dataLines: string[] = []
+        let eventName: string | undefined
         for (const line of rawEvent.split('\n')) {
           if (line.startsWith('data:')) {
             dataLines.push(line.slice(5).trimStart())
+          } else if (line.startsWith('event:')) {
+            eventName = line.slice(6).trim()
           }
         }
         if (dataLines.length === 0) continue
@@ -846,9 +903,24 @@ export async function* streamChatRound(
         try {
           parsed = JSON.parse(dataText)
         } catch {
+          // A named error event with a non-JSON body still ends the call.
+          if (eventName === 'error') parsed = { error: { message: dataText } }
           // Anthropic sometimes sends non-JSON `event:` lines we already filtered;
           // skip anything that isn't valid JSON.
-          continue
+          else continue
+        }
+
+        // A provider error after the stream started (issue #222): stop here,
+        // like the SDKs do. The text already yielded stays with the caller.
+        const streamError = streamErrorOf(provider, eventName, parsed)
+        if (streamError) {
+          throw new AiHttpError(
+            response.status,
+            streamError.type
+              ? `Mid-stream error (${streamError.type}): ${streamError.message}`
+              : `Mid-stream error: ${streamError.message}`,
+            { ...(streamError.type ? { errorType: streamError.type } : {}), midStream: true },
+          )
         }
 
         const fed = parser.feed(parsed)

@@ -146,7 +146,9 @@ describe('openMockInAiChatTab (§D.3.5)', () => {
     expect(useAiChatStore.getState().apiKey).toBe('')
     await settle()
     expect(useAiChatStore.getState().apiKey).toBe('')
-    expect(aiChatApi.getKey).toHaveBeenCalledWith('custom:http://127.0.0.1:3300')
+    // Issue #222: a tab opened from a mock never asks main for a saved key.
+    expect(useAiChatStore.getState().savedKeyDisabled).toBe(true)
+    expect(aiChatApi.getKey).not.toHaveBeenCalledWith('custom:http://127.0.0.1:3300')
   })
 
   it('a key carried in memory to the OpenAI origin does not hop to the mock', async () => {

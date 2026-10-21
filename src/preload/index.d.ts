@@ -2392,7 +2392,7 @@ interface MockServerCreatePayload {
   basePath?: string
   description?: string
   autoStart?: boolean
-  /** Fixed at creation (issue #221); absent → 'http'. */
+  /** Absent → 'http'; changeable later via `update` (issue #222). */
   kind?: MockServerKind
 }
 

@@ -59,7 +59,7 @@ describe('frame estimate (pure)', () => {
     '   leading and trailing   ',
   ]
   it('countChunks equals chunkText(...).length for every mode', () => {
-    for (const mode of ['word', 'char', 'sentence'] as const) {
+    for (const mode of ['word', 'char', 'sentence', 'fixed', 'whole'] as const) {
       for (const t of samples) expect(countChunks(t, mode)).toBe(chunkText(t, mode).length)
     }
   })
@@ -71,7 +71,7 @@ describe('frame estimate (pure)', () => {
 
   it('llmStreamFrameCount equals the encoded event count (both providers, tool calls, usage)', () => {
     for (const provider of ['openai', 'anthropic'] as const) {
-      for (const chunking of ['word', 'char', 'sentence'] as const) {
+      for (const chunking of ['word', 'char', 'sentence', 'fixed', 'whole'] as const) {
         for (const text of ['', 'Hi there. Bye!', 'Ünïcödé 🙂 text']) {
           for (const toolCalls of [[], [{ name: 'echo', arguments: { text: 'hello world' } }]]) {
             for (const includeUsage of [false, true]) {
