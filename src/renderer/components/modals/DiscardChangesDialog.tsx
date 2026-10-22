@@ -51,10 +51,10 @@ export default function DiscardChangesDialog({
             <AlertTriangle size={16} aria-hidden="true" />
           </div>
           <div className="min-w-0 flex-1">
-            <h3 className="text-[13px] font-semibold text-[var(--text)]">
+            <h3 className="text-sm font-semibold text-[var(--text)]">
               {t('gitCommit.discardTitle')}
             </h3>
-            <p data-testid="git-discard-body" className="mt-1 text-[13px] text-[var(--muted)]">
+            <p data-testid="git-discard-body" className="mt-1 text-sm text-[var(--muted)]">
               {body}
             </p>
           </div>
@@ -65,7 +65,7 @@ export default function DiscardChangesDialog({
             type="button"
             onClick={onCancel}
             data-testid="git-discard-cancel"
-            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] hover:opacity-80"
+            className="cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-3.5 py-1.5 text-sm font-medium text-[var(--text)] hover:opacity-80"
           >
             {t('common.cancel')}
           </button>
@@ -73,7 +73,7 @@ export default function DiscardChangesDialog({
             type="button"
             onClick={onConfirm}
             data-testid="git-discard-confirm"
-            className="cursor-pointer rounded-md bg-[var(--red)] px-3.5 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
+            className="cursor-pointer rounded-md bg-[var(--red)] px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90"
           >
             {confirm}
           </button>

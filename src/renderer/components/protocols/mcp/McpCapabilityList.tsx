@@ -83,14 +83,16 @@ export default function McpCapabilityList() {
             aria-selected={tab === id}
             data-testid={`mcp-cap-tab-${id}`}
             onClick={() => setTab(id)}
-            className={`flex flex-1 cursor-pointer items-center justify-center gap-1 border-x-0 border-t-0 border-b-2 bg-transparent px-1 py-2 text-[12px] font-medium ${
+            // Base size, 600 active / 400 idle — the sibling config / result
+            // tab strips (review #6: this strip stayed 12px at the 16px setting).
+            className={`flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 whitespace-nowrap border-x-0 border-t-0 border-b-2 bg-transparent px-1 py-2 text-sm ${
               tab === id
-                ? 'border-[var(--accent)] text-[var(--accent-text)]'
-                : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
+                ? 'border-[var(--accent)] font-semibold text-[var(--accent-text)]'
+                : 'border-transparent font-normal text-[var(--muted)] hover:text-[var(--text)]'
             }`}
           >
-            {labels[id]}
-            <span className="rounded-full bg-[var(--surface)] px-1.5 text-[10px] text-[var(--muted)]">
+            <span className="min-w-0 truncate">{labels[id]}</span>
+            <span className="shrink-0 rounded-full bg-[var(--surface)] px-1.5 text-[10px] text-[var(--muted)]">
               {counts[id]}
             </span>
           </button>
@@ -104,7 +106,7 @@ export default function McpCapabilityList() {
           onChange={(e) => setSearch(e.target.value)}
           data-testid="mcp-search"
           placeholder={t('mcp.list.search')}
-          className="min-w-0 flex-1 border-none bg-transparent text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)]"
+          className="min-w-0 flex-1 border-none bg-transparent text-sm text-[var(--text)] outline-none placeholder:text-[var(--placeholder)]"
         />
       </div>
       <div className="flex-1 overflow-y-auto">

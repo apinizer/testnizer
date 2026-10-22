@@ -36,8 +36,14 @@ vi.mock('../../../src/main/db/database', () => ({
 }))
 
 vi.mock('../../../src/main/lib/secure-storage', () => ({
-  encryptSecret: (s: string | null | undefined) => (s ? `enc:${s}` : null),
+  // A consistent stand-in for the safeStorage envelope: idempotent like the
+  // real `encryptSecret`, recognised by `isEncryptedSecret` (issue #239 —
+  // values marked secret are sealed on every write).
+  encryptSecret: (s: string | null | undefined) =>
+    s ? (s.startsWith('enc:') ? s : `enc:${s}`) : null,
   decryptSecret: (s: string | null | undefined) => (s ? s.replace(/^enc:/, '') : null),
+  isEncryptedSecret: (s: unknown): s is string => typeof s === 'string' && s.startsWith('enc:'),
+  isEncryptionAvailable: () => true,
 }))
 
 vi.mock('../../../src/main/ipc/import-export.handler', () => ({
@@ -143,6 +149,10 @@ function seed(db: Database.Database): Seeded {
   return s
 }
 
+/** A sealed mock auth column read back as the plaintext object (issue #239). */
+const openAuth = (json: unknown): unknown =>
+  JSON.parse(String(json), (_k, v: unknown) => (typeof v === 'string' ? v.replace(/^enc:/, '') : v))
+
 function mockGraphOf(
   db: Database.Database,
   projectId: string,
@@ -190,9 +200,10 @@ describe('Duplicate Project copies HTTP mock servers (issue #190)', () => {
       name: 'Orders mock',
       port: 4701,
       base_path: '/api',
-      // Local copy: secrets are NOT stripped (issue #177 strips files only).
-      auth_config: BEARER_AUTH,
     })
+    // Local copy: secrets are NOT stripped (issue #177 strips files only) —
+    // they are sealed at rest (issue #239; the mock envelope is `enc:`).
+    expect(openAuth(server.auth_config)).toEqual(JSON.parse(BEARER_AUTH))
 
     expect(endpoints).toHaveLength(1)
     expect(endpoints[0].id).not.toBe(s.endpointId)
@@ -201,8 +212,8 @@ describe('Duplicate Project copies HTTP mock servers (issue #190)', () => {
       method: 'POST',
       path: '/orders',
       priority: 5,
-      auth_override: BASIC_OVERRIDE,
     })
+    expect(openAuth(endpoints[0].auth_override)).toEqual(JSON.parse(BASIC_OVERRIDE))
 
     expect(responses.map((r) => r.endpoint_id)).toEqual([endpoints[0].id, endpoints[0].id])
     expect(responses.map((r) => [r.name, r.status_code, r.body])).toEqual([

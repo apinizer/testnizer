@@ -5,6 +5,7 @@ import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import { dismissOverlays } from '../../helpers/ui/bootstrap'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
+import { persistedLocale, restoreEnglishLocale } from '../../helpers/ui/locale'
 
 uiTest.describe('Tur1 — Settings [MST-191, MST-192]', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -47,12 +48,24 @@ uiTest.describe('Tur1 — Settings [MST-191, MST-192]', () => {
   })
 
   uiTest('MST-192 locale TR switch shows Turkish labels', async ({ window }) => {
-    await pressModShortcut(window, ',')
-    await expect(window.getByTestId('settings-modal')).toBeVisible()
-    await window.locator('#settings-modal select, [id^="settings-lang"]').first().selectOption('tr').catch(async () => {
-      await window.getByRole('combobox').first().selectOption('tr')
-    })
-    await window.getByRole('button', { name: /Save|Kaydet/i }).click()
-    await expect(window.getByTestId('nav-apis')).toBeVisible()
+    try {
+      await pressModShortcut(window, ',')
+      await expect(window.getByTestId('settings-modal')).toBeVisible()
+      // The language select is the modal's first <select>. The old selector
+      // (`#settings-modal select, [id^="settings-lang"]`) matched nothing — the
+      // modal has a data-testid, not an id, and the select's id comes from
+      // useId() — so every run sat out the 30 s action timeout before falling
+      // back to the page's first combobox.
+      await window.getByTestId('settings-modal').locator('select').first().selectOption('tr')
+      await window.getByRole('button', { name: /Save|Kaydet/i }).click()
+      await expect(window.getByTestId('nav-apis')).toBeVisible()
+      await expect.poll(() => persistedLocale(window), { timeout: 5_000 }).toBe('tr')
+    } finally {
+      // The afterEach's settings-modal reset swallows its own failures; this
+      // one asserts the persisted locale, so a TR leak fails HERE instead of
+      // in a later spec's English-text helper (issue #248: env.ts matches
+      // 'Environment name' / 'Globals' / 'Active').
+      await restoreEnglishLocale(window)
+    }
   })
 })

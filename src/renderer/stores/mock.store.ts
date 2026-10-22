@@ -30,7 +30,7 @@ export interface MockState {
     port: number
     basePath?: string
     description?: string
-    /** Fixed at creation (issue #221); absent = `http`. */
+    /** Absent = `http`; changeable later via `updateServer` (issue #222). */
     kind?: MockServerKind
   }) => Promise<MockServer | null>
   updateServer: (id: string, patch: Partial<MockServer>) => Promise<void>

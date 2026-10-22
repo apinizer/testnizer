@@ -217,6 +217,11 @@ const api = {
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('globalVariable:delete', id),
   },
 
+  // ─── Secret storage status (issue #239) ──────────────────
+  secureStorage: {
+    status: (): Promise<unknown> => ipcRenderer.invoke('secureStorage:status'),
+  },
+
   // ─── History ─────────────────────────────────────────────
   history: {
     list: (options: unknown): Promise<unknown> => ipcRenderer.invoke('history:list', options),

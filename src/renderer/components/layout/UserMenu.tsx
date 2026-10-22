@@ -20,6 +20,7 @@ export default function UserMenu() {
   const hasPasswordSet = useAuthStore((s) => s.hasPasswordSet)
   const logout = useAuthStore((s) => s.logout)
   const setShowAboutModal = useUIStore((s) => s.setShowAboutModal)
+  const openSettingsAt = useUIStore((s) => s.openSettingsAt)
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -118,11 +119,13 @@ export default function UserMenu() {
               style={itemStyle}
               onMouseEnter={(e) => (e.currentTarget.style.background = T.surface)}
               onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              data-testid="user-menu-set-password"
               onClick={() => {
-                // Returns to the auth screen; with no password set that screen
-                // is the set-password step. Data stays in the local DB.
+                // Review #13 sibling: the same inline form as Settings → App
+                // password (it used to sign out to the start screen without
+                // a word). The session continues.
                 setOpen(false)
-                void logout()
+                openSettingsAt('appPasswordSet')
               }}
             >
               <KeyRound size={13} aria-hidden="true" />

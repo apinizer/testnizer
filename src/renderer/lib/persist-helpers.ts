@@ -31,6 +31,29 @@ export function saveJson(key: string, value: unknown): void {
   }
 }
 
+/**
+ * The tabs bound to a saved row (endpoint / saved request / suite item) in the
+ * stored tab sets — the open tabs and every project's stashed set — as read
+ * at startup. Raw reads: the stores that own those keys import the per-tab
+ * stores that call this. Used to find a tab whose per-tab slice is missing
+ * from a store's snapshot (it is then reloaded from its row).
+ */
+export function storedBoundTabs(): Array<{ id: string; protocol?: string }> {
+  const out: Array<{ id: string; protocol?: string }> = []
+  const consider = (tabs: unknown): void => {
+    if (!Array.isArray(tabs)) return
+    for (const t of tabs as Array<Record<string, unknown> | null>) {
+      if (!t || typeof t.id !== 'string') continue
+      if (!(t.endpointId || t.savedRequestId || t.testSuiteItemId)) continue
+      out.push({ id: t.id, protocol: typeof t.protocol === 'string' ? t.protocol : undefined })
+    }
+  }
+  consider(loadJson<{ tabs?: unknown }>('testnizer-tabs')?.tabs)
+  const byProject = loadJson<Record<string, { tabs?: unknown } | null>>('testnizer-tabs-by-project')
+  for (const snap of Object.values(byProject ?? {})) consider(snap?.tabs)
+  return out
+}
+
 export function mapToEntries<K, V>(m: Map<K, V> | undefined | null): [K, V][] {
   if (!m) return []
   return Array.from(m.entries())

@@ -4,6 +4,15 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import {
+  credentialRows,
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
+import { urlCredentialText } from '../lib/credential-text'
 import { makeId } from '../lib/utils'
 import { wsMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
@@ -21,7 +30,7 @@ function getWsApi() {
 }
 
 /** Snapshot of WebSocket state for per-tab caching. */
-interface TabWsState {
+interface TabWsState extends WithheldState {
   url: string
   customHeaders: KeyValuePair[]
   composerContent: string
@@ -73,6 +82,7 @@ interface WebSocketStore extends TabWsState {
 
 function emptyTabState(): TabWsState {
   return {
+    withheldCredentials: [],
     url: 'wss://echo.websocket.org',
     customHeaders: [defaultKv()],
     composerContent: '{\n  "type": "ping",\n  "payload": "hello"\n}',
@@ -90,6 +100,7 @@ function emptyTabState(): TabWsState {
 
 function extractState(s: WebSocketStore): TabWsState {
   return {
+    withheldCredentials: s.withheldCredentials,
     url: s.url,
     customHeaders: s.customHeaders,
     composerContent: s.composerContent,
@@ -112,10 +123,22 @@ function extractState(s: WebSocketStore): TabWsState {
  * localStorage; they stay in memory for the session. The connection does not
  * survive a reload, so it is stored as disconnected.
  */
+/**
+ * Issue #244: credential-named WebSocket custom headers rows never hold a literal value in
+ * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
+ * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
+ */
+// Issue #247: `?token=…` / `user:pass@` in the connection URL too.
+export const WS_CREDENTIALS: CredentialSpec = {
+  fields: [],
+  rows: [credentialRows('customHeaders')],
+  texts: [urlCredentialText('url')],
+}
+
 function persistableWs(st: TabWsState): TabWsState {
   const idle = emptyTabState()
   return {
-    ...st,
+    ...withholdCredentials(st, WS_CREDENTIALS),
     messages: idle.messages,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -146,6 +169,8 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
   },
 
   connect: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { url, customHeaders } = get()
     if (!url.trim()) return
     // Issue #195: a History mask left in a credential field is never sent.
@@ -511,3 +536,5 @@ attachTabbedPersist(
   (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
   persistableWs,
 )
+// Issue #244: a user edit to a withheld value drops its marker.
+trackCredentialEdits(useWebSocketStore, WS_CREDENTIALS)

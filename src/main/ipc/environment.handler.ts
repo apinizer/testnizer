@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import * as envRepo from '../db/environment.repo'
+import { secretStorageStatus } from '../lib/secret-at-rest'
 
 export function registerEnvironmentHandlers(): void {
   // ─── Environments ────────────────────────────────────────
@@ -235,6 +236,17 @@ export function registerEnvironmentHandlers(): void {
       }
     },
   )
+
+  // Issue #239: are values marked secret really encrypted at rest? false when
+  // the OS keychain is unavailable (they are then stored unencrypted — the
+  // app keeps working, the UI says so).
+  ipcMain.handle('secureStorage:status', async () => {
+    try {
+      return { success: true, data: secretStorageStatus() }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
 
   ipcMain.handle('globalVariable:delete', async (_event, id: string) => {
     try {

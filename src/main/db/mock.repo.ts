@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
 import { isMockServerKind, type MockServerKind } from '../../shared/mock-kind'
+import { openMockAuthJson, sealMockAuthJson } from '../lib/secret-at-rest'
 
 // ─── Row types (raw SQLite shape) ────────────────────────────────
 
@@ -30,6 +31,8 @@ export interface MockServerRow {
   kind: string
   created_at: number
   updated_at: number
+  /** Not a column: a credential in `auth_config` cannot be decrypted here (issue #239). */
+  authDecryptFailed?: true
 }
 
 export interface MockEndpointRow {
@@ -46,6 +49,61 @@ export interface MockEndpointRow {
   schema_validation: string
   created_at: number
   updated_at: number
+  /** Not a column: a credential in `auth_override` cannot be decrypted here (issue #239). */
+  authDecryptFailed?: true
+}
+
+/*
+ * Mock auth credentials are encrypted at rest (issue #239): only the secret
+ * FIELDS inside the auth JSON (`secret-at-rest.ts`), so the column stays
+ * JSON. Every read below opens them, every write seals them — the handler
+ * (renderer view) and the engine (`getMockServerSnapshot`) see plaintext.
+ */
+function openServer(row: MockServerRow): MockServerRow {
+  const auth = openMockAuthJson(row.auth_config)
+  const out: MockServerRow = { ...row, auth_config: auth.json }
+  if (auth.failed) out.authDecryptFailed = true
+  return out
+}
+
+function openEndpoint(row: MockEndpointRow): MockEndpointRow {
+  if (!row.auth_override) return row
+  const auth = openMockAuthJson(row.auth_override)
+  const out: MockEndpointRow = { ...row, auth_override: auth.json }
+  if (auth.failed) out.authDecryptFailed = true
+  return out
+}
+
+/** The bind parameters for a server row: credentials sealed, no non-column keys. */
+function storedServer(
+  row: MockServerRow,
+  previousAuth?: string,
+): Omit<MockServerRow, 'authDecryptFailed'> {
+  const { authDecryptFailed: _flag, ...rest } = row
+  return { ...rest, auth_config: sealMockAuthJson(row.auth_config, previousAuth) }
+}
+
+function storedEndpoint(
+  row: MockEndpointRow,
+  previousAuth?: string,
+): Omit<MockEndpointRow, 'authDecryptFailed'> {
+  const { authDecryptFailed: _flag, ...rest } = row
+  return {
+    ...rest,
+    auth_override: row.auth_override ? sealMockAuthJson(row.auth_override, previousAuth) : '',
+  }
+}
+
+function rawServer(id: string): MockServerRow | undefined {
+  return getDb().prepare('SELECT * FROM mock_servers WHERE id = ?').get(id) as
+    | MockServerRow
+    | undefined
+}
+
+function rawEndpoint(id: string): MockEndpointRow | undefined {
+  return getDb().prepare('SELECT * FROM mock_endpoints WHERE id = ?').get(id) as
+    | MockEndpointRow
+    | undefined
 }
 
 export interface MockResponseRow {
@@ -78,8 +136,8 @@ export interface CreateMockServerInput {
   corsEnabled?: boolean
   corsAllowOrigins?: string
   /**
-   * Fixed at creation — `UpdateMockServerInput` has no `kind` (issue #221).
    * Absent → 'http'; anything else that is not a known kind is rejected.
+   * Changeable later through `UpdateMockServerInput.kind` (issue #222).
    */
   kind?: MockServerKind
 }
@@ -146,22 +204,20 @@ export function createMockServer(input: CreateMockServerInput): MockServerRow {
          @auth_config, @failure_config, @rate_limit_config, @echo_enabled,
          @proxy_enabled, @proxy_target, @proxy_record, @kind, @created_at, @updated_at)`,
     )
-    .run(row)
+    .run(storedServer(row))
   return row
 }
 
 export function listMockServers(projectId: string): MockServerRow[] {
-  return getDb()
+  const rows = getDb()
     .prepare('SELECT * FROM mock_servers WHERE project_id = ? ORDER BY created_at ASC')
     .all(projectId) as MockServerRow[]
+  return rows.map(openServer)
 }
 
 export function getMockServer(id: string): MockServerRow | null {
-  return (
-    (getDb().prepare('SELECT * FROM mock_servers WHERE id = ?').get(id) as
-      | MockServerRow
-      | undefined) ?? null
-  )
+  const row = rawServer(id)
+  return row ? openServer(row) : null
 }
 
 export interface UpdateMockServerInput {
@@ -184,11 +240,19 @@ export interface UpdateMockServerInput {
   proxyEnabled?: boolean
   proxyTarget?: string
   proxyRecord?: boolean
+  /**
+   * The "Server type" selector (issue #222). Presentation only — the engine
+   * never reads it, endpoints and responses are left as they are. Absent →
+   * the stored value is kept byte-for-byte (even an unknown one); an unknown
+   * value is rejected.
+   */
+  kind?: MockServerKind
 }
 
 export function updateMockServer(id: string, patch: UpdateMockServerInput): MockServerRow | null {
-  const cur = getMockServer(id)
-  if (!cur) return null
+  const raw = rawServer(id)
+  if (!raw) return null
+  const cur = openServer(raw)
   const next: MockServerRow = {
     ...cur,
     name: patch.name ?? cur.name,
@@ -221,8 +285,10 @@ export function updateMockServer(id: string, patch: UpdateMockServerInput): Mock
       patch.proxyEnabled === undefined ? cur.proxy_enabled : patch.proxyEnabled ? 1 : 0,
     proxy_target: patch.proxyTarget ?? cur.proxy_target,
     proxy_record: patch.proxyRecord === undefined ? cur.proxy_record : patch.proxyRecord ? 1 : 0,
+    kind: patch.kind === undefined ? cur.kind : kindForCreate(patch.kind),
     updated_at: Date.now(),
   }
+  const stored = storedServer(next, raw.auth_config)
   getDb()
     .prepare(
       `UPDATE mock_servers SET
@@ -233,11 +299,11 @@ export function updateMockServer(id: string, patch: UpdateMockServerInput): Mock
          cors_max_age=@cors_max_age, auth_config=@auth_config, failure_config=@failure_config,
          rate_limit_config=@rate_limit_config, echo_enabled=@echo_enabled,
          proxy_enabled=@proxy_enabled, proxy_target=@proxy_target, proxy_record=@proxy_record,
-         updated_at=@updated_at
+         kind=@kind, updated_at=@updated_at
        WHERE id=@id`,
     )
-    .run(next)
-  return next
+    .run(stored)
+  return openServer(stored)
 }
 
 export function deleteMockServer(id: string): boolean {
@@ -286,22 +352,20 @@ export function createMockEndpoint(input: CreateMockEndpointInput): MockEndpoint
        VALUES (@id, @server_id, @method, @path, @path_mode, @description, @priority,
          @enabled, @sort_order, @auth_override, @schema_validation, @created_at, @updated_at)`,
     )
-    .run(row)
+    .run(storedEndpoint(row))
   return row
 }
 
 export function listMockEndpoints(serverId: string): MockEndpointRow[] {
-  return getDb()
+  const rows = getDb()
     .prepare('SELECT * FROM mock_endpoints WHERE server_id = ? ORDER BY sort_order, created_at')
     .all(serverId) as MockEndpointRow[]
+  return rows.map(openEndpoint)
 }
 
 export function getMockEndpoint(id: string): MockEndpointRow | null {
-  return (
-    (getDb().prepare('SELECT * FROM mock_endpoints WHERE id = ?').get(id) as
-      | MockEndpointRow
-      | undefined) ?? null
-  )
+  const row = rawEndpoint(id)
+  return row ? openEndpoint(row) : null
 }
 
 export interface UpdateMockEndpointInput {
@@ -321,8 +385,9 @@ export function updateMockEndpoint(
   id: string,
   patch: UpdateMockEndpointInput,
 ): MockEndpointRow | null {
-  const cur = getMockEndpoint(id)
-  if (!cur) return null
+  const raw = rawEndpoint(id)
+  if (!raw) return null
+  const cur = openEndpoint(raw)
   const next: MockEndpointRow = {
     ...cur,
     method: patch.method ?? cur.method,
@@ -346,6 +411,7 @@ export function updateMockEndpoint(
           : JSON.stringify(patch.schemaValidation),
     updated_at: Date.now(),
   }
+  const stored = storedEndpoint(next, raw.auth_override)
   getDb()
     .prepare(
       `UPDATE mock_endpoints SET
@@ -355,8 +421,8 @@ export function updateMockEndpoint(
          updated_at=@updated_at
        WHERE id=@id`,
     )
-    .run(next)
-  return next
+    .run(stored)
+  return openEndpoint(stored)
 }
 
 export function deleteMockEndpoint(id: string): boolean {

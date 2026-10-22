@@ -91,14 +91,20 @@ describe('error line', () => {
 })
 
 describe('layout at a 1200px window (wave-1 regression)', () => {
-  it('the URL grows and never shrinks below 280px; the row wraps instead of clipping', () => {
+  it('the URL grows and keeps a floor; the row wraps instead of clipping', () => {
     render(<McpConnectionBar />)
     const row = screen.getByTestId('mcp-connection-row')
     expect(row.className).toMatch(/(^|\s)flex-wrap(\s|$)/)
     expect(row.className).not.toContain('flex-nowrap')
     const field = screen.getByTestId('mcp-url').closest('fieldset') as HTMLElement
     expect(field.className).toMatch(/(^|\s)flex-1(\s|$)/)
-    expect(field.className).toContain('min-w-[280px]')
+    // Review #5: the shared bar floor (`connection-bar-ui.ts`) — a rem value so
+    // it scales with the font size; the URL + Connect + config group wraps as
+    // a unit instead of the URL (or the icons) wrapping alone.
+    expect(field.className).toContain('min-w-[10rem]')
+    const group = screen.getByTestId('mcp-connection-target')
+    expect(group).toContainElement(screen.getByTestId('mcp-connect'))
+    expect(group.className).not.toMatch(/(^|\s)flex-wrap(\s|$)/)
   })
 
   it('Paste / Export config are icon buttons in row 1 with accessible names', () => {

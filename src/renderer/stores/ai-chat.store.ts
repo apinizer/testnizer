@@ -324,6 +324,15 @@ interface TabAiChatState {
   conversations: AiConversationSummary[]
   /** The list / current conversation were read from the database for this tab. */
   conversationLoaded: boolean
+  /**
+   * The saved provider key is never loaded into this tab (issue #222): set
+   * when a mock server opens the tab ("Open in AI Chat"), so the user's real
+   * OpenAI / Anthropic key is never sent to the mock. A key typed into the
+   * tab is used, in memory only (`tabLocalKeys`) — never persisted, never
+   * written under the provider's scope. Kept in the snapshot and saved with
+   * the request, so a restart or a reopen does not bring the saved key back.
+   */
+  savedKeyDisabled: boolean
 }
 
 /**
@@ -342,6 +351,8 @@ interface AiChatStore extends TabAiChatState {
   setProvider: (provider: AiProvider) => void
   setCustomUrl: (url: string) => void
   setApiKey: (key: string) => void
+  /** Turn `savedKeyDisabled` on (`true`) or back off — off loads the saved key again. */
+  setSavedKeyDisabled: (disabled: boolean) => void
   setModel: (model: string) => void
   setSystemPrompt: (prompt: string) => void
   setTemperature: (temperature: number | null) => void
@@ -392,6 +403,7 @@ function emptyTabState(): TabAiChatState {
     conversationName: null,
     conversations: [],
     conversationLoaded: false,
+    savedKeyDisabled: false,
   }
 }
 
@@ -418,6 +430,7 @@ function extractState(s: AiChatStore): TabAiChatState {
     conversationName: s.conversationName ?? null,
     conversations: s.conversations ?? [],
     conversationLoaded: s.conversationLoaded === true,
+    savedKeyDisabled: s.savedKeyDisabled === true,
   }
 }
 
@@ -548,6 +561,8 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     // Only a key typed for no origin yet follows the edit (`canCarryAiKey`:
     // a blank URL being typed, or a templated path edit that stays
     // templated), in memory — a carried key is never persisted.
+    // A "no saved key" tab (issue #222): its typed key is bound to the origin.
+    if (before.savedKeyDisabled) return syncLiveKey()
     const toScope = aiKeyScope(before.provider, customUrl)
     if (toScope === fromScope) return
     const origin = keyOrigins.get(fromScope) ?? fromScope
@@ -560,11 +575,25 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
   setApiKey: (apiKey) => {
     set({ apiKey })
     const s = get()
+    if (s.savedKeyDisabled) {
+      // Typed for this tab only (issue #222): never under the provider's
+      // scope — that would replace the user's saved key — and never persisted.
+      tabLocalKeys.set(liveTabKey(s), { key: apiKey, target: localKeyTarget(s) })
+      return
+    }
     const scope = aiKeyScope(s.provider, s.customUrl)
     sessionKeys.set(scope, apiKey)
     // Typed here → it belongs here (no longer a carried key).
     keyOrigins.delete(scope)
     schedulePersist(scope, apiKey)
+  },
+  setSavedKeyDisabled: (disabled) => {
+    if (get().savedKeyDisabled === disabled) return
+    tabLocalKeys.delete(liveTabKey(get()))
+    set({ savedKeyDisabled: disabled })
+    // Saved with the request (`savedAiConfigOf`) — a change is an edit.
+    markActiveTabDirty()
+    syncLiveKey({ clear: true })
   },
   setModel: (model) => {
     set({ model })
@@ -815,6 +844,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     if (state._tabStates.has(tabId) || state._currentTabId === tabId) dropTabConversations(tabId)
     const tabStates = new Map(state._tabStates)
     tabStates.delete(tabId)
+    tabLocalKeys.delete(tabId)
     set({ _tabStates: tabStates })
   },
 }))
@@ -923,6 +953,16 @@ const pendingWrites = new Map<string, string>()
  * `https://b`) remember the key came from `https://a`. Memory only.
  */
 const keyOrigins = new Map<string, string>()
+/**
+ * Keys typed into a `savedKeyDisabled` tab (issue #222): tab → the key and
+ * the provider + origin it was typed for (`localKeyTarget`). Memory only.
+ */
+const tabLocalKeys = new Map<string, { key: string; target: string }>()
+
+/** Provider + endpoint origin — a typed key never follows the tab elsewhere. */
+function localKeyTarget(s: { provider: string; customUrl: string }): string {
+  return `${s.provider}|${aiKeyScope('custom', s.customUrl)}`
+}
 let writeTimer: ReturnType<typeof setTimeout> | null = null
 
 function noteKeyStorage(encrypted: boolean): void {
@@ -958,6 +998,8 @@ export async function flushAiKeyWrites(): Promise<void> {
 /** Put the session key for `scope` on the live tab, if it still shows that scope. */
 function applyKeyIfLive(scope: string): void {
   const s = useAiChatStore.getState()
+  // A load that lands after a "no saved key" tab became live (issue #222).
+  if (s.savedKeyDisabled) return
   if (aiKeyScope(s.provider, s.customUrl) !== scope) return
   const key = sessionKeys.get(scope) ?? ''
   if (s.apiKey !== key) useAiChatStore.setState({ apiKey: key })
@@ -1006,6 +1048,14 @@ async function loadKeyFromMain(scope: string, carry: CarriedKey | undefined): Pr
  */
 function syncLiveKey(opts: { clear?: boolean; carry?: CarriedKey } = {}): void {
   const s = useAiChatStore.getState()
+  if (s.savedKeyDisabled) {
+    // Only the key typed into this tab, and only while it still points at
+    // the provider and origin it was typed for (issue #222).
+    const local = tabLocalKeys.get(liveTabKey(s))
+    const key = local && local.target === localKeyTarget(s) ? local.key : ''
+    if (s.apiKey !== key) useAiChatStore.setState({ apiKey: key })
+    return
+  }
   const scope = aiKeyScope(s.provider, s.customUrl)
   if (sessionKeys.has(scope)) {
     applyKeyIfLive(scope)
@@ -1053,6 +1103,7 @@ export function resetAiKeySessionForTests(): void {
   sessionKeys.clear()
   pendingWrites.clear()
   keyOrigins.clear()
+  tabLocalKeys.clear()
   if (writeTimer) clearTimeout(writeTimer)
   writeTimer = null
 }
@@ -1070,6 +1121,8 @@ export interface SavedAiConfig {
   maxTokens: number | null
   /** MCP servers as tools (issue #180) — no literal secrets, never "Run tools without asking". */
   toolServers: AiToolServerConfig[]
+  /** Present (true) only for a tab opened from a mock server (issue #222). */
+  savedKeyDisabled?: true
 }
 
 export function savedAiConfigOf(s: TabAiChatState): SavedAiConfig {
@@ -1082,6 +1135,7 @@ export function savedAiConfigOf(s: TabAiChatState): SavedAiConfig {
     temperature: isValidTemperature(s.temperature) ? s.temperature : null,
     maxTokens: isValidMaxTokens(s.maxTokens) ? s.maxTokens : null,
     toolServers: savedToolServersOf(s.toolServers ?? []),
+    ...(s.savedKeyDisabled === true ? { savedKeyDisabled: true as const } : {}),
   }
 }
 
@@ -1124,6 +1178,7 @@ export function restoreAiConfig(raw: unknown): void {
   patch.temperature = isValidTemperature(c.temperature) ? c.temperature : null
   patch.maxTokens = isValidMaxTokens(c.maxTokens) ? c.maxTokens : null
   patch.toolServers = readToolServers(c.toolServers)
+  patch.savedKeyDisabled = c.savedKeyDisabled === true
   useAiChatStore.setState(patch)
   syncLiveKey({ clear: true })
 }

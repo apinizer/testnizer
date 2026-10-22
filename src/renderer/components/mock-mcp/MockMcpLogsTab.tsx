@@ -81,7 +81,7 @@ export default function MockMcpLogsTab({ serverId }: { serverId: string }) {
         <span>{t('mockMcp.logs.result')}</span>
       </div>
       {logs.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-4 text-center text-[13px] text-[var(--hint)]">
+        <div className="flex flex-1 items-center justify-center p-4 text-center text-sm text-[var(--hint)]">
           {t('mockMcp.logs.empty')}
         </div>
       ) : (

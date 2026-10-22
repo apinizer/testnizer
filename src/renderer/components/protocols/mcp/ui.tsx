@@ -38,7 +38,7 @@ export function GhostButton({ className = '', ...props }: ButtonHTMLAttributes<H
 /** Centered muted hint filling the remaining space. */
 export function CenterHint({ children }: { children: ReactNode }) {
   return (
-    <div className="flex flex-1 items-center justify-center p-4 text-center text-[13px] text-[var(--hint)]">
+    <div className="flex flex-1 items-center justify-center p-4 text-center text-sm text-[var(--hint)]">
       {children}
     </div>
   )

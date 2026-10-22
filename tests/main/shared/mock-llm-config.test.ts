@@ -140,7 +140,7 @@ describe('validateLlmConfig — strict, save time', () => {
     [[], 'LLM settings must be an object'],
     [{ intervalMs: 5 }, 'Unknown LLM setting: intervalMs'],
     [{ provider: 'gemini' }, 'Provider must be "openai" or "anthropic"'],
-    [{ chunking: 'line' }, 'Chunking must be "word", "char" or "sentence"'],
+    [{ chunking: 'line' }, 'Chunking must be "word", "char", "sentence", "fixed" or "whole"'],
     [
       { chunkIntervalMs: 10_001 },
       'Chunk interval must be a whole number of milliseconds between 0 and 10000',
@@ -149,7 +149,10 @@ describe('validateLlmConfig — strict, save time', () => {
       { chunkIntervalMs: 1.5 },
       'Chunk interval must be a whole number of milliseconds between 0 and 10000',
     ],
-    [{ stopReason: 'end_turn' }, 'Stop reason must be "stop", "length" or "tool_calls"'],
+    [
+      { stopReason: 'end_turn' },
+      'Stop reason must be "stop", "length", "tool_calls", "content_filter" or "stop_sequence"',
+    ],
     [{ stopReason: 'tool_calls' }, 'Stop reason "tool_calls" needs at least one tool call'],
     [{ toolCalls: {} }, 'Tool calls must be a list'],
     [

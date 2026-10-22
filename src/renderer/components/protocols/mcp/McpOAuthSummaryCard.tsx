@@ -35,7 +35,7 @@ export default function McpOAuthSummaryCard({ summary }: { summary: McpOAuthSumm
       data-testid="mcp-oauth-summary"
       className="flex flex-col gap-2.5 rounded-lg border border-[var(--green-border)] bg-[var(--green-bg)] p-3"
     >
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--text)]">
+      <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text)]">
         <KeyRound size={14} className="text-[var(--green)]" />
         {t('mcp.oauth.summary.title')}
         {inUse && (

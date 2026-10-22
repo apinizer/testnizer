@@ -98,7 +98,8 @@ async function startAndOpenInSse(page: Page, name: string, port: number): Promis
 
   const url = `http://127.0.0.1:${port}/events`
   await expect(page.getByTestId('sse-url')).toHaveValue(url, { timeout: 10_000 })
-  await expect(activeTab(page)).toHaveAttribute('data-tab-name', name)
+  // The client tab is not titled like the editor tab (PM review #20).
+  await expect(activeTab(page)).toHaveAttribute('data-tab-name', `${name} · client`)
   await expect(sseRow(page, name).getByTestId('mock-sse-row-status')).toHaveText(/running/i, {
     timeout: 10_000,
   })
@@ -194,7 +195,7 @@ uiTest.describe('Tur1 — SSE mock servers [issue #221]', () => {
       await expect(window.getByTestId('sse-method')).toHaveValue('GET')
       await expectSseTabClean(window)
 
-      await window.getByTestId('sse-connect').click()
+      // Open connects at once (PM review #20) — no Connect click.
       await expect(window.getByTestId('sse-disconnect')).toBeVisible({ timeout: 15_000 })
 
       for (const n of [1, 2]) {
@@ -218,8 +219,7 @@ uiTest.describe('Tur1 — SSE mock servers [issue #221]', () => {
       await startAndOpenInSse(window, name, port)
       await expectSseTabClean(window)
 
-      await window.getByTestId('sse-connect').click()
-      // 5 events at 500 ms each.
+      // Open connected the tab already (PM review #20). 5 events at 500 ms each.
       const count = window.getByTestId('sse-event-count')
       await expect(count).toHaveText('5 events', { timeout: 15_000 })
       for (const n of [1, 2, 3, 4, 5]) {

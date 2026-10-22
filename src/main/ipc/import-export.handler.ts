@@ -24,6 +24,8 @@ import {
   keepLocalSecretByKey,
   type LocalSecretsByKey,
 } from '../lib/local-secrets'
+import { storedVariableValue } from '../lib/secret-at-rest'
+import { isEncryptedSecret } from '../lib/secure-storage'
 
 interface ImportResult {
   success: boolean
@@ -2235,7 +2237,17 @@ export async function importPostman(
           },
           localSecrets,
         )
-        insertVar.run(randomUUID(), envId, v.key, kept.value, null, 1, isSecret, kept.initial_value)
+        // Sealed (issue #239): a kept local value is already ciphertext.
+        insertVar.run(
+          randomUUID(),
+          envId,
+          v.key,
+          storedVariableValue(kept.value, isSecret === 1),
+          null,
+          1,
+          isSecret,
+          storedVariableValue(kept.initial_value, isSecret === 1),
+        )
       }
     }
   }
@@ -2512,15 +2524,16 @@ export async function importPostmanEnvironment(
       { key: v.key, secret: isSecret === 1, value: v.value ?? '', initial_value: v.value ?? null },
       localSecrets,
     )
+    // Sealed (issue #239): a kept local value is already ciphertext.
     insertVar.run(
       randomUUID(),
       envId,
       v.key,
-      kept.value,
+      storedVariableValue(kept.value, isSecret === 1),
       null,
       isEnabled,
       isSecret,
-      kept.initial_value,
+      storedVariableValue(kept.initial_value, isSecret === 1),
     )
     varCount++
   }
@@ -3039,7 +3052,9 @@ function collectPostmanVariables(
   return rows.map((r) =>
     isSecretFlag(r.secret)
       ? { key: r.key, value: '', type: 'secret' }
-      : { key: r.key, value: r.value ?? '', type: 'string' },
+      : // Ciphertext never leaves the machine (issue #239) — an undecryptable
+        // value kept on a row whose secret flag was cleared exports as ''.
+        { key: r.key, value: isEncryptedSecret(r.value) ? '' : (r.value ?? ''), type: 'string' },
   )
 }
 

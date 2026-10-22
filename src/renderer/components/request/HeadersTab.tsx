@@ -4,6 +4,7 @@ import { STANDARD_HTTP_HEADERS } from '../../lib/http-headers'
 import { useTranslation } from '../../lib/i18n'
 import { useTabsStore } from '../../stores/tabs.store'
 import AutoHeadersSection from './AutoHeadersSection'
+import CredentialRowsHint from '../shared/CredentialRowsHint'
 
 export default function HeadersTab() {
   const { t } = useTranslation()
@@ -33,6 +34,7 @@ export default function HeadersTab() {
         flush
         resizable
       />
+      <CredentialRowsHint rows={headers} testId="headers-credential-restart-hint" inset />
       {isHttp && <AutoHeadersSection />}
     </div>
   )

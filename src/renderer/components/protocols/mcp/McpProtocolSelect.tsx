@@ -1,6 +1,7 @@
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
 import { MCP_LEGACY_VERSIONS, MCP_MODERN_VERSION } from '../../../lib/mcp-protocol'
+import { CB_SELECT } from '../connection-bar-ui'
 
 /**
  * Protocol era negotiation for the next Connect (issue #152): Auto probes
@@ -23,7 +24,7 @@ export default function McpProtocolSelect({ disabled }: { disabled: boolean }) {
       data-testid="mcp-protocol"
       aria-label={t('mcp.protocol.label')}
       title={t('mcp.protocol.hint')}
-      className="h-8 max-w-[220px] cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+      className={`${CB_SELECT} max-w-[220px]`}
     >
       <option value="auto">{t('mcp.protocol.auto')}</option>
       <option value="legacy">{t('mcp.protocol.legacy')}</option>

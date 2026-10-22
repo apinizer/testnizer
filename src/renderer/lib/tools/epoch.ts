@@ -35,10 +35,13 @@ export function epochToDate(
   return { date: new Date(ms), unit: u }
 }
 
+/** UI language of the tool. EN keeps the formats it always had; TR reads Turkish. */
+export type EpochLocale = 'en' | 'tr'
+
 /** Format a Date in the user's local time zone with friendly weekday/date. */
-export function formatLocal(date: Date): string {
+export function formatLocal(date: Date, locale: EpochLocale = 'en'): string {
   if (isNaN(date.getTime())) return ''
-  return date.toLocaleString(undefined, {
+  return date.toLocaleString(locale === 'tr' ? 'tr-TR' : undefined, {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -51,9 +54,9 @@ export function formatLocal(date: Date): string {
 }
 
 /** Format a Date in UTC/GMT with friendly weekday/date. */
-export function formatUtc(date: Date): string {
+export function formatUtc(date: Date, locale: EpochLocale = 'en'): string {
   if (isNaN(date.getTime())) return ''
-  return date.toLocaleString('en-GB', {
+  return date.toLocaleString(locale === 'tr' ? 'tr-TR' : 'en-GB', {
     weekday: 'long',
     year: 'numeric',
     month: 'long',
@@ -76,14 +79,28 @@ export function localTzLabel(): string {
   return `GMT${sign}${hh}:${mm}`
 }
 
-/** Human-readable "n {unit} ago" / "in n {unit}". */
-export function relative(date: Date, now: Date = new Date()): string {
+/** Turkish unit names for `relative` (Turkish does not pluralise after a number). */
+const TR_UNITS: Record<string, string> = {
+  second: 'saniye',
+  minute: 'dakika',
+  hour: 'saat',
+  day: 'gün',
+  month: 'ay',
+  year: 'yıl',
+}
+
+/** Human-readable "n {unit} ago" / "in n {unit}" ("n {birim} önce" / "n {birim} sonra"). */
+export function relative(date: Date, now: Date = new Date(), locale: EpochLocale = 'en'): string {
   if (isNaN(date.getTime())) return ''
   const diffMs = date.getTime() - now.getTime()
   const past = diffMs < 0
   const absSec = Math.round(Math.abs(diffMs) / 1000)
   const fmt = (n: number, u: string): string =>
-    past ? `${n} ${u}${n === 1 ? '' : 's'} ago` : `in ${n} ${u}${n === 1 ? '' : 's'}`
+    locale === 'tr'
+      ? `${n} ${TR_UNITS[u]} ${past ? 'önce' : 'sonra'}`
+      : past
+        ? `${n} ${u}${n === 1 ? '' : 's'} ago`
+        : `in ${n} ${u}${n === 1 ? '' : 's'}`
   if (absSec < 60) return fmt(absSec, 'second')
   const min = Math.round(absSec / 60)
   if (min < 60) return fmt(min, 'minute')

@@ -409,7 +409,7 @@ export default function SaveModal() {
           </div>
           <button
             type="button"
-            aria-label="Close"
+            aria-label={t('common.close')}
             className="cursor-pointer"
             style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
             onClick={handleClose}

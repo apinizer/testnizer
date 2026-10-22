@@ -16,6 +16,7 @@ import { endpointDidPass } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
+import { displayRunSourceLabel } from '../../lib/runner-source-label'
 import {
   filterRunResults,
   runResultMethods,
@@ -42,6 +43,25 @@ const STOP_REASON_KEY: Record<RunStopReason, string> = {
 
 function stopReasonKey(reason: RunStopReason): string {
   return STOP_REASON_KEY[reason] ?? 'runLifecycle.stoppedCancelled'
+}
+
+/**
+ * The status chip text, translated. `statusBadge` (shared with main) keeps its
+ * English output — tests and the HTML report rely on it — so the mapping
+ * happens here, at display time. A real HTTP status passes through.
+ */
+const BADGE_KEY: Record<string, string> = {
+  SCRIPT: 'runResults.badgeScript',
+  SKIPPED: 'runResults.badgeSkipped',
+  'NOT RUN': 'runResults.badgeNotRun',
+  UNSUPPORTED: 'runResults.badgeUnsupported',
+  CANCELLED: 'runResults.badgeCancelled',
+  Error: 'runResults.badgeError',
+}
+
+function badgeLabel(text: string, t: (key: string) => string): string {
+  const key = BADGE_KEY[text]
+  return key ? t(key) : text
 }
 
 /** Script console output, coloured by level (matches the app's Console tab). */
@@ -125,7 +145,7 @@ export default function RunnerResults({
   onOpenEndpoint,
   onRevealInApis,
 }: RunnerResultsProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
   // Search + method narrowing on top of the outcome tabs (issue #114): a
   // 500-request run is unusable with All/Passed/Failed alone.
@@ -234,21 +254,44 @@ export default function RunnerResults({
   }
 
   const FILTER_TABS: { key: FilterTab; label: string; count: number }[] = [
-    { key: 'all', label: 'All', count: results.length },
-    { key: 'passed', label: 'Passed', count: totalPassed },
-    { key: 'failed', label: 'Failed', count: totalFailed },
-    { key: 'skipped', label: 'Skipped', count: summary.skipped },
-    { key: 'errors', label: 'Errors', count: totalErrors },
-    { key: 'console', label: 'Console log', count: summary.consoleLogs },
+    { key: 'all', label: t('runResults.tabAll'), count: results.length },
+    { key: 'passed', label: t('runnerHistory.colPassed'), count: totalPassed },
+    { key: 'failed', label: t('runnerHistory.colFailed'), count: totalFailed },
+    { key: 'skipped', label: t('runnerHistory.colSkipped'), count: summary.skipped },
+    { key: 'errors', label: t('runResults.errors'), count: totalErrors },
+    { key: 'console', label: t('runResults.consoleLog'), count: summary.consoleLogs },
   ]
 
   const formatTime = (ts: number | null) => {
     if (!ts) return ''
-    return new Date(ts).toLocaleTimeString([], {
+    // EN keeps the system's default time format; TR is 24-hour Turkish.
+    return new Date(ts).toLocaleTimeString(locale === 'tr' ? 'tr-TR' : [], {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
     })
+  }
+
+  /**
+   * "Ran today at …" only when the run IS from today. A run reopened from All
+   * Runs used to say "today" for any date; older runs now name the day.
+   */
+  const ranAtLine = (ts: number | null): string => {
+    const time = formatTime(ts)
+    if (!ts) return t('runResults.ranTodayAt').replace('{time}', time)
+    const started = new Date(ts)
+    const now = new Date()
+    const sameDay =
+      started.getFullYear() === now.getFullYear() &&
+      started.getMonth() === now.getMonth() &&
+      started.getDate() === now.getDate()
+    if (sameDay) return t('runResults.ranTodayAt').replace('{time}', time)
+    const date = started.toLocaleDateString(locale === 'tr' ? 'tr-TR' : [], {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+    return t('runResults.ranOnAt').replace('{date}', date).replace('{time}', time)
   }
 
   const formatDuration = (ms: number) => {
@@ -274,8 +317,11 @@ export default function RunnerResults({
     return body
   }
 
+  const progressLine = (key: string): string =>
+    t(key).replace('{current}', String(currentIndex)).replace('{total}', String(totalCount))
+
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex flex-1 overflow-hidden" lang={locale}>
       {/* ═══ Left: results list ═══ */}
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Running progress */}
@@ -289,9 +335,9 @@ export default function RunnerResults({
                     // away. Say so here, or the click leaves no trace at all
                     // and reads as ignored (issue #92).
                     stopRequested === 'graceful'
-                    ? `Stopped — cleaning up ${currentIndex} of ${totalCount}...`
-                    : `Cleaning up — ${currentIndex} of ${totalCount}...`
-                  : `Running ${currentIndex} of ${totalCount}...`}
+                    ? progressLine('runResults.stoppedCleaningUp')
+                    : progressLine('runResults.cleaningUp')
+                  : progressLine('runResults.running')}
               </span>
               {/*
                 Two stops, and each control keeps ONE meaning for the whole run
@@ -331,7 +377,7 @@ export default function RunnerResults({
                     onClick={onStop}
                     data-testid="runner-stop"
                     disabled={stopRequested !== null}
-                    title="End the run — cleanup still runs (every teardown request and script)"
+                    title={t('runResults.stopTitle')}
                     className="rounded-[5px] border border-[#cc2200] bg-transparent px-3 py-1 disabled:cursor-default disabled:opacity-60"
                     style={{
                       fontSize: 13,
@@ -340,7 +386,7 @@ export default function RunnerResults({
                       cursor: stopRequested !== null ? 'default' : 'pointer',
                     }}
                   >
-                    {stopRequested !== null ? 'Stopping…' : 'Stop'}
+                    {stopRequested !== null ? t('runResults.stopping') : t('runner.stop')}
                   </button>
                 )}
                 {onStopDirect && (
@@ -351,8 +397,8 @@ export default function RunnerResults({
                     disabled={stopRequested === 'direct'}
                     title={
                       inTeardown
-                        ? 'Halt now — abandon cleanup, including the step currently running'
-                        : 'Halt now — abort the request in flight and skip all remaining steps, cleanup included'
+                        ? t('runResults.stopNowTitleTeardown')
+                        : t('runResults.stopNowTitle')
                     }
                     className="rounded-[5px] border border-[#cc2200] px-3 py-1 disabled:cursor-default disabled:opacity-60"
                     style={{
@@ -363,7 +409,7 @@ export default function RunnerResults({
                       cursor: stopRequested === 'direct' ? 'default' : 'pointer',
                     }}
                   >
-                    {stopRequested === 'direct' ? 'Halting…' : 'Stop now'}
+                    {stopRequested === 'direct' ? t('runResults.halting') : t('runResults.stopNow')}
                   </button>
                 )}
               </div>
@@ -386,7 +432,7 @@ export default function RunnerResults({
                 data-testid="runner-results-title"
                 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}
               >
-                Run results
+                {t('runResults.title')}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -396,7 +442,7 @@ export default function RunnerResults({
                   style={{ fontSize: 13, color: 'var(--muted)' }}
                 >
                   <RotateCcw size={13} />
-                  Run Again
+                  {t('runResults.runAgain')}
                 </button>
                 <button
                   type="button"
@@ -405,7 +451,7 @@ export default function RunnerResults({
                   style={{ fontSize: 13, color: 'var(--muted)' }}
                 >
                   <Plus size={13} />
-                  New Run
+                  {t('testsHome.newRun')}
                 </button>
               </div>
             </div>
@@ -416,14 +462,14 @@ export default function RunnerResults({
                 className="inline-block h-2.5 w-2.5 rounded-full"
                 style={{ background: totalFailed > 0 ? '#cc2200' : '#1a7a4a' }}
               />
-              <span style={{ color: 'var(--muted)' }}>Ran today at {formatTime(runStartedAt)}</span>
+              <span style={{ color: 'var(--muted)' }}>{ranAtLine(runStartedAt)}</span>
               <button
                 type="button"
                 onClick={onViewAllRuns}
                 className="cursor-pointer border-none bg-transparent hover:underline"
                 style={{ fontSize: 13, color: 'var(--accent)' }}
               >
-                View all runs
+                {t('runResults.viewAllRuns')}
               </button>
             </div>
 
@@ -447,31 +493,46 @@ export default function RunnerResults({
 
             {/* Stats row */}
             <div className="flex gap-8">
-              <StatCell label="Source" value={sourceLabel || 'Runner'} />
-              <StatCell label="Environment" value={report ? 'Active' : '-'} />
-              <StatCell label="Iterations" value={String(iterationGroups.length || 1)} />
-              <StatCell label="Duration" value={formatDuration(totalDuration)} />
-              <StatCell label="All tests" value={String(totalTests)} />
               <StatCell
-                label="Errors"
+                label={t('runnerHistory.colSource')}
+                value={displayRunSourceLabel(sourceLabel || 'Runner', t)}
+              />
+              <StatCell
+                label={t('runnerHistory.colEnvironment')}
+                value={report ? t('runResults.envActive') : '-'}
+              />
+              <StatCell
+                label={t('runnerHistory.colIterations')}
+                value={String(iterationGroups.length || 1)}
+              />
+              <StatCell
+                label={t('runnerHistory.colDuration')}
+                value={formatDuration(totalDuration)}
+              />
+              <StatCell label={t('runnerHistory.colAllTests')} value={String(totalTests)} />
+              <StatCell
+                label={t('runResults.errors')}
                 value={String(totalErrors)}
                 color={totalErrors > 0 ? '#cc2200' : undefined}
               />
-              <StatCell label="Avg. Resp. Time" value={`${avgRespTime} ms`} />
+              <StatCell label={t('runnerHistory.colAvgResp')} value={`${avgRespTime} ms`} />
             </div>
           </div>
         )}
 
         {/* Filter tabs */}
         {results.length > 0 && !isRunning && (
-          <div className="flex shrink-0 items-center border-b border-[var(--border)] px-5">
+          <div
+            data-testid="runner-results-filter-row"
+            className="flex shrink-0 flex-wrap items-center border-b border-[var(--border)] px-5"
+          >
             {FILTER_TABS.map((tab) => (
               <button
                 key={tab.key}
                 type="button"
                 data-testid={`runner-filter-${tab.key}`}
                 onClick={() => setActiveFilter(tab.key)}
-                className="cursor-pointer border-none bg-transparent px-3 py-2"
+                className="shrink-0 cursor-pointer whitespace-nowrap border-none bg-transparent px-3 py-2"
                 style={{
                   fontSize: 13,
                   color: activeFilter === tab.key ? 'var(--text)' : 'var(--muted)',
@@ -484,14 +545,16 @@ export default function RunnerResults({
                 {tab.label} {tab.count}
               </button>
             ))}
-            <div className="flex-1" />
-
             {/* Search + method narrowing (issue #114). Sits next to the tabs
                 rather than above the list so all four controls read as one
-                filter row. */}
-            <div className="flex items-center gap-2 py-1.5">
+                filter row. Every label is nowrap and the row wraps instead:
+                in a narrow pane (right panel open, TR labels, 16px font) the
+                26px method button used to wrap its label onto three lines and
+                clip it (issue #245); now the controls drop to a second line,
+                right-aligned (`ml-auto`). */}
+            <div className="ml-auto flex min-w-0 items-center gap-2 py-1.5">
               <div
-                className="flex items-center gap-1.5 rounded border px-2"
+                className="flex min-w-0 items-center gap-1.5 rounded border px-2"
                 style={{ borderColor: 'var(--border2)', background: 'var(--white)', height: 26 }}
               >
                 <Search size={13} color="var(--hint)" />
@@ -502,8 +565,8 @@ export default function RunnerResults({
                   placeholder={t('runResults.search')}
                   aria-label={t('runResults.search')}
                   data-testid="runner-results-search"
-                  className="border-none bg-transparent outline-none"
-                  style={{ fontSize: 12, width: 150, color: 'var(--text)' }}
+                  className="w-[150px] min-w-[60px] shrink border-none bg-transparent outline-none"
+                  style={{ fontSize: 12, color: 'var(--text)' }}
                 />
                 {searchText && (
                   <button
@@ -524,7 +587,7 @@ export default function RunnerResults({
                     onClick={() => setMethodMenuOpen((v) => !v)}
                     data-testid="runner-results-method-filter"
                     aria-expanded={methodMenuOpen}
-                    className="flex cursor-pointer items-center gap-1 rounded border px-2"
+                    className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded border px-2"
                     style={{
                       height: 26,
                       fontSize: 12,
@@ -588,10 +651,12 @@ export default function RunnerResults({
                 </div>
               )}
 
-              <div className="flex items-center gap-1.5" style={{ fontSize: 13 }}>
-                <span style={{ fontWeight: 600, color: 'var(--text)' }}>List</span>
+              <div className="flex shrink-0 items-center gap-1.5" style={{ fontSize: 13 }}>
+                <span style={{ fontWeight: 600, color: 'var(--text)' }}>
+                  {t('runResults.viewList')}
+                </span>
                 <span style={{ color: 'var(--border2)' }}>|</span>
-                <span style={{ color: 'var(--muted)' }}>Grid</span>
+                <span style={{ color: 'var(--muted)' }}>{t('runResults.viewGrid')}</span>
               </div>
             </div>
           </div>
@@ -634,11 +699,19 @@ export default function RunnerResults({
                     aria-expanded={!collapsed}
                   >
                     {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                    <span>Iteration {iter}</span>
+                    <span>{t('runResults.iteration').replace('{n}', String(iter))}</span>
                     <span style={{ color: 'var(--hint)', fontWeight: 400, marginLeft: 6 }}>
-                      ({rows.length} {rows.length === 1 ? 'request' : 'requests'}
-                      {failed > 0 ? `, ${failed} failed` : ''}
-                      {passed > 0 && failed === 0 ? `, ${passed} passed` : ''})
+                      (
+                      {t(
+                        rows.length === 1 ? 'runResults.requestsOne' : 'runResults.requestsOther',
+                      ).replace('{count}', String(rows.length))}
+                      {failed > 0
+                        ? t('runResults.failedSuffix').replace('{count}', String(failed))
+                        : ''}
+                      {passed > 0 && failed === 0
+                        ? t('runResults.passedSuffix').replace('{count}', String(passed))
+                        : ''}
+                      )
                     </span>
                   </button>
                 )}
@@ -712,10 +785,10 @@ export default function RunnerResults({
                 type="button"
                 onClick={() => onOpenEndpoint(selectedResult.endpointId)}
                 className="flex cursor-pointer items-center gap-1 rounded border-none bg-transparent p-1 text-[var(--hint)] hover:text-[var(--accent)]"
-                title="Open endpoint editor"
+                title={t('runResults.openEndpointTitle')}
               >
                 <ExternalLink size={14} />
-                <span style={{ fontSize: 12 }}>Open endpoint</span>
+                <span style={{ fontSize: 12 }}>{t('runResults.openEndpoint')}</span>
               </button>
             )}
             <button
@@ -752,7 +825,7 @@ export default function RunnerResults({
                   marginBottom: -1,
                 }}
               >
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {t(DETAIL_TAB_KEY[tab])}
               </button>
             ))}
             {/* Status · duration · size */}
@@ -763,7 +836,7 @@ export default function RunnerResults({
                 return (
                   <>
                     <span style={{ fontWeight: 600, color: BADGE_COLOR[badge.tone] }}>
-                      {badge.text}
+                      {badgeLabel(badge.text, t)}
                     </span>
                     <span style={{ color: 'var(--hint)' }}>·</span>
                   </>
@@ -798,13 +871,13 @@ export default function RunnerResults({
                         className="shrink-0 overflow-y-auto border-b border-[var(--border)] px-4 py-3"
                         style={{ maxHeight: 220 }}
                       >
-                        <SectionLabel>Response Headers</SectionLabel>
+                        <SectionLabel>{t('console.section.responseHeaders')}</SectionLabel>
                         <HeadersTable headers={selectedResult.responseHeaders} />
                       </div>
                     )}
                   {selectedResult.assertions.length > 0 && (
                     <div className="shrink-0 border-b border-[var(--border)] px-4 py-3">
-                      <SectionLabel>Tests</SectionLabel>
+                      <SectionLabel>{t('response.tests')}</SectionLabel>
                       {selectedResult.assertions.map((a, i) => (
                         <div
                           key={i}
@@ -827,9 +900,9 @@ export default function RunnerResults({
                         className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-1.5"
                         style={{ fontSize: 13 }}
                       >
-                        <SectionLabel>Body</SectionLabel>
+                        <SectionLabel>{t('response.tab.body')}</SectionLabel>
                         <span className="ml-auto" style={{ fontWeight: 500, color: 'var(--text)' }}>
-                          Pretty
+                          {t('runResults.pretty')}
                         </span>
                         <span style={{ color: 'var(--hint)' }}>∨</span>
                       </div>
@@ -845,7 +918,7 @@ export default function RunnerResults({
                     </>
                   ) : (
                     <div className="flex-1 p-4" style={{ fontSize: 13, color: 'var(--hint)' }}>
-                      No response body available.
+                      {t('runResults.noResponseBody')}
                     </div>
                   )}
                 </>
@@ -861,7 +934,7 @@ export default function RunnerResults({
               {/* Summary: method + URL */}
               <div className="shrink-0 border-b border-[var(--border)] px-4 py-3">
                 <div className="mb-2 flex items-center gap-2">
-                  <SectionLabel>Method</SectionLabel>
+                  <SectionLabel>{t('runResults.method')}</SectionLabel>
                   <span
                     className="ml-1"
                     style={{ color: 'var(--text)', fontFamily: 'var(--font-mono)', fontSize: 13 }}
@@ -889,7 +962,7 @@ export default function RunnerResults({
                     className="shrink-0 overflow-y-auto border-b border-[var(--border)] px-4 py-3"
                     style={{ maxHeight: 220 }}
                   >
-                    <SectionLabel>Request Headers</SectionLabel>
+                    <SectionLabel>{t('console.section.requestHeaders')}</SectionLabel>
                     <HeadersTable headers={selectedResult.requestHeaders} />
                   </div>
                 )}
@@ -901,9 +974,9 @@ export default function RunnerResults({
                     className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] px-4 py-1.5"
                     style={{ fontSize: 13 }}
                   >
-                    <SectionLabel>Body</SectionLabel>
+                    <SectionLabel>{t('response.tab.body')}</SectionLabel>
                     <span className="ml-auto" style={{ fontWeight: 500, color: 'var(--text)' }}>
-                      Pretty
+                      {t('runResults.pretty')}
                     </span>
                     <span style={{ color: 'var(--hint)' }}>∨</span>
                   </div>
@@ -919,7 +992,7 @@ export default function RunnerResults({
                 </>
               ) : (
                 <div className="flex-1 p-4" style={{ fontSize: 13, color: 'var(--hint)' }}>
-                  No request body available.
+                  {t('runResults.noRequestBody')}
                 </div>
               )}
             </div>
@@ -948,6 +1021,13 @@ export default function RunnerResults({
   )
 }
 
+/** Detail-pane tab labels. */
+const DETAIL_TAB_KEY: Record<'response' | 'request' | 'console', string> = {
+  response: 'runResults.tabResponse',
+  request: 'runResults.tabRequest',
+  console: 'runResults.tabConsole',
+}
+
 /* ═══ Sub-components ═══ */
 
 function StatCell({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -968,6 +1048,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function HeadersTable({ headers }: { headers: Record<string, string> }) {
+  const { t } = useTranslation()
   const entries = Object.entries(headers)
   if (entries.length === 0) return null
   return (
@@ -975,10 +1056,10 @@ function HeadersTable({ headers }: { headers: Record<string, string> }) {
       <thead>
         <tr className="border-b border-[var(--border)]">
           <th className="py-2 pr-4 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-            Key
+            {t('kv.key')}
           </th>
           <th className="py-2 text-left" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-            Value
+            {t('kv.value')}
           </th>
         </tr>
       </thead>
@@ -1106,7 +1187,7 @@ function ResultRow({
               flexShrink: 0,
             }}
           >
-            {badge.text}
+            {badgeLabel(badge.text, t)}
           </span>
         )}
         {/* Row click still opens the details pane (issue #115 is explicit that
@@ -1164,7 +1245,7 @@ function ResultRow({
         // unchecked. Under a run-level script row, or a step that never ran, it
         // is noise about something the user did not ask for.
         !SYNTHETIC_STATUS.has(result.statusText) && (
-          <div style={{ fontSize: 13, color: 'var(--hint)' }}>No tests found</div>
+          <div style={{ fontSize: 13, color: 'var(--hint)' }}>{t('runResults.noTests')}</div>
         )
       )}
     </div>

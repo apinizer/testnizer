@@ -3,8 +3,11 @@
  * — the `llm` twin of `MockSseOptions.tsx`, with the same anatomy:
  *
  *  - `MockLlmOptions` — the "LLM" row shown while the body type is `llm`:
- *    provider, chunking, chunk interval, stop reason, usage, and the tool
- *    calls (`MockLlmToolCalls`). Built from the Stream row's field parts
+ *    provider, chunking (+ chunk size for `fixed`), chunk interval, stop
+ *    reason (each provider's own values, issue #222; + the stop sequence
+ *    for Anthropic `stop_sequence` — `MockLlmAdvancedFields`), usage, the
+ *    tool calls (`MockLlmToolCalls`) and the mid-stream error
+ *    (`MockLlmStreamError`). Built from the Stream row's field parts
  *    (`MockOptionFields.tsx`), with its disabled-with-reason pattern. Every
  *    change writes the whole config, merged over the last written one while
  *    a save is in flight (`useConfigWriter`); the stored tool-call list is
@@ -22,14 +25,16 @@ import {
   LLM_MAX_CHUNK_INTERVAL_MS,
   LLM_MAX_USAGE_TOKENS,
   llmConfigForEdit,
-  type MockLlmChunking,
+  stopReasonFor,
   type MockLlmConfig,
   type MockLlmProvider,
-  type MockLlmStopReason,
 } from '../../../shared/mock-stream'
 import { translateStreamError } from './mock-stream-errors'
 import { useConfigWriter, type ConfigPatch } from './use-config-writer'
 import MockLlmToolCalls from './MockLlmToolCalls'
+import MockLlmStreamError from './MockLlmStreamError'
+import { LlmChunkSizeField, LlmStopSequenceField } from './MockLlmAdvancedFields'
+import { LLM_CHUNKING_OPTIONS, LLM_STOP_REASON_OPTIONS } from './mock-llm-options'
 import {
   OptionError,
   OptionNumber,
@@ -42,16 +47,6 @@ import {
 const PROVIDERS: readonly (readonly [MockLlmProvider, string])[] = [
   ['openai', 'mockLlm.providerOpenai'],
   ['anthropic', 'mockLlm.providerAnthropic'],
-]
-const CHUNKINGS: readonly (readonly [MockLlmChunking, string])[] = [
-  ['word', 'mockLlm.chunkWord'],
-  ['char', 'mockLlm.chunkChar'],
-  ['sentence', 'mockLlm.chunkSentence'],
-]
-const STOP_REASONS: readonly (readonly [MockLlmStopReason, string])[] = [
-  ['stop', 'mockLlm.stopStop'],
-  ['length', 'mockLlm.stopLength'],
-  ['tool_calls', 'mockLlm.stopToolCalls'],
 ]
 const USAGE_MODES: readonly (readonly ['auto' | 'custom', string])[] = [
   ['auto', 'mockLlm.usageAuto'],
@@ -95,6 +90,7 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
 
   // The engine always stops with tool_calls when there are tool calls.
   const hasCalls = cfg.toolCalls.length > 0
+  const stopReason = hasCalls ? 'tool_calls' : stopReasonFor(cfg.provider, cfg.stopReason)
 
   return (
     <div className="mb-2" data-testid="mock-llm-options">
@@ -105,15 +101,20 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
           testId="mock-llm-provider"
           value={cfg.provider}
           options={PROVIDERS}
-          onChange={(provider) => void write({ provider })}
+          // The stop reason follows: a value the new provider cannot say is
+          // rewritten to the one it is sent as (stop_sequence → stop on OpenAI).
+          onChange={(provider) =>
+            void write((b) => ({ provider, stopReason: stopReasonFor(provider, b.stopReason) }))
+          }
         />
         <OptionSelect
           label={t('mockLlm.chunking')}
           testId="mock-llm-chunking"
           value={cfg.chunking}
-          options={CHUNKINGS}
+          options={LLM_CHUNKING_OPTIONS}
           onChange={(chunking) => void write({ chunking })}
         />
+        {cfg.chunking === 'fixed' && <LlmChunkSizeField cfg={cfg} write={write} />}
         <OptionNumber
           label={t('mockLlm.chunkInterval')}
           testId="mock-llm-interval"
@@ -122,12 +123,15 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
         <OptionSelect
           label={t('mockLlm.stopReason')}
           testId="mock-llm-stop-reason"
-          value={hasCalls ? 'tool_calls' : cfg.stopReason}
-          options={STOP_REASONS}
-          onChange={(stopReason) => void write({ stopReason })}
+          value={stopReason}
+          options={LLM_STOP_REASON_OPTIONS[cfg.provider]}
+          onChange={(next) => void write({ stopReason: next })}
           disabled={hasCalls}
           describedBy={hasCalls ? reasonId : undefined}
         />
+        {cfg.provider === 'anthropic' && stopReason === 'stop_sequence' && (
+          <LlmStopSequenceField cfg={cfg} write={write} />
+        )}
         <OptionSelect
           label={t('mockLlm.usage')}
           testId="mock-llm-usage"
@@ -174,6 +178,7 @@ export default function MockLlmOptions({ response }: { response: MockResponse })
           }))
         }
       />
+      <MockLlmStreamError cfg={cfg} write={write} />
       {error && <OptionError testId="mock-llm-error">{error}</OptionError>}
     </div>
   )

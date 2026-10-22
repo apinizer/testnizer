@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Shield } from 'lucide-react'
 import { useSoapStore } from '../../stores/soap.store'
 import { useNumberDraft } from '../../lib/number-draft'
 import KeyMaterialField from '../shared/KeyMaterialField'
+import CredentialRestartHint from '../shared/CredentialRestartHint'
 import type {
   WsSecurityMode,
   WsSignReference,
@@ -28,6 +29,8 @@ const ENCRYPT_ALGORITHMS: WsEncryptAlgorithm[] = [
 const KEY_WRAP_ALGORITHMS: WsKeyWrapAlgorithm[] = ['RSA-OAEP', 'RSA-1.5']
 const KEY_INFO_STRATEGIES: WsKeyInfoStrategy[] = ['BinarySecurityToken', 'IssuerSerial']
 const SIGN_REFERENCES: WsSignReference[] = ['Body', 'Timestamp', 'UsernameToken']
+
+const SOAP_RESTART_HINT_ID = 'soap-wss-restart-hint-text'
 
 export default function SoapSecuritySection() {
   const [expanded, setExpanded] = useState(true)
@@ -201,6 +204,7 @@ export default function SoapSecuritySection() {
                       onChange={(e) => updateUsernameToken({ password: e.target.value })}
                       className={INPUT}
                       placeholder="Enter password"
+                      aria-describedby={SOAP_RESTART_HINT_ID}
                     />
                   </div>
                   <div>
@@ -238,6 +242,8 @@ export default function SoapSecuritySection() {
                       <span className="text-sm text-[var(--text)]">Include Created</span>
                     </label>
                   </div>
+                  {/* Issue #247: the typed password is not kept in the tab snapshot. */}
+                  <CredentialRestartHint id={SOAP_RESTART_HINT_ID} testId="soap-wss-restart-hint" />
                 </fieldset>
               )}
 

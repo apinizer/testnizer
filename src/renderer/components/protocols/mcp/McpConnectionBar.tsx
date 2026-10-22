@@ -8,13 +8,15 @@ import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import McpConfigMenu from './McpConfigMenu'
 import McpProtocolSelect from './McpProtocolSelect'
 import McpStatusPill from './McpStatusPill'
-
-const URL_INPUT =
-  'h-8 w-full min-w-0 rounded-md border border-[var(--border)] px-2.5 font-mono text-[13px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]'
+import CredentialRestartHint from '../../shared/CredentialRestartHint'
+import { CB_ROW, CB_SELECT, CB_TARGET, CB_URL_FIELD, cbPrimaryButton } from '../connection-bar-ui'
+import { mcpUrlHasLiteralCredential } from './config-ui'
 
 /**
- * Row 1: status pill, transport, protocol, URL / command (grows, never below
- * 280px), Connect, config menu. Row 2, only when connected: the server's name
+ * Row 1: status pill, transport, protocol, then URL / command + Connect +
+ * config menu as one group (the shared bar sizes and wrap rule of
+ * `connection-bar-ui.ts`: the group drops to its own line as a unit instead
+ * of the icons wrapping alone). Row 2, only when connected: the server's name
  * + version and the protocol badge; an error goes in a box under it
  * (WebSocket bar parity, issue #171). The identity used to share row 1, which
  * overflowed at a 1200px window and clipped the badge off-screen. The URL
@@ -66,15 +68,15 @@ export default function McpConnectionBar() {
   return (
     <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--border)] px-3.5 py-2.5">
       {/* Wraps instead of clipping when the pane is narrower than the row; at a
-          1200px window everything fits on one line with the URL at >= 280px. */}
-      <div data-testid="mcp-connection-row" className="flex flex-wrap items-center gap-2">
+          1200px window everything fits on one line. */}
+      <div data-testid="mcp-connection-row" className={CB_ROW}>
         <McpStatusPill state={state} />
         <select
           value={transport}
           onChange={(e) => setTransport(e.target.value as McpTransport)}
           disabled={busy}
           data-testid="mcp-transport"
-          className="h-8 shrink-0 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+          className={CB_SELECT}
         >
           {transports.map((o) => (
             <option key={o.value} value={o.value}>
@@ -83,42 +85,52 @@ export default function McpConnectionBar() {
           ))}
         </select>
         <McpProtocolSelect disabled={busy} />
-        {/* A disabled fieldset disables the inner <input> (the shared input has no `disabled` prop). */}
-        <fieldset
-          disabled={busy}
-          className="m-0 flex min-w-[280px] flex-1 basis-[280px] border-0 p-0 disabled:opacity-60"
-        >
-          <VariableAutocompleteInput
-            value={url}
-            onChange={setUrl}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !busy) void connect()
-            }}
-            data-testid="mcp-url"
-            spellCheck={false}
-            autoComplete="off"
-            placeholder={
-              transport === 'stdio'
-                ? 'npx -y @modelcontextprotocol/server-everything'
-                : 'https://mcp.example.com/mcp'
-            }
-            className={URL_INPUT}
-          />
-        </fieldset>
-        <button
-          type="button"
-          onClick={() => void (busy ? disconnect() : connect())}
-          disabled={!busy && !url.trim()}
-          data-testid="mcp-connect"
-          className={`flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-md border-none px-4 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 ${
-            busy ? 'bg-[var(--mb-delete-fg)]' : 'bg-[var(--accent)]'
-          }`}
-        >
-          {isConnecting ? <X size={14} /> : isConnected ? <Unplug size={14} /> : <Plug size={14} />}
-          {isConnecting ? t('mcp.cancel') : isConnected ? t('mcp.disconnect') : t('mcp.connect')}
-        </button>
-        <McpConfigMenu disabled={busy} />
+        <div data-testid="mcp-connection-target" className={CB_TARGET}>
+          {/* A disabled fieldset disables the inner <input> (the shared input has no `disabled` prop). */}
+          <fieldset
+            disabled={busy}
+            className="m-0 flex min-w-[10rem] flex-1 border-0 p-0 disabled:opacity-60"
+          >
+            <VariableAutocompleteInput
+              value={url}
+              onChange={setUrl}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !busy) void connect()
+              }}
+              data-testid="mcp-url"
+              spellCheck={false}
+              autoComplete="off"
+              placeholder={
+                transport === 'stdio'
+                  ? 'npx -y @modelcontextprotocol/server-everything'
+                  : 'https://mcp.example.com/mcp'
+              }
+              className={CB_URL_FIELD}
+            />
+          </fieldset>
+          <button
+            type="button"
+            onClick={() => void (busy ? disconnect() : connect())}
+            disabled={!busy && !url.trim()}
+            data-testid="mcp-connect"
+            className={cbPrimaryButton(busy)}
+          >
+            {isConnecting ? (
+              <X size={14} />
+            ) : isConnected ? (
+              <Unplug size={14} />
+            ) : (
+              <Plug size={14} />
+            )}
+            {isConnecting ? t('mcp.cancel') : isConnected ? t('mcp.disconnect') : t('mcp.connect')}
+          </button>
+          <McpConfigMenu disabled={busy} />
+        </div>
       </div>
+      {/* Issue #247: a literal `--token …` / `?api_key=…` / `user:pass@` is not kept in the tab snapshot. */}
+      {mcpUrlHasLiteralCredential(transport, url) && (
+        <CredentialRestartHint id="mcp-url-restart-hint-text" testId="mcp-url-restart-hint" />
+      )}
       {isConnected && (serverName || protocolVersion) && (
         <div
           data-testid="mcp-server-info"

@@ -29,6 +29,22 @@ import type {
   McpTransport,
 } from '../types/mcp'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import {
+  credentialRows,
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
+import {
+  fillCommandLineCredentials,
+  fillUrlCredentials,
+  hasLiteralUrlUserinfo,
+  jsonCredentialText,
+  scrubCommandLineCredentials,
+  scrubUrlCredentials,
+} from '../lib/credential-text'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables } from '../lib/variable-resolver'
@@ -102,7 +118,8 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 export const MCP_EXPLORER_SECTION = 'explorer'
 export const MCP_SECURITY_SECTION = 'security'
 
-export interface TabMcpState extends McpSecurityTabState, McpEraTabState, McpCallTabState {
+export interface TabMcpState
+  extends McpSecurityTabState, McpEraTabState, McpCallTabState, WithheldState {
   transport: McpTransport
   /** Server URL — for stdio, the command line (`npx -y @scope/server …`). */
   url: string
@@ -294,6 +311,8 @@ type McpConfigKeys =
   | 'customHeaders'
   | 'envVars'
   | 'auth'
+  // Issue #244: which literal credentials the snapshot left out — config, not connection.
+  | 'withheldCredentials'
   | 'requestTimeout'
   | 'configTab'
   | 'configCollapsed'
@@ -382,6 +401,7 @@ function emptyState(): TabMcpState {
     customHeaders: [blankRow()],
     envVars: [blankRow()],
     auth: defaultMcpAuth(),
+    withheldCredentials: [],
     requestTimeout: null,
     configTab: 'auth',
     configCollapsed: false,
@@ -408,6 +428,7 @@ function extractState(s: TabMcpState): TabMcpState {
     customHeaders: s.customHeaders,
     envVars: s.envVars,
     auth: s.auth,
+    withheldCredentials: s.withheldCredentials,
     requestTimeout: s.requestTimeout,
     configTab: s.configTab,
     configCollapsed: s.configCollapsed,
@@ -491,7 +512,9 @@ function extractState(s: TabMcpState): TabMcpState {
  */
 function persistable(s: TabMcpState): TabMcpState {
   return {
-    ...s,
+    // Literal auth / header / env credentials (issue #244) — the saved row
+    // keeps them, `lib/withheld-credentials.ts` reloads them after a restart.
+    ...withholdCredentials(s, MCP_CREDENTIALS),
     ...disconnectedPatch(),
     notifications: [],
     frames: [],
@@ -504,8 +527,45 @@ function persistable(s: TabMcpState): TabMcpState {
   }
 }
 
+/**
+ * Issue #244: what the tab snapshot never holds literally — the Authorization
+ * tab's secrets (every sub-object, the type switch keeps them), credential-
+ * named custom headers, and credential-named stdio env vars. Env names use the
+ * same substring rule as headers, like AI Chat's ad-hoc stdio env (issue #180):
+ * `PGPASSWORD` / `GITHUB_TOKEN` must not slip through; an over-matched name
+ * (`AUTHOR`) only costs an unsaved draft its value after a restart.
+ *
+ * Issue #247 — the AI Chat rule of issue #180, blanking instead of removing:
+ * the server URL's `user:pass@` password and credential-named query values,
+ * the stdio command line's credential flags (`--token ""`, `--api-key=`) and
+ * URL arguments, and an env value that is a URL with `user:pass@` (the whole
+ * value — the row and its name stay).
+ */
+const isStdio = (st: unknown): boolean => (st as { transport?: string }).transport === 'stdio'
+
+export const MCP_CREDENTIALS: CredentialSpec = {
+  fields: ['auth.basic.password', 'auth.bearer.token', 'auth.apiKey.value'],
+  rows: [
+    credentialRows('customHeaders'),
+    { ...credentialRows('envVars'), isCredentialValue: hasLiteralUrlUserinfo },
+  ],
+  texts: [
+    {
+      path: 'url',
+      scrub: (v, st) => (isStdio(st) ? scrubCommandLineCredentials(v) : scrubUrlCredentials(v)),
+      fill: (live, saved, st) =>
+        isStdio(st) ? fillCommandLineCredentials(live, saved) : fillUrlCredentials(live, saved),
+    },
+    // The tool-call arguments JSON: credential-named members (`"api_key": ""`);
+    // the saved row keeps them under `call.toolArgs`.
+    jsonCredentialText('toolArgs', 'call.toolArgs'),
+  ],
+}
+
 const STORAGE_KEY = 'testnizer-mcp'
-const persisted = loadTabbedState<TabMcpState>(STORAGE_KEY, emptyState)
+// The snapshot sanitizer also runs on load: a snapshot an older build wrote
+// with literal credentials is cleaned at once (issue #244).
+const persisted = loadTabbedState<TabMcpState>(STORAGE_KEY, emptyState, persistable)
 
 // ─── Tab / connection routing (issue #76 discipline) ────────────────────────
 // Async results and server events land on the tab that OWNS them — found by
@@ -1380,6 +1440,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   startOAuth: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const st = get()
     if (st.oauthRunning) return
     if (st.transport === 'stdio') {
@@ -1489,6 +1551,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   setSecurityRateLimitProbe: (securityRateLimitProbe) => set({ securityRateLimitProbe }),
 
   startSecurityScan: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const st = get()
     if (st.securityRunning) return
     if (st.transport === 'stdio') {
@@ -1558,6 +1622,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   connect: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const {
       transport,
       url,
@@ -1702,6 +1768,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
   },
 
   callTool: async (opts) => {
+    // Issue #247: tool arguments still withheld after a restart are reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { connectionId, selectedTool, toolArgs, tools, toolCallId, url } = get()
     const tabId = get()._currentTabId
     if (!connectionId || !selectedTool || toolCallId) return
@@ -2143,5 +2211,7 @@ attachTabbedPersist(
   (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
   persistable,
 )
+// Issue #244: a user edit to a withheld value drops its marker.
+trackCredentialEdits(useMcpStore, MCP_CREDENTIALS)
 
 ensureMcpEventSubscriptions()

@@ -2,6 +2,7 @@ import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import { dismissOverlays, navigateSidebar, openCommandPalette, openHttpRequestTab } from '../helpers/ui/bootstrap'
 import { pressModShortcut } from '../helpers/ui/keyboard'
+import { restoreEnglishLocale } from '../helpers/ui/locale'
 
 uiTest.describe('Cross-cutting (deep)', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -16,10 +17,15 @@ uiTest.describe('Cross-cutting (deep)', () => {
   })
 
   uiTest('locale switch TR and EN', async ({ window }) => {
-    await openCommandPalette(window)
-    await window.getByRole('option', { name: /Türkçe|Turkish/i }).click()
-    await openCommandPalette(window)
-    await window.getByRole('option', { name: /English/i }).click()
+    try {
+      await openCommandPalette(window)
+      await window.getByRole('option', { name: /Türkçe|Turkish/i }).click()
+      await openCommandPalette(window)
+      await window.getByRole('option', { name: /English/i }).click()
+    } finally {
+      // A failure between the two clicks would leave the shared window on TR.
+      await restoreEnglishLocale(window)
+    }
   })
 
   uiTest('tab persistence across tab switches', async ({ window }) => {

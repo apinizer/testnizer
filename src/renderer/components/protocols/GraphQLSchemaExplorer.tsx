@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Search, ChevronRight, Hash, List, Box } from 'lucide-react'
 import type { GqlSchema, GqlType, GqlField } from '../../stores/graphql.store'
+import { useTranslation } from '../../lib/i18n'
 
 interface Props {
   schemaData: GqlSchema | null
@@ -8,6 +9,7 @@ interface Props {
 }
 
 export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
+  const { t, locale } = useTranslation()
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedTypeName, setSelectedTypeName] = useState<string | null>(null)
 
@@ -23,16 +25,16 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 text-[var(--hint)]">
         <Search size={20} />
-        <span>Click "Introspect" to load the schema</span>
+        <span>{t('graphql.schemaEmpty')}</span>
       </div>
     )
   }
 
-  const filteredTypes = schemaData.types.filter((t) =>
-    t.name.toLowerCase().includes(searchTerm.toLowerCase()),
+  const filteredTypes = schemaData.types.filter((ty) =>
+    ty.name.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const selectedType = schemaData.types.find((t) => t.name === selectedTypeName)
+  const selectedType = schemaData.types.find((ty) => ty.name === selectedTypeName)
 
   // Group types
   const rootTypes = [
@@ -40,16 +42,16 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
     schemaData.mutationType,
     schemaData.subscriptionType,
   ].filter(Boolean)
-  const queryTypes = filteredTypes.filter((t) => rootTypes.includes(t.name))
+  const queryTypes = filteredTypes.filter((ty) => rootTypes.includes(ty.name))
   const objectTypes = filteredTypes.filter(
-    (t) => t.kind === 'OBJECT' && !rootTypes.includes(t.name),
+    (ty) => ty.kind === 'OBJECT' && !rootTypes.includes(ty.name),
   )
-  const inputTypes = filteredTypes.filter((t) => t.kind === 'INPUT_OBJECT')
-  const enumTypes = filteredTypes.filter((t) => t.kind === 'ENUM')
-  const scalarTypes = filteredTypes.filter((t) => t.kind === 'SCALAR')
+  const inputTypes = filteredTypes.filter((ty) => ty.kind === 'INPUT_OBJECT')
+  const enumTypes = filteredTypes.filter((ty) => ty.kind === 'ENUM')
+  const scalarTypes = filteredTypes.filter((ty) => ty.kind === 'SCALAR')
 
   return (
-    <div className="flex h-full overflow-hidden">
+    <div className="flex h-full overflow-hidden" lang={locale}>
       {/* Left: type list */}
       <div className="flex w-[180px] shrink-0 flex-col border-r border-[var(--border)]">
         {/* Search */}
@@ -60,8 +62,8 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Filter types..."
-              className="w-full border-none bg-transparent text-[var(--text)] outline-none placeholder:text-[var(--hint)]"
+              placeholder={t('graphql.filterTypes')}
+              className="w-full border-none bg-transparent text-[var(--text)] outline-none placeholder:text-[var(--placeholder)]"
             />
           </div>
         </div>
@@ -69,28 +71,28 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
         {/* Types list */}
         <div className="flex-1 overflow-y-auto">
           <TypeSection
-            label="Root Types"
+            label={t('graphql.rootTypes')}
             types={queryTypes}
             selected={selectedTypeName}
             onSelect={setSelectedTypeName}
             icon={<Box size={11} />}
           />
           <TypeSection
-            label="Objects"
+            label={t('graphql.objects')}
             types={objectTypes}
             selected={selectedTypeName}
             onSelect={setSelectedTypeName}
             icon={<Hash size={11} />}
           />
           <TypeSection
-            label="Input Objects"
+            label={t('graphql.inputObjects')}
             types={inputTypes}
             selected={selectedTypeName}
             onSelect={setSelectedTypeName}
             icon={<ChevronRight size={11} />}
           />
           <TypeSection
-            label="Enums"
+            label={t('graphql.enums')}
             types={enumTypes}
             selected={selectedTypeName}
             onSelect={setSelectedTypeName}
@@ -98,7 +100,7 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
           />
           {scalarTypes.length > 0 && (
             <TypeSection
-              label="Scalars"
+              label={t('graphql.scalars')}
               types={scalarTypes}
               selected={selectedTypeName}
               onSelect={setSelectedTypeName}
@@ -114,7 +116,7 @@ export default function GraphQLSchemaExplorer({ schemaData, error }: Props) {
           <TypeDetail type={selectedType} onNavigate={setSelectedTypeName} />
         ) : (
           <div className="flex h-full items-center justify-center text-[var(--hint)]">
-            Select a type to view its details
+            {t('graphql.selectType')}
           </div>
         )}
       </div>
@@ -167,6 +169,7 @@ function TypeSection({
 // ─── Type Detail ─────────────────────────────────────────────
 
 function TypeDetail({ type, onNavigate }: { type: GqlType; onNavigate: (name: string) => void }) {
+  const { t } = useTranslation()
   return (
     <div>
       {/* Type header */}
@@ -186,7 +189,7 @@ function TypeDetail({ type, onNavigate }: { type: GqlType; onNavigate: (name: st
       {/* Enum values */}
       {type.enumValues && type.enumValues.length > 0 && (
         <div className="mb-3">
-          <div className="mb-1.5 font-semibold text-[var(--muted)]">Values</div>
+          <div className="mb-1.5 font-semibold text-[var(--muted)]">{t('graphql.values')}</div>
           <div className="flex flex-wrap gap-1">
             {type.enumValues.map((val) => (
               <span
@@ -205,7 +208,7 @@ function TypeDetail({ type, onNavigate }: { type: GqlType; onNavigate: (name: st
       {type.fields.length > 0 && (
         <div>
           <div className="mb-1.5 font-semibold text-[var(--muted)]">
-            Fields ({type.fields.length})
+            {t('graphql.fields').replace('{count}', String(type.fields.length))}
           </div>
           <div className="space-y-1">
             {type.fields.map((field) => (
@@ -221,6 +224,7 @@ function TypeDetail({ type, onNavigate }: { type: GqlType; onNavigate: (name: st
 // ─── Field Row ───────────────────────────────────────────────
 
 function FieldRow({ field, onNavigate }: { field: GqlField; onNavigate: (name: string) => void }) {
+  const { t } = useTranslation()
   const typeName = field.type.replace(/[[\]!]/g, '')
 
   return (
@@ -246,7 +250,7 @@ function FieldRow({ field, onNavigate }: { field: GqlField; onNavigate: (name: s
 
       {field.args.length > 0 && (
         <div className="mt-1.5 space-y-0.5">
-          <span className="font-medium text-[var(--hint)]">Arguments:</span>
+          <span className="font-medium text-[var(--hint)]">{t('graphql.arguments')}</span>
           {field.args.map((arg) => (
             <div key={arg.name} className="flex items-baseline gap-1.5 pl-2">
               <span className="font-mono text-[var(--text)]">{arg.name}</span>

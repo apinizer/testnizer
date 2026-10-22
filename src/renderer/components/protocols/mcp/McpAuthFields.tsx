@@ -4,8 +4,11 @@ import type { McpAuthConfig } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 
+/** The Authorization tab's restart hint (issue #244) — `McpAuthSection` renders it. */
+export const MCP_AUTH_RESTART_HINT_ID = 'mcp-auth-restart-hint'
+
 const INPUT =
-  'h-8 w-full min-w-0 rounded-md border border-[var(--border)] px-2.5 font-mono text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]'
+  'h-8 w-full min-w-0 rounded-md border border-[var(--border)] px-2.5 font-mono text-sm text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]'
 
 function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -44,6 +47,7 @@ function SecretField(props: {
   onChange: (v: string) => void
   placeholder?: string
   testId: string
+  describedBy?: string
 }) {
   const { t } = useTranslation()
   const [show, setShow] = useState(false)
@@ -58,6 +62,7 @@ function SecretField(props: {
           onChange={(e) => props.onChange(e.target.value)}
           placeholder={props.placeholder}
           data-testid={props.testId}
+          aria-describedby={props.describedBy}
           className={`${INPUT} bg-[var(--white)] pr-8`}
         />
         <button
@@ -77,9 +82,11 @@ function SecretField(props: {
 interface FieldsProps {
   auth: McpAuthConfig
   onChange: (auth: McpAuthConfig) => void
+  /** The id of the restart hint on screen, if any (`McpAuthSection`). */
+  describedBy?: string
 }
 
-export function McpBasicAuthFields({ auth, onChange }: FieldsProps) {
+export function McpBasicAuthFields({ auth, onChange, describedBy }: FieldsProps) {
   const { t } = useTranslation()
   const basic = auth.basic ?? { username: '', password: '' }
   return (
@@ -97,6 +104,7 @@ export function McpBasicAuthFields({ auth, onChange }: FieldsProps) {
         onChange={(password) => onChange({ ...auth, basic: { ...basic, password } })}
         placeholder="{{password}}"
         testId="mcp-auth-basic-password"
+        describedBy={describedBy}
       />
     </div>
   )
@@ -154,7 +162,7 @@ export function McpApiKeyAuthFields({ auth, onChange }: FieldsProps) {
             })
           }
           data-testid="mcp-auth-apikey-in"
-          className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+          className="h-8 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
         >
           <option value="header">{t('mcp.auth.addTo.header')}</option>
           <option value="query">{t('mcp.auth.addTo.query')}</option>

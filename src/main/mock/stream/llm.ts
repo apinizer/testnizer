@@ -21,11 +21,14 @@
  * `model` is reflected (an empty one reads as `mock-model`).
  */
 import { randomUUID } from 'node:crypto'
-import type {
-  MockLlmConfig,
-  MockLlmProvider,
-  MockLlmStopReason,
-  MockLlmUsage,
+import {
+  LLM_DEFAULT_STOP_SEQUENCE,
+  LLM_STREAM_ERROR_DEFAULTS,
+  stopReasonFor,
+  type MockLlmConfig,
+  type MockLlmProvider,
+  type MockLlmStopReason,
+  type MockLlmUsage,
 } from '../../../shared/mock-stream'
 import type { SseEvent } from './sse-writer'
 import { openAiCompletion, openAiEvents } from './llm-openai'
@@ -75,6 +78,25 @@ export interface LlmPlan {
   usage: MockLlmUsage
   includeUsage: boolean
   chunking: MockLlmConfig['chunking']
+  /** `fixed` chunking's size (undefined = the default). */
+  chunkSize?: number
+  /** Anthropic `stop_sequence` (the matched sequence) when the stop reason is `stop_sequence`, else null. */
+  stopSequence: string | null
+  /** Mid-stream error with the provider defaults filled in; null = none. */
+  streamError: { afterChunks: number; type: string; message: string } | null
+}
+
+/**
+ * One event of an encoded stream, as the encoders build it: `content`
+ * marks a chunk of model output (a text piece, a tool-call argument piece),
+ * `finish` the closing events (the finish / usage / `[DONE]` chunks,
+ * `message_delta` / `message_stop`) — what a mid-stream error cuts at.
+ */
+export interface LlmEvent extends SseEvent {
+  content?: true
+  finish?: true
+  /** The text piece a `content` event carries (for the log of a cut reply). */
+  text?: string
 }
 
 /** Id + clock source; tests pass fixed ones. */
@@ -229,6 +251,14 @@ export function buildLlmPlan(
     (n, c) => n + c.name.length + c.arguments.length,
     text.length,
   )
+  // Tool calls always stop with tool_calls; otherwise the configured reason, as
+  // this provider can say it (stop_sequence on OpenAI is `stop`).
+  const stopReason: MockLlmStopReason =
+    toolCalls.length > 0
+      ? 'tool_calls'
+      : config.stopReason === 'tool_calls'
+        ? 'stop'
+        : stopReasonFor(provider, config.stopReason)
   const usage: MockLlmUsage =
     config.usage === 'auto'
       ? {
@@ -245,15 +275,22 @@ export function buildLlmPlan(
       model: request.model,
       text,
       toolCalls,
-      stopReason:
-        toolCalls.length > 0
-          ? 'tool_calls'
-          : config.stopReason === 'tool_calls'
-            ? 'stop'
-            : config.stopReason,
+      stopReason,
       usage,
       includeUsage: request.includeUsage,
       chunking: config.chunking,
+      ...(config.chunkSize !== undefined ? { chunkSize: config.chunkSize } : {}),
+      stopSequence:
+        provider === 'anthropic' && stopReason === 'stop_sequence'
+          ? (config.stopSequence ?? LLM_DEFAULT_STOP_SEQUENCE)
+          : null,
+      streamError: config.streamError
+        ? {
+            afterChunks: config.streamError.afterChunks,
+            type: config.streamError.type || LLM_STREAM_ERROR_DEFAULTS[provider].type,
+            message: config.streamError.message || LLM_STREAM_ERROR_DEFAULTS[provider].message,
+          }
+        : null,
     },
   }
 }
@@ -265,9 +302,64 @@ export function encodeLlmJson(plan: LlmPlan): string {
   )
 }
 
-/** The streamed reply as server-sent events, in order. */
-export function encodeLlmEvents(plan: LlmPlan): SseEvent[] {
+/** The streamed reply as server-sent events, in order (the whole reply — no mid-stream error). */
+export function encodeLlmEvents(plan: LlmPlan): LlmEvent[] {
   return plan.provider === 'anthropic' ? anthropicEvents(plan) : openAiEvents(plan)
+}
+
+/**
+ * A provider's mid-stream error event — the shapes each official SDK raises
+ * on:
+ *  - OpenAI: an unnamed event whose data is `{"error": {…}}` (openai-python
+ *    `_streaming.py`: `if is_mapping(data) and data.get("error"): raise
+ *    APIError`; OpenAI does not document the shape itself — the SDK is the
+ *    contract);
+ *  - Anthropic: `event: error` + `{"type":"error","error":{type, message}}`
+ *    (streaming docs, "Error events"; anthropic-sdk-typescript
+ *    `core/streaming.ts`: `if (sse.event === 'error') throw new APIError`).
+ */
+export function llmStreamErrorEvent(
+  provider: MockLlmProvider,
+  error: { type: string; message: string },
+): SseEvent {
+  const data = llmErrorBody(provider, error.type, error.message)
+  return provider === 'anthropic' ? { event: 'error', data } : { data }
+}
+
+export interface LlmStream {
+  /** Events to stream before the error (all of them when there is none). */
+  events: SseEvent[]
+  /** The error event that ends the stream, or null. */
+  error: SseEvent | null
+  /** Chunks of output sent before the error. */
+  chunksSent: number
+  /** The text pieces sent before the error, joined. */
+  textSent: string
+}
+
+/**
+ * The streamed reply with its mid-stream error applied: the events up to
+ * (not including) the chunk after `afterChunks` chunks of output — or up to
+ * the first closing event when the reply has fewer — then the error. The
+ * preamble (role chunk; `message_start` / `content_block_start` / `ping`)
+ * always goes out, so `afterChunks: 0` is "an error before any output".
+ */
+export function encodeLlmStream(plan: LlmPlan): LlmStream {
+  const all = encodeLlmEvents(plan)
+  const err = plan.streamError
+  if (!err) return { events: all, error: null, chunksSent: 0, textSent: '' }
+  const events: SseEvent[] = []
+  let chunksSent = 0
+  let textSent = ''
+  for (const ev of all) {
+    if (ev.finish || (ev.content && chunksSent === err.afterChunks)) break
+    events.push(ev)
+    if (ev.content) {
+      chunksSent++
+      textSent += ev.text ?? ''
+    }
+  }
+  return { events, error: llmStreamErrorEvent(plan.provider, err), chunksSent, textSent }
 }
 
 /**
@@ -275,10 +367,12 @@ export function encodeLlmEvents(plan: LlmPlan): SseEvent[] {
  * count, checked against the writer's plan limit BEFORE anything is built.
  * Counting the text chunks stops past `limit`: the result is then some
  * number above it. Mirrors the event lists of `llm-openai.ts` /
- * `llm-anthropic.ts` (golden-tested against them).
+ * `llm-anthropic.ts` (golden-tested against them). A mid-stream error only
+ * shortens the stream (it replaces at least two closing events with one
+ * error event), so the count stays an upper bound there.
  */
 export function llmStreamFrameCount(plan: LlmPlan, limit = Infinity): number {
-  const text = countChunks(plan.text, plan.chunking, limit)
+  const text = countChunks(plan.text, plan.chunking, limit, plan.chunkSize)
   const calls = plan.toolCalls.reduce((n, c) => n + argumentPieceCount(c.arguments) + 2, 0)
   if (plan.provider === 'anthropic') {
     // message_start · (text block start + ping + deltas + stop | ping) · calls · message_delta · message_stop

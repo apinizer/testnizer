@@ -16,6 +16,7 @@ import type { GrpcMethodType } from '../../stores/grpc.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import { useTranslation } from '../../lib/i18n'
+import CredentialRowsHint from '../shared/CredentialRowsHint'
 
 const METHOD_TYPE_COLORS: Record<GrpcMethodType, { bg: string; color: string; label: string }> = {
   unary: { bg: '#e8f4ff', color: '#0066cc', label: 'Unary' },
@@ -103,7 +104,7 @@ export default function GrpcRequestPane() {
               onChange={(e) => setAddress(e.target.value)}
               data-testid="grpc-address"
               placeholder={t('grpc.serverAddressPlaceholder')}
-              className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
+              className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
             />
 
             {/* TLS toggle */}
@@ -177,7 +178,7 @@ export default function GrpcRequestPane() {
                   value={protoUrl}
                   onChange={(e) => setProtoUrl(e.target.value)}
                   placeholder={t('grpc.protoSource.urlPlaceholder')}
-                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
+                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
                 />
               )}
               {protoSource === 'file' && (
@@ -333,6 +334,7 @@ export default function GrpcRequestPane() {
                   onAdd={addMetadata}
                   addLabel={t('kv.addMetadata')}
                 />
+                <CredentialRowsHint rows={metadata} testId="grpc-metadata-restart-hint" />
               </div>
             )}
           </div>

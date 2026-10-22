@@ -12,17 +12,23 @@
  * The header targets an endpoint by the type's contract without loading any
  * response rows (KISS): SSE → the first exact-path GET / ANY endpoint; AI →
  * the first exact POST / ANY `…/chat/completions`, else the first exact POST
- * that is not an Anthropic `…/messages` path.
+ * that is not an Anthropic `…/messages` path; AI (Anthropic) → the first
+ * exact POST / ANY `…/messages` (issue #222).
  */
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 import { useAiChatStore } from '../../stores/ai-chat.store'
 import { activateTabStores } from '../../lib/activate-tab'
-import { makeTabId } from '../../lib/utils'
 import { toast } from '../../lib/toast'
 import type { MockEndpoint, MockMethod, MockServer } from '../../types'
 import { mockServerUrl } from './mock-http-tabs'
 import { MOCK_LLM_MODEL } from './mock-ai-presets'
+import {
+  focusMockClientTab,
+  mockClientTabKey,
+  mockClientTabName,
+  newMockClientTabId,
+} from './mock-client-tab'
 
 const SSE_METHODS: readonly SseHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
@@ -43,10 +49,10 @@ export function streamTargetEndpoint(endpoints: readonly MockEndpoint[]): MockEn
 /**
  * The endpoint the AI header button opens: the first exact POST / ANY one
  * whose path ends with `/chat/completions`, else the first exact POST one —
- * except an Anthropic `/messages` path: the AI Chat tab is opened on the
- * Custom (OpenAI-format) provider, which reads an Anthropic event stream as
- * an empty answer, and the Anthropic provider would send the saved Anthropic
- * key (§D.3.5). Null = no one-click target.
+ * except an Anthropic `/messages` path: this button opens the Custom
+ * (OpenAI-format) provider, which reads an Anthropic event stream as an empty
+ * answer. `/messages` has its own button (`anthropicTargetEndpoint`, issue
+ * #222). Null = no one-click target.
  */
 export function chatTargetEndpoint(endpoints: readonly MockEndpoint[]): MockEndpoint | null {
   const exact = endpoints.filter((e) => e.pathMode === 'exact')
@@ -59,6 +65,21 @@ export function chatTargetEndpoint(endpoints: readonly MockEndpoint[]): MockEndp
   )
 }
 
+/**
+ * The endpoint "Open in AI Chat (Anthropic)" opens (issue #222): the first
+ * exact POST / ANY one whose path ends with `/messages`. Null = none.
+ */
+export function anthropicTargetEndpoint(endpoints: readonly MockEndpoint[]): MockEndpoint | null {
+  return (
+    endpoints.find(
+      (e) =>
+        e.pathMode === 'exact' &&
+        (e.method === 'POST' || e.method === 'ANY') &&
+        /\/messages$/.test(e.path),
+    ) ?? null
+  )
+}
+
 /** Full URL of an endpoint path, reached through loopback when the server binds 0.0.0.0. */
 export function mockEndpointUrl(
   server: Pick<MockServer, 'host' | 'port' | 'basePath'>,
@@ -68,51 +89,95 @@ export function mockEndpointUrl(
 }
 
 export interface OpenMockSseTarget {
+  /** The mock server — with the method and path, the key of its one client tab. */
+  serverId: string
   name: string
   url: string
   method: SseHttpMethod
+  /** The endpoint path: header and per-endpoint buttons of one endpoint share a tab. */
+  path: string
 }
 
-/** Open a new SSE request tab prefilled with the mock's URL and method. Returns the tab id. */
+/**
+ * Open the SSE request tab of a mock endpoint, prefilled with its URL and
+ * method, and connect it (PM review #20 — "Open in SSE tab" used to leave it
+ * Disconnected). A second click focuses that tab instead of opening another
+ * (its config is left as the user has it) and reconnects it when it is not
+ * connected. Returns the tab id.
+ */
 export function openMockInSseTab(o: OpenMockSseTarget): string {
-  const id = makeTabId()
-  useTabsStore.getState().openTab({ id, name: o.name, protocol: 'sse', url: '' })
+  const key = mockClientTabKey('sse', o.serverId, `${o.method} ${o.path}`)
+  const open = focusMockClientTab(key)
+  if (open) {
+    connectSseIfIdle()
+    return open
+  }
+  const id = newMockClientTabId(key)
+  useTabsStore.getState().openTab({ id, name: mockClientTabName(o.name), protocol: 'sse', url: '' })
   activateTabStores(id)
   const sse = useSseStore.getState()
   sse.setMethod(o.method)
   sse.setUrl(o.url)
   // A prefilled scratch tab holds nothing the user typed — no dirty dot.
   useTabsStore.getState().markDirty(id, false)
+  connectSseIfIdle()
   return id
 }
 
+/** Connect the ACTIVE SSE tab unless it is connected or connecting already. */
+function connectSseIfIdle(): void {
+  const sse = useSseStore.getState()
+  if (sse.connectionState === 'connected' || sse.connectionState === 'connecting') return
+  void sse.connect()
+}
+
 export interface OpenMockAiChatTarget {
+  /** The mock server — with the provider, the key of its one AI Chat tab. */
+  serverId: string
   name: string
-  /** The full chat endpoint URL — the Custom provider posts to it as it is. */
+  /** The full chat endpoint URL — the provider posts to it as it is. */
   url: string
   /** Default `mock-model` (what GET /v1/models lists). */
   model?: string
+  /**
+   * The wire the tab speaks: `custom` (OpenAI chat completions, default) or
+   * `anthropic` (Anthropic messages, issue #222).
+   */
+  provider?: 'custom' | 'anthropic'
 }
 
 /**
- * Open a new AI Chat tab on the Custom provider, pointed at the mock's chat
- * endpoint (§D.3.5). Returns the tab id.
+ * Open a new AI Chat tab pointed at the mock's chat endpoint (§D.3.5, issue
+ * #222): the Custom provider for the OpenAI-compatible endpoint, the
+ * Anthropic provider for `…/v1/messages`. Returns the tab id.
  *
- * The URL is set BEFORE the provider: while the provider is still the fresh
- * tab's OpenAI, the URL edit changes no key scope; picking Custom then lands
- * straight on the mock's own scope (`custom:http://127.0.0.1:<port>`), which
- * has no stored key — so the key field is empty and no credential header is
- * sent. The other order passes through `custom:https://api.openai.com` (the
- * fresh tab's default URL), and a key carried there in memory would follow
- * the URL edit to the mock.
+ * No saved key reaches the mock, by ONE rule for both: the tab is marked
+ * `savedKeyDisabled` FIRST, before any provider / URL change could load a
+ * key — the Anthropic provider's key scope is the provider itself, whatever
+ * the URL, so without the mark the user's real Anthropic key would be sent
+ * as `x-api-key`. A key the user types into the tab is still used.
+ *
+ * Anthropic: the provider is set BEFORE the URL — `setProvider` replaces the
+ * URL with the provider's default (`api.anthropic.com`).
  */
 export function openMockInAiChatTab(o: OpenMockAiChatTarget): string {
-  const id = makeTabId()
-  useTabsStore.getState().openTab({ id, name: o.name, protocol: 'ai', url: '' })
+  // One tab per server and provider (PM review #20): a second click focuses
+  // it — its conversation and settings stay as they are.
+  const key = mockClientTabKey('ai', o.serverId, `${o.provider ?? 'custom'} ${o.url}`)
+  const open = focusMockClientTab(key)
+  if (open) return open
+  const id = newMockClientTabId(key)
+  useTabsStore.getState().openTab({ id, name: mockClientTabName(o.name), protocol: 'ai', url: '' })
   activateTabStores(id)
   const ai = useAiChatStore.getState()
-  ai.setCustomUrl(o.url)
-  ai.setProvider('custom')
+  ai.setSavedKeyDisabled(true)
+  if (o.provider === 'anthropic') {
+    ai.setProvider('anthropic')
+    ai.setCustomUrl(o.url)
+  } else {
+    ai.setCustomUrl(o.url)
+    ai.setProvider('custom')
+  }
   ai.setModel(o.model ?? MOCK_LLM_MODEL)
   useTabsStore.getState().markDirty(id, false)
   return id
@@ -126,9 +191,11 @@ export interface StartThenOpen {
 /**
  * The header buttons' one path: start the server first when it is not
  * running. A start error is shown and NO tab opens (a tab against a dead port
- * would only show a connection error). Returns the new tab id, or null.
+ * would only show a connection error). `open` runs after the start, so it can
+ * read what the start produced (the Mock MCP live URL). Returns the new tab
+ * id, or null.
  */
-async function startThenOpen(o: StartThenOpen, open: () => string): Promise<string | null> {
+export async function startThenOpen(o: StartThenOpen, open: () => string): Promise<string | null> {
   if (!o.running) {
     const err = await o.start()
     if (err) {
@@ -142,11 +209,27 @@ async function startThenOpen(o: StartThenOpen, open: () => string): Promise<stri
 export function startAndOpenMockInSseTab(
   o: OpenMockSseTarget & StartThenOpen,
 ): Promise<string | null> {
-  return startThenOpen(o, () => openMockInSseTab({ name: o.name, url: o.url, method: o.method }))
+  return startThenOpen(o, () =>
+    openMockInSseTab({
+      serverId: o.serverId,
+      name: o.name,
+      url: o.url,
+      method: o.method,
+      path: o.path,
+    }),
+  )
 }
 
 export function startAndOpenMockInAiChatTab(
   o: OpenMockAiChatTarget & StartThenOpen,
 ): Promise<string | null> {
-  return startThenOpen(o, () => openMockInAiChatTab({ name: o.name, url: o.url, model: o.model }))
+  return startThenOpen(o, () =>
+    openMockInAiChatTab({
+      serverId: o.serverId,
+      name: o.name,
+      url: o.url,
+      model: o.model,
+      provider: o.provider,
+    }),
+  )
 }

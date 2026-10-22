@@ -12,8 +12,9 @@
  * Mock MCP is deliberately NOT a kind here: it is its own table
  * (`mock_mcp_servers`) with its own engine.
  *
- * The kind is fixed at creation (there is no update path); only a project
- * file can change it. Pure and import-free so both bundles can use it.
+ * The kind is picked at creation and can be changed later from the editor's
+ * Settings tab (issue #222, `UpdateMockServerInput.kind`) — nothing else
+ * changes with it. Pure and import-free so both bundles can use it.
  */
 
 export const MOCK_SERVER_KINDS = ['http', 'sse', 'ai'] as const

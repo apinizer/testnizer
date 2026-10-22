@@ -17,7 +17,7 @@ export default function SoapWsdlImport() {
           value={wsdlUrl}
           onChange={(e) => setWsdlUrl(e.target.value)}
           placeholder="https://example.com/service?wsdl"
-          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
+          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
           onKeyDown={(e) => {
             if (e.key === 'Enter') parseWsdl()
           }}

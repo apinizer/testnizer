@@ -13,9 +13,16 @@ import { useTranslation } from '../../../lib/i18n'
 export default function AiChatMetricsRow({
   metrics,
   timestamp,
+  interrupted = false,
 }: {
   metrics?: AiTurnMetrics
   timestamp: number
+  /**
+   * The turn ended with an error. With a success status that means the
+   * stream broke mid-way (a provider error event after the 200): the chip
+   * turns orange and says so instead of a green "200" (PM review #11).
+   */
+  interrupted?: boolean
 }): ReactElement {
   const { t } = useTranslation()
   const time = new Date(timestamp).toLocaleTimeString()
@@ -27,6 +34,8 @@ export default function AiChatMetricsRow({
     )
   }
   const ok = metrics.status !== null && metrics.status < 400
+  const cut = ok && interrupted
+  const statusColor = cut ? 'var(--orange)' : ok ? 'var(--green)' : 'var(--red)'
   const partial = partialUsageNote(metrics, t)
   return (
     <div
@@ -34,8 +43,14 @@ export default function AiChatMetricsRow({
       style={{ fontSize: 11 }}
       data-testid="ai-metrics"
     >
-      <span data-testid="ai-metrics-status" style={{ color: ok ? 'var(--green)' : 'var(--red)' }}>
+      <span
+        data-testid="ai-metrics-status"
+        data-status={cut ? 'interrupted' : ok ? 'ok' : 'error'}
+        title={cut ? t('aiChat.metrics.interruptedHint') : undefined}
+        style={{ color: statusColor }}
+      >
         {metrics.status ?? '—'}
+        {cut && ` · ${t('aiChat.metrics.interrupted')}`}
       </span>
       <span>
         {t('aiChat.metrics.ttfb')} {ms(metrics.ttfbMs)}

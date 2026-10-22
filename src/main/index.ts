@@ -12,6 +12,7 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase, getDb, type InitDatabaseResult } from './db/database'
 import { runHistoryMaskMigration } from './db/history-mask-migration'
+import { runSecretAtRestMigration } from './db/secret-at-rest-migration'
 import { registerAllHandlers } from './ipc'
 import { migrateProjectSettings } from './ipc/settings.handler'
 import { initAutoUpdater } from './updater'
@@ -332,6 +333,10 @@ app.whenReady().then(() => {
   // once (settings marker), in byte-capped batches that yield. Started only
   // once the window is up (ready-to-show, or a fallback timer), so nothing of
   // it runs before the first paint.
+  //
+  // Issue #239: then seal values marked secret that are still plaintext
+  // (every launch; cheap and idempotent) and, once, checkpoint + VACUUM so
+  // plaintext left in freed pages / the WAL — from both passes — is gone.
   void runHistoryMaskMigration(getDb(), {
     startAfter: () =>
       new Promise<void>((resolve) => {
@@ -341,7 +346,10 @@ app.whenReady().then(() => {
           setTimeout(resolve, 1000)
         })
       }),
-  }).catch(() => undefined)
+  })
+    .catch(() => undefined)
+    .then(() => runSecretAtRestMigration(getDb()))
+    .catch(() => undefined)
 
   // If the DB was corrupt and we recovered, tell the user — but only AFTER the
   // window exists, never before (a pre-window modal would look like a crash).

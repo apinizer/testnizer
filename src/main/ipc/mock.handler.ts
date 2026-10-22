@@ -481,8 +481,11 @@ function serverRowToView(r: MockServerRow): {
   kind: MockServerKind
   createdAt: number
   updatedAt: number
+  /** Issue #239: a credential in `authConfig` cannot be decrypted here (it reads ''). */
+  authDecryptFailed?: true
 } {
   return {
+    ...(r.authDecryptFailed ? { authDecryptFailed: true as const } : {}),
     id: r.id,
     projectId: r.project_id,
     name: r.name,
@@ -535,8 +538,11 @@ function endpointRowToView(r: MockEndpointRow): {
   schemaValidation: unknown
   createdAt: number
   updatedAt: number
+  /** Issue #239: a credential in `authOverride` cannot be decrypted here (it reads ''). */
+  authDecryptFailed?: true
 } {
   return {
+    ...(r.authDecryptFailed ? { authDecryptFailed: true as const } : {}),
     id: r.id,
     serverId: r.server_id,
     method: r.method,

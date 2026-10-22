@@ -14,6 +14,7 @@ import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
 import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
+import { sealMcpBearerRows, sealMockAuthRows, sealVariableRows } from '../lib/secret-at-rest'
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
 import { safeFileName } from '../lib/filename-safe'
 import {
@@ -838,9 +839,13 @@ function importProjectData(
 
   // Import environment variables
   if (data.environmentVariables?.length) {
-    const rows = keepLocalVariableSecrets(
-      data.environmentVariables,
-      localRow('environment_variables', 'value, initial_value'),
+    // Sealed after the refill (issue #239): a local value is already
+    // ciphertext; an old file's plaintext secret gets encrypted here.
+    const rows = sealVariableRows(
+      keepLocalVariableSecrets(
+        data.environmentVariables,
+        localRow('environment_variables', 'value, initial_value'),
+      ),
     )
     upsert('environment_variables', rows, [
       'id',
@@ -858,9 +863,11 @@ function importProjectData(
   // global was scoped to a project on the source side, it must land scoped to
   // the target project rather than leaking workspace-wide.
   if (data.globalVariables?.length) {
-    const rows = keepLocalVariableSecrets(
-      rebind(data.globalVariables),
-      localRow('global_variables', 'value, initial_value'),
+    const rows = sealVariableRows(
+      keepLocalVariableSecrets(
+        rebind(data.globalVariables),
+        localRow('global_variables', 'value, initial_value'),
+      ),
     )
     upsert('global_variables', rows, [
       'id',
@@ -944,10 +951,13 @@ function importProjectData(
   // upsert parents before children. Missing arrays are skipped — pre-v1.2
   // export files don't carry these.
   if (data.mockServers?.length) {
-    const withAuth = keepLocalMockAuth(
-      rebind(data.mockServers),
+    const withAuth = sealMockAuthRows(
+      keepLocalMockAuth(
+        rebind(data.mockServers),
+        'auth_config',
+        localRow('mock_servers', 'auth_config, description'),
+      ),
       'auth_config',
-      localRow('mock_servers', 'auth_config, description'),
     )
     // `kind` is NOT NULL: an explicit null (a hand-edited file) counts as
     // absent instead of aborting the whole import on the constraint.
@@ -961,10 +971,13 @@ function importProjectData(
     upsert('mock_servers', rows, [...MOCK_SERVER_COLUMNS])
   }
   if (data.mockEndpoints?.length) {
-    const rows = keepLocalMockAuth(
-      data.mockEndpoints,
+    const rows = sealMockAuthRows(
+      keepLocalMockAuth(
+        data.mockEndpoints,
+        'auth_override',
+        localRow('mock_endpoints', 'auth_override, description'),
+      ),
       'auth_override',
-      localRow('mock_endpoints', 'auth_override, description'),
     )
     upsert('mock_endpoints', rows, [...MOCK_ENDPOINT_COLUMNS])
   }
@@ -1008,9 +1021,8 @@ function importProjectData(
 
   // Mock MCP servers (issue #140) — absent from pre-#140 files, skipped then.
   if (data.mockMcpServers?.length) {
-    const rows = keepLocalMcpBearer(
-      rebind(data.mockMcpServers),
-      localRow('mock_mcp_servers', 'bearer_token'),
+    const rows = sealMcpBearerRows(
+      keepLocalMcpBearer(rebind(data.mockMcpServers), localRow('mock_mcp_servers', 'bearer_token')),
     )
     upsert('mock_mcp_servers', rows, [...MOCK_MCP_SERVER_COLUMNS])
   }
@@ -2165,7 +2177,9 @@ export function importProjectAsNew(
       `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    for (const v of data.environmentVariables || []) {
+    // Sealed (issue #239): Duplicate copies ciphertext as it is (same
+    // keychain), a project file's plaintext secret is encrypted here.
+    for (const v of sealVariableRows(data.environmentVariables || [])) {
       const newEnvId = envIdMap.get(v.environment_id as string)
       if (!newEnvId) continue
       insertEnvVar.run(
@@ -2185,7 +2199,7 @@ export function importProjectAsNew(
       `INSERT INTO global_variables (id, workspace_id, key, value, description, enabled, secret, initial_value, project_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    for (const g of data.globalVariables || []) {
+    for (const g of sealVariableRows(data.globalVariables || [])) {
       insertGlobal.run(
         randomUUID(),
         workspaceId,
@@ -2330,7 +2344,7 @@ export function importProjectAsNew(
     // fight the original for that port at launch — the user starts it by hand.
     const mockServerIdMap = new Map<string, string>()
     const mockEndpointIdMap = new Map<string, string>()
-    for (const m of data.mockServers || []) {
+    for (const m of sealMockAuthRows(data.mockServers || [], 'auth_config')) {
       if (typeof m.id !== 'string') continue
       const newId = randomUUID()
       mockServerIdMap.set(m.id, newId)
@@ -2343,7 +2357,7 @@ export function importProjectAsNew(
         updated_at: now,
       })
     }
-    for (const e of data.mockEndpoints || []) {
+    for (const e of sealMockAuthRows(data.mockEndpoints || [], 'auth_override')) {
       const serverId = mockServerIdMap.get(e.server_id as string)
       if (!serverId || typeof e.id !== 'string') continue
       const newId = randomUUID()
@@ -2370,7 +2384,7 @@ export function importProjectAsNew(
     // the new project are the only rewrites. Columns a file lacks take their
     // defaults (nullable ones such as `options_json` stay NULL). There is no
     // auto-start column on this table, so nothing starts a copy at launch.
-    for (const m of data.mockMcpServers || []) {
+    for (const m of sealMcpBearerRows(data.mockMcpServers || [])) {
       insertPresentColumns(db, 'mock_mcp_servers', MOCK_MCP_SERVER_COLUMNS, {
         ...m,
         id: randomUUID(),

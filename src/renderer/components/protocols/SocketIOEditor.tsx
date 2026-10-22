@@ -1,7 +1,17 @@
-import { Radio } from 'lucide-react'
+import { Plug, Radio, Unplug, X } from 'lucide-react'
 import { useSocketIOStore } from '../../stores/socketio.store'
 import EmptyState from '../shared/EmptyState'
 import { T } from '../../styles/tokens'
+import { useTranslation } from '../../lib/i18n'
+import McpStatusPill from './mcp/McpStatusPill'
+import {
+  CB_ERROR_BOX,
+  CB_INPUT,
+  CB_ROW,
+  CB_TARGET,
+  CB_URL,
+  cbPrimaryButton,
+} from './connection-bar-ui'
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString('en-US', {
@@ -14,6 +24,7 @@ function formatTime(ts: number): string {
 
 export default function SocketIOEditor() {
   const store = useSocketIOStore()
+  const { t, locale } = useTranslation()
   const isConnected = store.connectionState === 'connected'
   const isConnecting = store.connectionState === 'connecting'
 
@@ -27,98 +38,88 @@ export default function SocketIOEditor() {
         overflow: 'hidden',
       }}
     >
-      {/* ─ Connection bar ─ */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 8,
-          padding: '10px 14px',
-          borderBottom: `1px solid ${T.border}`,
-          flexShrink: 0,
-          flexWrap: 'wrap',
-        }}
-      >
-        <input
-          type="text"
-          value={store.url}
-          onChange={(e) => store.setUrl(e.target.value)}
-          disabled={isConnected}
-          data-testid="socketio-url"
-          placeholder="http://localhost:3000"
-          style={{
-            flex: 1,
-            minWidth: 180,
-            height: 32,
-            border: `1px solid ${T.border}`,
-            borderRadius: 6,
-            padding: '0 10px',
-            fontSize: 13,
-            color: T.text,
-            background: isConnected ? 'var(--bg)' : 'var(--white)',
-          }}
-        />
-        <input
-          type="text"
-          value={store.namespace}
-          onChange={(e) => store.setNamespace(e.target.value)}
-          disabled={isConnected}
-          placeholder="Namespace (/)"
-          style={{
-            width: 120,
-            height: 32,
-            border: `1px solid ${T.border}`,
-            borderRadius: 6,
-            padding: '0 10px',
-            fontSize: 13,
-            color: T.text,
-            background: isConnected ? 'var(--bg)' : 'var(--white)',
-          }}
-        />
-        <input
-          type="password"
-          value={store.bearerToken}
-          onChange={(e) => store.setBearerToken(e.target.value)}
-          disabled={isConnected}
-          placeholder="Bearer token (optional)"
-          style={{
-            width: 160,
-            height: 32,
-            border: `1px solid ${T.border}`,
-            borderRadius: 6,
-            padding: '0 10px',
-            fontSize: 13,
-            color: T.text,
-            background: isConnected ? 'var(--bg)' : 'var(--white)',
-          }}
-        />
-        <button
-          type="button"
-          onClick={isConnected || isConnecting ? () => store.disconnect() : () => store.connect()}
-          data-testid="socketio-connect"
-          style={{
-            height: 32,
-            padding: '0 16px',
-            borderRadius: 6,
-            border: 'none',
-            background: isConnected || isConnecting ? T.DELETE.color : T.accent,
-            color: '#fff',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            flexShrink: 0,
-          }}
-        >
-          {isConnecting ? 'Cancel' : isConnected ? 'Disconnect' : 'Connect'}
-        </button>
+      {/* ─ Connection bar ─ the WS / SSE / MCP bars' sizes and wrap rule
+          (`connection-bar-ui.ts`): status pill, then URL + Connect as one
+          group; namespace and token on their own row under it so they never
+          squeeze the URL or push Connect off the line. */}
+      <div className="flex shrink-0 flex-col gap-2 border-b border-[var(--border)] px-3.5 py-2.5">
+        <div data-testid="socketio-connection-row" className={CB_ROW}>
+          <McpStatusPill state={store.connectionState} testId="socketio-status" />
+          <div className={CB_TARGET}>
+            <input
+              type="text"
+              value={store.url}
+              onChange={(e) => store.setUrl(e.target.value)}
+              disabled={isConnected}
+              data-testid="socketio-url"
+              placeholder="http://localhost:3000"
+              className={CB_URL}
+            />
+            <button
+              type="button"
+              onClick={
+                isConnected || isConnecting ? () => store.disconnect() : () => store.connect()
+              }
+              disabled={!isConnected && !isConnecting && !store.url.trim()}
+              data-testid="socketio-connect"
+              className={cbPrimaryButton(isConnected || isConnecting)}
+            >
+              {isConnecting ? (
+                <X size={14} />
+              ) : isConnected ? (
+                <Unplug size={14} />
+              ) : (
+                <Plug size={14} />
+              )}
+              {isConnecting
+                ? t('common.cancel')
+                : isConnected
+                  ? t('mcp.disconnect')
+                  : t('mcp.connect')}
+            </button>
+          </div>
+        </div>
+        <div data-testid="socketio-options-row" className={CB_ROW}>
+          <input
+            type="text"
+            value={store.namespace}
+            onChange={(e) => store.setNamespace(e.target.value)}
+            disabled={isConnected}
+            data-testid="socketio-namespace"
+            aria-label={t('socketio.namespace')}
+            placeholder={t('socketio.namespacePlaceholder')}
+            className={`w-[10rem] ${CB_INPUT}`}
+          />
+          <input
+            type="password"
+            value={store.bearerToken}
+            onChange={(e) => store.setBearerToken(e.target.value)}
+            disabled={isConnected}
+            data-testid="socketio-bearer-token"
+            aria-label={t('socketio.tokenPlaceholder')}
+            aria-describedby="socketio-token-hint"
+            placeholder={t('socketio.tokenPlaceholder')}
+            className={`w-[16rem] max-w-full ${CB_INPUT}`}
+          />
+        </div>
         {(store.connectionState === 'error' || store.connectionState === 'connected') &&
           store.errorMessage && (
-            <span style={{ fontSize: 12, color: T.DELETE.color }}>{store.errorMessage}</span>
+            <div data-testid="socketio-error" role="alert" className={CB_ERROR_BOX}>
+              {store.errorMessage}
+            </div>
           )}
+        {/* Issue #243: the literal token is never written to localStorage. */}
+        <p
+          id="socketio-token-hint"
+          data-testid="socketio-token-hint"
+          className="m-0 text-[11px] text-[var(--muted)]"
+        >
+          {t('socketio.tokenHint')}
+        </p>
       </div>
 
       {/* ─ Body ─ */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }} lang={locale}>
         {/* Left: emit + subscriptions */}
         <div
           style={{
@@ -142,13 +143,13 @@ export default function SocketIOEditor() {
                 marginBottom: 8,
               }}
             >
-              Emit Event
+              {t('socketio.emitEvent')}
             </div>
             <input
               type="text"
               value={store.emitEvent}
               onChange={(e) => store.setEmitEvent(e.target.value)}
-              placeholder="event name"
+              placeholder={t('socketio.eventNamePlaceholder')}
               style={{
                 width: '100%',
                 height: 28,
@@ -198,7 +199,7 @@ export default function SocketIOEditor() {
                 cursor: isConnected ? 'pointer' : 'not-allowed',
               }}
             >
-              Emit
+              {t('socketio.emit')}
             </button>
           </div>
 
@@ -216,7 +217,7 @@ export default function SocketIOEditor() {
                 marginBottom: 8,
               }}
             >
-              Subscribe
+              {t('socketio.subscribe')}
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
               <input
@@ -224,7 +225,7 @@ export default function SocketIOEditor() {
                 value={store.newSubscription}
                 onChange={(e) => store.setNewSubscription(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && store.subscribe()}
-                placeholder="event name"
+                placeholder={t('socketio.eventNamePlaceholder')}
                 style={{
                   flex: 1,
                   height: 28,
@@ -259,7 +260,12 @@ export default function SocketIOEditor() {
           {/* Active subscriptions */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '8px 12px' }}>
             {store.subscriptions.length === 0 ? (
-              <EmptyState icon={Radio} title="No subscriptions yet" variant="compact" size="sm" />
+              <EmptyState
+                icon={Radio}
+                title={t('socketio.noSubscriptions')}
+                variant="compact"
+                size="sm"
+              />
             ) : (
               store.subscriptions.map((sub) => (
                 <div
@@ -315,7 +321,7 @@ export default function SocketIOEditor() {
                 letterSpacing: '0.05em',
               }}
             >
-              Event Timeline {store.events.length > 0 && `(${store.events.length})`}
+              {t('socketio.eventTimeline')} {store.events.length > 0 && `(${store.events.length})`}
             </span>
             {store.events.length > 0 && (
               <button
@@ -329,7 +335,7 @@ export default function SocketIOEditor() {
                   cursor: 'pointer',
                 }}
               >
-                Clear
+                {t('console.clear')}
               </button>
             )}
           </div>
@@ -345,7 +351,7 @@ export default function SocketIOEditor() {
           >
             {store.events.length === 0 ? (
               <div style={{ fontSize: 12, color: T.ghost, textAlign: 'center', marginTop: 20 }}>
-                {isConnected ? 'Waiting for events…' : 'Connect to see events'}
+                {isConnected ? t('sse.waitingForEvents') : t('socketio.connectToSee')}
               </div>
             ) : (
               [...store.events].reverse().map((ev, i) => (

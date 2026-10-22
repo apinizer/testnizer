@@ -41,7 +41,7 @@ export default function McpElicitationCard({
       data-elicitation-id={elicitation.elicitationId}
       className="mb-2 flex flex-col gap-3 rounded-lg border border-[var(--accent)] bg-[var(--accent-light)] p-3"
     >
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-[var(--accent-text)]">
+      <div className="flex items-center gap-2 text-sm font-semibold text-[var(--accent-text)]">
         <MessageSquareMore size={14} />
         <span data-testid="mcp-elicitation-server">
           {t('mcp.elicit.from').replace('{server}', server)}

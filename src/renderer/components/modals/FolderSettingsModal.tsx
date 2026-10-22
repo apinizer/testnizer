@@ -25,7 +25,7 @@ const FOLDER_AUTH_TYPES: { value: AuthType; label: string }[] = [
 ]
 
 const INPUT =
-  'w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-[13px] outline-none'
+  'w-full rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-2 text-sm outline-none'
 const LABEL = 'mb-1.5 block text-[12px] font-medium'
 
 type FolderSettingsRow = {
@@ -172,7 +172,7 @@ export default function FolderSettingsModal({
               key={tk}
               type="button"
               onClick={() => setTab(tk)}
-              className="cursor-pointer rounded-t-[7px] px-3 py-2 text-[13px]"
+              className="cursor-pointer rounded-t-[7px] px-3 py-2 text-sm"
               style={{
                 color: tab === tk ? 'var(--accent-text)' : 'var(--muted)',
                 borderBottom: tab === tk ? '2px solid var(--accent)' : '2px solid transparent',
@@ -194,7 +194,7 @@ export default function FolderSettingsModal({
         {/* Body */}
         <div className="overflow-y-auto px-5 py-4" style={{ color: 'var(--text)' }}>
           {loading ? (
-            <div className="py-8 text-center text-[13px]" style={{ color: 'var(--hint)' }}>
+            <div className="py-8 text-center text-sm" style={{ color: 'var(--hint)' }}>
               …
             </div>
           ) : tab === 'auth' ? (
@@ -412,7 +412,7 @@ export default function FolderSettingsModal({
           <button
             type="button"
             onClick={onClose}
-            className="cursor-pointer rounded-[7px] px-3.5 py-2 text-[13px]"
+            className="cursor-pointer rounded-[7px] px-3.5 py-2 text-sm"
             style={{
               background: 'var(--surface)',
               color: 'var(--text)',
@@ -425,7 +425,7 @@ export default function FolderSettingsModal({
             type="button"
             onClick={handleSave}
             disabled={saving || loading || loadError !== null}
-            className="cursor-pointer rounded-[7px] px-3.5 py-2 text-[13px] font-medium"
+            className="cursor-pointer rounded-[7px] px-3.5 py-2 text-sm font-medium"
             style={{
               background: 'var(--accent)',
               color: '#fff',

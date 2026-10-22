@@ -1,5 +1,7 @@
 import type { KeyValuePair } from '../../../types'
 import KeyValueTable from '../../shared/KeyValueTable'
+import CredentialRowsHint from '../../shared/CredentialRowsHint'
+import { hasLiteralUrlUserinfo } from '../../../lib/credential-text'
 
 interface McpKvSectionProps {
   /** `mcp-headers` → `mcp-headers-section` (the panel). The tab carries the toggle / count. */
@@ -11,6 +13,8 @@ interface McpKvSectionProps {
   addLabel: string
   keyAutocompleteEntries?: readonly string[]
   hint?: string
+  /** The connection bar already shows the restart hint (one per MCP tab). */
+  hideRestartHint?: boolean
 }
 
 /**
@@ -28,6 +32,7 @@ export default function McpKvSection({
   addLabel,
   keyAutocompleteEntries,
   hint,
+  hideRestartHint = false,
 }: McpKvSectionProps) {
   return (
     <div data-testid={`${testIdPrefix}-section`}>
@@ -40,6 +45,14 @@ export default function McpKvSection({
         addLabel={addLabel}
         keyAutocompleteEntries={keyAutocompleteEntries}
       />
+      {/* Same rows the tab snapshot withholds (issues #244 / #247). */}
+      {!hideRestartHint && (
+        <CredentialRowsHint
+          rows={rows}
+          testId={`${testIdPrefix}-restart-hint`}
+          isCredentialValue={hasLiteralUrlUserinfo}
+        />
+      )}
     </div>
   )
 }

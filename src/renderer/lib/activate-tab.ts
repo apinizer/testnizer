@@ -8,6 +8,42 @@ import { useGraphQLStore } from '../stores/graphql.store'
 import { useAiChatStore } from '../stores/ai-chat.store'
 import { useMcpStore } from '../stores/mcp.store'
 import { useSocketIOStore } from '../stores/socketio.store'
+import { storedBoundTabs } from './persist-helpers'
+
+interface TabbedSlices {
+  getState: () => { _currentTabId: string | null; _tabStates: Map<string, unknown> }
+}
+
+/** The store that holds each protocol's own per-tab state (HTTP has none). */
+const PROTOCOL_STORES: Record<string, TabbedSlices> = {
+  soap: useSoapStore,
+  websocket: useWebSocketStore,
+  sse: useSseStore,
+  grpc: useGrpcStore,
+  graphql: useGraphQLStore,
+  ai: useAiChatStore,
+  mcp: useMcpStore,
+  socketio: useSocketIOStore,
+}
+
+/**
+ * Saved tabs whose protocol store slice was missing from its snapshot at
+ * startup (a write that never reached disk, an older build). None of the
+ * protocol stores drops a slice at runtime, so this is read once. On
+ * activation the tab is flagged `unloadedProtocol` and its protocol state is
+ * reloaded from the row with the request store's (`lib/withheld-credentials`)
+ * — an empty default (e.g. the echo WebSocket URL) must never be saved over it.
+ */
+const protocolLostAtStartup = new Set(
+  storedBoundTabs()
+    .filter((t) => {
+      const store = t.protocol ? PROTOCOL_STORES[t.protocol] : undefined
+      if (!store) return false
+      const s = store.getState()
+      return s._currentTabId !== t.id && !s._tabStates.has(t.id)
+    })
+    .map((t) => t.id),
+)
 
 /**
  * Point every protocol store's live slice at `tabId`.
@@ -27,6 +63,7 @@ export function activateTabStores(tabId: string): void {
   useAiChatStore.getState().switchToTab(tabId)
   useMcpStore.getState().switchToTab(tabId)
   useSocketIOStore.getState().switchToTab(tabId)
+  if (protocolLostAtStartup.delete(tabId)) useRequestStore.setState({ unloadedProtocol: true })
 }
 
 /**

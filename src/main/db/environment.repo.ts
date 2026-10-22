@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
 import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
+import { keepUndecryptable, openVariableRow, storedVariableValue } from '../lib/secret-at-rest'
 
 export interface EnvironmentRow {
   id: string
@@ -21,6 +22,12 @@ export interface EnvironmentVariableRow {
   enabled: number
   secret: number
   initial_value: string | null
+  /**
+   * Set (only) when `value` / `initial_value` is ciphertext this machine's
+   * keychain cannot decrypt (issue #239): that field reads '' and the stored
+   * value is kept until the user enters a new one.
+   */
+  decryptFailed?: true
 }
 
 export interface GlobalVariableRow {
@@ -33,6 +40,30 @@ export interface GlobalVariableRow {
   enabled: number
   secret: number
   initial_value: string | null
+  /** See `EnvironmentVariableRow.decryptFailed`. */
+  decryptFailed?: true
+}
+
+/*
+ * Values of variables marked secret are encrypted at rest (issue #239,
+ * `secret-at-rest.ts`): sealed here on every write, opened on every read —
+ * callers (IPC, Runner) only ever see plaintext.
+ */
+
+/**
+ * The stored form of one value column on update. `incoming` undefined keeps
+ * the stored value (re-sealed / opened when the secret flag flips); an
+ * incoming '' never replaces ciphertext the keychain cannot decrypt (the
+ * editor showed '' for it and sends it back with any other edit).
+ */
+function nextStoredValue(
+  incoming: string | null | undefined,
+  stored: string | null,
+  secret: boolean,
+): string | null {
+  const kept = keepUndecryptable(incoming, stored)
+  if (kept !== incoming) return kept as string
+  return storedVariableValue(incoming ?? stored, secret)
 }
 
 // ─── Environments ────────────────────────────────────────────
@@ -141,9 +172,10 @@ export function deleteEnvironment(id: string): boolean {
 
 export function getVariablesByEnvironment(environmentId: string): EnvironmentVariableRow[] {
   const db = getDb()
-  return db
+  const rows = db
     .prepare('SELECT * FROM environment_variables WHERE environment_id = ? ORDER BY key ASC')
     .all(environmentId) as EnvironmentVariableRow[]
+  return rows.map(openVariableRow)
 }
 
 export function createVariable(data: {
@@ -169,15 +201,17 @@ export function createVariable(data: {
     id,
     data.environment_id,
     data.key,
-    data.value,
+    storedVariableValue(data.value, !!data.secret),
     data.description ?? null,
     data.enabled !== false ? 1 : 0,
     data.secret ? 1 : 0,
-    data.initial_value ?? null,
+    storedVariableValue(data.initial_value ?? null, !!data.secret),
   )
-  return db
-    .prepare('SELECT * FROM environment_variables WHERE id = ?')
-    .get(id) as EnvironmentVariableRow
+  return openVariableRow(
+    db
+      .prepare('SELECT * FROM environment_variables WHERE id = ?')
+      .get(id) as EnvironmentVariableRow,
+  )
 }
 
 export function updateVariable(
@@ -198,6 +232,7 @@ export function updateVariable(
     | EnvironmentVariableRow
     | undefined
   if (!existing) return undefined
+  const secret = data.secret !== undefined ? !!data.secret : existing.secret === 1
 
   db.prepare(
     `
@@ -206,16 +241,18 @@ export function updateVariable(
   `,
   ).run(
     data.key ?? existing.key,
-    data.value ?? existing.value,
+    nextStoredValue(data.value, existing.value, secret) ?? '',
     data.description ?? existing.description,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
-    data.secret !== undefined ? (data.secret ? 1 : 0) : existing.secret,
-    data.initial_value ?? existing.initial_value,
+    secret ? 1 : 0,
+    nextStoredValue(data.initial_value, existing.initial_value, secret),
     id,
   )
-  return db
-    .prepare('SELECT * FROM environment_variables WHERE id = ?')
-    .get(id) as EnvironmentVariableRow
+  return openVariableRow(
+    db
+      .prepare('SELECT * FROM environment_variables WHERE id = ?')
+      .get(id) as EnvironmentVariableRow,
+  )
 }
 
 export function deleteVariable(id: string): boolean {
@@ -230,16 +267,18 @@ export function deleteVariable(id: string): boolean {
 
 export function getGlobalVariables(workspaceId: string): GlobalVariableRow[] {
   const db = getDb()
-  return db
+  const rows = db
     .prepare('SELECT * FROM global_variables WHERE workspace_id = ? ORDER BY key ASC')
     .all(workspaceId) as GlobalVariableRow[]
+  return rows.map(openVariableRow)
 }
 
 export function getGlobalVariablesByProject(projectId: string): GlobalVariableRow[] {
   const db = getDb()
-  return db
+  const rows = db
     .prepare('SELECT * FROM global_variables WHERE project_id = ? ORDER BY key ASC')
     .all(projectId) as GlobalVariableRow[]
+  return rows.map(openVariableRow)
 }
 
 export function createGlobalVariable(data: {
@@ -267,13 +306,15 @@ export function createGlobalVariable(data: {
     data.workspace_id,
     data.project_id ?? null,
     data.key,
-    data.value,
+    storedVariableValue(data.value, !!data.secret),
     data.description ?? null,
     data.enabled !== false ? 1 : 0,
     data.secret ? 1 : 0,
-    data.initial_value ?? null,
+    storedVariableValue(data.initial_value ?? null, !!data.secret),
   )
-  return db.prepare('SELECT * FROM global_variables WHERE id = ?').get(id) as GlobalVariableRow
+  return openVariableRow(
+    db.prepare('SELECT * FROM global_variables WHERE id = ?').get(id) as GlobalVariableRow,
+  )
 }
 
 export function updateGlobalVariable(
@@ -294,6 +335,7 @@ export function updateGlobalVariable(
     | GlobalVariableRow
     | undefined
   if (!existing) return undefined
+  const secret = data.secret !== undefined ? !!data.secret : existing.secret === 1
 
   db.prepare(
     `
@@ -302,14 +344,16 @@ export function updateGlobalVariable(
   `,
   ).run(
     data.key ?? existing.key,
-    data.value ?? existing.value,
+    nextStoredValue(data.value, existing.value, secret) ?? '',
     data.description ?? existing.description,
     data.enabled !== undefined ? (data.enabled ? 1 : 0) : existing.enabled,
-    data.secret !== undefined ? (data.secret ? 1 : 0) : existing.secret,
-    data.initial_value ?? existing.initial_value,
+    secret ? 1 : 0,
+    nextStoredValue(data.initial_value, existing.initial_value, secret),
     id,
   )
-  return db.prepare('SELECT * FROM global_variables WHERE id = ?').get(id) as GlobalVariableRow
+  return openVariableRow(
+    db.prepare('SELECT * FROM global_variables WHERE id = ?').get(id) as GlobalVariableRow,
+  )
 }
 
 export function deleteGlobalVariable(id: string): boolean {

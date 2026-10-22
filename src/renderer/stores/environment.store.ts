@@ -98,6 +98,8 @@ interface RawVarRow {
   enabled: number | boolean
   secret: number | boolean
   initial_value?: string | null
+  /** Issue #239: the stored secret could not be decrypted here (main reads it as ''). */
+  decryptFailed?: boolean
 }
 
 function rowToEnvVar(row: RawVarRow): EnvironmentVariable {
@@ -109,6 +111,7 @@ function rowToEnvVar(row: RawVarRow): EnvironmentVariable {
     description: row.description ?? undefined,
     enabled: !!row.enabled,
     secret: !!row.secret,
+    ...(row.decryptFailed ? { decryptFailed: true } : {}),
   }
 }
 
@@ -122,6 +125,7 @@ function rowToGlobalVar(row: RawVarRow): GlobalVariable {
     description: row.description ?? undefined,
     enabled: !!row.enabled,
     secret: !!row.secret,
+    ...(row.decryptFailed ? { decryptFailed: true } : {}),
   }
 }
 

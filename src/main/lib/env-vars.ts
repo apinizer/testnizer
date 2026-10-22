@@ -17,6 +17,7 @@
  * in the mock but not in Send?" bugs. Single source of truth here.
  */
 import { getDb } from '../db/database'
+import { openSecret } from './secret-at-rest'
 
 export interface EnvVarLoadOptions {
   workspaceId?: string
@@ -45,7 +46,28 @@ interface DualValueRow {
  * on Run while Send returned 200 (issue #4).
  */
 function effectiveValue(row: DualValueRow): string {
-  return row.value && row.value.length > 0 ? row.value : (row.initial_value ?? '')
+  // Secret values are ciphertext at rest (issue #239): decrypt first, so Run
+  // and Mock see what Send sees (the renderer gets plaintext over IPC).
+  // A value this machine cannot decrypt resolves to '' — never to the
+  // ciphertext, and never silently to the (older) Initial Value.
+  const value = openSecret(row.value)
+  if (value.failed) return undecryptable(row.key)
+  if (value.value.length > 0) return value.value
+  const initial = openSecret(row.initial_value)
+  if (initial.failed) return undecryptable(row.key)
+  return initial.value
+}
+
+const warnedKeys = new Set<string>()
+function undecryptable(key: string): string {
+  if (!warnedKeys.has(key)) {
+    warnedKeys.add(key)
+    // The key only — never a value.
+    console.warn(
+      `[env-vars] the value of secret variable "${key}" cannot be decrypted on this machine (OS keychain changed?); it resolves to an empty string until it is entered again`,
+    )
+  }
+  return ''
 }
 
 export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {

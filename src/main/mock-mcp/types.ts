@@ -191,6 +191,12 @@ export interface MockMcpServerConfig extends Omit<MockMcpServerDef, 'projectId' 
   enabled: boolean
   createdAt: number
   updatedAt: number
+  /**
+   * Set (only) when the stored bearer token is ciphertext this machine's
+   * keychain cannot decrypt (issue #239): `bearerToken` reads '' and the
+   * stored value stays until a new token is entered.
+   */
+  bearerTokenDecryptFailed?: true
 }
 
 export type MockMcpServerStatus = 'stopped' | 'starting' | 'running' | 'error'

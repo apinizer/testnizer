@@ -131,7 +131,7 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
 
   if (!server || !draft) {
     return (
-      <div className="p-4 text-[13px] text-[var(--muted)]" data-testid="mock-mcp-editor-missing">
+      <div className="p-4 text-sm text-[var(--muted)]" data-testid="mock-mcp-editor-missing">
         {t('mockMcp.notFound')}
       </div>
     )
@@ -191,7 +191,13 @@ export default function MockMcpServerEditor({ serverId }: { serverId: string }) 
       />
       <div className="flex min-h-0 flex-1 overflow-hidden">
         {tab === 'general' && <MockMcpGeneralTab draft={draft} change={change} />}
-        {tab === 'scenarios' && <MockMcpScenariosTab draft={draft} change={change} />}
+        {tab === 'scenarios' && (
+          <MockMcpScenariosTab
+            draft={draft}
+            change={change}
+            tokenLocked={!!server.bearerTokenDecryptFailed}
+          />
+        )}
         {tab === 'tools' && <MockMcpToolsTab draft={draft} change={change} />}
         {tab === 'resources' && <MockMcpResourcesTab draft={draft} change={change} />}
         {tab === 'prompts' && <MockMcpPromptsTab draft={draft} change={change} />}

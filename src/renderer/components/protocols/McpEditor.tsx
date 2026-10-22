@@ -78,10 +78,10 @@ export default function McpEditor() {
                         aria-selected={rightTab === s.id}
                         data-testid={`mcp-section-${s.id}`}
                         onClick={() => setRightTab(s.id)}
-                        className={`cursor-pointer border-x-0 border-t-0 border-b-2 bg-transparent px-2.5 py-1.5 text-[12px] ${
+                        className={`cursor-pointer border-x-0 border-t-0 border-b-2 bg-transparent px-2.5 py-1.5 text-sm ${
                           rightTab === s.id
-                            ? 'border-[var(--accent)] text-[var(--accent-text)]'
-                            : 'border-transparent text-[var(--muted)]'
+                            ? 'border-[var(--accent)] font-semibold text-[var(--accent-text)]'
+                            : 'border-transparent font-normal text-[var(--muted)]'
                         }`}
                       >
                         {s.id === EXPLORER ? s.label : t(s.label)}

@@ -18,7 +18,12 @@ import { useEffect } from 'react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useMcpStore } from '../../stores/mcp.store'
 import { activateTabStores } from '../../lib/activate-tab'
-import { makeTabId } from '../../lib/utils'
+import {
+  focusMockClientTab,
+  mockClientTabKey,
+  mockClientTabName,
+  newMockClientTabId,
+} from '../mock/mock-client-tab'
 import type { MockMcpServer } from '../../types/mock-mcp'
 
 export function mockMcpTabId(serverId: string): string {
@@ -56,14 +61,27 @@ export function closeMockMcpServerTab(serverId: string): void {
   if (tabs.tabs.some((t) => t.id === id)) tabs.closeTab(id)
 }
 
+/**
+ * PM review #20: one MCP tab per mock server (a second click focuses it, its
+ * config left as the user has it), titled "<name> · client" so it differs
+ * from the editor tab, and connected right away — "Open in MCP tab" used to
+ * leave it Disconnected.
+ */
 export function openMockInMcpTab(opts: {
+  serverId: string
   name: string
   url: string
   bearerToken?: string
 }): string {
-  const id = makeTabId()
+  const key = mockClientTabKey('mcp', opts.serverId)
+  const open = focusMockClientTab(key)
+  if (open) {
+    connectMcpIfIdle()
+    return open
+  }
+  const id = newMockClientTabId(key)
   const tabs = useTabsStore.getState()
-  tabs.openTab({ id, name: opts.name, protocol: 'mcp', url: '' })
+  tabs.openTab({ id, name: mockClientTabName(opts.name), protocol: 'mcp', url: '' })
   activateTabStores(id)
   const mcp = useMcpStore.getState()
   mcp.setTransport('http')
@@ -76,5 +94,13 @@ export function openMockInMcpTab(opts: {
   }
   // A prefilled scratch tab holds nothing the user typed — no dirty dot.
   useTabsStore.getState().markDirty(id, false)
+  connectMcpIfIdle()
   return id
+}
+
+/** Connect the ACTIVE MCP tab unless it is connected or connecting already. */
+function connectMcpIfIdle(): void {
+  const mcp = useMcpStore.getState()
+  if (mcp.connectionState === 'connected' || mcp.connectionState === 'connecting') return
+  void mcp.connect()
 }

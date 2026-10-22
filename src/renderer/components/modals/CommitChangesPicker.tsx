@@ -61,9 +61,9 @@ export default function CommitChangesPicker({
       </div>
       <div className="min-h-[64px] flex-1 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface)] p-2">
         {loading && !changes ? (
-          <p className="text-[13px] text-[var(--hint)]">{t('gitCommit.loading')}</p>
+          <p className="text-sm text-[var(--hint)]">{t('gitCommit.loading')}</p>
         ) : !changes ? (
-          <p className="text-[13px] text-[var(--red)]">{t('gitCommit.loadFailed')}</p>
+          <p className="text-sm text-[var(--red)]">{t('gitCommit.loadFailed')}</p>
         ) : hasChanges ? (
           <GitChangesList
             items={items}
@@ -74,7 +74,7 @@ export default function CommitChangesPicker({
             }}
           />
         ) : (
-          <p data-testid="git-changes-empty" className="text-[13px] text-[var(--hint)]">
+          <p data-testid="git-changes-empty" className="text-sm text-[var(--hint)]">
             {t('gitCommit.noChanges')}
           </p>
         )}

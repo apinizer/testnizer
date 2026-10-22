@@ -258,17 +258,65 @@ describe('mock server kind + response stream_config (issue #221)', () => {
     expect(testDb.prepare('SELECT COUNT(*) AS n FROM mock_servers').get()).toEqual({ n: 0 })
   })
 
-  it('kind is fixed at creation — update ignores it', async () => {
+  // Issue #222 — the Settings tab's "Server type" selector. Before the fix
+  // `UpdateMockServerInput` had no `kind` and the update ignored it.
+  it('update changes the kind and keeps every endpoint and response row as it is', async () => {
     const r = await createServer({ kind: 'sse' })
-    const up = (await harness.invoke('mock:server:update', r.data!.id, {
+    const id = r.data!.id as string
+    const ep = (await harness.invoke('mock:endpoint:create', {
+      serverId: id,
+      method: 'GET',
+      path: '/events',
+    })) as { data: { id: string } }
+    await harness.invoke('mock:response:create', {
+      endpointId: ep.data.id,
+      bodyType: 'sse',
+      body: 'data: hi',
+      streamConfig: { intervalMs: 250, heartbeatMs: 0, loop: false },
+    })
+    const before = testDb
+      .prepare('SELECT body_type, body, stream_config FROM mock_responses WHERE endpoint_id = ?')
+      .all(ep.data.id)
+
+    const up = (await harness.invoke('mock:server:update', id, {
       name: 'renamed',
       kind: 'ai',
     })) as View
     expect(up.success).toBe(true)
-    expect(up.data).toMatchObject({ name: 'renamed', kind: 'sse' })
+    expect(up.data).toMatchObject({ name: 'renamed', kind: 'ai' })
+    expect(testDb.prepare('SELECT kind FROM mock_servers WHERE id = ?').get(id)).toEqual({
+      kind: 'ai',
+    })
+    expect(
+      testDb
+        .prepare('SELECT body_type, body, stream_config FROM mock_responses WHERE endpoint_id = ?')
+        .all(ep.data.id),
+    ).toEqual(before)
+    expect(
+      testDb.prepare('SELECT COUNT(*) AS n FROM mock_endpoints WHERE server_id = ?').get(id),
+    ).toEqual({ n: 1 })
+  })
+
+  it('update rejects an unknown kind and leaves the stored one', async () => {
+    const r = await createServer({ kind: 'sse' })
+    for (const kind of ['mcp', 'x']) {
+      const up = (await harness.invoke('mock:server:update', r.data!.id, { kind })) as View
+      expect(up.success).toBe(false)
+      expect(up.error).toMatch(/Unknown mock server kind/)
+    }
     expect(
       testDb.prepare('SELECT kind FROM mock_servers WHERE id = ?').get(r.data!.id as string),
     ).toEqual({ kind: 'sse' })
+  })
+
+  it('an update without kind keeps a stored unknown kind byte-for-byte', async () => {
+    const r = await createServer()
+    testDb.prepare("UPDATE mock_servers SET kind = 'future' WHERE id = ?").run(r.data!.id)
+    const up = (await harness.invoke('mock:server:update', r.data!.id, { name: 'x' })) as View
+    expect(up.success).toBe(true)
+    expect(
+      testDb.prepare('SELECT kind FROM mock_servers WHERE id = ?').get(r.data!.id as string),
+    ).toEqual({ kind: 'future' })
   })
 
   it('a stored unknown kind (file from another build) reads back as http, raw value untouched', async () => {

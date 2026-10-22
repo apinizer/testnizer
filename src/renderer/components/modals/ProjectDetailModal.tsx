@@ -428,7 +428,7 @@ export default function ProjectDetailModal() {
             </span>
             <button
               type="button"
-              aria-label="Close"
+              aria-label={t('common.close')}
               onClick={handleClose}
               className="cursor-pointer rounded p-1"
               style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}

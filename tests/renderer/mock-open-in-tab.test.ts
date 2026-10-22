@@ -62,33 +62,134 @@ beforeEach(() => {
 })
 
 describe('openMockInSseTab', () => {
-  it('opens an SSE tab with the URL and method, active and not dirty', () => {
+  it('opens an SSE tab with the URL and method, active and not dirty, titled "<name> · client"', () => {
     const id = openMockInSseTab({
+      serverId: 's1',
       name: 'Ticker SSE',
       url: 'http://127.0.0.1:3200/events',
       method: 'POST',
+      path: '/events',
     })
     const { tabs, activeTabId } = useTabsStore.getState()
     expect(activeTabId).toBe(id)
     const tab = tabs.find((t) => t.id === id)
-    expect(tab).toMatchObject({ protocol: 'sse', name: 'Ticker SSE', isDirty: false })
+    // PM review #20: not the editor tab's bare server name.
+    expect(tab).toMatchObject({ protocol: 'sse', name: 'Ticker SSE · client', isDirty: false })
     const sse = useSseStore.getState()
     expect(sse._currentTabId).toBe(id)
     expect(sse.url).toBe('http://127.0.0.1:3200/events')
     expect(sse.method).toBe('POST')
   })
 
-  it('a second open is a second scratch tab (it does not overwrite the first)', () => {
-    const a = openMockInSseTab({ name: 'A', url: 'http://127.0.0.1:3200/a', method: 'GET' })
-    const b = openMockInSseTab({ name: 'B', url: 'http://127.0.0.1:3200/b', method: 'GET' })
-    expect(a).not.toBe(b)
+  it('connects the new tab right away (PM review #20: it used to stay Disconnected)', () => {
+    const connect = vi.fn(async () => {})
+    useSseStore.setState({ connect, connectionState: 'disconnected' })
+    const id = openMockInSseTab({
+      serverId: 's1',
+      name: 'A',
+      url: 'http://127.0.0.1:3200/a',
+      method: 'GET',
+      path: '/a',
+    })
+    expect(connect).toHaveBeenCalledTimes(1)
+    expect(useSseStore.getState()._currentTabId).toBe(id)
+  })
+
+  it('the same endpoint again focuses its tab — no duplicate, the edited URL kept; another endpoint is another tab', () => {
+    const a = openMockInSseTab({
+      serverId: 's1',
+      name: 'A',
+      url: 'http://127.0.0.1:3200/a',
+      method: 'GET',
+      path: '/a',
+    })
+    useSseStore.getState().setUrl('http://127.0.0.1:3200/a?edited=1')
+    const b = openMockInSseTab({
+      serverId: 's1',
+      name: 'A',
+      url: 'http://127.0.0.1:3200/b',
+      method: 'GET',
+      path: '/b',
+    })
+    expect(b).not.toBe(a)
     expect(useTabsStore.getState().tabs).toHaveLength(2)
-    expect(useSseStore.getState().url).toBe('http://127.0.0.1:3200/b')
+
+    const connect = vi.fn(async () => {})
+    useSseStore.setState({ connect })
+    const again = openMockInSseTab({
+      serverId: 's1',
+      name: 'A',
+      url: 'http://127.0.0.1:3200/a',
+      method: 'GET',
+      path: '/a',
+    })
+    expect(again).toBe(a)
+    expect(useTabsStore.getState().tabs).toHaveLength(2)
+    expect(useTabsStore.getState().activeTabId).toBe(a)
+    const sse = useSseStore.getState()
+    expect(sse._currentTabId).toBe(a)
+    expect(sse.url).toBe('http://127.0.0.1:3200/a?edited=1')
+    // Not connected → the focused tab reconnects.
+    expect(connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('Open after closing the tab is a fresh tab — no state of the closed one comes back', () => {
+    const first = openMockInSseTab({
+      serverId: 's1',
+      name: 'A',
+      url: 'http://127.0.0.1:3200/a',
+      method: 'GET',
+      path: '/a',
+    })
+    // The closed tab was live and connected; closing the ACTIVE tab keeps the
+    // store's live slice under its id (cleanup-tab-state → removeTabState).
+    useSseStore.setState({ connectionState: 'connected', url: 'http://stale/' })
+    useSseStore.getState().removeTabState(first)
+    useTabsStore.getState().closeTab(first)
+
+    const connect = vi.fn(async () => {})
+    useSseStore.setState({ connect })
+    const second = openMockInSseTab({
+      serverId: 's1',
+      name: 'A',
+      url: 'http://127.0.0.1:3200/a',
+      method: 'GET',
+      path: '/a',
+    })
+    expect(second).not.toBe(first)
+    expect(useSseStore.getState()._currentTabId).toBe(second)
+    expect(useSseStore.getState().url).toBe('http://127.0.0.1:3200/a')
+    expect(connect).toHaveBeenCalledTimes(1)
+  })
+
+  it('focusing a tab that is already connected does not reconnect it', () => {
+    const id = openMockInSseTab({
+      serverId: 's1',
+      name: 'A',
+      url: 'http://127.0.0.1:3200/a',
+      method: 'GET',
+      path: '/a',
+    })
+    useSseStore.setState({ connectionState: 'connected' })
+    openMockInSseTab({ serverId: 's1', name: 'B', url: 'http://x/b', method: 'GET', path: '/b' })
+    const connect = vi.fn(async () => {})
+    useSseStore.setState({ connect })
+    expect(
+      openMockInSseTab({ serverId: 's1', name: 'A', url: 'http://x/a', method: 'GET', path: '/a' }),
+    ).toBe(id)
+    expect(useSseStore.getState().connectionState).toBe('connected')
+    expect(connect).not.toHaveBeenCalled()
   })
 })
 
 describe('startAndOpenMockInSseTab', () => {
-  const target = { name: 'Ticker SSE', url: 'http://127.0.0.1:3200/events', method: 'GET' as const }
+  const target = {
+    serverId: 's1',
+    name: 'Ticker SSE',
+    url: 'http://127.0.0.1:3200/events',
+    method: 'GET' as const,
+    path: '/events',
+  }
 
   it('not running + start fails → toast, no tab', async () => {
     const start = vi.fn(async () => 'Port 3200 is already in use')
@@ -115,7 +216,11 @@ describe('startAndOpenMockInSseTab', () => {
 })
 
 describe('openMockInAiChatTab (§D.3.5)', () => {
-  const target = { name: 'Chat API', url: 'http://127.0.0.1:3300/v1/chat/completions' }
+  const target = {
+    serverId: 'ai-1',
+    name: 'Chat API',
+    url: 'http://127.0.0.1:3300/v1/chat/completions',
+  }
 
   it('opens an AI Chat tab on Custom with the chat URL and mock-model, active and not dirty', async () => {
     const id = openMockInAiChatTab(target)
@@ -124,7 +229,7 @@ describe('openMockInAiChatTab (§D.3.5)', () => {
     expect(activeTabId).toBe(id)
     expect(tabs.find((t) => t.id === id)).toMatchObject({
       protocol: 'ai',
-      name: 'Chat API',
+      name: 'Chat API · client',
       isDirty: false,
     })
     const ai = useAiChatStore.getState()
@@ -132,8 +237,25 @@ describe('openMockInAiChatTab (§D.3.5)', () => {
     expect(ai.provider).toBe('custom')
     expect(ai.customUrl).toBe('http://127.0.0.1:3300/v1/chat/completions')
     expect(ai.model).toBe('mock-model')
-    expect(openMockInAiChatTab({ ...target, model: 'error-429' })).toBeTruthy()
+    expect(openMockInAiChatTab({ ...target, serverId: 'ai-2', model: 'error-429' })).toBeTruthy()
     expect(useAiChatStore.getState().model).toBe('error-429')
+  })
+
+  it('PM review #20: a second click focuses the same AI Chat tab and leaves its settings alone', async () => {
+    const id = openMockInAiChatTab(target)
+    useAiChatStore.getState().setModel('error-stream')
+    const again = openMockInAiChatTab(target)
+    expect(again).toBe(id)
+    expect(useTabsStore.getState().tabs.filter((t) => t.protocol === 'ai')).toHaveLength(1)
+    expect(useAiChatStore.getState().model).toBe('error-stream')
+    // The Anthropic button of the same server is its own tab.
+    const anthropic = openMockInAiChatTab({
+      ...target,
+      url: 'http://127.0.0.1:3300/v1/messages',
+      provider: 'anthropic',
+    })
+    expect(anthropic).not.toBe(id)
+    await settle()
   })
 
   it('the saved OpenAI key is neither loaded nor kept: the key field is empty', async () => {
@@ -146,7 +268,9 @@ describe('openMockInAiChatTab (§D.3.5)', () => {
     expect(useAiChatStore.getState().apiKey).toBe('')
     await settle()
     expect(useAiChatStore.getState().apiKey).toBe('')
-    expect(aiChatApi.getKey).toHaveBeenCalledWith('custom:http://127.0.0.1:3300')
+    // Issue #222: a tab opened from a mock never asks main for a saved key.
+    expect(useAiChatStore.getState().savedKeyDisabled).toBe(true)
+    expect(aiChatApi.getKey).not.toHaveBeenCalledWith('custom:http://127.0.0.1:3300')
   })
 
   it('a key carried in memory to the OpenAI origin does not hop to the mock', async () => {
@@ -171,7 +295,11 @@ describe('openMockInAiChatTab (§D.3.5)', () => {
 })
 
 describe('startAndOpenMockInAiChatTab', () => {
-  const target = { name: 'Chat API', url: 'http://127.0.0.1:3300/v1/chat/completions' }
+  const target = {
+    serverId: 'ai-1',
+    name: 'Chat API',
+    url: 'http://127.0.0.1:3300/v1/chat/completions',
+  }
 
   it('not running + start fails → toast, no tab', async () => {
     const start = vi.fn(async () => 'Port 3300 is already in use')

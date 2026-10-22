@@ -113,7 +113,7 @@ export default function RunnerSequence({
   onSetFolderPhase,
   onToggleFolder,
 }: RunnerSequenceProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const tree = useMemo(() => buildTree(folderGroups, endpoints), [folderGroups, endpoints])
   // Collapsed rather than expanded, so "open by default" needs no bookkeeping
   // for folders that appear later (a suite refetch, a different scope).
@@ -193,10 +193,10 @@ export default function RunnerSequence({
   }
 
   return (
-    <div className="flex w-full flex-col overflow-hidden" style={{ fontSize: 13 }}>
+    <div className="flex w-full flex-col overflow-hidden" style={{ fontSize: 13 }} lang={locale}>
       {/* Header */}
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-2.5">
-        <span style={{ fontWeight: 600, color: 'var(--text)' }}>Run Sequence</span>
+        <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t('runSequence.title')}</span>
         <div className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
           <button
             type="button"
@@ -204,7 +204,7 @@ export default function RunnerSequence({
             className="cursor-pointer border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
             style={{ fontSize: 13, color: 'inherit' }}
           >
-            Deselect All
+            {t('runSequence.deselectAll')}
           </button>
           <span style={{ color: 'var(--border2)' }}>|</span>
           <button
@@ -213,7 +213,7 @@ export default function RunnerSequence({
             className="cursor-pointer border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
             style={{ fontSize: 13, color: 'inherit' }}
           >
-            Select All
+            {t('runSequence.selectAll')}
           </button>
           <span style={{ color: 'var(--border2)' }}>|</span>
           <button
@@ -222,7 +222,7 @@ export default function RunnerSequence({
             className="cursor-pointer border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
             style={{ fontSize: 13, color: 'inherit' }}
           >
-            Reset
+            {t('runSequence.reset')}
           </button>
         </div>
       </div>
@@ -245,7 +245,7 @@ export default function RunnerSequence({
         {tree.roots.map((node) => renderFolder(node, 0))}
         {endpoints.length === 0 && (
           <div className="flex h-full items-center justify-center" style={{ color: 'var(--hint)' }}>
-            No endpoints in this folder
+            {t('runSequence.empty')}
           </div>
         )}
       </div>
@@ -313,7 +313,9 @@ function FolderRow({
         type="button"
         onClick={onToggleCollapse}
         aria-expanded={!collapsed}
-        aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${node.group.label}`}
+        aria-label={t(
+          collapsed ? 'runSequence.expandFolder' : 'runSequence.collapseFolder',
+        ).replace('{name}', node.group.label)}
         className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
         style={{ color: 'var(--muted)' }}
       >
@@ -334,7 +336,7 @@ function FolderRow({
           // labelled "Phase: <request>" / "Phase — <folder>", and specs address
           // them with `/: <name>$/`; a checkbox labelled "…: <name>" matches the
           // same pattern and turns one locator into two elements.
-          aria-label={`Select folder ${node.group.label}`}
+          aria-label={t('runSequence.selectFolder').replace('{name}', node.group.label)}
           className="h-[15px] w-[15px] shrink-0 cursor-pointer accent-[var(--accent)]"
         />
       )}
@@ -494,7 +496,7 @@ function EndpointRow({
         onChange={onToggle}
         // See the folder checkbox: no colon, so this cannot collide with the
         // "Phase: <request>" locator convention.
-        aria-label={`Select ${endpoint.name}`}
+        aria-label={t('runSequence.selectRequest').replace('{name}', endpoint.name)}
         className="h-[15px] w-[15px] shrink-0 cursor-pointer accent-[var(--accent)]"
       />
 

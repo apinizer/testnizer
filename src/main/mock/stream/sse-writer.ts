@@ -23,6 +23,12 @@
  *  - Snapshot (R06): the plan is captured at open; nothing here reads the
  *    server definition again, so a hot reload never changes or closes an
  *    open stream.
+ *  - Mid-stream error (issue #222): a plan may carry one terminal block
+ *    (`errorEvent`). It is written in place of the next frame once `after`
+ *    frames went out on this connection (counted like `seq`, so it works
+ *    with loop and resume), or when the list runs out first; then the
+ *    response ends cleanly (`finish('error-event')` — `end()`, not
+ *    `destroy()`: the client reads the error, then the end of the stream).
  *  - Nothing is written synchronously from `startSseStream`, and the next
  *    block is always scheduled (`setTimeout`, or `setImmediate` for 0 ms), so
  *    a long list never starves the event loop.
@@ -57,7 +63,13 @@ export const SSE_LOG_MASK_TAIL = 16 * 1024
 /** The heartbeat comment. Clients ignore comment lines. */
 export const SSE_HEARTBEAT = ': keep-alive\n\n'
 
-export type SseFinishReason = 'completed' | 'client' | 'stopped' | 'error' | 'frame-too-large'
+export type SseFinishReason =
+  | 'completed'
+  | 'client'
+  | 'stopped'
+  | 'error'
+  | 'frame-too-large'
+  | 'error-event'
 
 export interface SseFrameContext {
   /** 1-based number of the frame being rendered on this connection. */
@@ -75,6 +87,12 @@ export interface SseStreamPlan {
   config: MockSseStreamConfig
   /** Render one block's template (called once per written frame). */
   render: (raw: string, frame: SseFrameContext) => string
+  /**
+   * The mid-stream error: `block` (rendered like any other) is written once
+   * `after` frames were written, or when the list runs out first, and ends
+   * the stream. Absent = none.
+   */
+  errorEvent?: { after: number; block: SseBlock }
 }
 
 export interface SseStreamSummary {
@@ -322,7 +340,40 @@ export function startSseStream(
     }
   }
 
+  /** True when the next frame is the mid-stream error. */
+  const errorDue = (): boolean =>
+    plan.errorEvent !== undefined && framesSent >= plan.errorEvent.after
+
+  /** Write a rendered frame; false = it was too large (the stream is then finished). */
+  function writeFrame(text: string, separator: string): boolean {
+    const frame = text + separator
+    if (Buffer.byteLength(frame) > SSE_MAX_FRAME_BYTES) {
+      write(`: testnizer mock: event larger than ${SSE_MAX_FRAME_BYTES} bytes, stream closed\n\n`)
+      finish('frame-too-large', `An event rendered to more than ${SSE_MAX_FRAME_BYTES} bytes`)
+      return false
+    }
+    framesSent++
+    addPreview(frame)
+    write(frame)
+    return true
+  }
+
+  function sendErrorEvent(): void {
+    const block = plan.errorEvent!.block
+    const text = safeRender(render, block, {
+      seq: framesSent + 1,
+      iteration,
+      now: new Date().toISOString(),
+    })
+    // The error frame is the last thing written; `end()` flushes the queue.
+    if (writeFrame(text, block.separator)) finish('error-event')
+  }
+
   function endOfList(): void {
+    if (plan.errorEvent) {
+      sendErrorEvent()
+      return
+    }
     listDone = true
     if (config.onEnd === 'close') finish('completed')
     // 'keep-open': nothing more to send; heartbeats (if any) keep running.
@@ -335,6 +386,10 @@ export function startSseStream(
       return
     }
     if (paused) return // `drain` reschedules
+    if (errorDue()) {
+      sendErrorEvent()
+      return
+    }
     if (cursor >= blocks.length) {
       if (config.loop && blocks.length > 0) {
         cursor = 0
@@ -354,20 +409,14 @@ export function startSseStream(
       scheduleFrame(config.intervalMs)
       return
     }
-    const frame = text + block.separator
-    if (Buffer.byteLength(frame) > SSE_MAX_FRAME_BYTES) {
-      write(`: testnizer mock: event larger than ${SSE_MAX_FRAME_BYTES} bytes, stream closed\n\n`)
-      finish('frame-too-large', `An event rendered to more than ${SSE_MAX_FRAME_BYTES} bytes`)
-      return
-    }
-    framesSent++
-    addPreview(frame)
-    if (!write(frame)) return
-    if (cursor >= blocks.length && !config.loop) {
+    if (!writeFrame(text, block.separator)) return
+    if (paused) return // `drain` reschedules
+    if (cursor >= blocks.length && !config.loop && !plan.errorEvent) {
       // Last frame written: end now rather than after another interval.
       endOfList()
       return
     }
+    // A pending mid-stream error goes out one interval later, like a frame.
     scheduleFrame(config.intervalMs)
   }
 

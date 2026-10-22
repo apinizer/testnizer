@@ -248,7 +248,7 @@ describe('branch menu → Commit / Discard (store → bridge)', () => {
     fireEvent.click(await screen.findByTestId('git-discard-confirm'))
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith(
-        'Devam eden bir birleştirme var. Önce branch menüsünden çözün veya iptal edin.',
+        'Devam eden bir birleştirme var. Önce dal menüsünden çözün veya iptal edin.',
       ),
     )
   })

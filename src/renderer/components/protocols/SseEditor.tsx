@@ -7,6 +7,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import SseConnectionBar from './SseConnectionBar'
 import SseEventLog from './SseEventLog'
 import { useTranslation } from '../../lib/i18n'
+import CredentialRowsHint from '../shared/CredentialRowsHint'
 
 export default function SseEditor() {
   const { t } = useTranslation()
@@ -69,7 +70,7 @@ export default function SseEditor() {
                 value={lastEventId}
                 onChange={(e) => setLastEventId(e.target.value)}
                 placeholder={t('sse.lastEventIdPlaceholder')}
-                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)]"
+                className="w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
               />
             </div>
           )}
@@ -168,6 +169,7 @@ export default function SseEditor() {
                 addLabel={t('kv.addHeader')}
                 keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
+              <CredentialRowsHint rows={customHeaders} testId="sse-headers-restart-hint" />
             </div>
           )}
         </div>

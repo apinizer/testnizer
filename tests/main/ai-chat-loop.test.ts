@@ -559,4 +559,41 @@ describe('runAiTurn — metrics (#198)', () => {
     expect(res.outcome).toBe('error')
     expect(res.turn.metrics?.calls[0]).toMatchObject({ status: 429, usageReported: false })
   })
+
+  it('a mid-stream error after streamed text keeps a real TTFB (review #11)', async () => {
+    const h = harness({ script: [{ text: 'x' }] })
+    let clock = 1000
+    h.deps.now = () => (clock += 10)
+    h.deps.streamRound = async function* () {
+      yield { type: 'text', delta: 'Hello from the' }
+      throw Object.assign(new Error('Mid-stream error: Overloaded'), { status: 200 })
+    }
+    const res = await runAiTurn({ ...h.req, tools: undefined }, h.deps, h.io)
+    expect(res.outcome).toBe('error')
+    const call = res.turn.metrics?.calls[0]
+    expect(call?.status).toBe(200)
+    expect(call?.ttfbMs).toBe(10)
+    expect(res.turn.metrics?.ttfbMs).toBe(10)
+  })
+
+  it("the engine's firstContentAt on a mid-stream error wins (tool-call fragments count)", async () => {
+    const h = harness({ script: [{ text: 'x' }] })
+    h.deps.now = () => 1000
+    h.deps.streamRound = async function* () {
+      yield* []
+      throw Object.assign(new Error('Mid-stream error'), { status: 200, firstContentAt: 1042 })
+    }
+    const res = await runAiTurn({ ...h.req, tools: undefined }, h.deps, h.io)
+    expect(res.turn.metrics?.calls[0]?.ttfbMs).toBe(42)
+  })
+
+  it('an error before any content keeps TTFB unknown', async () => {
+    const h = harness({ script: [{ text: 'x' }] })
+    h.deps.streamRound = async function* () {
+      yield* []
+      throw Object.assign(new Error('HTTP 500'), { status: 500 })
+    }
+    const res = await runAiTurn({ ...h.req, tools: undefined }, h.deps, h.io)
+    expect(res.turn.metrics?.calls[0]?.ttfbMs).toBeNull()
+  })
 })

@@ -500,6 +500,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
         open={!!deleteBranchTarget}
         itemName={deleteBranchTarget || ''}
         itemType="branch"
+        typeLabel={t('deleteConfirm.type.branch')}
         onConfirm={confirmDeleteBranch}
         onCancel={() => setDeleteBranchTarget(null)}
       />

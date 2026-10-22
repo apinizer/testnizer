@@ -94,6 +94,8 @@ export default function McpConfigTabs() {
   return (
     <div data-testid="mcp-config" className="shrink-0 border-b border-[var(--border)]">
       <div className="flex items-center gap-1 px-2">
+        {/* Label size / weight = the HTTP RequestEditor tab strip (base size,
+            600 active / 400 idle; issue #245) — it was a fixed 12px here. */}
         <div role="tablist" className="flex min-w-0 items-center gap-1">
           {availableConfigTabs(transport).map((id) => {
             const selected = !collapsed && active === id
@@ -106,10 +108,10 @@ export default function McpConfigTabs() {
                 aria-selected={selected}
                 data-testid={`mcp-config-tab-${id}`}
                 onClick={() => setConfigTab(id)}
-                className={`flex cursor-pointer items-center gap-1.5 border-x-0 border-t-0 border-b-2 bg-transparent px-2.5 py-1.5 text-[12px] font-medium transition-colors ${
+                className={`flex cursor-pointer items-center gap-1.5 border-x-0 border-t-0 border-b-2 bg-transparent px-2.5 py-1.5 text-sm transition-colors ${
                   selected
-                    ? 'border-[var(--accent)] text-[var(--accent-text)]'
-                    : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
+                    ? 'border-[var(--accent)] font-semibold text-[var(--accent-text)]'
+                    : 'border-transparent font-normal text-[var(--muted)] hover:text-[var(--text)]'
                 }`}
               >
                 <span data-testid={LEGACY_TOGGLE_IDS[id]}>{t(LABEL_KEYS[id])}</span>

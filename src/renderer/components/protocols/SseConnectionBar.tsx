@@ -2,6 +2,15 @@ import { Plug, Unplug, RefreshCw, X } from 'lucide-react'
 import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 import { useTranslation } from '../../lib/i18n'
 import McpStatusPill from './mcp/McpStatusPill'
+import {
+  CB_ERROR_BOX,
+  CB_ROW,
+  CB_SECONDARY_BUTTON,
+  CB_SELECT,
+  CB_TARGET,
+  CB_URL,
+  cbPrimaryButton,
+} from './connection-bar-ui'
 
 const METHODS: SseHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
 
@@ -16,8 +25,9 @@ const METHODS: SseHttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']
  * the stream, but "closed" is only said once the connection is really over.
  */
 const MESSAGE_TONE: Partial<Record<string, string>> = {
-  error: 'border-[var(--mb-delete-br)] bg-[var(--mb-delete-bg)] text-[var(--red)]',
-  disconnected: 'border-[var(--border)] bg-[var(--surface)] text-[var(--text)]',
+  error: CB_ERROR_BOX,
+  disconnected:
+    'break-words rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[var(--text)]',
 }
 
 export default function SseConnectionBar() {
@@ -41,7 +51,8 @@ export default function SseConnectionBar() {
 
   return (
     <div className="space-y-2">
-      <div className="flex items-center gap-2">
+      {/* Sizes + wrap rule: `connection-bar-ui.ts` (the WS / Socket.IO / MCP bars' set). */}
+      <div data-testid="sse-connection-row" className={CB_ROW}>
         <McpStatusPill
           state={showReconnecting ? 'connecting' : connectionState}
           labelKey={showReconnecting ? 'sse.reconnecting' : undefined}
@@ -54,7 +65,7 @@ export default function SseConnectionBar() {
           disabled={busy}
           data-testid="sse-method"
           aria-label={t('sse.method')}
-          className="shrink-0 rounded-lg border border-[var(--border)] bg-[var(--white)] px-2 py-2 font-mono font-medium text-[var(--text)] outline-none transition-colors focus:border-[var(--accent)] disabled:opacity-60"
+          className={`${CB_SELECT} font-mono font-medium`}
         >
           {METHODS.map((m) => (
             <option key={m} value={m}>
@@ -63,44 +74,56 @@ export default function SseConnectionBar() {
           ))}
         </select>
 
-        <input
-          type="text"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          disabled={busy}
-          data-testid="sse-url"
-          placeholder="https://api.example.com/events"
-          className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--hint)] focus:border-[var(--accent)] disabled:opacity-60"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !isConnected) connect()
-          }}
-        />
+        <div className={CB_TARGET}>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            disabled={busy}
+            data-testid="sse-url"
+            placeholder="https://api.example.com/events"
+            className={CB_URL}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !isConnected) connect()
+            }}
+          />
 
-        {/* Connect / Cancel / Disconnect — same tokens as the MCP bar's button. */}
-        <button
-          type="button"
-          onClick={() => void (busy ? disconnect() : connect())}
-          disabled={!busy && !url.trim()}
-          data-testid={isConnected ? 'sse-disconnect' : isConnecting ? 'sse-cancel' : 'sse-connect'}
-          className={`flex shrink-0 cursor-pointer items-center gap-2 rounded-lg border-none px-4 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${
-            busy ? 'bg-[var(--mb-delete-fg)]' : 'bg-[var(--accent)]'
-          }`}
-        >
-          {isConnecting ? <X size={14} /> : isConnected ? <Unplug size={14} /> : <Plug size={14} />}
-          {isConnecting ? t('common.cancel') : isConnected ? t('mcp.disconnect') : t('mcp.connect')}
-        </button>
-
-        {isConnected && (
+          {/* Connect / Cancel / Disconnect — same tokens as the MCP bar's button. */}
           <button
             type="button"
-            onClick={reconnect}
-            data-testid="sse-reconnect"
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[var(--border)] bg-transparent px-3 py-2 font-medium text-[var(--text)] transition-colors hover:bg-[var(--surface)]"
+            onClick={() => void (busy ? disconnect() : connect())}
+            disabled={!busy && !url.trim()}
+            data-testid={
+              isConnected ? 'sse-disconnect' : isConnecting ? 'sse-cancel' : 'sse-connect'
+            }
+            className={cbPrimaryButton(busy)}
           >
-            <RefreshCw size={13} />
-            {t('sse.reconnect')}
+            {isConnecting ? (
+              <X size={14} />
+            ) : isConnected ? (
+              <Unplug size={14} />
+            ) : (
+              <Plug size={14} />
+            )}
+            {isConnecting
+              ? t('common.cancel')
+              : isConnected
+                ? t('mcp.disconnect')
+                : t('mcp.connect')}
           </button>
-        )}
+
+          {isConnected && (
+            <button
+              type="button"
+              onClick={reconnect}
+              data-testid="sse-reconnect"
+              className={CB_SECONDARY_BUTTON}
+            >
+              <RefreshCw size={13} />
+              {t('sse.reconnect')}
+            </button>
+          )}
+        </div>
       </div>
 
       {messageTone && errorMessage && (
@@ -108,7 +131,7 @@ export default function SseConnectionBar() {
           data-testid="sse-message"
           data-state={connectionState}
           role={connectionState === 'error' ? 'alert' : 'status'}
-          className={`rounded-lg border px-3 py-2 ${messageTone}`}
+          className={messageTone}
         >
           {errorMessage}
         </div>

@@ -62,12 +62,15 @@ function parse(provider: 'openai' | 'anthropic', events: SseEvent[]) {
 const TEXT = 'Hello there, world! How are you?\nFine. Thanks… 😀 ok'
 
 describe('chunkText', () => {
-  it.each(['word', 'char', 'sentence'] as const)('%s chunks join back to the text', (mode) => {
-    for (const t of [TEXT, '  leading', 'trailing  ', 'one', ' ', '3.14 is pi. Yes!']) {
-      expect(chunkText(t, mode).join('')).toBe(t)
-    }
-    expect(chunkText('', mode)).toEqual([])
-  })
+  it.each(['word', 'char', 'sentence', 'fixed', 'whole'] as const)(
+    '%s chunks join back to the text',
+    (mode) => {
+      for (const t of [TEXT, '  leading', 'trailing  ', 'one', ' ', '3.14 is pi. Yes!']) {
+        expect(chunkText(t, mode).join('')).toBe(t)
+      }
+      expect(chunkText('', mode)).toEqual([])
+    },
+  )
 
   it('word: a word plus its trailing whitespace; char: code points (emoji kept whole)', () => {
     expect(chunkText('Hi  there you', 'word')).toEqual(['Hi  ', 'there ', 'you'])

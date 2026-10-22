@@ -1,12 +1,14 @@
 /**
  * Type switch (HTTP | MCP | SSE | AI) and preset list of the "New mock server"
  * dialog (issues #140, #221). Both are radio groups; the selected preset is
- * highlighted. The type list lives in `new-mock-server.ts`. Keyboard (issue
+ * highlighted. The type list lives in `new-mock-server.ts`; the type switch
+ * is `MockKindSegmented` (shared with the editor's Settings tab). Keyboard (issue
  * #226): one Tab stop per group, the arrow keys / Home / End move and select
  * (`radio-group-keys.ts`).
  */
 import { useTranslation } from '../../lib/i18n'
 import { onRadioKeyDown, radioTabIndex } from '../../lib/radio-group-keys'
+import MockKindSegmented from './MockKindSegmented'
 import {
   MOCK_DIALOG_KINDS,
   MOCK_KIND_HINT_KEYS,
@@ -29,41 +31,18 @@ export default function NewMockServerPresetPicker({
   const { t } = useTranslation()
   const presets = presetOptions(kind)
   const presetIds = presets.map((o) => o.id)
-  const kindIndex = MOCK_DIALOG_KINDS.indexOf(kind)
   const presetIndex = presetIds.indexOf(presetId)
   return (
     <div className="flex flex-col gap-3">
       <div>
-        <div
-          role="radiogroup"
-          aria-label={t('mockNew.type')}
-          className="grid gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1"
-          // One column per type; a computed `grid-cols-N` class would not be generated.
-          style={{ gridTemplateColumns: `repeat(${MOCK_DIALOG_KINDS.length}, minmax(0, 1fr))` }}
-        >
-          {MOCK_DIALOG_KINDS.map((k, i) => {
-            const active = k === kind
-            return (
-              <button
-                key={k}
-                type="button"
-                role="radio"
-                aria-checked={active}
-                tabIndex={radioTabIndex(i, kindIndex)}
-                data-testid={`mock-new-type-${k}`}
-                onClick={() => onKind(k)}
-                onKeyDown={(e) => onRadioKeyDown(e, MOCK_DIALOG_KINDS, i, onKind)}
-                className={`h-7 cursor-pointer rounded-md border-none text-[12px] font-semibold transition-colors ${
-                  active
-                    ? 'bg-[var(--white)] text-[var(--accent-text)] shadow-sm'
-                    : 'bg-transparent text-[var(--muted)] hover:text-[var(--text)]'
-                }`}
-              >
-                {MOCK_KIND_LABEL[k]}
-              </button>
-            )
-          })}
-        </div>
+        <MockKindSegmented
+          kinds={MOCK_DIALOG_KINDS}
+          value={kind}
+          labels={MOCK_KIND_LABEL}
+          ariaLabel={t('mockNew.type')}
+          testIdPrefix="mock-new-type"
+          onChange={onKind}
+        />
         <p data-testid="mock-new-type-hint" className="mt-1.5 text-[11px] text-[var(--muted)]">
           {t(MOCK_KIND_HINT_KEYS[kind])}
         </p>

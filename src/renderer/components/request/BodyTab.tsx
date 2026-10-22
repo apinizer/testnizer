@@ -4,6 +4,10 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import type { BodyType, KeyValuePair } from '../../types'
 import { useTranslation } from '../../lib/i18n'
+import CredentialRowsHint from '../shared/CredentialRowsHint'
+import { isCredentialArgName } from '../../../shared/credential-headers'
+import CredentialRestartHint from '../shared/CredentialRestartHint'
+import { scrubJsonCredentials } from '../../lib/credential-text'
 
 const BODY_TYPE_TEST_IDS: Record<string, string> = {
   none: 'none',
@@ -244,6 +248,10 @@ export default function BodyTab() {
           />
         </div>
       )}
+      {body.type === 'json' &&
+        scrubJsonCredentials(body.content ?? '') !== (body.content ?? '') && (
+          <CredentialRestartHint id="body-json-restart-hint-text" testId="body-json-restart-hint" />
+        )}
 
       {body.type === 'form-data' && (
         <div className="flex-1 overflow-auto pt-1">
@@ -254,6 +262,11 @@ export default function BodyTab() {
             onAdd={handleFormDataAdd}
             addLabel={t('kv.addField')}
             enableFileType
+          />
+          <CredentialRowsHint
+            rows={body.formData}
+            testId="body-credential-restart-hint"
+            isCredentialName={isCredentialArgName}
           />
         </div>
       )}
@@ -267,6 +280,11 @@ export default function BodyTab() {
             onAdd={handleUrlEncodedAdd}
             onReplaceAll={handleUrlEncodedReplaceAll}
             addLabel={t('kv.addField')}
+          />
+          <CredentialRowsHint
+            rows={body.urlEncoded}
+            testId="body-credential-restart-hint"
+            isCredentialName={isCredentialArgName}
           />
         </div>
       )}

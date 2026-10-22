@@ -33,10 +33,10 @@ export default function McpResultTabs({
       aria-selected={view === id}
       data-testid={`mcp-result-tab-${id}`}
       onClick={() => setView(id)}
-      className={`flex cursor-pointer items-center gap-1.5 border-x-0 border-t-0 border-b-2 bg-transparent px-2 py-1 text-[12px] ${
+      className={`flex cursor-pointer items-center gap-1.5 border-x-0 border-t-0 border-b-2 bg-transparent px-2 py-1 text-sm ${
         view === id
-          ? 'border-[var(--accent)] text-[var(--accent-text)]'
-          : 'border-transparent text-[var(--muted)] hover:text-[var(--text)]'
+          ? 'border-[var(--accent)] font-semibold text-[var(--accent-text)]'
+          : 'border-transparent font-normal text-[var(--muted)] hover:text-[var(--text)]'
       }`}
     >
       {label}

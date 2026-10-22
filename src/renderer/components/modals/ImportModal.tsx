@@ -775,7 +775,7 @@ export default function ImportModal() {
                     placeholder={`curl -X POST 'https://api.example.com/v1/users' \\\n  -H 'Authorization: Bearer ...' \\\n  -H 'Content-Type: application/json' \\\n  -d '{"name":"Alice"}'`}
                     rows={8}
                     spellCheck={false}
-                    className="w-full resize-y rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 font-mono text-[13px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                    className="w-full resize-y rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 font-mono text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   />
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-[var(--hint)]" style={{ fontSize: 12 }}>

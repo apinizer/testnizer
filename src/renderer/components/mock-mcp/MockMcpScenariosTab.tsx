@@ -2,6 +2,7 @@ import { KeyRound } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 import type { MockMcpAuthMode, MockMcpDraftUpdater, MockMcpServerDraft } from '../../types/mock-mcp'
 import { generateBearerToken } from './mock-mcp-draft'
+import { SecretLockedNote } from '../shared/SecretStorageNotes'
 import MockMcpErrorModeFields from './MockMcpErrorModeFields'
 import MockMcpExposedWarning from './MockMcpExposedWarning'
 import { Field, GhostButton, INPUT_CLS, IntInput, SectionLabel, SELECT_CLS } from './ui'
@@ -10,9 +11,12 @@ import { Field, GhostButton, INPUT_CLS, IntInput, SectionLabel, SELECT_CLS } fro
 export default function MockMcpScenariosTab({
   draft,
   change,
+  tokenLocked = false,
 }: {
   draft: MockMcpServerDraft
   change: MockMcpDraftUpdater
+  /** Issue #239: the saved token cannot be decrypted on this computer — re-enter it. */
+  tokenLocked?: boolean
 }) {
   const { t } = useTranslation()
   const set = (patch: Partial<MockMcpServerDraft>): void => change((d) => ({ ...d, ...patch }))
@@ -61,6 +65,9 @@ export default function MockMcpScenariosTab({
                 </GhostButton>
               </div>
             </Field>
+            {tokenLocked && !draft.bearerToken && (
+              <SecretLockedNote testId="mock-mcp-token-decrypt-failed" />
+            )}
             {/* Decision (issue #154): the token is project data, like every other mock setting. */}
             <div data-testid="mock-mcp-token-note" className="text-[11px] text-[var(--muted)]">
               {t('mockMcp.scenarios.tokenNote')}

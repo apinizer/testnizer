@@ -51,8 +51,14 @@ vi.mock('../../../src/main/db/database', async (importOriginal) => {
 })
 
 vi.mock('../../../src/main/lib/secure-storage', () => ({
-  encryptSecret: (s: string | null | undefined) => (s ? `enc:${s}` : null),
+  // A consistent stand-in for the safeStorage envelope: idempotent like the
+  // real `encryptSecret`, recognised by `isEncryptedSecret` (issue #239 —
+  // values marked secret are sealed on every write).
+  encryptSecret: (s: string | null | undefined) =>
+    s ? (s.startsWith('enc:') ? s : `enc:${s}`) : null,
   decryptSecret: (s: string | null | undefined) => (s ? s.replace(/^enc:/, '') : null),
+  isEncryptedSecret: (s: unknown): s is string => typeof s === 'string' && s.startsWith('enc:'),
+  isEncryptionAvailable: () => true,
 }))
 
 vi.mock('../../../src/main/ipc/import-export.handler', () => ({
@@ -376,8 +382,13 @@ describe('a stripped file imported back keeps this machine’s mock secrets (iss
           .prepare('SELECT auth_override, description FROM mock_endpoints WHERE id = ?')
           .get(b.endpointId),
       ).toEqual(beforeEp)
-      // Spot-check the tester's own row: the token they typed is still there.
-      expect(JSON.parse(dbAuth(b.authServerId))).toEqual(b.serverAuth.get(b.authServerId))
+      // Spot-check the tester's own row: the token they typed is still there
+      // (sealed at rest since issue #239 — the mock envelope is `enc:`).
+      expect(
+        JSON.parse(dbAuth(b.authServerId), (_k, v: unknown) =>
+          typeof v === 'string' ? v.replace(/^enc:/, '') : v,
+        ),
+      ).toEqual(b.serverAuth.get(b.authServerId))
     })
   }
 

@@ -50,8 +50,8 @@ import {
 } from '../../shared/mock-stream'
 import {
   buildLlmPlan,
-  encodeLlmEvents,
   encodeLlmJson,
+  encodeLlmStream,
   llmErrorBody,
   llmStreamFrameCount,
   readLlmRequest,
@@ -177,6 +177,7 @@ const FINISH_REASON_TEXT: Record<SseFinishReason, string> = {
   stopped: 'server stopped',
   error: 'write error',
   'frame-too-large': 'event too large',
+  'error-event': 'ended with the mid-stream error event',
 }
 const REQUEST_BODY_LIMIT_BYTES = 5 * 1024 * 1024 // 5 MB
 
@@ -1059,7 +1060,20 @@ class MockServerManager extends EventEmitter {
       { reqHeaders, query, path, bodyText, matchedEndpointId, matchedResponseId, scriptLog },
       out.statusCode,
       sseResponseHeaders(out.headers),
-      { blocks, startIndex: cursor.start, config, render },
+      {
+        blocks,
+        startIndex: cursor.start,
+        config,
+        render,
+        ...(config.errorEvent
+          ? {
+              errorEvent: {
+                after: config.errorEvent.afterEvents,
+                block: sseEventBlock({ event: 'error', data: config.errorEvent.data }),
+              },
+            }
+          : {}),
+      },
       {
         tag: cursor.resumed ? `open;resumeAt=${cursor.start}` : 'open',
         // v1 §6.3.3-1: an empty body is served (an empty stream), but say so.
@@ -1290,7 +1304,8 @@ class MockServerManager extends EventEmitter {
       serverError(tooManyStreamsMessage())
       return
     }
-    const blocks = encodeLlmEvents(plan).map(sseEventBlock)
+    const stream = encodeLlmStream(plan)
+    const blocks = stream.events.map(sseEventBlock)
     if (blocks.length > SSE_MAX_PLAN_FRAMES) {
       tooManyFrames(String(blocks.length))
       return
@@ -1319,8 +1334,21 @@ class MockServerManager extends EventEmitter {
         },
         // Frames are encoded JSON: never run a template over them (user text may hold `{{`).
         render: (raw) => raw,
+        // The mid-stream error ends the list (the events were cut before it).
+        ...(stream.error
+          ? { errorEvent: { after: blocks.length, block: sseEventBlock(stream.error) } }
+          : {}),
       },
-      { tag: 'open', note: null, logBody: encodeLlmJson(plan), errorBody: providerError },
+      {
+        tag: 'open',
+        note: null,
+        // What the client got: with a mid-stream error, the text sent before it
+        // and the error — not the whole reply it never received.
+        logBody: stream.error
+          ? `${stream.textSent}\n… mid-stream error after ${stream.chunksSent} chunks:\n${stream.error.data}`
+          : encodeLlmJson(plan),
+        errorBody: providerError,
+      },
     )
   }
 

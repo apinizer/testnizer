@@ -83,7 +83,10 @@ async function startAndOpenInAiChat(page: Page, name: string, port: number): Pro
   await expect(open).toBeEnabled({ timeout: 10_000 })
   await open.click()
 
-  await expect(activeTab(page)).toHaveAttribute('data-tab-name', name, { timeout: 10_000 })
+  // The client tab is not titled like the editor tab (PM review #20).
+  await expect(activeTab(page)).toHaveAttribute('data-tab-name', `${name} · client`, {
+    timeout: 10_000,
+  })
   await expect(page.getByText('Custom · mock-model')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByPlaceholder(/chat completions endpoint/)).toHaveValue(
     `http://127.0.0.1:${port}/v1/chat/completions`,

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { GitCommit, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
+import { useTranslation } from '../../lib/i18n'
 
 interface CommitRow {
   hash: string
@@ -23,6 +24,7 @@ interface CommitRow {
  * button — git operations are too expensive to re-run on every render.
  */
 export default function CommitHistoryPanel() {
+  const { t, locale } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const currentBranch = useBranchStore((s) => s.currentBranch)
   const [commits, setCommits] = useState<CommitRow[]>([])
@@ -42,7 +44,7 @@ export default function CommitHistoryPanel() {
         | { success: boolean; error?: string; data?: { commits: CommitRow[]; total: number } }
         | undefined
       if (!result?.success) {
-        setError(result?.error || 'Failed to load commit history')
+        setError(result?.error || t('commitHistory.loadFailed'))
         setCommits([])
       } else {
         setCommits(result.data?.commits ?? [])
@@ -52,7 +54,7 @@ export default function CommitHistoryPanel() {
     } finally {
       setLoading(false)
     }
-  }, [activeProjectId])
+  }, [activeProjectId, t])
 
   useEffect(() => {
     void refresh()
@@ -74,7 +76,7 @@ export default function CommitHistoryPanel() {
         style={{ borderBottom: '1px solid var(--border)' }}
       >
         <GitCommit size={14} style={{ color: 'var(--muted)' }} />
-        <span style={{ fontWeight: 600, color: 'var(--text)' }}>Commit History</span>
+        <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t('commitHistory.title')}</span>
         <span style={{ marginLeft: 'auto', color: 'var(--hint)', fontSize: 12 }}>
           {currentBranch || '—'}
         </span>
@@ -82,7 +84,7 @@ export default function CommitHistoryPanel() {
           type="button"
           onClick={() => void refresh()}
           disabled={loading}
-          aria-label="Refresh commit history"
+          aria-label={t('commitHistory.refresh')}
           className="cursor-pointer rounded p-1 hover:bg-[var(--surface)] disabled:cursor-wait disabled:opacity-50"
           style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
         >
@@ -93,7 +95,7 @@ export default function CommitHistoryPanel() {
       <div className="flex-1 overflow-y-auto">
         {!activeProjectId && (
           <div className="px-3 py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
-            Open a project to view its commit history.
+            {t('commitHistory.noProject')}
           </div>
         )}
 
@@ -108,7 +110,7 @@ export default function CommitHistoryPanel() {
 
         {activeProjectId && !error && commits.length === 0 && !loading && (
           <div className="px-3 py-6 text-center" style={{ color: 'var(--hint)', fontSize: 13 }}>
-            No commits yet. Save an endpoint to create the first commit.
+            {t('commitHistory.empty')}
           </div>
         )}
 
@@ -156,7 +158,7 @@ export default function CommitHistoryPanel() {
                   </span>
                   <span>{c.author}</span>
                   <span>•</span>
-                  <span>{formatDate(c.date)}</span>
+                  <span>{formatDate(c.date, t, locale)}</span>
                   {c.refs && c.refs.trim() && (
                     <>
                       <span>•</span>
@@ -186,14 +188,15 @@ export default function CommitHistoryPanel() {
   )
 }
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, t: (key: string) => string, locale: string): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
   const now = Date.now()
   const delta = (now - d.getTime()) / 1000
-  if (delta < 60) return 'just now'
-  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`
-  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`
-  if (delta < 86400 * 7) return `${Math.floor(delta / 86400)}d ago`
-  return d.toLocaleDateString()
+  const ago = (key: string, n: number): string => t(key).replace('{n}', String(n))
+  if (delta < 60) return t('commitHistory.justNow')
+  if (delta < 3600) return ago('commitHistory.minutesAgo', Math.floor(delta / 60))
+  if (delta < 86400) return ago('commitHistory.hoursAgo', Math.floor(delta / 3600))
+  if (delta < 86400 * 7) return ago('commitHistory.daysAgo', Math.floor(delta / 86400))
+  return d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : undefined)
 }

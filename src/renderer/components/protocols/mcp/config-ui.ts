@@ -4,7 +4,8 @@
  * working (`react-refresh/only-export-components`) and they unit-test alone.
  */
 import type { KeyValuePair } from '../../../types'
-import type { McpAuthConfig } from '../../../types/mcp'
+import type { McpAuthConfig, McpTransport } from '../../../types/mcp'
+import { scrubCommandLineCredentials, scrubUrlCredentials } from '../../../lib/credential-text'
 
 /** Enabled rows with a key — the count badge on the Headers / Environment tab. */
 export function enabledRowCount(rows: readonly KeyValuePair[]): number {
@@ -25,4 +26,15 @@ export function sentAsPreview(auth: McpAuthConfig): string | null {
     default:
       return null
   }
+}
+
+/**
+ * Issue #247: the URL (`?api_key=…`, `user:pass@`) or stdio command line
+ * (`--token …`) holds a literal credential the tab snapshot leaves out — the
+ * condition of the restart hint under the MCP connection bar.
+ */
+export function mcpUrlHasLiteralCredential(transport: McpTransport, url: string): boolean {
+  const scrubbed =
+    transport === 'stdio' ? scrubCommandLineCredentials(url) : scrubUrlCredentials(url)
+  return scrubbed !== url
 }

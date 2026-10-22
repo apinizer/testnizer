@@ -47,6 +47,7 @@
 
 import { HISTORY_MASK, isCredentialArgName } from '../../shared/credential-headers'
 import { createScrubber, type Scrubber } from './sensitive-scrub'
+import { decryptSecret, isEncryptedSecret } from './secure-storage'
 
 type Row = Record<string, unknown>
 
@@ -154,16 +155,41 @@ function serialiseAuth(raw: unknown, parsed: ParsedAuth, out: Row): unknown {
   return parsed.doubleEncoded ? JSON.stringify(json) : json
 }
 
-/** Every non-empty secret value inside a mock auth column (for the description scrub). */
+/**
+ * Every non-empty secret value inside a mock auth column (for the description
+ * scrub). The column holds `encryptSecret` output since issue #239, the
+ * description the plaintext the "Auth required" preset wrote — so each value
+ * is decrypted here; an undecryptable one is skipped (it can match nothing).
+ */
 export function mockAuthSecretValues(raw: unknown): string[] {
   const parsed = parseAuth(raw)
   if (!parsed) return []
   const out: string[] = []
   mapSecretStrings(parsed.auth, false, (s) => {
-    if (s !== '') out.push(s)
+    if (s === '') return s
+    const plain = isEncryptedSecret(s) ? decryptSecret(s) : s
+    if (plain) out.push(plain)
     return s
   })
   return out
+}
+
+/**
+ * `raw` with `fn` applied to every string under a credential-named field of
+ * the mock auth JSON (the same field rule as the export strip). Returns `raw`
+ * itself (same reference) when `fn` changed nothing, so an untouched column
+ * is never re-serialised (issue #239: encryption at rest).
+ */
+export function mapMockAuthSecrets(raw: unknown, fn: (s: string) => string): unknown {
+  const parsed = parseAuth(raw)
+  if (!parsed) return raw
+  let changed = false
+  const out = mapSecretStrings(parsed.auth, false, (s) => {
+    const next = fn(s)
+    if (next !== s) changed = true
+    return next
+  }) as Row
+  return changed ? serialiseAuth(raw, parsed, out) : raw
 }
 
 /**
@@ -284,7 +310,17 @@ export function keepLocalMaskedText(incoming: unknown, local: unknown): unknown 
 
 function stripVariables(rows: Row[] | undefined): Row[] | undefined {
   if (!Array.isArray(rows)) return rows
-  return rows.map((r) => (isSecretFlag(r.secret) ? { ...r, value: '', initial_value: '' } : r))
+  return rows.map((r) => {
+    if (isSecretFlag(r.secret)) return { ...r, value: '', initial_value: '' }
+    // Safety net (issue #239): ciphertext is bound to this machine's keychain
+    // and must never reach a file, even on a row no longer marked secret
+    // (an undecryptable value is kept as-is when its flag is cleared).
+    const enc = (['value', 'initial_value'] as const).filter((c) => isEncryptedSecret(r[c]))
+    if (enc.length === 0) return r
+    const next: Row = { ...r }
+    for (const c of enc) next[c] = ''
+    return next
+  })
 }
 
 function stripColumn(rows: Row[] | undefined, column: string): Row[] | undefined {

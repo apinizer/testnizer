@@ -49,6 +49,7 @@ class FakeStore {
 vi.mock('electron-store', () => ({ default: FakeStore }))
 
 const { registerGitHandlers } = await import('../../../src/main/ipc/git.handler')
+const { openSecret } = await import('../../../src/main/lib/secret-at-rest')
 const { GIT_MERGE_IN_PROGRESS_ERROR, GIT_NOTHING_COMMITTED_ERROR } =
   await import('../../../src/shared/git-changes')
 
@@ -127,10 +128,13 @@ function addVariable(m: Machine, envName: string, key: string, value: string, se
   return id
 }
 
+/** The plaintext the machine holds — values marked secret are sealed at rest (issue #239). */
 function variable(m: Machine, id: string): { value: string; initial_value: string } | undefined {
-  return m.db
+  const row = m.db
     .prepare('SELECT value, initial_value FROM environment_variables WHERE id = ?')
     .get(id) as { value: string; initial_value: string } | undefined
+  if (!row) return row
+  return { value: openSecret(row.value).value, initial_value: openSecret(row.initial_value).value }
 }
 
 /** Commit a file straight into the bare remote through a throwaway clone. */

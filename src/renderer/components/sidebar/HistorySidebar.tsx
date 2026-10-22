@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Clock, GitCommit } from 'lucide-react'
 import HistoryListPanel from './HistoryListPanel'
 import CommitHistoryPanel from './CommitHistoryPanel'
+import { useTranslation } from '../../lib/i18n'
 
 type HistoryMode = 'requests' | 'commits'
 
@@ -13,10 +14,11 @@ type HistoryMode = 'requests' | 'commits'
  * with the other side panels.
  */
 export default function HistorySidebar() {
+  const { t, locale } = useTranslation()
   const [mode, setMode] = useState<HistoryMode>('requests')
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" lang={locale}>
       {/* 44px header matches the APIs / Tests / Mocks / Tools sidebars —
        *  earlier 32px height was inconsistent with the rest of the chrome. */}
       <div
@@ -31,19 +33,19 @@ export default function HistorySidebar() {
             marginRight: 4,
           }}
         >
-          History
+          {t('sidebar.history')}
         </span>
         <TabButton
           active={mode === 'requests'}
           onClick={() => setMode('requests')}
           icon={<Clock size={12} />}
-          label="Requests"
+          label={t('history.tabRequests')}
         />
         <TabButton
           active={mode === 'commits'}
           onClick={() => setMode('commits')}
           icon={<GitCommit size={12} />}
-          label="Commits"
+          label={t('history.tabCommits')}
         />
       </div>
       <div className="min-h-0 flex-1">

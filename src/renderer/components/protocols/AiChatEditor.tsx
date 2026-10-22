@@ -114,7 +114,7 @@ export default function AiChatEditor(): ReactElement {
             onKeyDown={handleKeyDown}
             placeholder={t('aiChat.placeholder')}
             rows={2}
-            className="max-h-40 flex-1 resize-none bg-transparent px-1 py-1 text-[var(--text)] outline-none placeholder:text-[var(--hint)]"
+            className="max-h-40 flex-1 resize-none bg-transparent px-1 py-1 text-[var(--text)] outline-none placeholder:text-[var(--placeholder)]"
             style={{ fontSize: 13 }}
             disabled={streaming}
           />

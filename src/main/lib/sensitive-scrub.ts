@@ -41,6 +41,7 @@ import {
 } from '../../shared/credential-headers'
 import type { EndpointRunResult } from '../../shared/runner-types'
 import { INLINE_MASK } from '../../shared/mcp-call'
+import { decryptSecret, isEncryptedSecret } from './secure-storage'
 
 export { HISTORY_MASK }
 
@@ -174,8 +175,13 @@ export function loadSecretInventory(db: SecretDb | null | undefined): SecretInve
       .all() as Array<{ key: unknown; value: unknown; initial_value: unknown }>
     for (const r of rows) {
       if (typeof r.key === 'string') inv.keys.add(r.key)
-      if (typeof r.value === 'string') inv.values.push(r.value)
-      if (typeof r.initial_value === 'string') inv.values.push(r.initial_value)
+      // Stored encrypted (issue #239): the needle is the plaintext a request
+      // carries. An undecryptable value can match nothing and is skipped.
+      for (const stored of [r.value, r.initial_value]) {
+        if (typeof stored !== 'string') continue
+        const plain = isEncryptedSecret(stored) ? decryptSecret(stored) : stored
+        if (plain !== null) inv.values.push(plain)
+      }
     }
   } catch {
     /* no tables / not initialised — name rule only */

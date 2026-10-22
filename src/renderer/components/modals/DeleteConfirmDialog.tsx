@@ -1,11 +1,15 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import Modal from '../shared/Modal'
+import { useTranslation } from '../../lib/i18n'
 
 interface DeleteConfirmDialogProps {
   open: boolean
   itemName: string
+  /** Raw item type — logic keys off it (e.g. `'folder'` picks the folder warning). */
   itemType: string
+  /** Translated type name for the heading. Falls back to `itemType`. */
+  typeLabel?: string
   onConfirm: () => void
   onCancel: () => void
   /** If true, user must type "delete" to confirm (default: false = simple OK/Cancel) */
@@ -18,11 +22,13 @@ export default function DeleteConfirmDialog({
   open,
   itemName,
   itemType,
+  typeLabel,
   onConfirm,
   onCancel,
   requireTyping = false,
   description,
 }: DeleteConfirmDialogProps) {
+  const { t, locale } = useTranslation()
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const cancelRef = useRef<HTMLButtonElement>(null)
@@ -53,12 +59,17 @@ export default function DeleteConfirmDialog({
   const canConfirm = !requireTyping || value.toLowerCase() === 'delete'
 
   const defaultDesc =
-    itemType === 'folder'
-      ? 'This will permanently delete the folder and all its contents.'
-      : 'This action cannot be undone.'
+    itemType === 'folder' ? t('deleteConfirm.folderDesc') : t('deleteConfirm.cannotUndo')
+
+  // EN reads "Delete {type}", TR "{type} silinsin mi?" — the type can lead the
+  // sentence, so capitalise whatever comes first (with the locale's casing).
+  const headingRaw = t('deleteConfirm.heading').replace('{type}', typeLabel ?? itemType)
+  const heading = headingRaw.charAt(0).toLocaleUpperCase(locale) + headingRaw.slice(1)
+  const [questionBefore, questionAfter = ''] = t('deleteConfirm.question').split('{name}')
+  const [typeBefore, typeAfter = ''] = t('deleteConfirm.typeToConfirm').split('{word}')
 
   return (
-    <Modal open={open} onOpenChange={(o) => !o && onCancel()} title="Delete confirmation">
+    <Modal open={open} onOpenChange={(o) => !o && onCancel()} title={t('deleteConfirm.title')}>
       <div
         className="w-[420px] rounded-lg border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
@@ -80,7 +91,7 @@ export default function DeleteConfirmDialog({
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold" style={{ fontSize: 13, color: 'var(--text)' }}>
-              Delete {itemType}
+              {heading}
             </h3>
             <p className="mt-0.5" style={{ fontSize: 13, color: 'var(--muted)' }}>
               {description || defaultDesc}
@@ -98,13 +109,19 @@ export default function DeleteConfirmDialog({
               wordBreak: 'break-word',
             }}
           >
-            Are you sure you want to delete <strong>{itemName}</strong>?
+            {questionBefore}
+            <strong>{itemName}</strong>
+            {questionAfter}
           </p>
 
           {requireTyping && (
             <>
               <p className="mt-3" style={{ fontSize: 13, color: 'var(--muted)' }}>
-                Type <strong style={{ color: 'var(--text)' }}>delete</strong> to confirm:
+                {/* The keyword stays the literal "delete" in every locale — it is
+                    what the confirm check compares against. */}
+                {typeBefore}
+                <strong style={{ color: 'var(--text)' }}>delete</strong>
+                {typeAfter}
               </p>
               <input
                 ref={inputRef}
@@ -143,7 +160,7 @@ export default function DeleteConfirmDialog({
               color: 'var(--text)',
             }}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -158,7 +175,7 @@ export default function DeleteConfirmDialog({
               opacity: canConfirm ? 1 : 0.6,
             }}
           >
-            Delete
+            {t('common.delete')}
           </button>
         </div>
       </div>

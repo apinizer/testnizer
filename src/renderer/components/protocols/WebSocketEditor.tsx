@@ -7,6 +7,7 @@ import WsConnectionBar from './WsConnectionBar'
 import WsComposer from './WsComposer'
 import WsMessageLog from './WsMessageLog'
 import { useTranslation } from '../../lib/i18n'
+import CredentialRowsHint from '../shared/CredentialRowsHint'
 
 export default function WebSocketEditor() {
   const { t } = useTranslation()
@@ -26,12 +27,10 @@ export default function WebSocketEditor() {
         <span className="font-medium" style={{ color: 'var(--accent-text)' }}>
           WebSocket
         </span>
+        {/* Same badge as the SSE editor's header (issue #248): translated, theme tokens. */}
         {connectionState === 'connected' && (
-          <span
-            className="rounded-full px-2 py-0.5 font-medium"
-            style={{ background: '#e8f9f1', color: '#1a7a4a' }}
-          >
-            Connected
+          <span className="rounded-full bg-[var(--green-bg)] px-2 py-0.5 font-medium text-[var(--green)]">
+            {t('mcp.status.connected')}
           </span>
         )}
       </div>
@@ -51,7 +50,7 @@ export default function WebSocketEditor() {
           >
             {headersExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             <Settings2 size={14} className="text-[var(--muted)]" />
-            <span>Custom Headers</span>
+            <span>{t('sse.customHeaders')}</span>
             {enabledHeaderCount > 0 && (
               <span
                 className="ml-1 rounded-full px-[5px]"
@@ -71,6 +70,7 @@ export default function WebSocketEditor() {
                 addLabel={t('kv.addHeader')}
                 keyAutocompleteEntries={STANDARD_HTTP_HEADERS}
               />
+              <CredentialRowsHint rows={customHeaders} testId="ws-headers-restart-hint" />
             </div>
           )}
         </div>

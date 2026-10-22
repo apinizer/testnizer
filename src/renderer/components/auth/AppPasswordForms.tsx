@@ -32,7 +32,7 @@ function inputStyle(invalid = false): React.CSSProperties {
   }
 }
 
-function RevealButton({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
+export function RevealButton({ shown, onToggle }: { shown: boolean; onToggle: () => void }) {
   const { t } = useTranslation()
   return (
     <button

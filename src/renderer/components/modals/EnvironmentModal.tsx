@@ -12,6 +12,7 @@ import {
   Download,
   Upload,
   Search,
+  Variable,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -20,6 +21,7 @@ import type { Environment, EnvironmentVariable, GlobalVariable } from '../../typ
 import DeleteConfirmDialog from './DeleteConfirmDialog'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
+import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 
@@ -58,7 +60,7 @@ export default function EnvironmentModal() {
 
   const fetchEnvironments = useEnvironmentStore((s) => s.fetchEnvironments)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
 
   const [pane, setPane] = useState<Pane>({ kind: 'globals' })
   const [creatingEnv, setCreatingEnv] = useState(false)
@@ -173,7 +175,7 @@ export default function EnvironmentModal() {
         const name = result?.data?.environmentName
         toast.success(name ? `${t('env.importSuccess')}: ${name}` : t('env.importSuccess'))
       } else {
-        const errMsg = result?.data?.error || result?.error || 'unknown'
+        const errMsg = result?.data?.error || result?.error || t('env.unknownError')
         toast.error(`${t('env.importFailed')}: ${errMsg}`)
       }
     } catch (err) {
@@ -236,8 +238,12 @@ export default function EnvironmentModal() {
   }
 
   return (
-    <Modal open={show} onOpenChange={setShow} title="Environments" testId="environment-modal">
+    <Modal open={show} onOpenChange={setShow} title={t('env.title')} testId="environment-modal">
+      {/* `lang` makes the CSS `uppercase` headers use Turkish casing
+          (Değişken → DEĞİŞKEN, not DEĞIŞKEN). Local to this modal on purpose:
+          a global <html lang> would turn leftover English elsewhere into "İ". */}
       <div
+        lang={locale}
         className="flex overflow-hidden rounded-[12px]"
         style={{
           width: 960,
@@ -262,11 +268,11 @@ export default function EnvironmentModal() {
             style={{ borderBottom: '1px solid var(--border)' }}
           >
             <span className="font-semibold" style={{ color: 'var(--text)' }}>
-              Environments
+              {t('env.title')}
             </span>
             <button
               type="button"
-              aria-label="Close"
+              aria-label={t('common.close')}
               onClick={() => setShow(false)}
               className="cursor-pointer"
               style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
@@ -289,17 +295,17 @@ export default function EnvironmentModal() {
             }}
           >
             <Globe size={13} />
-            Globals
+            {t('env.globals')}
           </button>
 
           {/* Separator */}
           <div className="px-4 pt-3 pb-1 uppercase tracking-wide" style={{ color: 'var(--muted)' }}>
-            Environments
+            {t('env.sectionEnvironments')}
           </div>
 
           <div className="flex-1 overflow-y-auto">
             {environments.length === 0 && !creatingEnv && (
-              <EmptyState icon={Layers} title="No environments yet." variant="compact" size="sm" />
+              <EmptyState icon={Layers} title={t('env.empty')} variant="compact" size="sm" />
             )}
             {environments.map((env) => (
               <button
@@ -339,7 +345,7 @@ export default function EnvironmentModal() {
                       setNewEnvName('')
                     }
                   }}
-                  placeholder="Environment name"
+                  placeholder={t('env.namePlaceholder')}
                   className="flex-1 rounded border px-2 py-1 outline-none"
                   style={{
                     borderColor: 'var(--accent)',
@@ -365,7 +371,7 @@ export default function EnvironmentModal() {
               }}
             >
               <Plus size={12} />
-              New Environment
+              {t('env.newEnvironment')}
             </button>
             <button
               type="button"
@@ -453,7 +459,7 @@ export default function EnvironmentModal() {
               className="flex h-full items-center justify-center"
               style={{ color: 'var(--hint)' }}
             >
-              Select an environment from the sidebar.
+              {t('env.selectFromSidebar')}
             </div>
           )}
         </div>
@@ -462,7 +468,7 @@ export default function EnvironmentModal() {
       <DeleteConfirmDialog
         open={!!deleteEnvTarget}
         itemName={deleteEnvTarget?.name || ''}
-        itemType="environment"
+        itemType={t('env.itemType')}
         onConfirm={() => {
           if (deleteEnvTarget) {
             deleteEnvironment(deleteEnvTarget.id)
@@ -491,6 +497,7 @@ function GlobalsPane({
   onUpdate: (id: string, updates: Partial<GlobalVariable>) => void
   onDelete: (id: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="flex h-full flex-col">
       <div
@@ -499,11 +506,9 @@ function GlobalsPane({
       >
         <div>
           <div className="text-[15px] font-semibold" style={{ color: 'var(--heading)' }}>
-            Globals
+            {t('env.globals')}
           </div>
-          <div style={{ color: 'var(--muted)' }}>
-            A global variable can be accessed anywhere inside this project.
-          </div>
+          <div style={{ color: 'var(--muted)' }}>{t('env.globalsDescription')}</div>
         </div>
       </div>
 
@@ -542,6 +547,8 @@ function EnvPane({
   onAddVar: () => void
   onRemoveVar: (id: string) => void
 }) {
+  const { t } = useTranslation()
+  const count = env.variables.length
   return (
     <div className="flex h-full flex-col">
       <div
@@ -562,11 +569,15 @@ function EnvPane({
                   border: '1px solid var(--green-border)',
                 }}
               >
-                Active
+                {t('env.active')}
               </span>
             )}
           </div>
-          <div style={{ color: 'var(--muted)' }}>{env.variables.length} variables</div>
+          <div style={{ color: 'var(--muted)' }}>
+            {count === 1
+              ? t('env.variableCountOne')
+              : t('env.variableCount').replace('{count}', String(count))}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           {!isActive && (
@@ -582,7 +593,7 @@ function EnvPane({
                 fontWeight: 600,
               }}
             >
-              Set Active
+              {t('env.setActive')}
             </button>
           )}
           <button
@@ -595,7 +606,8 @@ function EnvPane({
               border: '1px solid var(--border)',
               color: 'var(--muted)',
             }}
-            title="Delete environment"
+            title={t('env.deleteEnvironment')}
+            aria-label={t('env.deleteEnvironment')}
           >
             <Trash2 size={12} />
           </button>
@@ -635,6 +647,8 @@ interface VarRow {
   initialValue?: string
   enabled: boolean
   secret: boolean
+  /** Issue #239: main could not decrypt the stored secret on this computer. */
+  decryptFailed?: boolean
 }
 
 /**
@@ -690,6 +704,10 @@ function VarTable({
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
+      {/* Issue #239: shown only when the OS keychain cannot encrypt secrets.
+          `py-2` like the search row below it, so the note never touches the
+          table's column header when there is no search row. */}
+      <SecretStorageUnencryptedNote className="shrink-0 px-5 py-2" />
       {/* Search — only meaningful once there is something to search. */}
       {variables.length > 0 && (
         <div className="shrink-0 px-5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -762,10 +780,10 @@ function VarTable({
         }}
       >
         <span />
-        <span>Variable</span>
-        <span title={t('env.secretStaysLocal')}>Type</span>
-        <span>Initial Value</span>
-        <span>Current Value</span>
+        <span>{t('env.colVariable')}</span>
+        <span title={t('env.secretStaysLocal')}>{t('env.colType')}</span>
+        <span>{t('env.colInitialValue')}</span>
+        <span>{t('env.colCurrentValue')}</span>
         <span />
         <span />
       </div>
@@ -782,7 +800,20 @@ function VarTable({
           />
         ))}
 
-        {shown.length === 0 && (
+        {/* Review #12: "no match" only for an actual search; an empty list is
+            its own state (the Add Variable button right below is the action). */}
+        {variables.length === 0 && (
+          <div data-testid="env-var-empty">
+            <EmptyState
+              icon={Variable}
+              title={t('env.noVariables')}
+              description={t('env.noVariablesHint')}
+              variant="compact"
+              size="sm"
+            />
+          </div>
+        )}
+        {shown.length === 0 && variables.length > 0 && (
           <div
             data-testid="env-var-no-match"
             className="px-5 py-6 text-center"
@@ -810,7 +841,7 @@ function VarTable({
           }}
         >
           <Plus size={12} />
-          Add Variable
+          {t('env.addVariable')}
         </button>
       </div>
     </div>
@@ -831,6 +862,8 @@ function VarRowView({
   const { t } = useTranslation()
   const [showCurrent, setShowCurrent] = useState(false)
   const [copied, setCopied] = useState(false)
+  // Undecryptable until the user types a new value (issue #239).
+  const locked = !!variable.decryptFailed && !variable.value
 
   const INPUT: React.CSSProperties = {
     width: '100%',
@@ -870,7 +903,7 @@ function VarRowView({
         data-testid="env-var-key"
         value={variable.key}
         onChange={(e) => onUpdate({ key: e.target.value })}
-        placeholder="variable_name"
+        placeholder={t('env.varNamePlaceholder')}
         style={INPUT}
       />
 
@@ -889,9 +922,10 @@ function VarRowView({
           color: 'var(--muted)',
         }}
       >
-        <option value="default">default</option>
+        {/* Values stay 'default' / 'secret' — e2e selects by value. */}
+        <option value="default">{t('env.typeDefault')}</option>
         <option value="secret" title={t('env.secretStaysLocal')}>
-          secret
+          {t('env.typeSecret')}
         </option>
       </select>
 
@@ -917,19 +951,30 @@ function VarRowView({
           // value leaked in plain text (issue #13). Mask the placeholder hint
           // for hidden secrets while keeping the inherited-value affordance.
           placeholder={
-            variable.secret && !showCurrent
-              ? variable.initialValue
-                ? '••••••'
-                : '—'
-              : variable.initialValue || '—'
+            locked
+              ? t('env.decryptFailed')
+              : variable.secret && !showCurrent
+                ? variable.initialValue
+                  ? '••••••'
+                  : '—'
+                : variable.initialValue || '—'
           }
-          type={variable.secret && !showCurrent ? 'password' : 'text'}
-          style={{ ...INPUT, color: 'var(--json-string)' }}
+          // Issue #239: the stored secret cannot be decrypted on this computer.
+          title={locked ? t('env.decryptFailed') : undefined}
+          data-decrypt-failed={locked || undefined}
+          type={variable.secret && !showCurrent && !locked ? 'password' : 'text'}
+          style={{
+            ...INPUT,
+            color: 'var(--json-string)',
+            ...(locked ? { boxShadow: 'inset 0 0 0 1px var(--red)' } : {}),
+          }}
         />
         {variable.secret && (
           <button
             type="button"
             onClick={() => setShowCurrent((v) => !v)}
+            aria-label={showCurrent ? t('env.hideValue') : t('env.showValue')}
+            title={showCurrent ? t('env.hideValue') : t('env.showValue')}
             className="cursor-pointer"
             style={{ background: 'transparent', border: 'none', color: 'var(--muted)', padding: 2 }}
           >
@@ -951,7 +996,11 @@ function VarRowView({
             // ignore clipboard failures
           }
         }}
-        title={variable.key ? `Copy {{${variable.key}}}` : 'Set a variable name first'}
+        title={
+          variable.key
+            ? t('env.copyReference').replace('{ref}', `{{${variable.key}}}`)
+            : t('env.copyNeedsName')
+        }
         disabled={!variable.key}
         className="flex cursor-pointer items-center justify-center"
         style={{
@@ -977,7 +1026,7 @@ function VarRowView({
       <button
         type="button"
         onClick={onRemove}
-        aria-label="Remove"
+        aria-label={t('env.removeVariable')}
         className="flex cursor-pointer items-center justify-center"
         style={{ background: 'transparent', border: 'none', color: 'var(--hint)', padding: 4 }}
         onMouseEnter={(e) => {

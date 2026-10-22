@@ -28,6 +28,7 @@ import { resolveInheritance } from './auth-inheritance'
 import { resolveVariables } from './variable-resolver'
 import { makeId } from './utils'
 import { useRequestStore } from '../stores/request.store'
+import { reloadWithheldBeforeSend } from './withheld-before-send'
 import { useTabsStore } from '../stores/tabs.store'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { useEnvironmentStore } from '../stores/environment.store'
@@ -71,9 +72,16 @@ export function beginMcpScripts(
   tabId: string | null,
   url: string,
   customHeaders: ReadonlyArray<{ key: string; value: string; enabled?: boolean }> = [],
+  reloaded = false,
 ): Promise<McpScriptContext> {
   const req = useRequestStore.getState()
   const own = tabId && req._currentTabId !== tabId ? (req._tabStates.get(tabId) ?? null) : req
+  // The tab's request-store state was dropped from the cache (or missing
+  // after a restart): its scripts / assertions come back from the saved row
+  // first — the same reload as Send / Ctrl+S (`lib/withheld-credentials.ts`).
+  if (own?.unloaded && !reloaded) {
+    return reloadWithheldBeforeSend().then(() => beginMcpScripts(tabId, url, customHeaders, true))
+  }
   const preScript = own?.preScript ?? ''
   const postScript = own?.postScript ?? ''
   const assertions = own?.assertions ?? []

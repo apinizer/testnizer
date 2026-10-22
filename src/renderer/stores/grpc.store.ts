@@ -6,6 +6,14 @@ import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
+import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import {
+  credentialRows,
+  trackCredentialEdits,
+  withholdCredentials,
+  type CredentialSpec,
+  type WithheldState,
+} from '../lib/credential-withhold'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for gRPC, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -170,7 +178,7 @@ export interface GrpcStreamEvent {
  */
 export type ProtoSource = 'reflection' | 'url' | 'file'
 
-interface TabGrpcState {
+interface TabGrpcState extends WithheldState {
   address: string
   useTls: boolean
   protoSource: ProtoSource
@@ -256,6 +264,7 @@ const DEFAULT_REQUEST = '{\n  \n}'
 
 function emptyTabState(): TabGrpcState {
   return {
+    withheldCredentials: [],
     address: 'localhost:50051',
     useTls: false,
     protoSource: 'reflection',
@@ -281,6 +290,7 @@ function emptyTabState(): TabGrpcState {
 
 function extractState(s: GrpcStore): TabGrpcState {
   return {
+    withheldCredentials: s.withheldCredentials,
     address: s.address,
     useTls: s.useTls,
     protoSource: s.protoSource,
@@ -310,10 +320,20 @@ function extractState(s: GrpcStore): TabGrpcState {
  * response or stream events (server output; they stay in memory for the
  * session) or the error text. Calls and streams do not survive a reload.
  */
+/**
+ * Issue #244: credential-named gRPC metadata rows never hold a literal value in
+ * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
+ * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
+ */
+// Issue #247: the server address is `host:port` only (scheme stripped on
+// input, path and query dropped at send) — no place for a credential, so it
+// has no `texts` entry.
+export const GRPC_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('metadata')] }
+
 function persistableGrpc(st: TabGrpcState): TabGrpcState {
   const idle = emptyTabState()
   return {
-    ...st,
+    ...withholdCredentials(st, GRPC_CREDENTIALS),
     response: idle.response,
     streamEvents: idle.streamEvents,
     activeStreamId: idle.activeStreamId,
@@ -556,6 +576,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   },
 
   execute: async () => {
+    // Issue #244: a credential still withheld after a restart is reloaded first.
+    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
     const { address, useTls, selectedService, selectedMethod, requestBody, metadata, protoPath } =
       get()
     if (!address.trim() || !selectedService || !selectedMethod) return
@@ -995,3 +1017,5 @@ attachTabbedPersist(
   (s) => ({ _tabStates: s._tabStates, _currentTabId: s._currentTabId }),
   persistableGrpc,
 )
+// Issue #244: a user edit to a withheld value drops its marker.
+trackCredentialEdits(useGrpcStore, GRPC_CREDENTIALS)

@@ -80,7 +80,8 @@ ability to retrieve it.
 | Database (SQLite) | `<userData>/testnizer.db` |
 | Settings (electron-store) | `<userData>/settings.json` |
 | Encrypted secrets: git access tokens, certificate passphrases and keystore passwords, keystores saved to the Keystore library, one-time-password (OTP) secrets, and credential-named settings such as a proxy password | In the database or `<userData>/settings.json`, encrypted via Electron `safeStorage` (macOS Keychain, Windows DPAPI, libsecret on Linux). If `safeStorage` is unavailable on your system (for example Linux without libsecret), these values are stored without encryption on your computer. Two exceptions are never written unencrypted: AI Chat API keys (below) and remembered keystore passwords. |
-| Secret-type variables, mock server tokens and passwords, and credentials typed into an Auth tab | In `<userData>/testnizer.db` as **plain text** — they are **not** encrypted at rest. Anyone who can read your user profile or disk can read them, so use full-disk encryption and your operating system's account protection. They leave your computer only if you send a request that uses them. The **secret** flag on an environment or global variable, and mock server tokens, passwords and API keys, are written as empty values to every project file, git commit or push, and export, so those never carry them. Auth you type into a request or folder is part of that request or folder and does travel with exports and git; use `{{variable}}` references to keep the real value out of them. |
+| Secret-type variables (current and initial value), HTTP mock server tokens, passwords and API keys, and Mock MCP bearer tokens | In `<userData>/testnizer.db`, encrypted via Electron `safeStorage` (the same OS keychain as above). Only the secret values are encrypted; variable names, user names and the rest of a mock's auth settings stay readable. If `safeStorage` is unavailable on your system (for example Linux without libsecret), these values are stored without encryption on your computer, and they are encrypted on a later launch once the keychain is available. A value encrypted on one computer cannot be decrypted on another one, or after the OS keychain is reset; Testnizer then treats it as empty until you enter it again. They leave your computer only if you send a request that uses them. The **secret** flag on an environment or global variable, and mock server tokens, passwords and API keys, are written as empty values to every project file, git commit or push, and export, so those never carry them. |
+| Credentials typed into an Auth tab | In `<userData>/testnizer.db` as **plain text** — they are **not** encrypted at rest. Anyone who can read your user profile or disk can read them, so use full-disk encryption and your operating system's account protection. Auth you type into a request or folder is part of that request or folder and does travel with exports and git; use `{{variable}}` references (for example to a secret-type variable) to keep the real value out of them. |
 | Received stream data: SSE events, WebSocket and Socket.IO messages, MCP notifications and the raw message log | The live message lists in the tab are held in memory only while the app is running; they are never written to the database or to disk and are gone when you quit the app. History keeps a record per connection, not per message: for SSE, WebSocket and Socket.IO it stores the connection attempt (URL, headers and options with credentials masked, status, duration, connection id) and never the messages or events. For MCP it stores each tool call, resource read, prompt fetch and input response with its result (a result over 500,000 characters is not stored), with credentials masked. |
 | Logs (if any) | `<userData>/logs/` |
 | AI Chat provider API keys | `<userData>/settings.json`, one key per provider, encrypted via `safeStorage`. If `safeStorage` encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk. |
@@ -372,10 +373,12 @@ The Software employs the following defensive practices:
   to the OS keychain (macOS Keychain, Windows DPAPI, libsecret on Linux). If
   the keychain is unavailable on your system, AI Chat keys and remembered
   keystore passwords are not saved at all; the other values are then stored
-  without encryption. Secret-type variables, mock server tokens and
-  passwords, and credentials typed into an Auth tab are **not** encrypted at
-  rest: they sit in the local database as plain text, and are blanked in
-  project files, git and exports (Section 3).
+  without encryption. Secret-type variables, mock server tokens, passwords
+  and API keys, and Mock MCP bearer tokens are encrypted the same way (stored
+  without encryption while the keychain is unavailable, and encrypted on a
+  later launch once it is), and are blanked in project files, git and
+  exports (Section 3). Credentials typed into an Auth tab are **not**
+  encrypted at rest: they sit in the local database as plain text.
 - **No stream messages on disk.** The messages and events received over SSE,
   WebSocket and Socket.IO, and MCP notifications, are kept in memory only
   and are not written to disk; History records the connection, not the

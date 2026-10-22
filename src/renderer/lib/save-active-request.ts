@@ -25,6 +25,11 @@ import { normalizeMcpProtocol } from './mcp-protocol'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { stripWsSecuritySecrets } from './key-material'
 import { autoRequestName } from './endpoint-name'
+import {
+  ensureWithheldCredentialsLoaded,
+  isTabUnloaded,
+  NOT_LOADED_ERROR,
+} from './withheld-credentials'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
@@ -605,6 +610,19 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   const tabs = useTabsStore.getState()
   const activeTab = tabs.tabs.find((t) => t.id === tabs.activeTabId)
   if (!activeTab) return { success: false, notApplicable: true }
+
+  // Issues #243 / #244: a tab restored after a restart has empty credential
+  // fields — literal credentials are kept out of localStorage — while the row
+  // still holds them. Read them back before the snapshot; when the row cannot
+  // be read, do not save rather than write the empty fields over them.
+  if (activeTab.endpointId || activeTab.savedRequestId || activeTab.testSuiteItemId) {
+    const reload = await ensureWithheldCredentialsLoaded(activeTab)
+    if (!reload.ok) return { success: false, error: reload.error }
+    // Belt and braces (P0): a state that was never loaded from the row — the
+    // cache cap dropped it, the startup snapshot lacked it — is never written
+    // over the row, whatever the reload above reported.
+    if (isTabUnloaded(activeTab.id)) return { success: false, error: NOT_LOADED_ERROR }
+  }
 
   const req = useRequestStore.getState()
   const { effectiveUrl, effectiveMethod, effectiveBody, protocolMeta } = snapshotProtocol(activeTab)
