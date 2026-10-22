@@ -16,7 +16,7 @@ Bir projenin istediği kadar ortamı olabilir. Herhangi bir anda tam olarak bir
 ortam **aktif** durumdadır. Aktif ortamın değişkenleri, istekler tetiklenirken
 içine yerleştirilir.
 
-Sağ kenar çubuğundaki **Ortamlar** → **+ Yeni Ortam** seçeneğinden bir ortam oluşturun.
+Sağ kenar çubuğundaki **Ortamlar** → **+ Yeni** seçeneğinden bir ortam oluşturun.
 
 Her değişkenin şunları vardır:
 
@@ -41,7 +41,7 @@ kişisel geçersiz kılmanızı kullanın (`baseUrl: http://localhost:3000`).
 Çözümleme sırası:
 
 1. Ortam değişkenleri (aktif ortam)
-2. Global değişkenler (**Ortamlar → Globaller** bölümünde yapılandırılır)
+2. Global değişkenler (**Ayarlar → Globals**'ta yapılandırılır)
 3. Dinamik değişkenler (yerleşik, aşağıya bakın)
 4. Olduğu gibi — eşleşme yoksa `{{...}}` yerinde bırakılır
 
@@ -76,41 +76,24 @@ içindeki isteklerde kalıcı olurlar.
 
 ## Sır sızdırmadan koleksiyon paylaşma
 
-Dışa aktardığınız ya da Git'e commit ettiğiniz proje dosyası her değişkeni —
-adını, türünü, başlangıç değerini **ve** geçerli değerini — taşır; **secret**
-olarak işaretlenmiş değişkenlerin değerleri hariç: bunlar boş yazılır ve bu
-bilgisayarda kalır.
-
 Önerilen kalıp:
 
-1. Token, parola ve API anahtarlarını **gizli** olarak işaretleyin (Tür
-   sütunu).
-2. Push edin. Ekip arkadaşınızın Pull'u değişkeni boş değerle getirir ve
-   Testnizer doldurması gereken kaç gizli değer kaldığını söyler. Her
-   geliştirici kendi değerini girer; sonraki Pull'lar ve branch geçişleri bu
-   değeri korur.
-3. Değeri yapıştırmak yerine isteklerden ve Auth sekmelerinden değişkene
-   başvurun (`{{authToken}}`) — bir isteğe veya klasöre doğrudan yazılan
-   kimlik doğrulama projeyle birlikte taşınır.
+1. **Başlangıç değerine** yer tutucu değerler koyun (`{{authToken}}` varsayılan
+   olarak `"<buraya-yapıştır>"` veya boş)
+2. Her geliştirici **geçerli değerini** yerel olarak doldurur
+3. Projeyi Git'e taahhüt edin — yalnızca başlangıç değerleri taşınır; geçerli
+   değerler ayrı, gitignore'da olan bir dosyada saklanır
 
-HTTP mock sunucu token'ları, parolaları ve API anahtarları ile Mock MCP bearer
-token'ları da aynı kurala uyar.
+Üretim kalitesinde ekiplerin gerçek bir bearer token'ını yanlışlıkla depoya
+göndermeden Testnizer projelerini yayımlamasının yolu budur.
 
 ## İşletim sistemi anahtarlığındaki sırlar
 
-Token ve parolalar için değişkeni **gizli** olarak işaretleyin (Tür sütunu).
-Geçerli ve başlangıç değeri diskte işletim sistemi anahtarlığıyla (macOS
-Keychain, Windows DPAPI, Linux'ta libsecret) şifrelenir; proje dosyasına, git'e
-ve dışa aktarımlara hiçbir zaman yazılmaz; History ve Console'da maskelenir.
-HTTP mock sunucu token'ları, parolaları ve API anahtarları ile Mock MCP bearer
-token'ları da aynı şekilde saklanır; sertifika parolaları da şifrelenir.
+Uzun ömürlü kimlik bilgileri için (OAuth yenileme token'ları, sertifika parola
+ifadeleri), ortam değişkenleri yerine **Sertifika yöneticisini** veya istek başına
+auth alanlarını tercih edin. Bu değerler işletim sistemi anahtarlığından geçer ve
+hiçbir zaman düz metin olarak diske yazılmaz.
 
-Anahtarlık kullanılamıyorsa (örneğin libsecret olmayan Linux) gizli değerler
-şifrelenmeden saklanır ve anahtarlık kullanılabilir hâle geldiğinde sonraki bir
-açılışta şifrelenir. Bir bilgisayarda şifrelenen değer başka bir bilgisayarda ya
-da anahtarlık sıfırlandıktan sonra çözülemez — orada değeri yeniden girin.
-
-Secret olarak işaretlenmemiş değişkenler ve bir isteğin Auth sekmesine doğrudan
-yazılan kimlik bilgileri yerel veritabanında düz metin olarak saklanır. Üretim
-erişimi sağlayan token'lar için değeri gizli bir değişkene koyun ve Auth
-sekmesinden ona başvurun (`{{token}}`).
+Ortam "geçerli değerleri" proje dizininizdeki düz metin olarak saklanır — geliştirme
+için elverişlidir, ancak üretim kimlik bilgileri için uygun değildir. Üretim
+erişimi sağlayan token'lar için her zaman anahtarlık destekli yolları kullanın.
