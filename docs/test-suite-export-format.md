@@ -60,3 +60,61 @@ re-pointed at the target project's endpoints. If a foreign key still cannot
 be satisfied, for example a corrupted `parent_id` cycle, the error names the
 table, the row and its references. A bare `FOREIGN KEY constraint failed`
 is never shown.
+
+## Scripts and Tests on Postman/Insomnia export
+
+This applies to the project export and the suite export alike (issue #270).
+The aim is that a collection runs in Postman, Newman or Insomnia with the
+same checks it runs with here.
+
+| Testnizer | Postman v2.1 | Insomnia v4 |
+|---|---|---|
+| Project pre-request / test script (`projects.shared_settings`) | collection `event` (`prerequest` / `test`) | not carried: Testnizer's Insomnia importers read no workspace-level script |
+| Folder auth, pre-request script, post-response script | folder `auth`, `event` | `request_group` `authentication`, `preRequestScript`, `afterResponseScript` |
+| Request pre-request script | item `event` `prerequest` | `preRequestScript` |
+| Request post-response script | item `event` `test` | `afterResponseScript` |
+| Tests-tab assertion rows | generated `pm.test` code at the top of the item's `test` script, plus `x-apinizer.assertions` for the four kinds Apinizer carries | generated `insomnia.test` code at the top of `afterResponseScript` |
+
+The generated code sits between two marker lines, ahead of the request's
+own script, because Testnizer runs the rows before that script:
+
+```js
+// --- Testnizer Tests tab assertions (generated) ---
+;(function () {
+// tn-assert:status_equals
+pm.test("Status is 200", function () { … });
+})();
+// --- end Testnizer Tests tab assertions ---
+```
+
+- Every row computes the same verdict as the Tests tab on Send:
+  - Header names are matched without regard to case, and values are trimmed.
+  - JSON equality compares `JSON.stringify` output, so key order matters.
+  - A JSONPath row with no expected value only checks that the path exists.
+  - `{{var}}` is resolved with `pm.variables.replaceIn`.
+- The code uses only plain JavaScript and pm calls that Postman, Insomnia
+  and Testnizer's own script runtime all provide. JSONPath is evaluated by an
+  inlined copy of Testnizer's evaluator.
+- Disabled rows are not exported.
+- `body_xpath` rows, and any kind this build doesn't know, become a
+  `// … not exportable` comment and are never dropped silently. Postman and
+  Insomnia scripts have no XPath engine. The XPath row still travels in
+  `x-apinizer`.
+- The single implementation is `src/shared/assertions-to-script.ts`.
+
+**On import** (Postman), when an item carries `x-apinizer` assertions:
+
+1. Those assertions come back as Tests-tab rows (`status_equals`,
+   `body_contains`/`body_equals_json`, `body_jsonpath`, `body_xpath`).
+2. Their generated lines are removed from the test script, so no check runs
+   twice.
+3. Generated tests of the other kinds (headers, status range, time and size)
+   stay in the script. They run there with the same verdict.
+
+Without `x-apinizer`, for example in an Insomnia file, the whole block stays
+as script.
+
+A collection-level `event` fills the project's pre-request / test script
+only when that script is empty. A collection imported into a folder leaves
+the project's scripts alone. Each case that is not applied is reported as an
+import warning.
