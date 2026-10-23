@@ -6,16 +6,25 @@
 // such a tab in place: the update hit no row, main answered success, the tab
 // was marked clean and the edits were lost on close.
 //
-// The tab is now ORPHANED instead: it keeps its content, loses its binding
-// (endpoint / saved request / suite item id and the not-loaded marks of issue
-// #259, which would otherwise wait for a row that will never come back) and is
-// marked dirty, so the next save goes through Save As. It is never closed and
-// never marked clean here. One helper for every path: the in-place save (row
-// found missing) and the sidebar delete handlers (row deleted on purpose).
+// Two entry points, one rule each:
+//
+//  - `orphanTab` — the in-place save found the row missing (git switch / pull,
+//    a delete elsewhere). The tab is ORPHANED: it keeps its content, loses its
+//    binding (endpoint / saved request / suite item id and the not-loaded
+//    marks of issue #259, which would otherwise wait for a row that will never
+//    come back) and is marked dirty, so the next save goes through Save As. It
+//    is never closed and never marked clean.
+//
+//  - `releaseTabsForDeletedRows` — the user deleted the row on purpose (APIs
+//    tree item or folder, Tests item, folder or suite). Every delete path calls
+//    it. A CLEAN tab bound to a deleted row has nothing to lose, so it closes
+//    like the tab-strip X would (protocol state torn down, the next tab
+//    activated, no unsaved-changes prompt). A DIRTY tab is orphaned as above.
 
 import { useTabsStore } from '../stores/tabs.store'
 import { useRequestStore } from '../stores/request.store'
-import { forgetProtocolLost } from './activate-tab'
+import { activateTabStores, forgetProtocolLost } from './activate-tab'
+import { closeTabSafely } from './cleanup-tab-state'
 import type { Tab, TreeNode } from '../types'
 
 /** Unbind one tab from its row; keeps it open and dirty. */
@@ -42,22 +51,45 @@ export interface RowRefs {
   testSuiteItemIds?: Iterable<string>
 }
 
-/** Orphan every open tab bound to one of the given rows. Returns their ids. */
-export function orphanTabsForRows(refs: RowRefs): string[] {
+/** What `releaseTabsForDeletedRows` did with the open tabs of the deleted rows. */
+export interface ReleasedTabs {
+  /** Clean tabs, closed. */
+  closed: string[]
+  /** Dirty tabs, unbound and kept open (Save As on the next save). */
+  orphaned: string[]
+}
+
+/**
+ * The user deleted these rows: close every clean tab bound to one of them and
+ * orphan every dirty one. The single rule for every sidebar delete path.
+ */
+export function releaseTabsForDeletedRows(refs: RowRefs): ReleasedTabs {
   const endpoints = new Set(refs.endpointIds ?? [])
   const saved = new Set(refs.savedRequestIds ?? [])
   const items = new Set(refs.testSuiteItemIds ?? [])
-  if (endpoints.size + saved.size + items.size === 0) return []
+  const released: ReleasedTabs = { closed: [], orphaned: [] }
+  if (endpoints.size + saved.size + items.size === 0) return released
   const bound = (t: Tab): boolean =>
     (!!t.endpointId && endpoints.has(t.endpointId)) ||
     (!!t.savedRequestId && saved.has(t.savedRequestId)) ||
     (!!t.testSuiteItemId && items.has(t.testSuiteItemId))
-  const ids = useTabsStore
-    .getState()
-    .tabs.filter(bound)
-    .map((t) => t.id)
-  for (const id of ids) orphanTab(id)
-  return ids
+  const before = useTabsStore.getState()
+  for (const t of before.tabs.filter(bound)) {
+    if (t.isDirty) released.orphaned.push(t.id)
+    else released.closed.push(t.id)
+  }
+  for (const id of released.orphaned) orphanTab(id)
+  // `force`: a clean tab has nothing to confirm. Tears down its protocol
+  // slices first (`cleanupTabState` needs the tab still in the store).
+  for (const id of released.closed) closeTabSafely(id, { force: true })
+  // Same as the tab-strip close: point the protocol stores at the tab that
+  // became active (Workbench also does it on `activeTabId` change, but the
+  // sidebar must not depend on that being mounted).
+  const nextActive = useTabsStore.getState().activeTabId
+  if (released.closed.length > 0 && nextActive && nextActive !== before.activeTabId) {
+    activateTabStores(nextActive)
+  }
+  return released
 }
 
 function findNode(nodes: readonly TreeNode[], id: string): TreeNode | undefined {
@@ -90,9 +122,9 @@ export function treeRowIds(
   return { endpointIds, savedRequestIds }
 }
 
-/** APIs tree delete of `nodeId` (request, endpoint or folder): orphan its open tabs. */
-export function orphanTabsForTreeNode(tree: readonly TreeNode[], nodeId: string): string[] {
-  return orphanTabsForRows(treeRowIds(tree, nodeId))
+/** APIs tree delete of `nodeId` (request, endpoint or folder): release its open tabs. */
+export function releaseTabsForTreeNode(tree: readonly TreeNode[], nodeId: string): ReleasedTabs {
+  return releaseTabsForDeletedRows(treeRowIds(tree, nodeId))
 }
 
 /** The suite item ids inside a Tests folder and every folder beneath it. */

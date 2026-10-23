@@ -2763,6 +2763,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'endpointSave.folderNamePlaceholder': 'Folder name…',
     'endpointSave.alreadySavedHint':
       'Already saved. Saving again will overwrite the existing endpoint and move it to the chosen folder.',
+    'endpointSave.orphanedNotice':
+      'The saved request was deleted. Choose where to save your changes.',
     'endpointSave.update': 'Update',
     'endpointSave.updating': 'Updating…',
     'endpointSave.defaultName': 'New Endpoint',
@@ -6743,6 +6745,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'endpointSave.folderNamePlaceholder': 'Klasör adı…',
     'endpointSave.alreadySavedHint':
       'Bu uç nokta zaten kayıtlı. Tekrar kaydedince mevcut uç nokta güncellenir ve seçtiğiniz klasöre taşınır.',
+    'endpointSave.orphanedNotice':
+      'Kayıtlı istek silinmiş. Değişikliklerinizi nereye kaydedeceğinizi seçin.',
     'endpointSave.update': 'Güncelle',
     'endpointSave.updating': 'Güncelleniyor…',
     'endpointSave.defaultName': 'Yeni Endpoint',

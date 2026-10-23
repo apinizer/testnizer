@@ -313,21 +313,63 @@ describe('TestsPanel — suite export reports items left out (issue #197)', () =
   })
 })
 
-// Issue #269 — deleting a suite item used to close its open tab even with
-// unsaved edits, dropping them. A dirty tab now stays open, unbound and dirty
-// (Ctrl+S goes to Save As); a clean one still closes.
-describe('TestsPanel — deleting an item with an open tab (issue #269)', () => {
-  function seedItem(): void {
+// Issue #269 — an explicit delete in the Tests panel (item, folder, suite)
+// releases the open tabs of the deleted items: a clean tab closes, one with
+// unsaved edits stays open, unbound and dirty (Ctrl+S goes to Save As). The
+// item delete used to close dirty tabs too, dropping the edits; the folder
+// and suite deletes used to keep clean tabs open and mark them dirty.
+describe('TestsPanel — deleting items with open tabs (issue #269)', () => {
+  function seedItem(id: string, name: string, folderId: string | null): void {
     h.state.items.push({
-      id: 'item-x',
+      id,
       suite_id: 'suite-1',
-      folder_id: null,
-      name: 'Charge card',
+      folder_id: folderId,
+      name,
       protocol: 'http',
       method: 'POST',
       url: '',
+      sort_order: h.state.items.length,
+    })
+  }
+
+  function seedFolder(): void {
+    h.state.folders.push({
+      id: 'folder-x',
+      suite_id: 'suite-1',
+      parent_id: null,
+      name: 'Cards',
       sort_order: 0,
     })
+    seedItem('item-a', 'Charge card', 'folder-x')
+    seedItem('item-b', 'Refund card', 'folder-x')
+  }
+
+  const tabOf = (id: string): Tab | undefined =>
+    useTabsStore.getState().tabs.find((t) => t.id === id)
+
+  /** One open tab per item; `dirty` lists the tabs with unsaved edits. */
+  function openTabs(itemIds: string[], dirty: string[] = []): void {
+    useTabsStore.setState({
+      tabs: itemIds.map(
+        (id) =>
+          ({
+            id: `tab-${id}`,
+            name: id,
+            protocol: 'http',
+            testSuiteItemId: id,
+            isDirty: dirty.includes(id),
+            isLoading: false,
+          }) as Tab,
+      ),
+      activeTabId: `tab-${itemIds[0]}`,
+    })
+  }
+
+  function expectOrphaned(id: string): void {
+    expect(tabOf(id)).toBeDefined()
+    expect(tabOf(id)?.testSuiteItemId).toBeUndefined()
+    expect(tabOf(id)?.isDirty).toBe(true)
+    expect(tabOf(id)?.orphaned).toBe(true)
   }
 
   async function deleteItem(): Promise<void> {
@@ -336,41 +378,61 @@ describe('TestsPanel — deleting an item with an open tab (issue #269)', () => 
     fireEvent.click(await screen.findByText('Delete'))
   }
 
-  const itemTab = (): Tab | undefined =>
-    useTabsStore.getState().tabs.find((t) => t.id === 'tab-item-x')
-
-  function openItemTab(isDirty: boolean): void {
-    useTabsStore.setState({
-      tabs: [
-        {
-          id: 'tab-item-x',
-          name: 'Charge card',
-          protocol: 'http',
-          testSuiteItemId: 'item-x',
-          isDirty,
-          isLoading: false,
-        } as Tab,
-      ],
-      activeTabId: 'tab-item-x',
-    })
-  }
-
-  it('a dirty tab stays open, unbound and dirty', async () => {
-    seedItem()
-    openItemTab(true)
+  it('item: a dirty tab stays open, unbound and dirty', async () => {
+    seedItem('item-a', 'Charge card', null)
+    openTabs(['item-a'], ['item-a'])
     await deleteItem()
 
     // (Expanding the suite also opens the runner tab — look the item tab up by id.)
-    await waitFor(() => expect(itemTab()?.testSuiteItemId).toBeUndefined())
-    expect(itemTab()).toBeDefined()
-    expect(itemTab()?.isDirty).toBe(true)
+    await waitFor(() => expect(tabOf('tab-item-a')?.testSuiteItemId).toBeUndefined())
+    expectOrphaned('tab-item-a')
   })
 
-  it('a clean tab still closes', async () => {
-    seedItem()
-    openItemTab(false)
+  it('item: a clean tab still closes', async () => {
+    seedItem('item-a', 'Charge card', null)
+    openTabs(['item-a'])
     await deleteItem()
 
-    await waitFor(() => expect(itemTab()).toBeUndefined())
+    await waitFor(() => expect(tabOf('tab-item-a')).toBeUndefined())
+  })
+
+  it('folder: clean tabs of its items close, dirty ones are orphaned', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      seedFolder()
+      seedItem('item-out', 'Outside', null)
+      openTabs(['item-a', 'item-b', 'item-out'], ['item-b'])
+      await renderWithSuite()
+      fireEvent.contextMenu(await screen.findByText('Cards'))
+      fireEvent.click(await screen.findByText('Delete Folder'))
+
+      await waitFor(() => expect(callsTo('testSuiteFolder:delete')).toHaveLength(1))
+      await waitFor(() => expect(tabOf('tab-item-a')).toBeUndefined())
+      expectOrphaned('tab-item-b')
+      expect(tabOf('tab-item-out')?.testSuiteItemId).toBe('item-out')
+      expect(tabOf('tab-item-out')?.isDirty).toBe(false)
+      expect(confirm).not.toHaveBeenCalled()
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('suite: clean tabs of its items close, dirty ones are orphaned', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      seedFolder()
+      openTabs(['item-a', 'item-b'], ['item-b'])
+      await renderWithSuite()
+      await screen.findByText('Cards') // contents loaded
+      openSuiteMenu()
+      fireEvent.click(await screen.findByText('Delete'))
+      fireEvent.click(await screen.findByTestId('delete-confirm-btn'))
+
+      await waitFor(() => expect(tabOf('tab-item-a')).toBeUndefined())
+      expectOrphaned('tab-item-b')
+      expect(confirm).not.toHaveBeenCalled()
+    } finally {
+      confirm.mockRestore()
+    }
   })
 })

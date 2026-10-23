@@ -7,8 +7,11 @@
  *   - unbinds the tab (no endpoint / saved request / suite item id, no
  *     not-loaded flags) and keeps it dirty,
  *   - returns `{ notApplicable, orphaned }` so the caller opens Save As.
- * Deleting from the APIs tree or the Tests panel unbinds matching open tabs
- * the same way (descendants of a deleted folder included).
+ * Deleting from the APIs tree or the Tests panel releases matching open tabs
+ * (descendants of a deleted folder included) with one rule: a clean tab
+ * closes, a dirty one is unbound the same way and stays open. The in-place
+ * save never closes a tab, clean or dirty — the row can vanish without the
+ * user deleting it (git switch / pull).
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Tab, TreeNode } from '../../src/renderer/types'
@@ -187,6 +190,21 @@ describe('in-place save of a request whose row is gone (issue #269)', () => {
     expect(api.endpoints.has('ep-a')).toBe(false)
   })
 
+  it('a CLEAN tab whose row vanished (git switch / pull) is orphaned by Ctrl+S, never closed', async () => {
+    const api = installApi()
+    seedEndpoint(api, 'ep-a')
+    const app = await launch()
+    const tabId = await openPinned(app, 'ep-a')
+    expect(tabOf(app, tabId).isDirty).toBe(false)
+
+    api.endpoints.delete('ep-a') // gone without a sidebar delete
+    const res = await app.saveActiveRequestInPlace()
+
+    expect(res).toMatchObject({ success: false, notApplicable: true, orphaned: true })
+    expectOrphaned(app, tabId)
+    expect(app.useTabsStore.getState().activeTabId).toBe(tabId)
+  })
+
   it('saved request deleted → orphaned (no "Request saved", no clean flag)', async () => {
     const api = installApi()
     const app = await launch()
@@ -271,7 +289,7 @@ describe('in-place save of a request whose row is gone (issue #269)', () => {
   })
 })
 
-describe('deleting from the sidebar unbinds matching open tabs (issue #269)', () => {
+describe('deleting from the sidebar releases matching open tabs (issue #269)', () => {
   const tree: TreeNode[] = [
     {
       id: 'f1',
@@ -298,51 +316,76 @@ describe('deleting from the sidebar unbinds matching open tabs (issue #269)', ()
     { id: 'ep-out', type: 'endpoint', label: 'Outside', method: 'GET' },
   ]
 
-  function seedTabs(app: App): void {
+  /** t1 (clean) and t2 (dirty) live under f1; t3 is outside; t4 is a suite item. */
+  function seedTabs(app: App, dirty: string[] = []): void {
     app.useTabsStore.setState({
       tabs: [
         { id: 't1', name: 'Pay', protocol: 'http', endpointId: 'ep-1' },
         { id: 't2', name: 'Refund', protocol: 'http', savedRequestId: 'sr-1' },
         { id: 't3', name: 'Outside', protocol: 'http', endpointId: 'ep-out' },
         { id: 't4', name: 'Suite', protocol: 'http', testSuiteItemId: 'si-1' },
-      ].map((t) => ({ ...t, isDirty: false, isLoading: false })) as Tab[],
+      ].map((t) => ({ ...t, isDirty: dirty.includes(t.id), isLoading: false })) as Tab[],
       activeTabId: 't1',
     })
   }
 
-  it('folder delete unbinds every descendant request tab and keeps them open + dirty', async () => {
+  const ids = (app: App): string[] => app.useTabsStore.getState().tabs.map((t) => t.id)
+
+  it('folder delete closes the clean descendant tabs and orphans the dirty ones', async () => {
     installApi()
     const app = await launch()
-    seedTabs(app)
+    seedTabs(app, ['t2'])
+    const confirm = vi.spyOn(window, 'confirm')
 
-    const ids = app.orphan.orphanTabsForTreeNode(tree, 'f1')
+    const released = app.orphan.releaseTabsForTreeNode(tree, 'f1')
 
-    expect(ids.sort()).toEqual(['t1', 't2'])
-    expectOrphaned(app, 't1')
+    expect(released).toEqual({ closed: ['t1'], orphaned: ['t2'] })
+    expect(ids(app)).toEqual(['t2', 't3', 't4'])
     expectOrphaned(app, 't2')
     expect(tabOf(app, 't3').endpointId).toBe('ep-out')
     expect(tabOf(app, 't3').isDirty).toBe(false)
-    expect(app.useTabsStore.getState().tabs).toHaveLength(4)
+    // The closed tab was active: its neighbour takes over, protocol stores too.
+    expect(app.useTabsStore.getState().activeTabId).toBe('t2')
+    expect(app.useRequestStore.getState()._currentTabId).toBe('t2')
+    expect(confirm).not.toHaveBeenCalled()
+    confirm.mockRestore()
   })
 
-  it('a single endpoint delete unbinds only its tab', async () => {
+  it('a single endpoint delete releases only its tab', async () => {
     installApi()
     const app = await launch()
     seedTabs(app)
 
-    app.orphan.orphanTabsForTreeNode(tree, 'ep-out')
+    expect(app.orphan.releaseTabsForTreeNode(tree, 'ep-out')).toEqual({
+      closed: ['t3'],
+      orphaned: [],
+    })
+    expect(ids(app)).toEqual(['t1', 't2', 't4'])
+    expect(tabOf(app, 't1').endpointId).toBe('ep-1')
+    // An inactive tab closing leaves the active one alone.
+    expect(app.useTabsStore.getState().activeTabId).toBe('t1')
+  })
+
+  it('a dirty single endpoint tab is orphaned, not closed', async () => {
+    installApi()
+    const app = await launch()
+    seedTabs(app, ['t3'])
+
+    app.orphan.releaseTabsForTreeNode(tree, 'ep-out')
 
     expectOrphaned(app, 't3')
-    expect(tabOf(app, 't1').endpointId).toBe('ep-1')
+    expect(ids(app)).toHaveLength(4)
   })
 
-  it('suite item ids (Tests folder / suite delete) unbind their tabs', async () => {
+  it('suite item ids (Tests item / folder / suite delete) follow the same rule', async () => {
     installApi()
     const app = await launch()
     seedTabs(app)
+    app.orphan.releaseTabsForDeletedRows({ testSuiteItemIds: ['si-1'] })
+    expect(ids(app)).toEqual(['t1', 't2', 't3'])
 
-    app.orphan.orphanTabsForRows({ testSuiteItemIds: ['si-1'] })
-
+    seedTabs(app, ['t4'])
+    app.orphan.releaseTabsForDeletedRows({ testSuiteItemIds: ['si-1'] })
     expectOrphaned(app, 't4')
     expect(tabOf(app, 't1').endpointId).toBe('ep-1')
   })

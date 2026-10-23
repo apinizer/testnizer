@@ -1,13 +1,14 @@
 /**
- * Issue #269 (P0 data loss) — the tester's four steps:
+ * Issue #269 (P0 data loss) — the tester's steps:
  *   1. save an HTTP request into a folder,
- *   2. delete it (or its folder) from the sidebar, keeping the tab open,
- *   3. edit it,
+ *   2. edit it (the tab is now dirty),
+ *   3. delete it (or its folder) from the sidebar,
  *   4. Ctrl+S / the UrlBar Save button.
  * Before the fix: "Request saved", tab clean, nothing written (the row was
- * gone). Now the tab stays open and dirty, and the Save dialog opens with
- * "This request no longer exists in the collection…"; saving it from there
- * writes a new row carrying the edit.
+ * gone). Now the dirty tab stays open, unbound, and the Save dialog opens with
+ * a persistent notice inside it (`save-modal-orphan-notice`: "The saved
+ * request was deleted…"); saving from there writes a new row carrying the
+ * edit. A CLEAN tab has nothing to lose: deleting its request closes it.
  */
 import { expect, type Page } from '@playwright/test'
 import { uiTest } from './_setup'
@@ -29,7 +30,7 @@ import { localHttpBin } from '../helpers/test-servers'
 
 const http = () => localHttpBin()
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-const ORPHAN_NOTICE = /no longer exists in the collection/i
+const ORPHAN_NOTICE = /saved request was deleted/i
 
 const activeTab = (page: Page) => page.locator('[data-testid="endpoint-tab"][data-active="true"]')
 
@@ -59,7 +60,7 @@ uiTest.describe('Issue #269 — saving a request whose row was deleted', () => {
   })
 
   uiTest(
-    'folder deleted → Ctrl+S opens Save As, tab stays dirty, nothing reported saved',
+    'folder deleted → Ctrl+S opens Save As with the notice, tab stays dirty, nothing reported saved',
     async ({ window }) => {
       const folderName = `Orphan folder ${uid()}`
       const reqName = `Orphan req ${uid()}`
@@ -72,22 +73,26 @@ uiTest.describe('Issue #269 — saving a request whose row was deleted', () => {
       await saveRequestToFolder(window, reqName, folderName)
       await expect(activeTab(window)).toHaveAttribute('data-dirty', 'false', { timeout: 8_000 })
 
-      // 2. Delete the folder from the sidebar; the tab stays open.
+      // 2. Edit — unsaved changes.
+      const edited = `${http()}/get?v=edited-${uid()}`
+      await fillUrl(window, edited)
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
+
+      // 3. Delete the folder from the sidebar; the dirty tab stays open.
       await treeDelete(window, folderName)
       await expect(activeTab(window)).toBeVisible()
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
       await expect
         .poll(async () => (await savedRows(window, projectId)).some((r) => r.name === reqName))
         .toBe(false)
-
-      // 3. Edit.
-      const edited = `${http()}/get?v=edited-${uid()}`
-      await fillUrl(window, edited)
 
       // 4. Ctrl+S → Save dialog + notice; never "Request saved", never clean.
       await pressModShortcut(window, 's')
       const modal = window.getByTestId('endpoint-save-modal')
       await expect(modal).toBeVisible({ timeout: 8_000 })
-      await expect(window.getByText(ORPHAN_NOTICE).first()).toBeVisible({ timeout: 8_000 })
+      const notice = modal.getByTestId('save-modal-orphan-notice')
+      await expect(notice).toBeVisible({ timeout: 8_000 })
+      await expect(notice).toHaveText(ORPHAN_NOTICE)
       await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
 
       // Saving from the dialog writes a NEW row carrying the edit.
@@ -101,24 +106,48 @@ uiTest.describe('Issue #269 — saving a request whose row was deleted', () => {
     },
   )
 
-  uiTest('request deleted → UrlBar Save opens Save As (no red ✗)', async ({ window }) => {
+  uiTest(
+    'request deleted → UrlBar Save opens Save As with the notice (no red ✗)',
+    async ({ window }) => {
+      const folderName = `Orphan folder ${uid()}`
+      const reqName = `Orphan req ${uid()}`
+      const projectId = await getActiveProjectId(window)
+      await createFolder(window, projectId, folderName)
+
+      await openHttpRequestTab(window)
+      await fillUrl(window, `${http()}/get?v=1`)
+      await saveRequestToFolder(window, reqName, folderName)
+
+      await fillUrl(window, `${http()}/get?v=2`)
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
+      await treeDelete(window, reqName)
+
+      await window.getByTestId('save-btn').click()
+      const modal = window.getByTestId('endpoint-save-modal')
+      await expect(modal).toBeVisible({ timeout: 8_000 })
+      await expect(modal.getByTestId('save-modal-orphan-notice')).toBeVisible({ timeout: 8_000 })
+      await expect(window.getByTestId('save-btn')).not.toHaveText(/✗/)
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
+      await window.keyboard.press('Escape')
+    },
+  )
+
+  uiTest('a clean tab closes when its request is deleted', async ({ window }) => {
     const folderName = `Orphan folder ${uid()}`
-    const reqName = `Orphan req ${uid()}`
+    const reqName = `Clean req ${uid()}`
     const projectId = await getActiveProjectId(window)
     await createFolder(window, projectId, folderName)
 
     await openHttpRequestTab(window)
-    await fillUrl(window, `${http()}/get?v=1`)
+    await fillUrl(window, `${http()}/get?v=clean`)
     await saveRequestToFolder(window, reqName, folderName)
+    await expect(activeTab(window)).toHaveAttribute('data-dirty', 'false', { timeout: 8_000 })
+    const savedTab = window.locator(`[data-testid="endpoint-tab"][data-tab-name="${reqName}"]`)
+    await expect(savedTab).toHaveCount(1, { timeout: 8_000 })
 
     await treeDelete(window, reqName)
-    await fillUrl(window, `${http()}/get?v=2`)
 
-    await window.getByTestId('save-btn').click()
-    await expect(window.getByTestId('endpoint-save-modal')).toBeVisible({ timeout: 8_000 })
-    await expect(window.getByText(ORPHAN_NOTICE).first()).toBeVisible({ timeout: 8_000 })
-    await expect(window.getByTestId('save-btn')).not.toHaveText(/✗/)
-    await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
-    await window.keyboard.press('Escape')
+    // Closed without an unsaved-changes prompt — there were no changes.
+    await expect(savedTab).toHaveCount(0, { timeout: 8_000 })
   })
 })

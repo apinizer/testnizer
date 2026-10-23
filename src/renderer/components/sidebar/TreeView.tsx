@@ -27,7 +27,7 @@ import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { exportProjectAs, type ProjectExportFormat } from '../../lib/project-export'
 import { openExampleTab } from '../../lib/open-example-tab'
-import { orphanTabsForRows, treeRowIds } from '../../lib/orphan-tab'
+import { releaseTabsForDeletedRows, treeRowIds } from '../../lib/orphan-tab'
 import { useSavedResponseStore } from '../../stores/saved-response.store'
 import {
   requestStoreSettings,
@@ -622,9 +622,10 @@ export default function TreeView() {
     if (!deleteTarget) return
     try {
       // Issue #269: open tabs of the deleted rows (a folder's whole subtree
-      // included) lose their binding and stay open + dirty, so Ctrl+S goes to
-      // Save As instead of "saving" into a row that is gone. Collected from the
-      // unfiltered tree BEFORE the delete — the search view prunes children.
+      // included) are released — a clean tab closes, a dirty one stays open,
+      // unbound, so Ctrl+S goes to Save As instead of "saving" into a row that
+      // is gone. Collected from the unfiltered tree BEFORE the delete — the
+      // search view prunes children.
       const tree = useWorkspaceStore.getState().treeData
       const rows = treeRowIds(tree, deleteTarget.id)
       let res: { success?: boolean } | undefined
@@ -639,7 +640,7 @@ export default function TreeView() {
       } else if (deleteTarget.type === 'folder') {
         res = (await window.api?.folder?.delete(deleteTarget.id)) as typeof res
       }
-      if (res?.success) orphanTabsForRows(rows)
+      if (res?.success) releaseTabsForDeletedRows(rows)
       await refreshTree()
     } catch {
       /* ignore */
