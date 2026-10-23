@@ -1,6 +1,7 @@
 import { useMemo } from 'react'
 import { useRequestStore } from '../../stores/request.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
+import { useUIStore } from '../../stores/ui.store'
 import { generateCode } from '../../lib/code-generator'
 import { activeSecretVariableNames, placeholdersIn } from '../../lib/secret-variables'
 import type { CodeLanguage } from '../../types'
@@ -25,6 +26,9 @@ export function useGeneratedCode(lang: CodeLanguage, includeSecrets: boolean): G
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
   const auth = useRequestStore((s) => s.auth)
+  const sslVerification = useRequestStore((s) => s.sslVerification)
+  // The cURL variant (shell + single / multi-line) — issue #279.
+  const curlSnippet = useUIStore((s) => s.curlSnippet)
   const getActiveVariables = useEnvironmentStore((s) => s.getActiveVariables)
   const activeEnvironmentId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const environments = useEnvironmentStore((s) => s.environments)
@@ -38,8 +42,8 @@ export function useGeneratedCode(lang: CodeLanguage, includeSecrets: boolean): G
     })
     const code = generateCode(
       lang,
-      { method, url, params, headers, body, auth },
-      { envVars: getActiveVariables(), secretNames, includeSecrets },
+      { method, url, params, headers, body, auth, settings: { sslVerification } },
+      { envVars: getActiveVariables(), secretNames, includeSecrets, curl: curlSnippet },
     )
     const left = placeholdersIn(code)
     return {
@@ -56,6 +60,8 @@ export function useGeneratedCode(lang: CodeLanguage, includeSecrets: boolean): G
     headers,
     body,
     auth,
+    sslVerification,
+    curlSnippet,
     getActiveVariables,
     activeEnvironmentId,
     environments,

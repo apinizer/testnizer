@@ -3,11 +3,12 @@
  * (src/main/ipc/import-export.handler.ts: parseCurlCommand, tokenizeCurl,
  * importCurl via the `import:curl` IPC channel, exportAsCurl via `export:curl`).
  *
- * Pins ONLY inputs whose current parsed result is correct. Anything below that
- * is broken today is deliberately NOT pinned (the rewrite will fix it) and is
- * listed here so the rewrite knows what to cover with new tests:
+ * Pins ONLY inputs whose current parsed result is correct. The inputs below
+ * were broken in the pre-#279 parser; the shared parser (`src/shared/curl/`,
+ * issue #279) fixes every one and the describe block "previously broken
+ * inputs" at the end of the parse section asserts the corrected result:
  *
- * BROKEN TODAY (not pinned; probed against the current parser):
+ * BROKEN BEFORE ISSUE #279 (now asserted, see below):
  *  1. `curl -XPOST url`            attached short option value -> method stays GET
  *  2. `curl --request=POST url`    `--opt=value` long form unsupported -> GET
  *  3. `curl -I url`                HEAD ignored -> GET
@@ -59,6 +60,7 @@ vi.mock('../../src/main/protocols/grpc.engine', () => ({
 }))
 
 import { initDatabase, getDb } from '../../src/main/db/database'
+import { curlToRequest, parseCurl } from '../../src/shared/curl'
 import {
   registerImportExportHandlers,
   parseCurlCommand,
@@ -111,6 +113,128 @@ describe('baseline cURL import — tokenizeCurl / parseCurlCommand', () => {
       expect(parseCurlCommand(input)).toMatchSnapshot()
     })
   }
+})
+
+// ─── The 19 inputs the pre-#279 parser got wrong ───────────────────────
+
+let rowId = 0
+const toReq = (cmd: string): ReturnType<typeof curlToRequest> =>
+  curlToRequest(parseCurl(cmd), { makeId: () => `r${++rowId}` })
+const headerPairs = (cmd: string): string[] => toReq(cmd).headers.map((h) => `${h.key}: ${h.value}`)
+const codes = (cmd: string): string[] => toReq(cmd).warnings.map((w) => w.code)
+
+describe('baseline cURL import — previously broken inputs (issue #279)', () => {
+  it('#1 glued -XPOST sets the method', () => {
+    expect(parseCurlCommand('curl -XPOST https://x.test').method).toBe('POST')
+  })
+
+  it('#2 --request=POST (long --opt=value) sets the method', () => {
+    expect(parseCurlCommand('curl --request=POST https://x.test').method).toBe('POST')
+  })
+
+  it('#3 -I is HEAD', () => {
+    expect(toReq('curl -I https://x.test').method).toBe('HEAD')
+  })
+
+  it('#4 -G keeps GET and moves the data into the query', () => {
+    const r = toReq(`curl -G -d 'a=1' https://x.test`)
+    expect(r.method).toBe('GET')
+    expect(r.url).toBe('https://x.test?a=1')
+    expect(r.params.map((p) => [p.key, p.value])).toEqual([['a', '1']])
+    expect(r.body).toEqual({ type: 'none' })
+  })
+
+  it('#5 repeated -d joins with &', () => {
+    expect(parseCurlCommand('curl -d a=1 -d b=2 https://x.test').body).toBe('a=1&b=2')
+    expect(toReq('curl -d a=1 -d b=2 https://x.test').body.urlEncoded?.map((r) => r.key)).toEqual([
+      'a',
+      'b',
+    ])
+  })
+
+  it('#6 repeated JSON -d concatenates with & like curl', () => {
+    expect(parseCurlCommand(`curl -d '{"a":1}' -d '{"b":2}' https://x.test`).body).toBe(
+      '{"a":1}&{"b":2}',
+    )
+  })
+
+  it('#7 -o value is consumed, not taken as the URL', () => {
+    expect(parseCurlCommand('curl -s -o /dev/null https://x.test').url).toBe('https://x.test')
+  })
+
+  it('#8 --max-time / --connect-timeout values are consumed and become the timeout', () => {
+    const r = toReq('curl --max-time 5 --connect-timeout 2 https://x.test')
+    expect(r.url).toBe('https://x.test')
+    expect(r.settings).toEqual({ timeout: 5000 })
+  })
+
+  it('#9 --json sets the body, JSON Content-Type + Accept and POST', () => {
+    const r = toReq(`curl --json '{"a":1}' https://x.test`)
+    expect(r.url).toBe('https://x.test')
+    expect(r.method).toBe('POST')
+    expect(r.body).toEqual({ type: 'json', content: '{"a":1}' })
+    expect(headerPairs(`curl --json '{"a":1}' https://x.test`)).toEqual([
+      'Content-Type: application/json',
+      'Accept: application/json',
+    ])
+  })
+
+  it('#10 ;type= on a TEXT form part is stripped from the value (and reported)', () => {
+    const r = toReq(
+      `curl -F 'a=b;type=text/plain' -F 'json={"x":1};type=application/json' https://x.test`,
+    )
+    expect(r.body.formData?.map((f) => [f.key, f.value, f.type])).toEqual([
+      ['a', 'b', 'text'],
+      ['json', '{"x":1}', 'text'],
+    ])
+    expect(r.warnings.filter((w) => w.code === 'form-type-ignored')).toHaveLength(2)
+  })
+
+  it('#11 -d @file is not read: binary body pointing at the path + a warning', () => {
+    const r = toReq('curl -d @file.json https://x.test')
+    expect(r.body).toEqual({ type: 'binary', binaryPath: 'file.json' })
+    expect(r.warnings.map((w) => [w.code, w.arg])).toEqual([['file-reference', 'file.json']])
+  })
+
+  it('#12 --data-urlencode percent-encodes the value; the row holds it decoded', () => {
+    expect(parseCurlCommand(`curl --data-urlencode 'q=a b' https://x.test`).body).toBe('q=a%20b')
+    expect(toReq(`curl --data-urlencode 'q=a b' https://x.test`).body.urlEncoded).toEqual([
+      { id: expect.any(String), key: 'q', value: 'a b', enabled: true },
+    ])
+  })
+
+  it('#13 bare newlines (no backslash) are whitespace', () => {
+    const r = toReq(`curl\n  https://x.test\n  -H 'A: b'`)
+    expect(r.url).toBe('https://x.test')
+    expect(headerPairs(`curl\n  https://x.test\n  -H 'A: b'`)).toEqual(['A: b'])
+  })
+
+  it('#14 duplicate header names are both kept, in order', () => {
+    expect(headerPairs(`curl -H 'X-A: 1' -H 'X-A: 2' https://x.test`)).toEqual(['X-A: 1', 'X-A: 2'])
+  })
+
+  it('#15 `Name;` is an empty-value header, `Name:` removes the header', () => {
+    expect(headerPairs(`curl -H 'X-Empty;' -H 'Accept:' https://x.test`)).toEqual(['X-Empty: '])
+  })
+
+  it('#16 -u user without ":" is basic auth with an empty password (+ warning)', () => {
+    const r = toReq('curl -u admin https://x.test')
+    expect(r.auth).toEqual({ type: 'basic', basic: { username: 'admin', password: '' } })
+    expect(r.warnings.map((w) => w.code)).toEqual(['password-prompt'])
+  })
+
+  it("#17 invalid shell (`\\'` inside single quotes) still finds the URL and reports the unbalanced quote", () => {
+    const cmd = `curl -H "X: y" -d '{"a":"it\\'s"}' https://x.test`
+    const r = toReq(cmd)
+    expect(r.url).toBe('https://x.test')
+    expect(r.method).toBe('POST')
+    expect(headerPairs(cmd)[0]).toBe('X: y')
+    expect(codes(cmd)).toContain('unterminated-quote')
+  })
+
+  it('#19 a `$ ` prompt prefix is stripped before parsing', () => {
+    expect(parseCurlCommand('$ curl https://x.test/a').url).toBe('https://x.test/a')
+  })
 })
 
 // ─── import:curl IPC — persisted endpoint shape ────────────────────────
@@ -201,6 +325,43 @@ describe('baseline cURL import — import:curl IPC (persisted endpoint)', () => 
 
   it('rejects a curl command with no URL', async () => {
     expect(await importCurlVia('curl -X POST')).toMatchSnapshot()
+  })
+
+  it('#18 -b becomes a Cookie header, -k/-L/-m become request settings, a plain body is text', async () => {
+    const { row } = await importCurlVia(
+      `curl -b 'a=1; b=2' -k -L --max-redirs 3 -m 2.5 -d 'hello' -H 'Content-Type: text/plain' https://x.test/n`,
+    )
+    const schema = row?.request_schema as Record<string, unknown>
+    expect(schema.body).toEqual({ type: 'text', content: 'hello' })
+    expect(
+      (schema.headers as Array<{ key: string; value: string }>).map((h) => `${h.key}: ${h.value}`),
+    ).toEqual(['Content-Type: text/plain', 'Cookie: a=1; b=2'])
+    expect(schema).toMatchObject({
+      sslVerification: false,
+      followRedirects: true,
+      maxRedirects: 3,
+      timeout: 2500,
+      url: 'https://x.test/n',
+    })
+  })
+
+  it('#19 a `$ ` prompt is stripped — the endpoint is the real URL, not "$"', async () => {
+    const { row } = await importCurlVia('$ curl https://x.test/a?b=1')
+    expect(row?.name).toBe('GET /a')
+    expect(row?.path).toBe('/a')
+    expect((row?.request_schema as { url: string }).url).toBe('https://x.test/a?b=1')
+  })
+
+  it('accepts PowerShell and CMD commands and returns parser warnings', async () => {
+    const ps = await importCurlVia(
+      "PS> curl.exe -X PUT 'https://x.test/p' `\n  -o out.txt --frobnicate",
+    )
+    expect(ps.row?.method).toBe('PUT')
+    expect((ps.res as { data: { warnings?: string[] } }).data.warnings).toEqual([
+      '--frobnicate is not a known curl option and was ignored.',
+    ])
+    const cmd = await importCurlVia('curl ^"https://x.test/c^" ^\r\n  -H ^"A: 1^"')
+    expect(cmd.row?.path).toBe('/c')
   })
 })
 

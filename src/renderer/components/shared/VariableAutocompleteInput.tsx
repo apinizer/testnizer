@@ -44,6 +44,12 @@ interface VariableAutocompleteInputProps {
   spellCheck?: boolean
   /** Passed to the `<input>` (`off` for URL fields). */
   autoComplete?: string
+  /**
+   * Passed to the `<input>`. Read the text from `e.clipboardData` — the input
+   * strips newlines from its value — and `preventDefault()` to take it over
+   * (the HTTP URL bar's cURL paste, issue #278).
+   */
+  onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void
 }
 
 /**
@@ -60,6 +66,7 @@ export default function VariableAutocompleteInput({
   'data-testid': testId,
   spellCheck,
   autoComplete,
+  onPaste,
 }: VariableAutocompleteInputProps) {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
@@ -398,6 +405,7 @@ export default function VariableAutocompleteInput({
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           spellCheck={spellCheck}
           autoComplete={autoComplete}

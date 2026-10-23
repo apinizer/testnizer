@@ -17,6 +17,7 @@ import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import { detectImportFormat, checkTypeMismatch } from '../../lib/import-format-detect'
+import { startsWithCurl } from '../../../shared/curl'
 import Modal from '../shared/Modal'
 import type { WsdlParseResult, TreeNode } from '../../types'
 
@@ -245,7 +246,8 @@ export default function ImportModal() {
       setImportError('Paste a cURL command first.')
       return
     }
-    if (!/^\s*curl\b/i.test(text)) {
+    // bash / CMD / PowerShell (`curl.exe`, `& curl.exe`, `PS> ` prompt) — issue #279.
+    if (!startsWithCurl(text)) {
       setImportError('That does not look like a cURL command (must start with "curl").')
       return
     }

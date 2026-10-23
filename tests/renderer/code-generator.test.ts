@@ -259,12 +259,13 @@ describe('headers and auth', () => {
     expect(out).toContain('headers=headers')
   })
 
-  it('basic auth produces a Basic Authorization placeholder', () => {
+  it('basic auth is emitted as -u (cURL) instead of a Basic placeholder (issue #279)', () => {
     const out = generateCode(
       'curl',
       baseReq({ auth: { type: 'basic', basic: { username: 'u', password: 'p' } } as AuthConfig }),
     )
-    expect(out).toContain('Authorization: Basic <base64(u:p)>')
+    expect(out).toContain(`-u 'u:p'`)
+    expect(out).not.toContain('<base64(')
   })
 
   it('api-key auth (header) injects the named header', () => {

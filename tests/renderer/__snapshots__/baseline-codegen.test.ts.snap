@@ -166,7 +166,7 @@ var body = await response.Content.ReadAsStringAsync();
 Console.WriteLine(body);"
 `;
 
-exports[`baseline code generation — all languages x request matrix > auth-apikey-query > curl 1`] = `"curl -X GET 'https://api.example.com/secure'"`;
+exports[`baseline code generation — all languages x request matrix > auth-apikey-query > curl 1`] = `"curl -X GET 'https://api.example.com/secure?api_key=key-1'"`;
 
 exports[`baseline code generation — all languages x request matrix > auth-apikey-query > go 1`] = `
 "package main
@@ -301,7 +301,7 @@ Console.WriteLine(body);"
 
 exports[`baseline code generation — all languages x request matrix > auth-basic > curl 1`] = `
 "curl -X GET 'https://api.example.com/secure' \\
-  -H 'Authorization: Basic <base64(admin:s3cret)>'"
+  -u 'admin:s3cret'"
 `;
 
 exports[`baseline code generation — all languages x request matrix > auth-basic > go 1`] = `

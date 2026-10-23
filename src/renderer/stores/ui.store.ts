@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Theme, Language } from '../types'
+import type { CurlDialect } from '../../shared/curl/types'
 import { setLocale as setI18nLocale } from '../lib/i18n'
 
 type Locale = Language
@@ -62,6 +63,12 @@ interface UIStore {
    */
   settingsFocus: SettingsFocus | null
   showCodeGenerator: boolean
+  /**
+   * The cURL snippet variant (issue #279) — shell + single / multi-line.
+   * Shared by the Generate Code modal and the right panel's Code pane;
+   * session-only (not persisted).
+   */
+  curlSnippet: { dialect: CurlDialect; multiLine: boolean }
   showUpdateModal: boolean
   showSaveModal: boolean
   showNewProjectModal: boolean
@@ -125,6 +132,7 @@ interface UIStore {
   /** Opens Settings at a section (`settingsFocus`). */
   openSettingsAt: (focus: SettingsFocus) => void
   setShowCodeGenerator: (show: boolean) => void
+  setCurlSnippet: (patch: Partial<{ dialect: CurlDialect; multiLine: boolean }>) => void
   setShowUpdateModal: (show: boolean) => void
   setShowSaveModal: (show: boolean) => void
   setShowNewProjectModal: (show: boolean) => void
@@ -213,6 +221,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   showSettingsModal: false,
   settingsFocus: null,
   showCodeGenerator: false,
+  curlSnippet: { dialect: 'bash', multiLine: true },
   showUpdateModal: false,
   showSaveModal: false,
   showNewProjectModal: false,
@@ -406,6 +415,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set(show ? { showSettingsModal: true } : { showSettingsModal: false, settingsFocus: null }),
   openSettingsAt: (focus) => set({ showSettingsModal: true, settingsFocus: focus }),
   setShowCodeGenerator: (show) => set({ showCodeGenerator: show }),
+  setCurlSnippet: (patch) => set((s) => ({ curlSnippet: { ...s.curlSnippet, ...patch } })),
   setShowUpdateModal: (show) => set({ showUpdateModal: show }),
   setShowSaveModal: (show) => set({ showSaveModal: show }),
   setShowNewProjectModal: (show) => set({ showNewProjectModal: show }),

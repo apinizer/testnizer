@@ -1,6 +1,7 @@
 import type { HttpMethod, KeyValuePair, RequestBody, AuthConfig, CodeLanguage } from '../types'
 import { resolveAuth, resolveVariables } from './variable-resolver'
 import { snippetVariables } from './secret-variables'
+import { generateCurl, type CurlDialect, type CurlGenRequest } from '../../shared/curl'
 
 export interface CodeGenRequest {
   method: HttpMethod
@@ -9,9 +10,19 @@ export interface CodeGenRequest {
   headers: KeyValuePair[]
   body?: RequestBody
   auth?: AuthConfig
+  /** Per-request settings the snippet reflects (cURL: SSL verification off → `-k`). */
+  settings?: { sslVerification?: boolean }
+}
+
+/** The cURL variant (issue #279): shell + one line or one option per line. */
+export interface CurlSnippetOptions {
+  dialect?: CurlDialect
+  multiLine?: boolean
 }
 
 export interface CodeGenOptions {
+  /** Only read by the `curl` language. Default: bash, multi-line. */
+  curl?: CurlSnippetOptions
   /**
    * Optional variable scope used to substitute `{{var}}` placeholders before
    * the request is rendered into a code snippet. Without this, suite items
@@ -145,43 +156,80 @@ function bodyString(body?: RequestBody): string | null {
   return null
 }
 
-function escapeShell(s: string): string {
-  return s.replace(/'/g, "'\\''")
-}
-
 function escapeString(s: string, quote = "'"): string {
   if (quote === "'") return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
 }
 
-function genCurl(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const lines: string[] = [`curl -X ${req.method} '${escapeShell(fullUrl)}'`]
-  const hdrs = activeHeaders(req.headers, req.auth)
+/**
+ * cURL in the chosen shell (issue #279): quoting + layout are the shared
+ * generator (`src/shared/curl/generate.ts`); the bash multi-line output is
+ * byte-identical to the pre-#279 snippet except two fixed bugs — Basic auth is
+ * `-u 'user:pass'` (was the literal text `Basic <base64(user:pass)>`) and an
+ * API key "in query" is appended to the URL (was dropped). Digest / NTLM get
+ * `-u … --digest|--ntlm`, a binary body `--data-binary '@path'`, SSL
+ * verification off `-k`.
+ */
+function genCurl(req: CodeGenRequest, opts?: CurlSnippetOptions): string {
+  const auth = req.auth
+  let headerAuth = auth
+  let user: CurlGenRequest['user']
+  const params = [...req.params]
+  if (auth?.type === 'basic' && auth.basic) {
+    user = { username: auth.basic.username, password: auth.basic.password }
+    headerAuth = undefined
+  } else if (auth?.type === 'digest' && auth.digest) {
+    user = { username: auth.digest.username, password: auth.digest.password, scheme: 'digest' }
+    headerAuth = undefined
+  } else if (auth?.type === 'ntlm' && auth.ntlm) {
+    const { username, password, domain } = auth.ntlm
+    user = { username: domain ? `${domain}\\${username}` : username, password, scheme: 'ntlm' }
+    headerAuth = undefined
+  } else if (auth?.type === 'api-key' && auth.apiKey?.in === 'query' && auth.apiKey.key) {
+    params.push({
+      id: 'auth-api-key',
+      key: auth.apiKey.key,
+      value: auth.apiKey.value,
+      enabled: true,
+    })
+  }
+  const hdrs = activeHeaders(req.headers, headerAuth)
   // Skip an explicit Content-Type header for form-data — let curl emit the
   // multipart boundary itself; otherwise we'd ship a header that doesn't
   // match the body curl just generated, which is the classic Postman gotcha.
   const isFormData = req.body?.type === 'form-data' && Array.isArray(req.body.formData)
-  Object.entries(hdrs).forEach(([k, v]) => {
-    if (isFormData && k.toLowerCase() === 'content-type') return
-    lines.push(`  -H '${escapeShell(k)}: ${escapeShell(v)}'`)
-  })
+  const headers = Object.entries(hdrs)
+    .filter(([k]) => !(isFormData && k.toLowerCase() === 'content-type'))
+    .map(([key, value]) => ({ key, value }))
+  let body: CurlGenRequest['body']
   if (isFormData) {
-    const parts = (req.body!.formData || []).filter((p) => p.enabled && p.key)
-    parts.forEach((p) => {
-      if (p.type === 'file' && p.filePath) {
-        lines.push(`  -F '${escapeShell(p.key)}=@${escapeShell(p.filePath)}'`)
-      } else {
-        lines.push(`  -F '${escapeShell(p.key)}=${escapeShell(p.value)}'`)
-      }
-    })
+    body = {
+      kind: 'form',
+      parts: (req.body!.formData || [])
+        .filter((p) => p.enabled && p.key)
+        .map((p) => ({
+          key: p.key,
+          value: p.value,
+          filePath: p.type === 'file' && p.filePath ? p.filePath : undefined,
+        })),
+    }
+  } else if (req.body?.type === 'binary' && req.body.binaryPath) {
+    body = { kind: 'binary', path: req.body.binaryPath }
   } else {
     const bd = bodyString(req.body)
-    if (bd) {
-      lines.push(`  -d '${escapeShell(bd)}'`)
-    }
+    if (bd) body = { kind: 'raw', content: bd }
   }
-  return lines.join(' \\\n')
+  return generateCurl(
+    {
+      method: req.method,
+      url: buildFullUrl(req.url, params),
+      headers,
+      user,
+      body,
+      insecure: req.settings?.sslVerification === false,
+    },
+    { dialect: opts?.dialect ?? 'bash', multiLine: opts?.multiLine ?? true },
+  )
 }
 
 function genJsFetch(req: CodeGenRequest): string {
@@ -481,7 +529,15 @@ export function generateCode(
       )
     : undefined
   const effective = vars ? resolveRequest(req, vars) : req
+  if (language === 'curl') return genCurl(effective, options?.curl)
   return gen(effective)
+}
+
+/** Monaco language of a cURL snippet in a shell (issue #279). */
+export function curlMonacoLanguage(dialect: CurlDialect): string {
+  if (dialect === 'cmd') return 'bat'
+  if (dialect === 'powershell') return 'powershell'
+  return 'shell'
 }
 
 export const CODE_LANGUAGES: { id: CodeLanguage; label: string; monacoLang: string }[] = [

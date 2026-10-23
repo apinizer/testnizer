@@ -84,7 +84,9 @@ describe('parseCurlCommand: body flags', () => {
     )
     expect(r.method).toBe('POST')
     expect(r.headers['Content-Type']).toBe('application/x-www-form-urlencoded')
-    expect(r.body).toBe('q=hello world&p=v')
+    // curl percent-encodes the value of --data-urlencode (issue #279 — the
+    // old parser sent it raw).
+    expect(r.body).toBe('q=hello%20world&p=v')
   })
 })
 
@@ -265,15 +267,10 @@ describe('parseCurlCommand: multiline / Chrome copy', () => {
     expect(r.headers['user-agent']).toBe('Mozilla/5.0')
   })
 
-  it('cmd.exe form with caret-escaped quotes (best effort)', () => {
-    // Windows: curl ^"https://x^"
-    // We accept either correct parse OR graceful no-crash with empty url.
-    const cmd = `curl ^"https://api.example.com/x^"`
-    let r: ReturnType<typeof parseCurlCommand> | null = null
-    expect(() => {
-      r = parseCurlCommand(cmd)
-    }).not.toThrow()
-    expect(r).not.toBeNull()
+  it('cmd.exe form with caret-escaped quotes', () => {
+    // Windows: curl ^"https://x^" — parsed by the CMD dialect since issue #279.
+    const r = parseCurlCommand(`curl ^"https://api.example.com/x^"`)
+    expect(r.url).toBe('https://api.example.com/x')
   })
 })
 

@@ -9,6 +9,8 @@
 // return `null` and let the import proceed (the protocol-specific parser
 // will report a more accurate error if the content is truly bad).
 
+import { startsWithCurl } from '../../shared/curl'
+
 /**
  * Inspect a content snippet (and optional file path) and return a
  * coarse format bucket: `wsdl` | `soapui` | `proto` | `raml` | `openapi`
@@ -23,8 +25,9 @@ export function detectImportFormat(content: string, filePath?: string | null): s
   const trimmed = content.replace(/^\uFEFF/, '').trimStart()
   const head = trimmed.slice(0, 4096)
 
-  // cURL — single-line "curl ..." command (extension rarely meaningful)
-  if (/^\s*curl\s+/i.test(trimmed)) return 'curl'
+  // cURL — `curl …` / `curl.exe …` in any of the three shells, optionally
+  // after a `$ ` / `PS> ` prompt or PowerShell's `&` (issue #279).
+  if (startsWithCurl(trimmed) && /\S\s+\S/.test(trimmed)) return 'curl'
 
   // XML-family: WSDL, SoapUI. RAML uses YAML so it's handled below.
   if (head.startsWith('<?xml') || head.startsWith('<')) {

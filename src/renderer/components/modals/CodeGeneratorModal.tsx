@@ -4,9 +4,10 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import Modal from '../shared/Modal'
-import { CODE_LANGUAGES } from '../../lib/code-generator'
+import { CODE_LANGUAGES, curlMonacoLanguage } from '../../lib/code-generator'
 import { useGeneratedCode } from '../shared/use-generated-code'
 import IncludeSecretsToggle from '../shared/IncludeSecretsToggle'
+import CurlVariantPicker from '../shared/CurlVariantPicker'
 import type { CodeLanguage } from '../../types'
 
 const LANG_ICONS: Record<string, React.ReactNode> = {
@@ -39,7 +40,11 @@ export default function CodeGeneratorModal() {
     setShowCodeGenerator(open)
   }
 
-  const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
+  const curlDialect = useUIStore((s) => s.curlSnippet.dialect)
+  const monacoLang =
+    activeLang === 'curl'
+      ? curlMonacoLanguage(curlDialect)
+      : (CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext')
 
   if (!show) return null
 
@@ -119,8 +124,15 @@ export default function CodeGeneratorModal() {
           </div>
 
           {/* Code pane */}
-          <div className="flex-1 overflow-hidden">
-            <MonacoWrapper value={code} language={monacoLang} readOnly height="100%" />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            {activeLang === 'curl' && (
+              <div className="shrink-0 border-b border-[var(--border)] px-3 py-1.5">
+                <CurlVariantPicker />
+              </div>
+            )}
+            <div className="flex-1 overflow-hidden">
+              <MonacoWrapper value={code} language={monacoLang} readOnly height="100%" />
+            </div>
           </div>
         </div>
 

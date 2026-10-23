@@ -8,6 +8,14 @@ import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-fil
 import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import {
+  curlToRequest,
+  parseCurl,
+  renderCurl,
+  startsWithCurl,
+  tokenizeShell,
+  type CurlArg,
+} from '../../shared/curl'
+import {
   withAssertionScript,
   stripExportedAssertions,
   type AssertionScriptPrefix,
@@ -3491,98 +3499,56 @@ interface CurlExportRequest {
 }
 
 // ─── cURL Import ────────────────────────────────────────────
+//
+// The parser lives in `src/shared/curl/` (issue #279) — ONE parser for this
+// importer and the renderer's URL-bar paste (issue #278), in all three shell
+// dialects (bash / Windows CMD / PowerShell). This file only persists what
+// `curlToRequest` returns, in the same row shape the HAR importer writes:
+// `request_schema = { method, url, params?, headers?, body?, auth?, …settings }`
+// (the old importer kept only the pathname in `path` and no `url`, so an
+// imported request opened as `/users/42` and could not be sent).
 
 function importCurl(
   projectId: string,
   curlCommand: string,
   parentFolderId: string | null = null,
 ): ImportResult {
-  const warnings: string[] = []
   const db = getDb()
   const now = Date.now()
 
   // Reject input that obviously isn't a cURL command before parsing —
   // protects against the same wrong-file-type confusion as the Postman /
-  // Insomnia importers (v1.4.6). A real cURL starts with `curl `
-  // (optionally preceded by whitespace, line continuations, or a `$ `
-  // shell prompt). Anything else gets a single generic message.
-  const cleaned = (curlCommand || '').replace(/^\s*\$\s*/, '').trim()
-  if (!/^curl(\s|$)/i.test(cleaned)) {
+  // Insomnia importers (v1.4.6). A real cURL starts with `curl` / `curl.exe`
+  // (optionally after a `$ ` / `PS> ` prompt or PowerShell's `&`). Anything
+  // else gets a single generic message.
+  if (!startsWithCurl(curlCommand || '')) {
     return {
       success: false,
       error: "This is not a cURL command. You can't upload this file type from here.",
     }
   }
 
-  // Parse cURL command
-  const parsed = parseCurlCommand(curlCommand)
-
+  const parsed = parseCurl(curlCommand)
   if (!parsed.url) {
     return { success: false, error: 'No URL found in cURL command' }
   }
+  const req = curlToRequest(parsed, { makeId: randomUUID })
 
   const endpointId = randomUUID()
   let path = ''
   try {
-    path = new URL(parsed.url).pathname
+    path = new URL(req.url).pathname
   } catch {
-    path = parsed.url
+    path = req.url
   }
+  const name = `${req.method} ${path}`
 
-  const name = `${parsed.method} ${path}`
-
-  const requestSchema: Record<string, unknown> = {}
-
-  if (parsed.headers && Object.keys(parsed.headers).length > 0) {
-    // Persist as KeyValuePair[] so the renderer's request store can load it
-    // directly without an ad-hoc map → array conversion at every read site.
-    requestSchema.headers = Object.entries(parsed.headers).map(([key, value]) => ({
-      id: randomUUID(),
-      key,
-      value,
-      enabled: true,
-    }))
-  }
-  if (parsed.formData && parsed.formData.length > 0) {
-    requestSchema.body = {
-      type: 'form-data',
-      formData: parsed.formData.map((row) => ({
-        id: randomUUID(),
-        key: row.key,
-        value: row.value,
-        enabled: true,
-        type: row.type,
-        filePath: row.filePath,
-      })),
-    }
-  } else if (parsed.body) {
-    // Best-effort: classify the raw body string by header content-type so the
-    // user lands on the right body tab in the UI.
-    const ct = parsed.headers['Content-Type'] ?? parsed.headers['content-type'] ?? ''
-    if (/application\/x-www-form-urlencoded/i.test(ct)) {
-      const urlEncoded = parsed.body.split('&').map((pair) => {
-        const eq = pair.indexOf('=')
-        const key = eq === -1 ? pair : pair.slice(0, eq)
-        const value = eq === -1 ? '' : pair.slice(eq + 1)
-        return {
-          id: randomUUID(),
-          key: decodeURIComponent(key),
-          value: decodeURIComponent(value),
-          enabled: true,
-        }
-      })
-      requestSchema.body = { type: 'urlencoded', urlEncoded }
-    } else if (/json/i.test(ct)) {
-      requestSchema.body = { type: 'json', content: parsed.body }
-    } else if (/xml/i.test(ct)) {
-      requestSchema.body = { type: 'xml', content: parsed.body }
-    } else {
-      requestSchema.body = { type: 'raw', content: parsed.body }
-    }
-  }
-  if (parsed.auth) {
-    requestSchema.auth = parsed.auth
-  }
+  const requestSchema: Record<string, unknown> = { method: req.method, url: req.url }
+  if (req.params.length > 0) requestSchema.params = req.params
+  if (req.headers.length > 0) requestSchema.headers = req.headers
+  if (req.body.type !== 'none') requestSchema.body = req.body
+  if (req.auth) requestSchema.auth = req.auth
+  Object.assign(requestSchema, req.settings)
 
   db.prepare(
     `
@@ -3596,16 +3562,17 @@ function importCurl(
     name,
     null,
     'http',
-    parsed.method,
+    req.method,
     path,
     'developing',
-    Object.keys(requestSchema).length > 0 ? JSON.stringify(requestSchema) : null,
+    JSON.stringify(requestSchema),
     null,
     0,
     now,
     now,
   )
 
+  const warnings = req.warnings.map((w) => w.message)
   return {
     success: true,
     collectionId: projectId,
@@ -3615,465 +3582,130 @@ function importCurl(
   }
 }
 
-interface ParsedCurl {
+/**
+ * The pre-#279 parse shape, kept for callers / tests that read it. Built
+ * from the shared parser: `headers` as a map (last value wins), the implicit
+ * urlencoded Content-Type curl sends for `-d`, `-b` as a string.
+ */
+interface ParsedCurlLegacy {
   method: string
   url: string
   headers: Record<string, string>
   body?: string
-  /**
-   * Multipart `-F` rows parsed structurally so the importer can persist a
-   * proper UI body shape (`{ type: 'form-data', formData: KeyValuePair[] }`)
-   * instead of joining everything into a body string. `type: 'file'` rows
-   * carry the source path in `filePath` for the main-process upload stream.
-   */
   formData?: Array<{
     key: string
     value: string
     type?: 'text' | 'file'
     filePath?: string
   }>
-  auth?: { type: string; basic?: { username: string; password: string } }
+  auth?: {
+    type: string
+    basic?: { username: string; password: string }
+    digest?: { username: string; password: string }
+    ntlm?: { username: string; password: string }
+  }
   insecure: boolean
   cookies?: string
 }
 
-export function parseCurlCommand(command: string): ParsedCurl {
-  // Normalize the command
-  const normalized = command
-    .replace(/\\\n/g, ' ') // Line continuations
-    .replace(/\\\r\n/g, ' ')
-    .trim()
-
-  const result: ParsedCurl = {
-    method: 'GET',
-    url: '',
-    headers: {},
-    insecure: false,
-  }
-
-  // Track whether the body was set via -d/--data/--data-raw/--data-binary so we
-  // can auto-add Content-Type: application/x-www-form-urlencoded at the end of
-  // parsing if the user did not provide one. This matches cURL's actual
-  // behaviour for these flags.
-  let bodyFromDataFlag = false
-
-  const tokens = tokenizeCurl(normalized)
-
-  let i = 0
-  while (i < tokens.length) {
-    const token = tokens[i]
-
-    switch (token) {
-      case 'curl':
-        // skip the command itself
-        break
-
-      case '-X':
-      case '--request': {
-        i++
-        if (i < tokens.length) {
-          result.method = tokens[i].toUpperCase()
-        }
-        break
-      }
-
-      case '-H':
-      case '--header': {
-        i++
-        if (i < tokens.length) {
-          const headerStr = tokens[i]
-          const colonIdx = headerStr.indexOf(':')
-          if (colonIdx > 0) {
-            const key = headerStr.substring(0, colonIdx).trim()
-            const value = headerStr.substring(colonIdx + 1).trim()
-            result.headers[key] = value
-          }
-        }
-        break
-      }
-
-      case '-d':
-      case '--data':
-      case '--data-raw':
-      case '--data-binary':
-      case '--data-ascii': {
-        i++
-        if (i < tokens.length) {
-          result.body = tokens[i]
-          bodyFromDataFlag = true
-          // If method is still GET, change to POST
-          if (result.method === 'GET') {
-            result.method = 'POST'
-          }
-        }
-        break
-      }
-
-      case '--data-urlencode': {
-        i++
-        if (i < tokens.length) {
-          const existing = result.body || ''
-          const sep = existing ? '&' : ''
-          result.body = existing + sep + tokens[i]
-          if (result.method === 'GET') {
-            result.method = 'POST'
-          }
-          if (!result.headers['Content-Type']) {
-            result.headers['Content-Type'] = 'application/x-www-form-urlencoded'
-          }
-        }
-        break
-      }
-
-      case '-u':
-      case '--user': {
-        i++
-        if (i < tokens.length) {
-          const userPass = tokens[i]
-          const colonIdx = userPass.indexOf(':')
-          if (colonIdx > 0) {
-            result.auth = {
-              type: 'basic',
-              basic: {
-                username: userPass.substring(0, colonIdx),
-                password: userPass.substring(colonIdx + 1),
-              },
-            }
-          }
-        }
-        break
-      }
-
-      case '-k':
-      case '--insecure': {
-        result.insecure = true
-        break
-      }
-
-      case '-b':
-      case '--cookie': {
-        i++
-        if (i < tokens.length) {
-          result.cookies = tokens[i]
-        }
-        break
-      }
-
-      case '-A':
-      case '--user-agent': {
-        i++
-        if (i < tokens.length) {
-          result.headers['User-Agent'] = tokens[i]
-        }
-        break
-      }
-
-      case '-e':
-      case '--referer': {
-        i++
-        if (i < tokens.length) {
-          result.headers['Referer'] = tokens[i]
-        }
-        break
-      }
-
-      case '-x':
-      case '--proxy': {
-        // Consume the proxy value but do not let it leak into result.url.
-        // Proxy is not yet surfaced on the imported endpoint schema.
-        i++
-        break
-      }
-
-      case '-L':
-      case '--location':
-      case '--compressed': {
-        // Boolean flags with no value; safely ignored at parse time.
-        break
-      }
-
-      case '-F':
-      case '--form': {
-        i++
-        if (i < tokens.length) {
-          // Multipart form data — content-type boundary is set by the HTTP
-          // client when it builds the multipart body, so we don't pre-fill
-          // `Content-Type` from the importer.
-          const formPart = tokens[i]
-          const eqIdx = formPart.indexOf('=')
-          if (eqIdx > 0) {
-            const fieldName = formPart.slice(0, eqIdx)
-            const rawValue = formPart.slice(eqIdx + 1)
-            const row = parseCurlFormPart(fieldName, rawValue)
-            if (!result.formData) result.formData = []
-            result.formData.push(row)
-          }
-          if (result.method === 'GET') {
-            result.method = 'POST'
-          }
-        }
-        break
-      }
-
-      default: {
-        // If it looks like a URL (not a flag), capture it
-        if (!token.startsWith('-') && !result.url) {
-          result.url = token
-        }
-        break
-      }
+/** @deprecated Use `parseCurl` + `curlToRequest` from `src/shared/curl`. */
+export function parseCurlCommand(command: string): ParsedCurlLegacy {
+  const p = parseCurl(command)
+  const headers: Record<string, string> = {}
+  for (const h of p.headers) headers[h.key] = h.value
+  const result: ParsedCurlLegacy = { method: p.method, url: p.url, headers, insecure: p.insecure }
+  if (p.body !== undefined) {
+    result.body = p.body
+    if (!Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded'
     }
-    i++
   }
-
-  // cURL behaviour: -d / --data / --data-raw / --data-binary all imply
-  // Content-Type: application/x-www-form-urlencoded when the user did not
-  // supply one explicitly via -H. We only add the default after all tokens
-  // have been processed so a later -H overrides nothing.
-  if (bodyFromDataFlag && !hasContentTypeHeader(result.headers)) {
-    result.headers['Content-Type'] = 'application/x-www-form-urlencoded'
+  if (p.form.length > 0) {
+    result.formData = p.form.map((f) =>
+      f.kind === 'file'
+        ? { key: f.name, value: f.value, type: 'file' as const, filePath: f.path }
+        : { key: f.name, value: f.value, type: 'text' as const },
+    )
   }
-
+  if (p.user) {
+    const creds = { username: p.user.username, password: p.user.password }
+    if (p.authScheme === 'digest') result.auth = { type: 'digest', digest: creds }
+    else if (p.authScheme === 'ntlm') result.auth = { type: 'ntlm', ntlm: creds }
+    else result.auth = { type: 'basic', basic: creds }
+  }
+  if (p.cookies.length > 0) result.cookies = p.cookies.join('; ')
   return result
 }
 
-function hasContentTypeHeader(headers: Record<string, string>): boolean {
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === 'content-type') return true
-  }
-  return false
-}
-
-/**
- * Parse a single cURL `-F` value (everything after `field=`).
- * - `@/path/to/file`     → `{ type: 'file', filePath: '/path/to/file', value: <basename> }`
- * - `@/path;type=...`    → file row, the `;type=`/`;filename=` modifiers are noted in `value` only as basename
- * - `<value>`            → text row with the literal value
- * `<` (read-from-file then send as text) is rare; we fall back to text.
- */
-function parseCurlFormPart(
-  fieldName: string,
-  rawValue: string,
-): { key: string; value: string; type?: 'text' | 'file'; filePath?: string } {
-  if (rawValue.startsWith('@')) {
-    // Strip `;type=...;filename=...` modifiers that aren't part of the path
-    const semiIdx = rawValue.indexOf(';')
-    const path = semiIdx === -1 ? rawValue.slice(1) : rawValue.slice(1, semiIdx)
-    const baseName = path.split(/[/\\]/).pop() ?? path
-    return { key: fieldName, value: baseName, type: 'file', filePath: path }
-  }
-  return { key: fieldName, value: rawValue, type: 'text' }
-}
-
+/** @deprecated POSIX-shell tokens of a command (`tokenizeShell(text, 'bash')`). */
 export function tokenizeCurl(command: string): string[] {
-  const tokens: string[] = []
-  let current = ''
-  let inSingle = false
-  let inDouble = false
-  let inAnsiC = false // bash $'...' — backslash escapes interpreted
-  let escaped = false
-
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i]
-
-    if (escaped) {
-      // Inside $'...': decode common bash ANSI-C escapes; elsewhere preserve verbatim.
-      if (inAnsiC) {
-        current += decodeAnsiCEscape(ch)
-      } else {
-        current += ch
-      }
-      escaped = false
-      continue
-    }
-
-    // ANSI-C quoting opener: $'...'
-    if (ch === '$' && !inSingle && !inDouble && !inAnsiC && command[i + 1] === "'") {
-      inAnsiC = true
-      i++ // skip the opening single quote
-      continue
-    }
-
-    // Inside $'...': only \ and the closing ' are special; spaces are literal.
-    if (inAnsiC) {
-      if (ch === '\\') {
-        escaped = true
-        continue
-      }
-      if (ch === "'") {
-        inAnsiC = false
-        continue
-      }
-      current += ch
-      continue
-    }
-
-    if (ch === '\\' && !inSingle) {
-      escaped = true
-      continue
-    }
-
-    if (ch === "'" && !inDouble) {
-      inSingle = !inSingle
-      continue
-    }
-
-    if (ch === '"' && !inSingle) {
-      inDouble = !inDouble
-      continue
-    }
-
-    if ((ch === ' ' || ch === '\t') && !inSingle && !inDouble) {
-      if (current.length > 0) {
-        tokens.push(current)
-        current = ''
-      }
-      continue
-    }
-
-    current += ch
-  }
-
-  if (current.length > 0) {
-    tokens.push(current)
-  }
-
-  return tokens
-}
-
-/** Decode a single character that follows `\` inside a bash `$'...'` literal. */
-function decodeAnsiCEscape(ch: string | undefined): string {
-  switch (ch) {
-    case 'n':
-      return '\n'
-    case 't':
-      return '\t'
-    case 'r':
-      return '\r'
-    case 'a':
-      return '\x07'
-    case 'b':
-      return '\b'
-    case 'f':
-      return '\f'
-    case 'v':
-      return '\v'
-    case '0':
-      return '\0'
-    case '\\':
-      return '\\'
-    case "'":
-      return "'"
-    case '"':
-      return '"'
-    case '?':
-      return '?'
-    case 'e':
-    case 'E':
-      return '\x1b'
-    default:
-      return ch ?? ''
-  }
+  return tokenizeShell(command, 'bash').tokens
 }
 
 // ─── cURL Export ────────────────────────────────────────────
 
 /**
- * POSIX-shell-quote a value for use inside a cURL command line. Returns the
- * value wrapped in single quotes, with any internal `'` rewritten as `'\''`
- * (close-quote, escaped quote, reopen-quote). This is the canonical way to
- * embed arbitrary text in a single-quoted bash word and is what cURL itself
- * expects when round-tripping. Always pass user-controlled strings (URL,
- * header values, cookies, passwords, body content, form values) through this
- * helper before interpolating them into the output.
+ * `export:curl` — a bash command, one option per line. Quoting is the shared
+ * `renderCurl` (`src/shared/curl/generate.ts`): every user-controlled string
+ * (URL, header values, cookies, passwords, body content, form values) is a
+ * single-quoted bash word with `'` → `'\''`.
  */
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`
-}
-
 export function exportAsCurl(request: CurlExportRequest): string {
-  const parts: string[] = ['curl']
+  const args: CurlArg[] = []
 
-  // Method
   if (request.method && request.method !== 'GET') {
-    parts.push(`-X ${request.method.toUpperCase()}`)
+    args.push({ flag: '-X', value: request.method.toUpperCase(), literal: true })
+  }
+  args.push({ value: request.url })
+
+  for (const h of request.headers ?? []) {
+    if (h.enabled && h.key) args.push({ flag: '-H', value: `${h.key}: ${h.value}` })
   }
 
-  // URL
-  parts.push(shellEscape(request.url))
-
-  // Headers
-  if (request.headers) {
-    for (const h of request.headers) {
-      if (h.enabled && h.key) {
-        parts.push(`-H ${shellEscape(`${h.key}: ${h.value}`)}`)
-      }
-    }
+  if (request.auth?.type === 'basic' && request.auth.basic) {
+    args.push({
+      flag: '-u',
+      value: `${request.auth.basic.username}:${request.auth.basic.password}`,
+    })
+  } else if (request.auth?.type === 'bearer' && request.auth.bearer) {
+    const prefix = request.auth.bearer.prefix || 'Bearer'
+    args.push({ flag: '-H', value: `Authorization: ${prefix} ${request.auth.bearer.token}` })
   }
 
-  // Auth
-  if (request.auth) {
-    if (request.auth.type === 'basic' && request.auth.basic) {
-      parts.push(
-        `-u ${shellEscape(`${request.auth.basic.username}:${request.auth.basic.password}`)}`,
-      )
-    } else if (request.auth.type === 'bearer' && request.auth.bearer) {
-      const prefix = request.auth.bearer.prefix || 'Bearer'
-      parts.push(`-H ${shellEscape(`Authorization: ${prefix} ${request.auth.bearer.token}`)}`)
-    }
-  }
-
-  // Body
-  if (request.body && request.body.type !== 'none') {
-    switch (request.body.type) {
+  const body = request.body
+  if (body && body.type !== 'none') {
+    switch (body.type) {
       case 'json':
       case 'xml':
       case 'text':
       case 'html':
-      case 'javascript': {
-        if (request.body.content) {
-          parts.push(`-d ${shellEscape(request.body.content)}`)
+      case 'javascript':
+        if (body.content) args.push({ flag: '-d', value: body.content })
+        break
+      case 'urlencoded':
+        for (const item of body.urlEncoded ?? []) {
+          if (item.enabled)
+            args.push({ flag: '--data-urlencode', value: `${item.key}=${item.value}` })
         }
         break
-      }
-      case 'urlencoded': {
-        if (request.body.urlEncoded) {
-          for (const item of request.body.urlEncoded) {
-            if (item.enabled) {
-              parts.push(`--data-urlencode ${shellEscape(`${item.key}=${item.value}`)}`)
-            }
+      case 'form-data':
+        for (const item of body.formData ?? []) {
+          if (!item.enabled) continue
+          // cURL convention for file uploads: -F 'field=@/path/to/file'
+          if (item.type === 'file' && item.filePath) {
+            args.push({ flag: '-F', value: `${item.key}=@${item.filePath}` })
+          } else {
+            args.push({ flag: '-F', value: `${item.key}=${item.value}` })
           }
         }
         break
-      }
-      case 'form-data': {
-        if (request.body.formData) {
-          for (const item of request.body.formData) {
-            if (!item.enabled) continue
-            if (item.type === 'file' && item.filePath) {
-              // cURL convention for file uploads: -F 'field=@/path/to/file'
-              parts.push(`-F ${shellEscape(`${item.key}=@${item.filePath}`)}`)
-            } else {
-              parts.push(`-F ${shellEscape(`${item.key}=${item.value}`)}`)
-            }
-          }
-        }
-        break
-      }
     }
   }
 
-  // Cookies
-  if (request.cookies) {
-    parts.push(`-b ${shellEscape(request.cookies)}`)
-  }
+  if (request.cookies) args.push({ flag: '-b', value: request.cookies })
+  if (request.sslVerification === false) args.push({ flag: '-k' })
 
-  // SSL
-  if (request.sslVerification === false) {
-    parts.push('-k')
-  }
-
-  return parts.join(' \\\n  ')
+  return renderCurl(args, { dialect: 'bash', inline: 0 })
 }
 
 // ─── HAR Types ──────────────────────────────────────────────

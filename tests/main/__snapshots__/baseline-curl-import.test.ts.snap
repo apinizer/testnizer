@@ -69,7 +69,18 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > GET wit
     "name": "GET /users/42",
     "path": "/users/42",
     "protocol": "http",
-    "request_schema": null,
+    "request_schema": {
+      "method": "GET",
+      "params": [
+        {
+          "enabled": true,
+          "id": "<id>",
+          "key": "expand",
+          "value": "1",
+        },
+      ],
+      "url": "https://api.example.com/users/42?expand=1",
+    },
     "status": "developing",
   },
 }
@@ -105,6 +116,8 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST JS
           "value": "application/json",
         },
       ],
+      "method": "POST",
+      "url": "https://api.example.com/users",
     },
     "status": "developing",
   },
@@ -141,6 +154,8 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST XM
           "value": "text/xml",
         },
       ],
+      "method": "POST",
+      "url": "https://x.test/soap",
     },
     "status": "developing",
   },
@@ -167,7 +182,7 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST bo
     "request_schema": {
       "body": {
         "content": "hello",
-        "type": "raw",
+        "type": "text",
       },
       "headers": [
         {
@@ -177,6 +192,8 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST bo
           "value": "text/plain",
         },
       ],
+      "method": "POST",
+      "url": "https://x.test/n",
     },
     "status": "developing",
   },
@@ -226,6 +243,8 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST ur
           "value": "application/x-www-form-urlencoded",
         },
       ],
+      "method": "POST",
+      "url": "https://x.test/login",
     },
     "status": "developing",
   },
@@ -257,6 +276,8 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > basic a
         },
         "type": "basic",
       },
+      "method": "GET",
+      "url": "https://x.test/secure",
     },
     "status": "developing",
   },
@@ -301,6 +322,8 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > form-da
         ],
         "type": "form-data",
       },
+      "method": "POST",
+      "url": "https://x.test/up",
     },
     "status": "developing",
   },

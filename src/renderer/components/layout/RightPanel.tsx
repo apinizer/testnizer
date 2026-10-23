@@ -3,9 +3,10 @@ import { Code2, Variable, ChevronRight, Copy, Check } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import RunnerVariables from '../runner/RunnerVariables'
 import MonacoWrapper from '../shared/MonacoWrapper'
-import { CODE_LANGUAGES } from '../../lib/code-generator'
+import { CODE_LANGUAGES, curlMonacoLanguage } from '../../lib/code-generator'
 import { useGeneratedCode } from '../shared/use-generated-code'
 import IncludeSecretsToggle from '../shared/IncludeSecretsToggle'
+import CurlVariantPicker from '../shared/CurlVariantPicker'
 import type { CodeLanguage } from '../../types'
 import { useTranslation } from '../../lib/i18n'
 
@@ -27,7 +28,11 @@ function GenerateCodePane() {
     unresolved: unresolvedVars,
   } = useGeneratedCode(activeLang, includeSecrets)
 
-  const monacoLang = CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext'
+  const curlDialect = useUIStore((s) => s.curlSnippet.dialect)
+  const monacoLang =
+    activeLang === 'curl'
+      ? curlMonacoLanguage(curlDialect)
+      : (CODE_LANGUAGES.find((l) => l.id === activeLang)?.monacoLang ?? 'plaintext')
 
   function handleCopy() {
     navigator.clipboard.writeText(code)
@@ -69,6 +74,12 @@ function GenerateCodePane() {
       <div className="flex shrink-0 items-center border-b border-[var(--border)] px-2.5 py-1.5">
         <IncludeSecretsToggle checked={includeSecrets} onChange={setIncludeSecrets} />
       </div>
+
+      {activeLang === 'curl' && (
+        <div className="shrink-0 border-b border-[var(--border)] px-2.5 py-1.5">
+          <CurlVariantPicker />
+        </div>
+      )}
 
       {hiddenSecrets.length > 0 && (
         <div

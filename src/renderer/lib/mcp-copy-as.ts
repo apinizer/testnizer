@@ -17,6 +17,7 @@ import { resolveVariables } from './variable-resolver'
 import { resolveMcpAuth } from '../stores/mcp-auth.slice'
 import { isCredentialHeaderName } from '../../shared/credential-headers'
 import { mcpSafeUrl } from '../../shared/mcp-call'
+import { renderCurl, type CurlArg } from '../../shared/curl'
 
 export type McpCopyTarget =
   | { kind: 'tool'; name: string; args: unknown }
@@ -61,9 +62,6 @@ export function isCredentialHeader(name: string): boolean {
   return isCredentialHeaderName(name.trim())
 }
 
-/** POSIX single-quote a word for the shell. */
-const sq = (s: string): string => `'${s.replace(/'/g, `'\\''`)}'`
-
 export function buildCurl(opts: {
   url: string
   headers: Record<string, string>
@@ -94,10 +92,11 @@ export function buildCurl(opts: {
   for (const [k, v] of Object.entries(opts.headers)) {
     headers.push([k, isCredentialHeader(k) ? REDACTED : v])
   }
-  const lines = [`curl -X POST ${sq(url)}`]
-  for (const [k, v] of headers) lines.push(`  -H ${sq(`${k}: ${v}`)}`)
-  lines.push(`  --data-raw ${sq(JSON.stringify(opts.body))}`)
-  return lines.join(' \\\n')
+  // Quoting + layout: the shared cURL generator (issue #279) — output unchanged.
+  const args: CurlArg[] = [{ flag: '-X', value: 'POST', literal: true }, { value: url }]
+  for (const [k, v] of headers) args.push({ flag: '-H', value: `${k}: ${v}` })
+  args.push({ flag: '--data-raw', value: JSON.stringify(opts.body) })
+  return renderCurl(args, { inline: 2 })
 }
 
 /** The slice of a tab the copy needs. */

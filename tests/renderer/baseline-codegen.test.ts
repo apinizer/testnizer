@@ -13,8 +13,10 @@
  *  - form-data body (text + file part): only cURL emits `-F`; the other 10
  *    languages DROP the body entirely (bodyString() returns null).
  *  - basic auth: emitted as the literal text `Basic <base64(user:pass)>` instead
- *    of a real base64 value (cURL gets no `-u`).
- *  - api-key in query: the key/value is NOT appended to the URL in any language.
+ *    of a real base64 value. FIXED for cURL by issue #279 (`-u 'user:pass'`);
+ *    the other 10 languages still pin the placeholder.
+ *  - api-key in query: the key/value is NOT appended to the URL. FIXED for cURL
+ *    by issue #279; the other 10 languages still drop it.
  *  - Python + JSON body: body text is pasted as a Python literal (`payload = {...}`),
  *    so JSON `true` / `false` / `null` are invalid Python (NameError).
  *  - Python/others: no Content-Type header is added for json / urlencoded / text
