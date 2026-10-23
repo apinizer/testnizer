@@ -6,6 +6,9 @@ type Locale = Language
 import type { SidebarPage } from '../lib/sidebar-pages'
 export type RightPanelTab = 'variables' | 'code'
 
+/** Settings sections that `openSettingsAt` can open with (see `settingsFocus`). */
+export type SettingsFocus = 'appPasswordSet' | 'appPassword'
+
 // Preset font stacks offered as quick picks. The stored `fontFamily` is always
 // a raw CSS font-family value — users may type any stack they like.
 export const FONT_PRESETS: Array<{ id: string; label: string; stack: string }> = [
@@ -52,10 +55,12 @@ interface UIStore {
   showEnvironmentModal: boolean
   showSettingsModal: boolean
   /**
-   * A Settings section to open with (the header session menu's "Set a
-   * password…" → the App password form). Consumed once by the section.
+   * A Settings section to open with. Consumed once by the section.
+   * - 'appPasswordSet': the header menu's "Set a password…" → the inline Set form.
+   * - 'appPassword': the header menu's "Manage password…" (issue #268) → scroll
+   *   to the App password section without opening a form (Change / Turn off).
    */
-  settingsFocus: 'appPasswordSet' | null
+  settingsFocus: SettingsFocus | null
   showCodeGenerator: boolean
   showUpdateModal: boolean
   showSaveModal: boolean
@@ -118,7 +123,7 @@ interface UIStore {
   setShowEnvironmentModal: (show: boolean) => void
   setShowSettingsModal: (show: boolean) => void
   /** Opens Settings at a section (`settingsFocus`). */
-  openSettingsAt: (focus: 'appPasswordSet') => void
+  openSettingsAt: (focus: SettingsFocus) => void
   setShowCodeGenerator: (show: boolean) => void
   setShowUpdateModal: (show: boolean) => void
   setShowSaveModal: (show: boolean) => void
