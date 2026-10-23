@@ -1,0 +1,259 @@
+{
+  "info": {
+    "name": "Baseline Parity Collection",
+    "description": "Constructed fixture for the Postman parity baseline (not a third-party file).",
+    "_postman_id": "00000000-0000-4000-8000-000000000001",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{collectionToken}}", "type": "string" }]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": { "type": "text/javascript", "exec": ["pm.variables.set('collPre', '1');"] }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": ["pm.test('collection test', function () {", "  pm.expect(1).to.equal(1);", "});"]
+      }
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "https://api.example.com", "type": "string" },
+    { "key": "apiVersion", "value": "v2", "type": "string" },
+    { "key": "clientSecret", "value": "super-secret-value", "type": "secret" }
+  ],
+  "item": [
+    {
+      "name": "Root request (inherits collection bearer)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{baseUrl}}/ping", "host": ["{{baseUrl}}"], "path": ["ping"] }
+      }
+    },
+    {
+      "name": "Users",
+      "auth": {
+        "type": "apikey",
+        "apikey": [
+          { "key": "key", "value": "X-Folder-Key", "type": "string" },
+          { "key": "value", "value": "{{folderKey}}", "type": "string" },
+          { "key": "in", "value": "header", "type": "string" }
+        ]
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": { "type": "text/javascript", "exec": ["console.log('users folder pre');"] }
+        },
+        {
+          "listen": "test",
+          "script": { "type": "text/javascript", "exec": ["console.log('users folder test');"] }
+        }
+      ],
+      "item": [
+        {
+          "name": "List users",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Accept", "value": "application/json" },
+              { "key": "X-Disabled", "value": "nope", "disabled": true }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/{{apiVersion}}/users?page=1&trace=x",
+              "host": ["{{baseUrl}}"],
+              "path": ["{{apiVersion}}", "users"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "debug", "value": "1", "disabled": true },
+                { "key": "trace", "value": "x", "description": "trace id" }
+              ]
+            },
+            "description": "Lists users"
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('status is 200', function () {", "  pm.response.to.have.status(200);", "});"]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create user (raw json)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/users",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ada\",\n  \"active\": true,\n  \"tags\": [\"a\", \"b\"]\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "auth": {
+              "type": "basic",
+              "basic": [
+                { "key": "username", "value": "admin", "type": "string" },
+                { "key": "password", "value": "{{adminPass}}", "type": "string" }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "type": "text/javascript", "exec": ["pm.environment.set('ts', Date.now());"] }
+            }
+          ]
+        },
+        {
+          "name": "Posts",
+          "item": [
+            {
+              "name": "Create post (raw xml)",
+              "request": {
+                "method": "POST",
+                "header": [{ "key": "Content-Type", "value": "application/xml" }],
+                "url": { "raw": "{{baseUrl}}/posts", "host": ["{{baseUrl}}"], "path": ["posts"] },
+                "body": {
+                  "mode": "raw",
+                  "raw": "<post><title>Hello</title></post>",
+                  "options": { "raw": { "language": "xml" } }
+                },
+                "auth": { "type": "noauth" }
+              }
+            },
+            {
+              "name": "Update post (raw text, PUT)",
+              "request": {
+                "method": "PUT",
+                "header": [{ "key": "Content-Type", "value": "text/plain" }],
+                "url": "{{baseUrl}}/posts/1",
+                "body": { "mode": "raw", "raw": "plain text body", "options": { "raw": { "language": "text" } } }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Forms",
+      "item": [
+        {
+          "name": "Login (urlencoded)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/login",
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                { "key": "user", "value": "ada" },
+                { "key": "pass", "value": "p@ss word" },
+                { "key": "remember", "value": "1", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Upload (formdata)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/upload",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "title", "value": "My report", "type": "text" },
+                { "key": "notes", "value": "skip me", "type": "text", "disabled": true },
+                { "key": "file", "type": "file", "src": "/tmp/report.pdf" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GraphQL query",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/graphql",
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query Q($id: ID!) { user(id: $id) { id name } }",
+                "variables": "{\"id\": \"42\"}"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth variants",
+      "item": [
+        {
+          "name": "Bearer request",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/me",
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{myToken}}", "type": "string" }]
+            }
+          }
+        },
+        {
+          "name": "API key in query",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/data",
+            "auth": {
+              "type": "apikey",
+              "apikey": [
+                { "key": "key", "value": "api_key", "type": "string" },
+                { "key": "value", "value": "{{apiKey}}", "type": "string" },
+                { "key": "in", "value": "query", "type": "string" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "OAuth2 request",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/oauth-protected",
+            "auth": {
+              "type": "oauth2",
+              "oauth2": [
+                { "key": "accessTokenUrl", "value": "https://auth.example.com/token", "type": "string" },
+                { "key": "authUrl", "value": "https://auth.example.com/authorize", "type": "string" },
+                { "key": "clientId", "value": "my-client", "type": "string" },
+                { "key": "clientSecret", "value": "{{clientSecret}}", "type": "string" },
+                { "key": "scope", "value": "read write", "type": "string" },
+                { "key": "grant_type", "value": "client_credentials", "type": "string" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "DELETE with no body",
+      "request": {
+        "method": "DELETE",
+        "header": [{ "key": "X-Reason", "value": "cleanup" }],
+        "url": "{{baseUrl}}/users/7"
+      }
+    }
+  ]
+}

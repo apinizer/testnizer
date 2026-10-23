@@ -1,0 +1,1778 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`baseline Postman environment import (import:postmanEnvironment) > creates a project environment with the rows, secret flag and enabled state 1`] = `
+{
+  "data": {
+    "endpointCount": 0,
+    "environmentName": "Baseline Env",
+    "folderCount": 0,
+    "success": true,
+    "warnings": undefined,
+  },
+  "success": true,
+}
+`;
+
+exports[`baseline Postman environment import (import:postmanEnvironment) > creates a project environment with the rows, secret flag and enabled state 2`] = `
+[
+  {
+    "is_active": 1,
+    "name": "Baseline Env",
+    "variables": [
+      {
+        "description": null,
+        "enabled": 1,
+        "initial_value": "https://api.example.com",
+        "key": "baseUrl",
+        "secret": 0,
+        "value": "https://api.example.com",
+      },
+      {
+        "description": null,
+        "enabled": 1,
+        "initial_value": "tok-123",
+        "key": "token",
+        "secret": 1,
+        "value": "tok-123",
+      },
+      {
+        "description": null,
+        "enabled": 0,
+        "initial_value": "off",
+        "key": "muted",
+        "secret": 0,
+        "value": "off",
+      },
+      {
+        "description": null,
+        "enabled": 1,
+        "initial_value": "x",
+        "key": "noEnabledField",
+        "secret": 0,
+        "value": "x",
+      },
+    ],
+  },
+]
+`;
+
+exports[`baseline Postman environment import (import:postmanEnvironment) > re-import is idempotent and rejects a non-environment file 1`] = `
+{
+  "environmentsAfterReimport": 1,
+  "wrong": {
+    "error": "Not a Postman environment export (\`_postman_variable_scope\` missing).",
+    "success": false,
+  },
+}
+`;
+
+exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import (folders, endpoints, environments, project scripts) 1`] = `
+{
+  "endpoints": [
+    {
+      "description": null,
+      "folder": null,
+      "method": "GET",
+      "name": "Root request (inherits collection bearer)",
+      "path": "/ping",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/ping",
+      },
+      "response_schemas": null,
+      "sort_order": 0,
+      "status": "developing",
+    },
+    {
+      "description": "Lists users",
+      "folder": "F1",
+      "method": "GET",
+      "name": "List users",
+      "path": "/{{apiVersion}}/users?page=1&trace=x",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "apiKey": {
+            "in": "header",
+            "key": "X-Folder-Key",
+            "value": "{{folderKey}}",
+          },
+          "type": "api-key",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Accept",
+            "value": "application/json",
+          },
+          {
+            "enabled": false,
+            "id": "<id>",
+            "key": "X-Disabled",
+            "value": "nope",
+          },
+        ],
+        "method": "GET",
+        "params": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "page",
+            "value": "1",
+          },
+          {
+            "enabled": false,
+            "id": "<id>",
+            "key": "debug",
+            "value": "1",
+          },
+          {
+            "description": "trace id",
+            "enabled": true,
+            "id": "<id>",
+            "key": "trace",
+            "value": "x",
+          },
+        ],
+        "postScript": "pm.test('status is 200', function () {
+  pm.response.to.have.status(200);
+});",
+        "url": "{{baseUrl}}/{{apiVersion}}/users?page=1&trace=x",
+      },
+      "response_schemas": null,
+      "sort_order": 1,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F1",
+      "method": "POST",
+      "name": "Create user (raw json)",
+      "path": "/users",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "basic": {
+            "password": "{{adminPass}}",
+            "username": "admin",
+          },
+          "type": "basic",
+        },
+        "body": {
+          "content": "{
+  "name": "Ada",
+  "active": true,
+  "tags": ["a", "b"]
+}",
+          "type": "json",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "application/json",
+          },
+        ],
+        "method": "POST",
+        "params": [],
+        "preScript": "pm.environment.set('ts', Date.now());",
+        "url": "{{baseUrl}}/users",
+      },
+      "response_schemas": null,
+      "sort_order": 2,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F2",
+      "method": "POST",
+      "name": "Create post (raw xml)",
+      "path": "/posts",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "type": "none",
+        },
+        "body": {
+          "content": "<post><title>Hello</title></post>",
+          "type": "xml",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "application/xml",
+          },
+        ],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/posts",
+      },
+      "response_schemas": null,
+      "sort_order": 3,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F2",
+      "method": "PUT",
+      "name": "Update post (raw text, PUT)",
+      "path": "/posts/1",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "apiKey": {
+            "in": "header",
+            "key": "X-Folder-Key",
+            "value": "{{folderKey}}",
+          },
+          "type": "api-key",
+        },
+        "body": {
+          "content": "plain text body",
+          "type": "text",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "text/plain",
+          },
+        ],
+        "method": "PUT",
+        "params": [],
+        "url": "{{baseUrl}}/posts/1",
+      },
+      "response_schemas": null,
+      "sort_order": 4,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F3",
+      "method": "POST",
+      "name": "Login (urlencoded)",
+      "path": "/login",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "urlencoded",
+          "urlEncoded": [
+            {
+              "enabled": true,
+              "id": "<id>",
+              "key": "user",
+              "value": "ada",
+            },
+            {
+              "enabled": true,
+              "id": "<id>",
+              "key": "pass",
+              "value": "p@ss word",
+            },
+            {
+              "enabled": false,
+              "id": "<id>",
+              "key": "remember",
+              "value": "1",
+            },
+          ],
+        },
+        "headers": [],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/login",
+      },
+      "response_schemas": null,
+      "sort_order": 5,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F3",
+      "method": "POST",
+      "name": "Upload (formdata)",
+      "path": "/upload",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "formData": [
+            {
+              "enabled": true,
+              "id": "<id>",
+              "key": "title",
+              "type": "text",
+              "value": "My report",
+            },
+            {
+              "enabled": false,
+              "id": "<id>",
+              "key": "notes",
+              "type": "text",
+              "value": "skip me",
+            },
+            {
+              "enabled": true,
+              "filePath": "/tmp/report.pdf",
+              "id": "<id>",
+              "key": "file",
+              "type": "file",
+              "value": "report.pdf",
+            },
+          ],
+          "type": "form-data",
+        },
+        "headers": [],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/upload",
+      },
+      "response_schemas": null,
+      "sort_order": 6,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F3",
+      "method": "POST",
+      "name": "GraphQL query",
+      "path": "/graphql",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "content": "{
+  "query": "query Q($id: ID!) { user(id: $id) { id name } }",
+  "variables": {
+    "id": "42"
+  }
+}",
+          "type": "json",
+        },
+        "headers": [],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/graphql",
+      },
+      "response_schemas": null,
+      "sort_order": 7,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F4",
+      "method": "GET",
+      "name": "Bearer request",
+      "path": "/me",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{myToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/me",
+      },
+      "response_schemas": null,
+      "sort_order": 8,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F4",
+      "method": "GET",
+      "name": "API key in query",
+      "path": "/data",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "apiKey": {
+            "in": "query",
+            "key": "api_key",
+            "value": "{{apiKey}}",
+          },
+          "type": "api-key",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/data",
+      },
+      "response_schemas": null,
+      "sort_order": 9,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F4",
+      "method": "GET",
+      "name": "OAuth2 request",
+      "path": "/oauth-protected",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "oauth2": {
+            "authUrl": "https://auth.example.com/authorize",
+            "clientId": "my-client",
+            "clientSecret": "{{clientSecret}}",
+            "grantType": "client_credentials",
+            "scope": "read write",
+            "token": "",
+            "tokenUrl": "https://auth.example.com/token",
+          },
+          "type": "oauth2",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/oauth-protected",
+      },
+      "response_schemas": null,
+      "sort_order": 10,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": null,
+      "method": "DELETE",
+      "name": "DELETE with no body",
+      "path": "/users/7",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "X-Reason",
+            "value": "cleanup",
+          },
+        ],
+        "method": "DELETE",
+        "params": [],
+        "url": "{{baseUrl}}/users/7",
+      },
+      "response_schemas": null,
+      "sort_order": 11,
+      "status": "developing",
+    },
+  ],
+  "environments": [
+    {
+      "is_active": 1,
+      "name": "Baseline Parity Collection (imported)",
+      "variables": [
+        {
+          "description": null,
+          "enabled": 1,
+          "initial_value": "https://api.example.com",
+          "key": "baseUrl",
+          "secret": 0,
+          "value": "https://api.example.com",
+        },
+        {
+          "description": null,
+          "enabled": 1,
+          "initial_value": "v2",
+          "key": "apiVersion",
+          "secret": 0,
+          "value": "v2",
+        },
+        {
+          "description": null,
+          "enabled": 1,
+          "initial_value": "super-secret-value",
+          "key": "clientSecret",
+          "secret": 1,
+          "value": "super-secret-value",
+        },
+      ],
+    },
+  ],
+  "folders": [
+    {
+      "auth": {
+        "apiKey": {
+          "in": "header",
+          "key": "X-Folder-Key",
+          "value": "{{folderKey}}",
+        },
+        "type": "api-key",
+      },
+      "label": "F1",
+      "name": "Users",
+      "parent": null,
+      "post_script": "console.log('users folder test');",
+      "pre_script": "console.log('users folder pre');",
+      "sort_order": 0,
+    },
+    {
+      "auth": null,
+      "label": "F2",
+      "name": "Posts",
+      "parent": "F1",
+      "post_script": null,
+      "pre_script": null,
+      "sort_order": 1,
+    },
+    {
+      "auth": null,
+      "label": "F3",
+      "name": "Forms",
+      "parent": null,
+      "post_script": null,
+      "pre_script": null,
+      "sort_order": 2,
+    },
+    {
+      "auth": null,
+      "label": "F4",
+      "name": "Auth variants",
+      "parent": null,
+      "post_script": null,
+      "pre_script": null,
+      "sort_order": 3,
+    },
+  ],
+  "project_shared_settings": {
+    "preScript": "pm.variables.set('collPre', '1');",
+    "testScript": "pm.test('collection test', function () {
+  pm.expect(1).to.equal(1);
+});",
+  },
+}
+`;
+
+exports[`baseline Postman v2.1 — import -> DB -> export > export:postman output 1`] = `
+{
+  "collection": {
+    "event": [
+      {
+        "listen": "prerequest",
+        "script": {
+          "exec": [
+            "pm.variables.set('collPre', '1');",
+          ],
+          "type": "text/javascript",
+        },
+      },
+      {
+        "listen": "test",
+        "script": {
+          "exec": [
+            "pm.test('collection test', function () {",
+            "  pm.expect(1).to.equal(1);",
+            "});",
+          ],
+          "type": "text/javascript",
+        },
+      },
+    ],
+    "info": {
+      "name": "Baseline Project",
+      "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    },
+    "item": [
+      {
+        "auth": {
+          "apikey": [
+            {
+              "key": "key",
+              "type": "string",
+              "value": "X-Folder-Key",
+            },
+            {
+              "key": "value",
+              "type": "string",
+              "value": "{{folderKey}}",
+            },
+            {
+              "key": "in",
+              "type": "string",
+              "value": "header",
+            },
+          ],
+          "type": "apikey",
+        },
+        "event": [
+          {
+            "listen": "prerequest",
+            "script": {
+              "exec": [
+                "console.log('users folder pre');",
+              ],
+              "type": "text/javascript",
+            },
+          },
+          {
+            "listen": "test",
+            "script": {
+              "exec": [
+                "console.log('users folder test');",
+              ],
+              "type": "text/javascript",
+            },
+          },
+        ],
+        "item": [
+          {
+            "item": [
+              {
+                "name": "Create post (raw xml)",
+                "request": {
+                  "body": {
+                    "mode": "raw",
+                    "options": {
+                      "raw": {
+                        "language": "xml",
+                      },
+                    },
+                    "raw": "<post><title>Hello</title></post>",
+                  },
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/xml",
+                    },
+                  ],
+                  "method": "POST",
+                  "url": {
+                    "path": [
+                      "posts",
+                    ],
+                    "raw": "{{baseUrl}}/posts",
+                  },
+                },
+              },
+              {
+                "name": "Update post (raw text, PUT)",
+                "request": {
+                  "auth": {
+                    "apikey": [
+                      {
+                        "key": "key",
+                        "type": "string",
+                        "value": "X-Folder-Key",
+                      },
+                      {
+                        "key": "value",
+                        "type": "string",
+                        "value": "{{folderKey}}",
+                      },
+                      {
+                        "key": "in",
+                        "type": "string",
+                        "value": "header",
+                      },
+                    ],
+                    "type": "apikey",
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "options": {
+                      "raw": {
+                        "language": "text",
+                      },
+                    },
+                    "raw": "plain text body",
+                  },
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "text/plain",
+                    },
+                  ],
+                  "method": "PUT",
+                  "url": {
+                    "path": [
+                      "posts",
+                      "1",
+                    ],
+                    "raw": "{{baseUrl}}/posts/1",
+                  },
+                },
+              },
+            ],
+            "name": "Posts",
+          },
+          {
+            "event": [
+              {
+                "listen": "test",
+                "script": {
+                  "exec": [
+                    "pm.test('status is 200', function () {",
+                    "  pm.response.to.have.status(200);",
+                    "});",
+                  ],
+                  "type": "text/javascript",
+                },
+              },
+            ],
+            "name": "List users",
+            "request": {
+              "auth": {
+                "apikey": [
+                  {
+                    "key": "key",
+                    "type": "string",
+                    "value": "X-Folder-Key",
+                  },
+                  {
+                    "key": "value",
+                    "type": "string",
+                    "value": "{{folderKey}}",
+                  },
+                  {
+                    "key": "in",
+                    "type": "string",
+                    "value": "header",
+                  },
+                ],
+                "type": "apikey",
+              },
+              "description": "Lists users",
+              "header": [
+                {
+                  "key": "Accept",
+                  "value": "application/json",
+                },
+                {
+                  "disabled": true,
+                  "key": "X-Disabled",
+                  "value": "nope",
+                },
+              ],
+              "method": "GET",
+              "url": {
+                "path": [
+                  "users?page=1&trace=x",
+                ],
+                "query": [
+                  {
+                    "key": "page",
+                    "value": "1",
+                  },
+                  {
+                    "disabled": true,
+                    "key": "debug",
+                    "value": "1",
+                  },
+                  {
+                    "description": "trace id",
+                    "key": "trace",
+                    "value": "x",
+                  },
+                ],
+                "raw": "{{baseUrl}}/{{apiVersion}}/users?page=1&trace=x",
+              },
+            },
+          },
+          {
+            "event": [
+              {
+                "listen": "prerequest",
+                "script": {
+                  "exec": [
+                    "pm.environment.set('ts', Date.now());",
+                  ],
+                  "type": "text/javascript",
+                },
+              },
+            ],
+            "name": "Create user (raw json)",
+            "request": {
+              "auth": {
+                "basic": [
+                  {
+                    "key": "username",
+                    "type": "string",
+                    "value": "admin",
+                  },
+                  {
+                    "key": "password",
+                    "type": "string",
+                    "value": "{{adminPass}}",
+                  },
+                ],
+                "type": "basic",
+              },
+              "body": {
+                "mode": "raw",
+                "options": {
+                  "raw": {
+                    "language": "json",
+                  },
+                },
+                "raw": "{
+  "name": "Ada",
+  "active": true,
+  "tags": ["a", "b"]
+}",
+              },
+              "header": [
+                {
+                  "key": "Content-Type",
+                  "value": "application/json",
+                },
+              ],
+              "method": "POST",
+              "url": {
+                "path": [
+                  "users",
+                ],
+                "raw": "{{baseUrl}}/users",
+              },
+            },
+          },
+        ],
+        "name": "Users",
+      },
+      {
+        "item": [
+          {
+            "name": "Login (urlencoded)",
+            "request": {
+              "auth": {
+                "bearer": [
+                  {
+                    "key": "token",
+                    "type": "string",
+                    "value": "{{collectionToken}}",
+                  },
+                ],
+                "type": "bearer",
+              },
+              "body": {
+                "mode": "urlencoded",
+                "urlencoded": [
+                  {
+                    "key": "user",
+                    "value": "ada",
+                  },
+                  {
+                    "key": "pass",
+                    "value": "p@ss word",
+                  },
+                  {
+                    "disabled": true,
+                    "key": "remember",
+                    "value": "1",
+                  },
+                ],
+              },
+              "header": [],
+              "method": "POST",
+              "url": {
+                "path": [
+                  "login",
+                ],
+                "raw": "{{baseUrl}}/login",
+              },
+            },
+          },
+          {
+            "name": "Upload (formdata)",
+            "request": {
+              "auth": {
+                "bearer": [
+                  {
+                    "key": "token",
+                    "type": "string",
+                    "value": "{{collectionToken}}",
+                  },
+                ],
+                "type": "bearer",
+              },
+              "body": {
+                "formdata": [
+                  {
+                    "key": "title",
+                    "type": "text",
+                    "value": "My report",
+                  },
+                  {
+                    "disabled": true,
+                    "key": "notes",
+                    "type": "text",
+                    "value": "skip me",
+                  },
+                  {
+                    "key": "file",
+                    "src": "/tmp/report.pdf",
+                    "type": "file",
+                  },
+                ],
+                "mode": "formdata",
+              },
+              "header": [],
+              "method": "POST",
+              "url": {
+                "path": [
+                  "upload",
+                ],
+                "raw": "{{baseUrl}}/upload",
+              },
+            },
+          },
+          {
+            "name": "GraphQL query",
+            "request": {
+              "auth": {
+                "bearer": [
+                  {
+                    "key": "token",
+                    "type": "string",
+                    "value": "{{collectionToken}}",
+                  },
+                ],
+                "type": "bearer",
+              },
+              "body": {
+                "graphql": {
+                  "query": "query Q($id: ID!) { user(id: $id) { id name } }",
+                  "variables": "{"id":"42"}",
+                },
+                "mode": "graphql",
+              },
+              "header": [],
+              "method": "POST",
+              "url": {
+                "path": [
+                  "graphql",
+                ],
+                "raw": "{{baseUrl}}/graphql",
+              },
+            },
+          },
+        ],
+        "name": "Forms",
+      },
+      {
+        "item": [
+          {
+            "name": "Bearer request",
+            "request": {
+              "auth": {
+                "bearer": [
+                  {
+                    "key": "token",
+                    "type": "string",
+                    "value": "{{myToken}}",
+                  },
+                ],
+                "type": "bearer",
+              },
+              "header": [],
+              "method": "GET",
+              "url": {
+                "path": [
+                  "me",
+                ],
+                "raw": "{{baseUrl}}/me",
+              },
+            },
+          },
+          {
+            "name": "API key in query",
+            "request": {
+              "auth": {
+                "apikey": [
+                  {
+                    "key": "key",
+                    "type": "string",
+                    "value": "api_key",
+                  },
+                  {
+                    "key": "value",
+                    "type": "string",
+                    "value": "{{apiKey}}",
+                  },
+                  {
+                    "key": "in",
+                    "type": "string",
+                    "value": "query",
+                  },
+                ],
+                "type": "apikey",
+              },
+              "header": [],
+              "method": "GET",
+              "url": {
+                "path": [
+                  "data",
+                ],
+                "raw": "{{baseUrl}}/data",
+              },
+            },
+          },
+          {
+            "name": "OAuth2 request",
+            "request": {
+              "auth": {
+                "oauth2": [
+                  {
+                    "key": "accessToken",
+                    "value": "",
+                  },
+                  {
+                    "key": "accessTokenUrl",
+                    "value": "https://auth.example.com/token",
+                  },
+                  {
+                    "key": "authUrl",
+                    "value": "https://auth.example.com/authorize",
+                  },
+                  {
+                    "key": "clientId",
+                    "value": "my-client",
+                  },
+                  {
+                    "key": "clientSecret",
+                    "value": "{{clientSecret}}",
+                  },
+                  {
+                    "key": "scope",
+                    "value": "read write",
+                  },
+                ],
+                "type": "oauth2",
+              },
+              "header": [],
+              "method": "GET",
+              "url": {
+                "path": [
+                  "oauth-protected",
+                ],
+                "raw": "{{baseUrl}}/oauth-protected",
+              },
+            },
+          },
+        ],
+        "name": "Auth variants",
+      },
+      {
+        "name": "Root request (inherits collection bearer)",
+        "request": {
+          "auth": {
+            "bearer": [
+              {
+                "key": "token",
+                "type": "string",
+                "value": "{{collectionToken}}",
+              },
+            ],
+            "type": "bearer",
+          },
+          "header": [],
+          "method": "GET",
+          "url": {
+            "path": [
+              "ping",
+            ],
+            "raw": "{{baseUrl}}/ping",
+          },
+        },
+      },
+      {
+        "name": "DELETE with no body",
+        "request": {
+          "auth": {
+            "bearer": [
+              {
+                "key": "token",
+                "type": "string",
+                "value": "{{collectionToken}}",
+              },
+            ],
+            "type": "bearer",
+          },
+          "header": [
+            {
+              "key": "X-Reason",
+              "value": "cleanup",
+            },
+          ],
+          "method": "DELETE",
+          "url": {
+            "path": [
+              "users",
+              "7",
+            ],
+            "raw": "{{baseUrl}}/users/7",
+          },
+        },
+      },
+    ],
+    "variable": [
+      {
+        "key": "baseUrl",
+        "type": "string",
+        "value": "https://api.example.com",
+      },
+      {
+        "key": "apiVersion",
+        "type": "string",
+        "value": "v2",
+      },
+      {
+        "key": "clientSecret",
+        "type": "secret",
+        "value": "",
+      },
+    ],
+  },
+  "skipped": [],
+}
+`;
+
+exports[`baseline Postman v2.1 — import -> DB -> export > import:postman result envelope 1`] = `
+{
+  "data": {
+    "collectionId": "pm-baseline-1",
+    "endpointCount": 12,
+    "endpointIds": "<12 ids>",
+    "folderCount": 4,
+    "success": true,
+    "suggestedEnvVars": {
+      "apiVersion": "v2",
+      "baseUrl": "https://api.example.com",
+      "clientSecret": "super-secret-value",
+    },
+    "warnings": undefined,
+  },
+  "error": undefined,
+  "success": true,
+}
+`;
+
+exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the export into a fresh project (round-trip fidelity) 1`] = `
+{
+  "endpoints": [
+    {
+      "description": null,
+      "folder": "F2",
+      "method": "POST",
+      "name": "Create post (raw xml)",
+      "path": "/posts",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "apiKey": {
+            "in": "header",
+            "key": "X-Folder-Key",
+            "value": "{{folderKey}}",
+          },
+          "type": "api-key",
+        },
+        "body": {
+          "content": "<post><title>Hello</title></post>",
+          "type": "xml",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "application/xml",
+          },
+        ],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/posts",
+      },
+      "response_schemas": null,
+      "sort_order": 0,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F2",
+      "method": "PUT",
+      "name": "Update post (raw text, PUT)",
+      "path": "/posts/1",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "apiKey": {
+            "in": "header",
+            "key": "X-Folder-Key",
+            "value": "{{folderKey}}",
+          },
+          "type": "api-key",
+        },
+        "body": {
+          "content": "plain text body",
+          "type": "text",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "text/plain",
+          },
+        ],
+        "method": "PUT",
+        "params": [],
+        "url": "{{baseUrl}}/posts/1",
+      },
+      "response_schemas": null,
+      "sort_order": 1,
+      "status": "developing",
+    },
+    {
+      "description": "Lists users",
+      "folder": "F1",
+      "method": "GET",
+      "name": "List users",
+      "path": "/{{apiVersion}}/users?page=1&trace=x",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "apiKey": {
+            "in": "header",
+            "key": "X-Folder-Key",
+            "value": "{{folderKey}}",
+          },
+          "type": "api-key",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Accept",
+            "value": "application/json",
+          },
+          {
+            "enabled": false,
+            "id": "<id>",
+            "key": "X-Disabled",
+            "value": "nope",
+          },
+        ],
+        "method": "GET",
+        "params": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "page",
+            "value": "1",
+          },
+          {
+            "enabled": false,
+            "id": "<id>",
+            "key": "debug",
+            "value": "1",
+          },
+          {
+            "description": "trace id",
+            "enabled": true,
+            "id": "<id>",
+            "key": "trace",
+            "value": "x",
+          },
+        ],
+        "postScript": "pm.test('status is 200', function () {
+  pm.response.to.have.status(200);
+});",
+        "url": "{{baseUrl}}/{{apiVersion}}/users?page=1&trace=x",
+      },
+      "response_schemas": null,
+      "sort_order": 2,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F1",
+      "method": "POST",
+      "name": "Create user (raw json)",
+      "path": "/users",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "basic": {
+            "password": "{{adminPass}}",
+            "username": "admin",
+          },
+          "type": "basic",
+        },
+        "body": {
+          "content": "{
+  "name": "Ada",
+  "active": true,
+  "tags": ["a", "b"]
+}",
+          "type": "json",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "application/json",
+          },
+        ],
+        "method": "POST",
+        "params": [],
+        "preScript": "pm.environment.set('ts', Date.now());",
+        "url": "{{baseUrl}}/users",
+      },
+      "response_schemas": null,
+      "sort_order": 3,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F3",
+      "method": "POST",
+      "name": "Login (urlencoded)",
+      "path": "/login",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "urlencoded",
+          "urlEncoded": [
+            {
+              "enabled": true,
+              "id": "<id>",
+              "key": "user",
+              "value": "ada",
+            },
+            {
+              "enabled": true,
+              "id": "<id>",
+              "key": "pass",
+              "value": "p@ss word",
+            },
+            {
+              "enabled": false,
+              "id": "<id>",
+              "key": "remember",
+              "value": "1",
+            },
+          ],
+        },
+        "headers": [],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/login",
+      },
+      "response_schemas": null,
+      "sort_order": 4,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F3",
+      "method": "POST",
+      "name": "Upload (formdata)",
+      "path": "/upload",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "formData": [
+            {
+              "enabled": true,
+              "id": "<id>",
+              "key": "title",
+              "type": "text",
+              "value": "My report",
+            },
+            {
+              "enabled": false,
+              "id": "<id>",
+              "key": "notes",
+              "type": "text",
+              "value": "skip me",
+            },
+            {
+              "enabled": true,
+              "filePath": "/tmp/report.pdf",
+              "id": "<id>",
+              "key": "file",
+              "type": "file",
+              "value": "report.pdf",
+            },
+          ],
+          "type": "form-data",
+        },
+        "headers": [],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/upload",
+      },
+      "response_schemas": null,
+      "sort_order": 5,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F3",
+      "method": "POST",
+      "name": "GraphQL query",
+      "path": "/graphql",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "content": "{
+  "query": "query Q($id: ID!) { user(id: $id) { id name } }",
+  "variables": {
+    "id": "42"
+  }
+}",
+          "type": "json",
+        },
+        "headers": [],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/graphql",
+      },
+      "response_schemas": null,
+      "sort_order": 6,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F4",
+      "method": "GET",
+      "name": "Bearer request",
+      "path": "/me",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{myToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/me",
+      },
+      "response_schemas": null,
+      "sort_order": 7,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F4",
+      "method": "GET",
+      "name": "API key in query",
+      "path": "/data",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "apiKey": {
+            "in": "query",
+            "key": "api_key",
+            "value": "{{apiKey}}",
+          },
+          "type": "api-key",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/data",
+      },
+      "response_schemas": null,
+      "sort_order": 8,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F4",
+      "method": "GET",
+      "name": "OAuth2 request",
+      "path": "/oauth-protected",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "oauth2": {
+            "authUrl": "https://auth.example.com/authorize",
+            "clientId": "my-client",
+            "clientSecret": "{{clientSecret}}",
+            "grantType": "client_credentials",
+            "scope": "read write",
+            "token": "",
+            "tokenUrl": "https://auth.example.com/token",
+          },
+          "type": "oauth2",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/oauth-protected",
+      },
+      "response_schemas": null,
+      "sort_order": 9,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": null,
+      "method": "GET",
+      "name": "Root request (inherits collection bearer)",
+      "path": "/ping",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [],
+        "method": "GET",
+        "params": [],
+        "url": "{{baseUrl}}/ping",
+      },
+      "response_schemas": null,
+      "sort_order": 10,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": null,
+      "method": "DELETE",
+      "name": "DELETE with no body",
+      "path": "/users/7",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "bearer": {
+            "prefix": "Bearer",
+            "token": "{{collectionToken}}",
+          },
+          "type": "bearer",
+        },
+        "body": {
+          "type": "none",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "X-Reason",
+            "value": "cleanup",
+          },
+        ],
+        "method": "DELETE",
+        "params": [],
+        "url": "{{baseUrl}}/users/7",
+      },
+      "response_schemas": null,
+      "sort_order": 11,
+      "status": "developing",
+    },
+  ],
+  "environments": [
+    {
+      "is_active": 1,
+      "name": "Baseline Project (imported)",
+      "variables": [
+        {
+          "description": null,
+          "enabled": 1,
+          "initial_value": "https://api.example.com",
+          "key": "baseUrl",
+          "secret": 0,
+          "value": "https://api.example.com",
+        },
+        {
+          "description": null,
+          "enabled": 1,
+          "initial_value": "v2",
+          "key": "apiVersion",
+          "secret": 0,
+          "value": "v2",
+        },
+        {
+          "description": null,
+          "enabled": 1,
+          "initial_value": "",
+          "key": "clientSecret",
+          "secret": 1,
+          "value": "",
+        },
+      ],
+    },
+  ],
+  "folders": [
+    {
+      "auth": {
+        "apiKey": {
+          "in": "header",
+          "key": "X-Folder-Key",
+          "value": "{{folderKey}}",
+        },
+        "type": "api-key",
+      },
+      "label": "F1",
+      "name": "Users",
+      "parent": null,
+      "post_script": "console.log('users folder test');",
+      "pre_script": "console.log('users folder pre');",
+      "sort_order": 0,
+    },
+    {
+      "auth": null,
+      "label": "F2",
+      "name": "Posts",
+      "parent": "F1",
+      "post_script": null,
+      "pre_script": null,
+      "sort_order": 1,
+    },
+    {
+      "auth": null,
+      "label": "F3",
+      "name": "Forms",
+      "parent": null,
+      "post_script": null,
+      "pre_script": null,
+      "sort_order": 2,
+    },
+    {
+      "auth": null,
+      "label": "F4",
+      "name": "Auth variants",
+      "parent": null,
+      "post_script": null,
+      "pre_script": null,
+      "sort_order": 3,
+    },
+  ],
+  "project_shared_settings": {
+    "preScript": "pm.variables.set('collPre', '1');",
+    "testScript": "pm.test('collection test', function () {
+  pm.expect(1).to.equal(1);
+});",
+  },
+}
+`;
+
+exports[`baseline Postman v2.1 — import -> DB -> export > rejects a non-collection file and a v1 collection 1`] = `
+{
+  "bad": {
+    "error": "This file is not a Postman collection. You can't upload this file type from here.",
+    "success": false,
+  },
+  "v1": {
+    "error": "Postman v1 collections are not supported. Re-export the collection from Postman as v2.1 (Collections → ⋯ → Export → Collection v2.1) and import the resulting file.",
+    "success": false,
+  },
+}
+`;
+
+exports[`baseline Postman v2.1 — import -> DB -> export > second export is stable relative to the first (export(import(export))) 1`] = `
+{
+  "firstInfoName": "Baseline Project",
+  "sameEvents": true,
+  "sameItems": false,
+  "sameVariables": true,
+  "secondInfoName": "Roundtrip Project",
+}
+`;
