@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { toast } from '../../lib/toast'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
@@ -351,6 +352,23 @@ export default function EndpointSaveModal() {
 
         {/* Body */}
         <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Issue #269: why Save As opened for this tab — the toast that says
+              so fades, this stays while the dialog is open. Same box as the
+              "already saved" hint below (never both: an orphan has no row). */}
+          {activeTab?.orphaned && (
+            <div
+              data-testid="save-modal-orphan-notice"
+              role="note"
+              className="flex items-start gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--accent-light)] px-[11px] py-2 text-[12px] leading-[1.45] text-[var(--muted)]"
+            >
+              <AlertTriangle
+                size={12}
+                className="mt-0.5 shrink-0 text-[var(--orange)]"
+                aria-hidden="true"
+              />
+              <span>{t('endpointSave.orphanedNotice')}</span>
+            </div>
+          )}
           {isUpdate && (
             <div
               style={{

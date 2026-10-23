@@ -8,6 +8,8 @@
  *        protocol picker renders instead of the editor).
  *   #68  Add Folder must prompt with an empty name; Escape creates nothing.
  *   #70  the collapse chevron must work while the search box has text.
+ *   #269 deleting a request or folder releases its open tabs: a clean tab
+ *        closes, a dirty one stays open, unbound and dirty (Save As next).
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
@@ -32,6 +34,7 @@ vi.mock('@tanstack/react-virtual', () => ({
 const created = vi.hoisted(() => ({
   savedRequests: [] as Array<Record<string, unknown>>,
   folders: [] as Array<Record<string, unknown>>,
+  deleted: [] as string[],
 }))
 
 vi.hoisted(() => {
@@ -56,13 +59,22 @@ vi.hoisted(() => {
         })
       },
     },
-    endpoint: { get: () => Promise.resolve({ success: false, data: null }) },
+    endpoint: {
+      get: () => Promise.resolve({ success: false, data: null }),
+      delete: (id: string) => {
+        created.deleted.push(id)
+        return Promise.resolve({ success: true, data: true })
+      },
+    },
     folder: {
       create: (payload: Record<string, unknown>) => {
         created.folders.push(payload)
         return Promise.resolve({ success: true, data: { id: 'fld-new' } })
       },
-      delete: () => Promise.resolve({ success: true, data: true }),
+      delete: (id: string) => {
+        created.deleted.push(id)
+        return Promise.resolve({ success: true, data: true })
+      },
     },
   }
   const g = globalThis as unknown as { window?: { api?: unknown } }
@@ -73,7 +85,8 @@ vi.hoisted(() => {
 import TreeView from '../../src/renderer/components/sidebar/TreeView'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
-import type { TreeNode } from '../../src/renderer/types'
+import { useRequestStore } from '../../src/renderer/stores/request.store'
+import type { Tab, TreeNode } from '../../src/renderer/types'
 
 const tree: TreeNode[] = [
   {
@@ -83,6 +96,7 @@ const tree: TreeNode[] = [
     icon: 'folder',
     children: [
       { id: 'e1', label: 'Charge card', type: 'endpoint', method: 'POST', path: '/charge' },
+      { id: 'e2', label: 'Refund', type: 'endpoint', method: 'POST', path: '/refund' },
     ],
   },
 ]
@@ -98,6 +112,7 @@ describe('APIs tree (issues #68 / #69 / #70)', () => {
   beforeEach(() => {
     created.savedRequests.length = 0
     created.folders.length = 0
+    created.deleted.length = 0
     useTabsStore.setState({ tabs: [], activeTabId: null })
     useWorkspaceStore.setState({
       treeData: tree,
@@ -201,31 +216,104 @@ describe('APIs tree (issues #68 / #69 / #70)', () => {
     await waitFor(() => expect(screen.getByText('Charge card')).toBeTruthy())
   })
 
-  it('#269: deleting a folder unbinds the open tabs of its requests, keeping them open and dirty', async () => {
-    useTabsStore.setState({
-      tabs: [
-        { id: 'tab-e1', name: 'Charge card', protocol: 'http', endpointId: 'e1' },
-        { id: 'tab-other', name: 'Other', protocol: 'http', endpointId: 'elsewhere' },
-      ].map((t) => ({ ...t, isDirty: false, isLoading: false })) as never,
-      activeTabId: 'tab-e1',
-    })
-    render(<TreeView />)
-    openContextMenu('Payments')
-    fireEvent.click(screen.getByText('Delete'))
-    fireEvent.change(await screen.findByTestId('delete-confirm-input'), {
-      target: { value: 'delete' },
-    })
-    fireEvent.click(screen.getByTestId('delete-confirm-btn'))
+  // ─── Issue #269: an explicit delete releases the open tabs ──────────────
 
-    await waitFor(() =>
-      expect(
-        useTabsStore.getState().tabs.find((t) => t.id === 'tab-e1')?.endpointId,
-      ).toBeUndefined(),
-    )
-    const tabs = useTabsStore.getState().tabs
-    expect(tabs).toHaveLength(2)
-    expect(tabs.find((t) => t.id === 'tab-e1')?.isDirty).toBe(true)
-    expect(tabs.find((t) => t.id === 'tab-other')?.endpointId).toBe('elsewhere')
-    expect(tabs.find((t) => t.id === 'tab-other')?.isDirty).toBe(false)
+  function seedTabs(tabs: Array<Partial<Tab> & { id: string }>, activeTabId: string): void {
+    useTabsStore.setState({
+      tabs: tabs.map((t) => ({
+        name: t.id,
+        protocol: 'http',
+        isDirty: false,
+        isLoading: false,
+        ...t,
+      })) as Tab[],
+      activeTabId,
+    })
+  }
+
+  const tabOf = (id: string): Tab | undefined =>
+    useTabsStore.getState().tabs.find((t) => t.id === id)
+
+  async function deleteNode(label: string, typed: boolean): Promise<void> {
+    openContextMenu(label)
+    fireEvent.click(screen.getByText('Delete'))
+    if (typed) {
+      fireEvent.change(await screen.findByTestId('delete-confirm-input'), {
+        target: { value: 'delete' },
+      })
+    }
+    fireEvent.click(await screen.findByTestId('delete-confirm-btn'))
+  }
+
+  function expectOrphaned(id: string): void {
+    const tab = tabOf(id)
+    expect(tab).toBeDefined()
+    expect(tab?.endpointId).toBeUndefined()
+    expect(tab?.isDirty).toBe(true)
+    expect(tab?.orphaned).toBe(true)
+  }
+
+  it('#269: deleting a request closes its clean tab, without an unsaved-changes prompt', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      seedTabs(
+        [
+          { id: 'tab-e1', endpointId: 'e1' },
+          { id: 'tab-other', endpointId: 'elsewhere' },
+        ],
+        'tab-e1',
+      )
+      render(<TreeView />)
+      await deleteNode('Charge card', false)
+
+      await waitFor(() => expect(tabOf('tab-e1')).toBeUndefined())
+      expect(created.deleted).toEqual(['e1'])
+      expect(confirm).not.toHaveBeenCalled()
+      // The neighbour became active, protocol stores included.
+      expect(useTabsStore.getState().activeTabId).toBe('tab-other')
+      expect(useRequestStore.getState()._currentTabId).toBe('tab-other')
+      expect(tabOf('tab-other')?.endpointId).toBe('elsewhere')
+      expect(tabOf('tab-other')?.isDirty).toBe(false)
+    } finally {
+      confirm.mockRestore()
+    }
+  })
+
+  it('#269: deleting a request keeps its dirty tab open, unbound and dirty', async () => {
+    seedTabs([{ id: 'tab-e1', endpointId: 'e1', isDirty: true }], 'tab-e1')
+    render(<TreeView />)
+    await deleteNode('Charge card', false)
+
+    await waitFor(() => expect(tabOf('tab-e1')?.endpointId).toBeUndefined())
+    expectOrphaned('tab-e1')
+    expect(useTabsStore.getState().activeTabId).toBe('tab-e1')
+  })
+
+  it('#269: deleting a folder closes the clean tabs under it and orphans the dirty ones', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      seedTabs(
+        [
+          { id: 'tab-e1', endpointId: 'e1' },
+          { id: 'tab-e2', endpointId: 'e2', isDirty: true },
+          { id: 'tab-other', endpointId: 'elsewhere' },
+        ],
+        'tab-e1',
+      )
+      render(<TreeView />)
+      await deleteNode('Payments', true)
+
+      await waitFor(() => expect(tabOf('tab-e1')).toBeUndefined())
+      expect(created.deleted).toEqual(['f1'])
+      expect(confirm).not.toHaveBeenCalled()
+      expectOrphaned('tab-e2')
+      expect(tabOf('tab-other')?.endpointId).toBe('elsewhere')
+      expect(tabOf('tab-other')?.isDirty).toBe(false)
+      expect(useTabsStore.getState().tabs.map((t) => t.id)).toEqual(['tab-e2', 'tab-other'])
+      expect(useTabsStore.getState().activeTabId).toBe('tab-e2')
+      expect(useRequestStore.getState()._currentTabId).toBe('tab-e2')
+    } finally {
+      confirm.mockRestore()
+    }
   })
 })
