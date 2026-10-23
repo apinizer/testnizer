@@ -42,6 +42,7 @@ import { runAssertions, runScript, createPmApi, resolveAssertionVars } from '../
 import { absorbScriptWrites, emptyScriptWrites, sendScriptScopes } from '../lib/script-scopes'
 import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
+import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
 import { httpMaskedSendError } from '../lib/masked-send-guard'
 import { resolveHttpTimeout } from '../../shared/request-settings'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
@@ -53,46 +54,8 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
 }
 
-// ─── URL ⇄ Query-param sync (issue #22) ───────────────────────
-// The URL bar and the Params tab were independent: adding a param never
-// touched the URL. Keep them in lockstep without encoding (so `{{vars}}`
-// survive intact, matching what the URL bar renders) and without losing
-// disabled rows.
-function buildQueryString(params: KeyValuePair[]): string {
-  return params
-    .filter((p) => p.enabled && p.key.trim() !== '')
-    .map((p) => (p.value !== '' ? `${p.key}=${p.value}` : p.key))
-    .join('&')
-}
-
-/** Rewrite the URL's query string from the current params (enabled only). */
-function applyParamsToUrl(url: string, params: KeyValuePair[]): string {
-  const base = url.split('?')[0]
-  const qs = buildQueryString(params)
-  return qs ? `${base}?${qs}` : base
-}
-
-/**
- * Derive params from the URL's query, preserving any disabled rows the user
- * set in the Params tab (those never appear in the URL). Enabled rows are
- * rebuilt from the query.
- */
-function mergeParamsFromUrl(url: string, existing: KeyValuePair[]): KeyValuePair[] {
-  const qIdx = url.indexOf('?')
-  const fromUrl: KeyValuePair[] = []
-  if (qIdx !== -1) {
-    const qs = url.slice(qIdx + 1)
-    for (const pair of qs.split('&')) {
-      if (!pair) continue
-      const eq = pair.indexOf('=')
-      const key = eq === -1 ? pair : pair.slice(0, eq)
-      const value = eq === -1 ? '' : pair.slice(eq + 1)
-      fromUrl.push({ id: makeId(), key, value, enabled: true })
-    }
-  }
-  const disabled = existing.filter((p) => !p.enabled)
-  return [...fromUrl, ...disabled]
-}
+// URL ⇄ Query-param sync (issue #22): `lib/url-query-sync.ts`, shared with
+// the WebSocket and Socket.IO Params tabs.
 
 /** Snapshot of request state for a single tab */
 interface TabRequestState extends WithheldState {

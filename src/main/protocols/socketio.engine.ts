@@ -1,9 +1,33 @@
 import { io, type Socket } from 'socket.io-client'
+import {
+  DEFAULT_SIO_SETTINGS,
+  bytesToBase64,
+  decodeBinary,
+  isBinaryContentType,
+  readSioSettings,
+  type SioListenConfig,
+  type SioSettings,
+  type SioWireArg,
+  type TaggedBinary,
+} from '../../shared/realtime'
 
+/**
+ * One timeline entry pushed to the renderer.
+ *   - `in` / `out`: a received / emitted event; `args` is set when the event
+ *     carried other than exactly one argument (`data` then is the array).
+ *   - `ack`: the server's acknowledgement of an emit (`event` = the emitted
+ *     name; `error` set when none arrived in time).
+ *   - `system`: a connection-level row (`event` = `reconnecting`,
+ *     `reconnected`, `reconnect_attempt`); `data` carries the reason / attempt.
+ * Binary values are tagged `{ $binary, size }` (IPC turns Buffers into bare
+ * Uint8Arrays the renderer cannot tell from a number array).
+ */
 export interface SocketIOEvent {
-  direction: 'in' | 'out'
+  direction: 'in' | 'out' | 'ack' | 'system'
   event: string
   data: unknown
+  args?: unknown[]
+  error?: string
   timestamp: number
 }
 
@@ -13,18 +37,11 @@ export interface SocketIOConnectionInfo {
   namespace: string
 }
 
-interface SubscriptionState {
-  /**
-   * 'all'       — every received event is forwarded to the renderer.
-   *               Default after connect, used until the user explicitly
-   *               subscribes to a specific event.
-   * 'whitelist' — only events whose name appears in `whitelist` are forwarded.
-   *               Set the moment the first `socketIOSubscribe` call lands and
-   *               persists across `unsubscribe` (so removing the last name
-   *               results in *no* events surfacing, not "all again").
-   */
-  mode: 'all' | 'whitelist'
-  whitelist: Set<string>
+/** Why a connection ended without the user disconnecting it (issue #275). */
+export interface SocketIOClosedInfo {
+  connectionId: string
+  /** socket.io-client's reason (`io server disconnect`, `transport close`, …) or `reconnect failed`. */
+  reason: string
 }
 
 /**
@@ -38,6 +55,9 @@ interface SubscriptionState {
  */
 const MAX_PENDING_EVENTS = 1000
 
+/** How long an emit with "Ack" waits for the server's acknowledgement. */
+export const SIO_ACK_TIMEOUT_MS = 15_000
+
 interface Connection {
   socket: Socket
   info: SocketIOConnectionInfo
@@ -48,13 +68,19 @@ interface Connection {
    * the remainder of the connection. Cleared on disconnect.
    */
   pendingEvents: SocketIOEvent[]
-  subscription: SubscriptionState
+  /**
+   * Which received events reach the renderer (the Events tab's Listen
+   * toggles). `all` forwards everything — the pre-#283 default, still what a
+   * caller that passes no `listen` gets.
+   */
+  listen: { all: boolean; events: Set<string> }
 }
 
 /**
  * Deliver an event to the renderer callback, or buffer it (bounded) when the
- * callback has not been wired yet. Single funnel for both the inbound `onAny`
- * forward and the outbound `emit` echo so buffering/flush stays consistent.
+ * callback has not been wired yet. Single funnel for the inbound `onAny`
+ * forward, the outbound `emit` echo, acks and system rows so buffering/flush
+ * stays consistent.
  */
 function dispatchEvent(conn: Connection, event: SocketIOEvent): void {
   if (conn.onEvent) {
@@ -82,28 +108,122 @@ function makeId(): string {
   return `sio-${nextId++}-${Date.now()}`
 }
 
+// ─── Binary tagging ──────────────────────────────────────────────────────
+
+function tagBinary(bytes: Uint8Array): TaggedBinary {
+  return { $binary: bytesToBase64(bytes), size: bytes.length }
+}
+
+/**
+ * Received / emitted values made IPC-safe and displayable: Buffers and typed
+ * arrays become `{ $binary, size }`, functions (a server ack callback riding
+ * on an event) are dropped — structured clone throws on them.
+ */
+export function toWireValue(value: unknown, depth = 0): unknown {
+  if (value instanceof Uint8Array) return tagBinary(value)
+  if (value instanceof ArrayBuffer) return tagBinary(new Uint8Array(value))
+  if (ArrayBuffer.isView(value)) {
+    return tagBinary(new Uint8Array(value.buffer, value.byteOffset, value.byteLength))
+  }
+  if (depth > 32 || value === null || typeof value !== 'object') {
+    return typeof value === 'function' ? undefined : value
+  }
+  if (Array.isArray(value)) {
+    return value.filter((v) => typeof v !== 'function').map((v) => toWireValue(v, depth + 1))
+  }
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(value)) {
+    if (typeof v !== 'function') out[k] = toWireValue(v, depth + 1)
+  }
+  return out
+}
+
+function eventPayload(args: unknown[]): { data: unknown; args?: unknown[] } {
+  const wire = args.filter((a) => typeof a !== 'function').map((a) => toWireValue(a))
+  if (wire.length === 1) return { data: wire[0] }
+  return { data: wire.length === 0 ? null : wire, args: wire }
+}
+
+/**
+ * Renderer arguments → what socket.io-client sends: JSON parsed (an invalid
+ * JSON argument is an error, never silently sent as text), text as a string,
+ * base64 / hex decoded to a Buffer (a binary attachment on the wire).
+ */
+export function decodeWireArgs(args: SioWireArg[]): unknown[] {
+  return args.map((a, i) => {
+    if (a.contentType === 'json') {
+      try {
+        return JSON.parse(a.content)
+      } catch (e) {
+        throw new Error(`Argument ${i + 1} is not valid JSON: ${(e as Error).message}`)
+      }
+    }
+    if (isBinaryContentType(a.contentType)) {
+      const res = decodeBinary(a.content, a.contentType)
+      if (!res.ok) throw new Error(`Argument ${i + 1}: ${res.error}`)
+      return Buffer.from(res.bytes)
+    }
+    return a.content
+  })
+}
+
+// ─── Connect ─────────────────────────────────────────────────────────────
+
+function transportsOf(s: SioSettings): Array<'websocket' | 'polling'> {
+  if (s.transport === 'websocket') return ['websocket']
+  if (s.transport === 'polling') return ['polling']
+  return ['websocket', 'polling']
+}
+
 export async function socketIOConnect(options: {
   url: string
   namespace?: string
   auth?: Record<string, unknown>
   extraHeaders?: Record<string, string>
+  /** Settings tab (issue #283); missing keys take `DEFAULT_SIO_SETTINGS`. */
+  settings?: Partial<SioSettings>
+  /** Listened events; omitted = forward every event. */
+  listen?: SioListenConfig
+  /**
+   * Called once when the connection ends without the user disconnecting it —
+   * the server kicked the client, the transport died and no reconnection is
+   * configured, or every reconnection attempt failed (issue #275). Given at
+   * connect time so a close right after the handshake is never missed.
+   */
+  onClose?: (info: SocketIOClosedInfo) => void
   /**
    * Renderer-supplied id so `socketIOCancelConnect(id)` can abort a stalled
    * handshake. Cleared once the connection opens or fails.
    */
   pendingId?: string
 }): Promise<SocketIOConnectionInfo> {
+  const settings = readSioSettings({ ...DEFAULT_SIO_SETTINGS, ...(options.settings ?? {}) })
+  if (settings.version !== '4') {
+    throw new Error(
+      `Socket.IO client v${settings.version} is not available yet; use client version 4.`,
+    )
+  }
   return new Promise((resolve, reject) => {
     const connectionId = makeId()
     const ns = options.namespace || '/'
     const fullUrl = options.url.replace(/\/$/, '') + (ns === '/' ? '' : ns)
+    const reconnect = settings.retryCount > 0
 
     const socket = io(fullUrl, {
       auth: options.auth,
       extraHeaders: options.extraHeaders,
-      reconnection: false,
-      timeout: 10000,
-      transports: ['websocket', 'polling'],
+      path: settings.path,
+      // One Manager per request: two requests to the same server never share
+      // a transport (and its headers / TLS options).
+      forceNew: true,
+      reconnection: reconnect,
+      reconnectionAttempts: settings.retryCount,
+      reconnectionDelay: settings.retryDelay,
+      reconnectionDelayMax: Math.max(settings.retryDelay, 1),
+      randomizationFactor: 0,
+      timeout: settings.handshakeTimeout,
+      transports: transportsOf(settings),
+      rejectUnauthorized: settings.strictSSL,
     })
 
     if (options.pendingId) {
@@ -116,36 +236,87 @@ export async function socketIOConnect(options: {
       namespace: ns,
     }
 
+    let opened = false
     socket.once('connect', () => {
+      opened = true
       if (options.pendingId) pendingConnects.delete(options.pendingId)
       const conn: Connection = {
         socket,
         info,
         pendingEvents: [],
-        subscription: { mode: 'all', whitelist: new Set<string>() },
+        listen: {
+          all: options.listen ? options.listen.all : true,
+          events: new Set(options.listen?.events ?? []),
+        },
       }
       connections.set(connectionId, conn)
 
-      // Forward every server-pushed event. Filtering is applied here based on
-      // the subscription whitelist, so the `subscribe`/`unsubscribe` API only
-      // adjusts what reaches the renderer — it never re-attaches listeners on
-      // the socket.io client.
+      // Forward server-pushed events the listen config lets through. The
+      // config only adjusts what reaches the renderer — listeners are never
+      // re-attached on the socket.io client.
       socket.onAny((event: string, ...args: unknown[]) => {
-        const sub = conn.subscription
-        if (sub.mode === 'whitelist' && !sub.whitelist.has(event)) return
-        const data = args.length === 1 ? args[0] : args.length === 0 ? null : args
+        if (!conn.listen.all && !conn.listen.events.has(event)) return
         dispatchEvent(conn, {
           direction: 'in',
           event,
-          data,
+          ...eventPayload(args),
           timestamp: Date.now(),
         })
+      })
+
+      const close = (reason: string): void => {
+        // A user disconnect removed the entry first — nothing to report.
+        if (connections.get(connectionId) !== conn) return
+        connections.delete(connectionId)
+        conn.pendingEvents.length = 0
+        options.onClose?.({ connectionId, reason })
+      }
+
+      socket.on('disconnect', (reason: string) => {
+        if (connections.get(connectionId) !== conn) return
+        // `active` = the client will reconnect by itself (never after a
+        // server kick or a client disconnect, and only when reconnection
+        // is configured).
+        if (reconnect && socket.active) {
+          dispatchEvent(conn, {
+            direction: 'system',
+            event: 'reconnecting',
+            data: reason,
+            timestamp: Date.now(),
+          })
+          return
+        }
+        close(reason)
+        socket.disconnect()
+      })
+      socket.io.on('reconnect_attempt', (attempt: number) => {
+        if (connections.get(connectionId) !== conn) return
+        dispatchEvent(conn, {
+          direction: 'system',
+          event: 'reconnect_attempt',
+          data: attempt,
+          timestamp: Date.now(),
+        })
+      })
+      socket.io.on('reconnect', (attempt: number) => {
+        if (connections.get(connectionId) !== conn) return
+        dispatchEvent(conn, {
+          direction: 'system',
+          event: 'reconnected',
+          data: attempt,
+          timestamp: Date.now(),
+        })
+      })
+      socket.io.on('reconnect_failed', () => {
+        close('reconnect failed')
+        socket.disconnect()
       })
 
       resolve(info)
     })
 
     socket.once('connect_error', (err) => {
+      if (opened) return
       if (options.pendingId) pendingConnects.delete(options.pendingId)
       socket.disconnect()
       reject(new Error(err.message))
@@ -173,34 +344,89 @@ export function socketIOCancelConnect(pendingId: string): boolean {
 export function socketIODisconnect(connectionId: string): void {
   const conn = connections.get(connectionId)
   if (!conn) return
-  conn.socket.disconnect()
-  conn.pendingEvents.length = 0
+  // Removed BEFORE the socket closes: its 'disconnect' listener then knows
+  // this was the user, not the server, and reports nothing.
   connections.delete(connectionId)
+  conn.pendingEvents.length = 0
+  conn.socket.disconnect()
 }
 
-export function socketIOEmit(connectionId: string, eventName: string, data: unknown): void {
+function liveConnection(connectionId: string): Connection {
   const conn = connections.get(connectionId)
-  if (!conn) throw new Error('Not connected')
-  conn.socket.emit(eventName, data)
+  if (!conn || !conn.socket.connected) throw new Error('Not connected')
+  return conn
+}
+
+/** Emit one event with one argument (the pre-#283 API). */
+export function socketIOEmit(connectionId: string, eventName: string, data: unknown): void {
+  socketIOEmitArgs(connectionId, eventName, [data])
+}
+
+/**
+ * Emit `eventName` with any number of arguments (already decoded). With
+ * `ack`, the server's acknowledgement — or its absence after
+ * `SIO_ACK_TIMEOUT_MS` — arrives as an `ack` timeline entry.
+ */
+export function socketIOEmitArgs(
+  connectionId: string,
+  eventName: string,
+  args: unknown[],
+  opts: { ack?: boolean; ackTimeoutMs?: number } = {},
+): void {
+  const conn = liveConnection(connectionId)
+  if (opts.ack) {
+    conn.socket
+      .timeout(opts.ackTimeoutMs ?? SIO_ACK_TIMEOUT_MS)
+      .emit(eventName, ...args, (err: Error | null, ...response: unknown[]) => {
+        if (connections.get(connectionId) !== conn) return
+        dispatchEvent(conn, {
+          direction: 'ack',
+          event: eventName,
+          ...(err ? { data: null, error: err.message } : eventPayload(response)),
+          timestamp: Date.now(),
+        })
+      })
+  } else {
+    conn.socket.emit(eventName, ...args)
+  }
   dispatchEvent(conn, {
     direction: 'out',
     event: eventName,
-    data,
+    ...eventPayload(args),
     timestamp: Date.now(),
   })
 }
 
+/** Renderer-format arguments (`{content, contentType}`) decoded and emitted. */
+export function socketIOEmitWire(
+  connectionId: string,
+  eventName: string,
+  args: SioWireArg[],
+  opts: { ack?: boolean } = {},
+): void {
+  liveConnection(connectionId)
+  socketIOEmitArgs(connectionId, eventName, decodeWireArgs(args), opts)
+}
+
+/** Replace the listen config of a live connection (Events tab edit while connected). */
+export function socketIOSetListen(connectionId: string, cfg: SioListenConfig): void {
+  const conn = connections.get(connectionId)
+  if (!conn) throw new Error('Not connected')
+  conn.listen = { all: cfg.all, events: new Set(cfg.events) }
+}
+
+/** Listen to one more event (and stop forwarding the others). */
 export function socketIOSubscribe(connectionId: string, eventName: string): void {
   const conn = connections.get(connectionId)
   if (!conn) throw new Error('Not connected')
-  conn.subscription.mode = 'whitelist'
-  conn.subscription.whitelist.add(eventName)
+  conn.listen.all = false
+  conn.listen.events.add(eventName)
 }
 
 export function socketIOUnsubscribe(connectionId: string, eventName: string): void {
   const conn = connections.get(connectionId)
   if (!conn) return
-  conn.subscription.whitelist.delete(eventName)
+  conn.listen.events.delete(eventName)
 }
 
 export function socketIOSetEventCallback(

@@ -61,6 +61,8 @@ uiTest.describe('Tier 12 — Protocol advanced [MST-114..150]', () => {
     const { socketio } = getTestServerUrls()
     await openNewDropdownItem(window, /Socket\.IO/i)
     await window.getByTestId('socketio-url').fill(socketio)
+    // Issue #283: a new request listens to no event (Postman) — show them all.
+    await window.getByTestId('socketio-listen-all-inline').click()
     await window.getByTestId('socketio-connect').click()
     await expect(window.getByTestId('socketio-emit')).toBeVisible({ timeout: 15_000 })
     await window.getByPlaceholder(/event/i).first().fill('ping')

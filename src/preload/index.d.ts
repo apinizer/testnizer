@@ -528,6 +528,7 @@ interface ConsoleApi {
 // the format could not carry (issue #197) — see src/shared/collection-export.ts.
 import type { ExportSkippedItem } from '../shared/collection-export'
 import type { HistoryConfigured } from '../shared/history-snapshot'
+import type { SioListenConfig, SioSettings, SioWireArg, WsSettings } from '../shared/realtime'
 import type { MockServerKind } from '../shared/mock-kind'
 import type {
   AiApprovalDecision,
@@ -677,6 +678,8 @@ interface WsConnectOptions {
   headers?: Record<string, string>
   protocols?: string[]
   rejectUnauthorized?: boolean
+  /** Settings tab (issue #282). */
+  settings?: Partial<WsSettings>
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
@@ -694,20 +697,29 @@ interface WsConnectionInfo {
 
 interface WsEventPayload {
   connectionId: string
-  type: 'open' | 'message' | 'close' | 'error'
+  type: 'open' | 'message' | 'close' | 'error' | 'reconnecting'
   data?: string
   code?: number
   reason?: string
   timestamp: number
   messageId?: string
   contentType?: 'text' | 'json' | 'binary'
+  /** `reconnecting`: the attempt number (issue #282). */
+  attempt?: number
+  /** `open` after a reconnection. */
+  reconnected?: boolean
 }
 
 interface WsApi {
   connect(options: WsConnectOptions): Promise<IpcResult<WsConnectionInfo>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
-  send(connectionId: string, message: string): Promise<IpcResult<boolean>>
+  /** `opts.binary`: `message` is base64 / hex text sent as a binary frame (issue #282). */
+  send(
+    connectionId: string,
+    message: string,
+    opts?: { binary?: 'base64' | 'hex' },
+  ): Promise<IpcResult<boolean>>
   onEvent(callback: (event: WsEventPayload) => void): () => void
 }
 
@@ -1870,6 +1882,12 @@ interface SocketIOConnectOptions {
   bearerToken?: string
   /** Socket.IO `auth.*` payload sent during the namespace handshake. */
   auth?: Record<string, unknown>
+  /** Handshake headers (issue #283). */
+  extraHeaders?: Record<string, string>
+  /** Settings tab (issue #283). */
+  settings?: Partial<SioSettings>
+  /** Listened events (issue #283); omitted = every event. */
+  listen?: SioListenConfig
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
@@ -1880,10 +1898,18 @@ interface SocketIOConnectOptions {
 
 interface SocketIOEventPayload {
   connectionId: string
-  direction: 'in' | 'out'
+  direction: 'in' | 'out' | 'ack' | 'system'
   event: string
   data: unknown
+  args?: unknown[]
+  error?: string
   timestamp: number
+}
+
+/** `socketio:closed` — the server ended the connection (issue #275). */
+interface SocketIOClosedPayload {
+  connectionId: string
+  reason: string
 }
 
 interface SocketIOApi {
@@ -1893,7 +1919,16 @@ interface SocketIOApi {
   emit(connectionId: string, eventName: string, data: unknown): Promise<IpcResult<boolean>>
   subscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
   unsubscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
+  /** Emit with any number of `{content, contentType}` arguments, optionally asking for an ack. */
+  emitArgs(
+    connectionId: string,
+    eventName: string,
+    args: SioWireArg[],
+    opts?: { ack?: boolean },
+  ): Promise<IpcResult<boolean>>
+  setListen(connectionId: string, cfg: SioListenConfig): Promise<IpcResult<boolean>>
   onEvent(callback: (event: SocketIOEventPayload) => void): () => void
+  onClosed(callback: (event: SocketIOClosedPayload) => void): () => void
 }
 
 // ─── Updater ─────────────────────────────────────────────────────

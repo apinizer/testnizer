@@ -31,6 +31,8 @@ import {
   NOT_LOADED_ERROR,
 } from './withheld-credentials'
 import { orphanTab } from './orphan-tab'
+import { readSioMeta, readWsMeta, sioMetaOf, wsMetaOf } from './realtime-meta'
+import { mergeParamsFromUrl } from './url-query-sync'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
@@ -129,15 +131,9 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       effectiveUrl: ws.url || url,
       effectiveMethod: 'GET',
       effectiveBody: { type: 'none' },
-      protocolMeta: {
-        websocket: {
-          url: ws.url,
-          customHeaders: ws.customHeaders,
-          composerContent: ws.composerContent,
-          composerMode: ws.composerMode,
-          autoScroll: ws.autoScroll,
-        },
-      },
+      // One writer (`lib/realtime-meta.ts`), shared with the History row's
+      // `configured`: + params, settings, saved messages (issue #282).
+      protocolMeta: { websocket: wsMetaOf(ws) },
     }
   }
   if (protocol === 'sse') {
@@ -169,16 +165,9 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       effectiveUrl: sio.url || url,
       effectiveMethod: 'GET',
       effectiveBody: { type: 'none' },
-      protocolMeta: {
-        socketio: {
-          url: sio.url,
-          namespace: sio.namespace,
-          bearerToken: sio.bearerToken,
-          subscriptions: sio.subscriptions,
-          emitEvent: sio.emitEvent,
-          emitPayload: sio.emitPayload,
-        },
-      },
+      // One writer for the block (`lib/realtime-meta.ts`), shared with the
+      // History row's `configured` (issue #283).
+      protocolMeta: { socketio: sioMetaOf(sio) },
     }
   }
   if (protocol === 'grpc') {
@@ -497,32 +486,32 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
   }
 
   if (protocol === 'socketio' && meta.socketio && typeof meta.socketio === 'object') {
-    const s = meta.socketio as Record<string, unknown>
-    const sio = useSocketIOStore.getState()
-    if (typeof s.url === 'string') sio.setUrl(s.url)
-    if (typeof s.namespace === 'string') sio.setNamespace(s.namespace)
-    if (typeof s.bearerToken === 'string') sio.setBearerToken(s.bearerToken)
-    if (typeof s.emitEvent === 'string') sio.setEmitEvent(s.emitEvent)
-    if (typeof s.emitPayload === 'string') sio.setEmitPayload(s.emitPayload)
-    // Snapshotted but never restored (found with issue #182).
-    if (Array.isArray(s.subscriptions)) {
-      useSocketIOStore.setState({
-        subscriptions: s.subscriptions.filter((x): x is string => typeof x === 'string'),
-      })
-    }
+    // One reader (`lib/realtime-meta.ts`): an old row's `subscriptions` /
+    // `emitPayload` migrate, and its missing `listenAll` reads as true — the
+    // behaviour it had (issue #283).
+    const read = readSioMeta(meta.socketio)
+    useSocketIOStore.setState({
+      ...read,
+      ...(read.url !== undefined && read.params === undefined
+        ? { params: mergeParamsFromUrl(read.url, []) }
+        : {}),
+      ...(read.bearerToken !== undefined ? { bearerTokenWithheld: false } : {}),
+      activeSavedMessageId: null,
+    })
     return
   }
 
   if (protocol === 'websocket' && meta.websocket && typeof meta.websocket === 'object') {
-    const w = meta.websocket as Record<string, unknown>
-    const ws = useWebSocketStore.getState()
-    if (typeof w.url === 'string') ws.setUrl(w.url)
-    if (Array.isArray(w.customHeaders)) {
-      ws.setHeaders(w.customHeaders as KeyValuePair[])
-    }
-    if (typeof w.composerContent === 'string') ws.setComposerContent(w.composerContent)
-    if (w.composerMode === 'json' || w.composerMode === 'text') ws.setComposerMode(w.composerMode)
-    if (typeof w.autoScroll === 'boolean') ws.setAutoScroll(w.autoScroll)
+    // One reader (`lib/realtime-meta.ts`); keys an old row lacks keep the
+    // tab's defaults, missing settings read as the pre-#282 behaviour.
+    const read = readWsMeta(meta.websocket)
+    useWebSocketStore.setState({
+      ...read,
+      ...(read.url !== undefined && read.params === undefined
+        ? { params: mergeParamsFromUrl(read.url, []) }
+        : {}),
+      activeSavedMessageId: null,
+    })
     return
   }
 

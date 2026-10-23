@@ -4,14 +4,24 @@ import {
   socketIODisconnect,
   socketIOCancelConnect,
   socketIOEmit,
+  socketIOEmitWire,
+  socketIOSetListen,
   socketIOSubscribe,
   socketIOUnsubscribe,
   socketIOSetEventCallback,
+  type SocketIOClosedInfo,
   type SocketIOEvent,
 } from '../protocols/socketio.engine'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
+import {
+  isBinaryContentType,
+  utf8Length,
+  type SioListenConfig,
+  type SioSettings,
+  type SioWireArg,
+} from '../../shared/realtime'
 
 function getWindow(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
@@ -31,6 +41,49 @@ function previewJson(value: unknown, max = 80): string {
   return s.length > max ? s.slice(0, max - 1) + '…' : s
 }
 
+/**
+ * The connection ended without the user disconnecting it (issue #275): the
+ * server kicked the client, the transport died, or reconnection gave up.
+ * Mirrors `mcp:connectionClosed`: a dedicated push the store routes to the
+ * owning tab, the context dropped, one Console line.
+ */
+function handleServerClose({ connectionId, reason }: SocketIOClosedInfo): void {
+  getWindow()?.webContents.send('socketio:closed', { connectionId, reason })
+  const ctx = sioContext.get(connectionId)
+  sioContext.delete(connectionId)
+  logEvent({
+    protocol: 'socketio',
+    category: 'connection',
+    level: 'warning',
+    message: `Socket.IO connection closed by the server (${connectionId}): ${reason}`,
+    url: ctx?.url,
+    direction: 'in',
+    durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+  })
+}
+
+/**
+ * Console body of an emit: ONE JSON array (JSON arguments parsed, text as
+ * strings, binary as a marker). A single JSON value is what the Console's
+ * name rule masks (`"password": …`) — a comma-joined list of arguments would
+ * not look like JSON and a literal credential would reach the Console.
+ */
+function argsConsoleBody(args: SioWireArg[]): string {
+  return JSON.stringify(
+    args.map((a) => {
+      if (isBinaryContentType(a.contentType)) return `<binary ${a.contentType}>`
+      if (a.contentType === 'json') {
+        try {
+          return JSON.parse(a.content) as unknown
+        } catch {
+          return a.content
+        }
+      }
+      return a.content
+    }),
+  )
+}
+
 export function registerSocketIOHandlers(): void {
   ipcMain.handle(
     'socketio:connect',
@@ -41,6 +94,10 @@ export function registerSocketIOHandlers(): void {
         namespace?: string
         auth?: Record<string, unknown>
         extraHeaders?: Record<string, string>
+        /** Settings tab (issue #283). */
+        settings?: Partial<SioSettings>
+        /** Listened events (issue #283); omitted = every event. */
+        listen?: SioListenConfig
         _workspaceId?: string
         _projectId?: string
         _endpointId?: string
@@ -57,6 +114,9 @@ export function registerSocketIOHandlers(): void {
           namespace: options.namespace,
           auth: options.auth,
           extraHeaders: options.extraHeaders,
+          settings: options.settings,
+          listen: options.listen,
+          onClose: handleServerClose,
           pendingId: options._pendingId,
         })
         const connectedAt = Date.now()
@@ -96,6 +156,7 @@ export function registerSocketIOHandlers(): void {
               namespace: options.namespace,
               hasAuth: !!options.auth,
               extraHeaders: options.extraHeaders,
+              ...(options.settings ? { settings: options.settings } : {}),
               ...(options._configured ? { configured: options._configured } : {}),
             }),
             extra_secrets: Object.values(options.auth ?? {}),
@@ -218,6 +279,61 @@ export function registerSocketIOHandlers(): void {
       }
     },
   )
+
+  ipcMain.handle(
+    'socketio:emitArgs',
+    (
+      _event,
+      connectionId: string,
+      eventName: string,
+      args: SioWireArg[],
+      opts?: { ack?: boolean },
+    ) => {
+      try {
+        socketIOEmitWire(connectionId, eventName, Array.isArray(args) ? args : [], {
+          ack: opts?.ack === true,
+        })
+        const ctx = sioContext.get(connectionId)
+        const body = argsConsoleBody(Array.isArray(args) ? args : [])
+        logEvent({
+          protocol: 'socketio',
+          category: 'event',
+          message: `Socket.IO → ${eventName}${opts?.ack ? ' (ack)' : ''}: ${previewJson(body)}`,
+          direction: 'out',
+          eventName,
+          body,
+          url: ctx?.url,
+          sizeBytes: utf8Length(body),
+          durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+          meta: { args: args.length, ack: opts?.ack === true },
+        })
+        return { success: true, data: true }
+      } catch (e) {
+        const err = e as Error
+        logEvent({
+          protocol: 'socketio',
+          category: 'event',
+          message: `Socket.IO emit '${eventName}' failed: ${err.message}`,
+          direction: 'out',
+          eventName,
+          error: { message: err.message },
+        })
+        return { success: false, error: err.message }
+      }
+    },
+  )
+
+  ipcMain.handle('socketio:setListen', (_event, connectionId: string, cfg: SioListenConfig) => {
+    try {
+      socketIOSetListen(connectionId, {
+        all: cfg?.all === true,
+        events: Array.isArray(cfg?.events) ? cfg.events.filter((e) => typeof e === 'string') : [],
+      })
+      return { success: true, data: true }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
 
   ipcMain.handle('socketio:subscribe', (_event, connectionId: string, eventName: string) => {
     try {

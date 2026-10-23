@@ -67,20 +67,26 @@ export function graphqlMaskedSendError(req: {
   })
 }
 
-/** WebSocket connect (URL + headers) or a composer message. */
+/** WebSocket connect (URL + headers + params) or a composer message. */
 export function wsMaskedSendError(req: {
   url?: string
   customHeaders?: KeyValuePair[]
+  params?: KeyValuePair[]
   composerContent?: string
 }): string | null {
   return maskedCredentialsGuard(req)
 }
 
-/** Socket.IO connect (URL + auth token) or an emit payload. */
+/** Socket.IO connect (URL + headers + params + auth token) or an emit's arguments. */
 export function socketioMaskedSendError(req: {
   url?: string
   bearerToken?: string
+  customHeaders?: KeyValuePair[]
+  params?: KeyValuePair[]
+  /** Pre-#283 single payload. */
   emitPayload?: string
+  /** Each argument's content (issue #283). */
+  emitArgs?: string[]
 }): string | null {
   return maskedCredentialsGuard(req)
 }

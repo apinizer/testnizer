@@ -148,7 +148,7 @@ describe('Socket.IO store', () => {
       _tabStates: new Map([['tab-2', { ...useSocketIOStore.getState(), events: [received] }]]),
       url: 'http://config.example.test',
       namespace: '/chat',
-      emitPayload: '{"draft":true}',
+      emitArgs: [{ id: 'a1', content: '{"draft":true}', contentType: 'json' }],
       events: [received],
       errorMessage: CANARY,
     })
@@ -172,6 +172,27 @@ describe('Socket.IO store', () => {
     expect(useSocketIOStore.getState().url).toBe('http://config.example.test')
     expect(useSocketIOStore.getState().events).toEqual([])
     expect(raw(KEY)).not.toContain(CANARY)
+  })
+
+  it('a pre-#283 snapshot (subscriptions / emitPayload) keeps showing every event', async () => {
+    const old = {
+      url: 'http://old.example.test',
+      subscriptions: ['chat'],
+      newSubscription: '',
+      emitEvent: 'go',
+      emitPayload: '{"a":1}',
+    }
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ current: old, _currentTabId: 'tab-1', _tabStates: [['tab-2', old]] }),
+    )
+    const { useSocketIOStore } = await import('../../src/renderer/stores/socketio.store')
+    const st = useSocketIOStore.getState()
+    expect(st.listenAll).toBe(true)
+    expect(st.listeners.map((l) => l.name)).toEqual(['chat'])
+    expect(st.emitArgs.map((a) => [a.content, a.contentType])).toEqual([['{"a":1}', 'json']])
+    expect(st._tabStates.get('tab-2')?.listenAll).toBe(true)
+    expect(raw(KEY)).not.toContain('subscriptions')
   })
 })
 

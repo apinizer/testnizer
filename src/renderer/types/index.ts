@@ -910,10 +910,14 @@ export interface ConsoleLog {
 
 export interface WsMessage {
   id: string
-  direction: 'sent' | 'received'
+  /** `system`: a connection row (issue #282) — `event` names it, `content` carries the detail. */
+  direction: 'sent' | 'received' | 'system'
+  /** `binary`: `content` is base64. */
   content: string
-  contentType: 'text' | 'json' | 'binary'
+  contentType: 'text' | 'json' | 'xml' | 'html' | 'binary'
   timestamp: number
+  /** System rows: `connected`, `disconnected`, `error`, `reconnecting`, `reconnected`. */
+  event?: string
 }
 
 // ─── SSE ─────────────────────────────────────────────────────

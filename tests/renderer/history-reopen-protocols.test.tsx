@@ -501,9 +501,64 @@ describe('SSE / Socket.IO reopen in their own editors (issue #182)', () => {
     expect(sio.url).toBe('http://sio.test')
     expect(sio.namespace).toBe('/chat')
     expect(sio.bearerToken).toBe('{{secret}}')
-    expect(sio.subscriptions).toEqual(['message', 'typing'])
+    // A row written before issue #283: its subscriptions become listened
+    // events, and it keeps showing every event (it never filtered on reopen).
+    expect(sio.listeners.map((l) => [l.name, l.listen])).toEqual([
+      ['message', true],
+      ['typing', true],
+    ])
+    expect(sio.listenAll).toBe(true)
     expect(sio.emitEvent).toBe('join')
-    expect(sio.emitPayload).toBe('{"room":1}')
+    expect(sio.emitArgs.map((a) => [a.content, a.contentType])).toEqual([['{"room":1}', 'json']])
+  })
+
+  it('Socket.IO, issue #283 template row: headers, params, settings, listeners, args, saved messages', () => {
+    openRow(
+      storedRow('socketio', 'http://sio.test?room=1', {
+        url: 'http://sio.test?room=1',
+        configured: {
+          url: 'http://sio.test?room=1',
+          meta: {
+            socketio: {
+              url: 'http://sio.test?room=1',
+              namespace: '/',
+              bearerToken: '',
+              customHeaders: [{ id: 'h1', key: 'X-Team', value: '{{team}}', enabled: true }],
+              params: [{ id: 'p1', key: 'room', value: '1', enabled: true }],
+              settings: { handshakeTimeout: 3000, retryCount: 2, path: '/io', strictSSL: false },
+              listeners: [{ id: 'l1', name: 'chat', description: 'room chat', listen: false }],
+              listenAll: false,
+              emitEvent: 'join',
+              emitArgs: [
+                { id: 'a1', content: 'hi', contentType: 'text' },
+                { id: 'a2', content: 'AQI=', contentType: 'base64' },
+              ],
+              emitAck: true,
+              savedMessages: [
+                { id: 'm1', name: 'Join', eventName: 'join', acknowledgement: true, args: [] },
+              ],
+            },
+          },
+        },
+      }),
+    )
+    const sio = useSocketIOStore.getState()
+    expect(sio.customHeaders.map((h) => [h.key, h.value])).toEqual([['X-Team', '{{team}}']])
+    expect(sio.params.map((p) => [p.key, p.value])).toEqual([['room', '1']])
+    expect(sio.settings).toMatchObject({
+      handshakeTimeout: 3000,
+      retryCount: 2,
+      path: '/io',
+      strictSSL: false,
+      version: '4',
+    })
+    expect(sio.listeners).toEqual([
+      { id: 'l1', name: 'chat', description: 'room chat', listen: false },
+    ])
+    expect(sio.listenAll).toBe(false)
+    expect(sio.emitAck).toBe(true)
+    expect(sio.emitArgs.map((a) => a.contentType)).toEqual(['text', 'base64'])
+    expect(sio.savedMessages.map((m) => m.name)).toEqual(['Join'])
   })
 
   it('Socket.IO, old row that sent a token: token empty, and the note names it', () => {

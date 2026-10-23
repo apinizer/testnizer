@@ -37,8 +37,9 @@ describe('WebSocketEditor header (issue #248)', () => {
     useUIStore.getState().setLocale('tr')
     const header = show()
     expect(header).toHaveTextContent('Bağlı')
-    expect(document.body.textContent).not.toMatch(/\bConnected\b|Custom Headers/)
-    expect(document.body.textContent).toContain('Özel Başlıklar')
+    expect(document.body.textContent).not.toMatch(/\bConnected\b|Custom Headers|\bHeaders\b/)
+    // Issue #282: the request tab strip (the HTTP editor's labels).
+    expect(document.body.textContent).toContain('Başlıklar')
     const badge = Array.from(header.querySelectorAll('span')).find(
       (s) => s.textContent === 'Bağlı',
     )!
@@ -49,6 +50,6 @@ describe('WebSocketEditor header (issue #248)', () => {
   it('EN text unchanged', () => {
     const header = show()
     expect(header).toHaveTextContent('Connected')
-    expect(document.body.textContent).toContain('Custom Headers')
+    expect(document.body.textContent).toContain('Headers')
   })
 })
