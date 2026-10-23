@@ -39,6 +39,7 @@ import {
   resolveRequestBody,
 } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi, resolveAssertionVars } from '../lib/test-runner'
+import { absorbScriptWrites, emptyScriptWrites, sendScriptScopes } from '../lib/script-scopes'
 import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
 import { httpMaskedSendError } from '../lib/masked-send-guard'
@@ -645,6 +646,14 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const effectiveAuth = inheritance.auth
     const preScripts = inheritance.preScripts
     const postScripts = inheritance.postScripts
+    // `pm.info.requestId` / `pm.execution.location` — what Run reports too.
+    const scriptRequestId = activeTab?.endpointId ?? activeTab?.savedRequestId
+    const scriptRequestName = activeTab?.name ?? ''
+    const scriptLocation = [...(inheritance.folderNames ?? []), scriptRequestName]
+    // Per-scope writes of the earlier scripts in this send's cascade: each pm
+    // scope stays separate (issue #281); `scriptOverrides` below is the merged
+    // view `{{var}}` resolution reads.
+    const scriptWrites = emptyScriptWrites()
 
     const preScriptLogs: ConsoleLog[] = []
 
@@ -668,23 +677,20 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // so a project/folder script's env writes are visible to inner scripts.
     for (const script of preScripts) {
       if (!script || !script.trim()) continue
-      // Rebuild the env map each iteration so later scripts see earlier writes.
-      const activeVarsRecord = { ...envStore.getActiveVariables(), ...scriptOverrides }
-      const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
-      const globalMap = new Map<string, string>()
-      const globalVars = envStore.globalVariables || []
-      for (const gv of globalVars) {
-        if (gv.enabled) globalMap.set(gv.key, gv.value || gv.initialValue || '')
-      }
+      // Rebuild the scope maps each iteration so later scripts see earlier writes.
+      const { envMap, globalMap, localVars } = sendScriptScopes(scriptWrites)
       // Pre-request scripts don't read response — supply an empty shell so the
       // pm API contract is satisfied.
       const emptyResp: ApiResponse = { requestId: makeId(), protocol: 'http', timing: { total: 0 } }
-      const requestName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
       // Populate pm.request with the user-typed values so the script can read
       // method/url/headers BEFORE variable resolution (Mehmet BUG-01).
       const pmApi = createPmApi(emptyResp, envMap, globalMap, {
         eventName: 'prerequest',
-        requestName,
+        requestName: scriptRequestName,
+        requestId: scriptRequestId,
+        location: scriptLocation,
+        localVars,
+        body,
         request: {
           method,
           url,
@@ -695,6 +701,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         projectId: wsStore.activeProjectId || undefined,
       })
       const scriptResult = await runScript(script, pmApi)
+      absorbScriptWrites(scriptWrites, scriptResult)
       // test-runner emits 'info'/'debug' via console.info/debug — flatten those
       // into 'log' so they satisfy ConsoleLog's narrower level union.
       for (const log of scriptResult.consoleLogs) {
@@ -1005,22 +1012,19 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         // folder(s) → request). pm.test results from every level are merged.
         for (const script of postScripts) {
           if (!script || !script.trim()) continue
-          const activeVarsRecord = { ...envStore.getActiveVariables(), ...scriptOverrides }
-          const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
-          const globalMap = new Map<string, string>()
-          // Populate global vars
-          const globalVars = envStore.globalVariables || []
-          for (const gv of globalVars) {
-            if (gv.enabled) globalMap.set(gv.key, gv.value || gv.initialValue || '')
-          }
-
-          const requestName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+          const { envMap, globalMap, localVars } = sendScriptScopes(scriptWrites)
           const pmApi = createPmApi(apiResp, envMap, globalMap, {
             eventName: 'test',
-            requestName,
+            requestName: scriptRequestName,
+            requestId: scriptRequestId,
+            location: scriptLocation,
+            localVars,
+            // `pm.request.body` is the body as defined — the same source Run uses.
+            body,
             projectId: wsStore.activeProjectId || undefined,
           })
           const scriptResult = await runScript(script, pmApi)
+          absorbScriptWrites(scriptWrites, scriptResult)
           allTestResults.push(...scriptResult.results)
           allConsoleLogs.push(...scriptResult.consoleLogs)
           // Fold writes into the overlay so a later cascade script sees them.

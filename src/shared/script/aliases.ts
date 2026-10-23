@@ -21,8 +21,8 @@ export function buildInsomnia(ctx: ScriptHostContext): object {
     baseEnvironment: unknown
     response: unknown
   }
-  // Guard on `r` (the normalized response), NOT pm.response — in pre-request
-  // scope pm.response is a getter that throws, so only touch it when r exists.
+  // Guard on `r` (the normalized response): in pre-request scope pm.response
+  // does not exist (Postman), so only touch it when r exists.
   const insomniaResponse = r ? { ...(pm.response as object), status: r.code } : null
   Object.defineProperties(insomnia, {
     baseEnvironment: { value: pm.collectionVariables, enumerable: true },

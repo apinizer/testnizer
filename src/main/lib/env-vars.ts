@@ -70,8 +70,19 @@ function undecryptable(key: string): string {
   return ''
 }
 
-export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
-  const vars: Record<string, string> = {}
+/**
+ * The same variables, kept apart by scope: `globals` (workspace globals, then
+ * project globals over them) and `environment` (the active / requested
+ * environment). The Collection Runner backs the separate `pm.globals` and
+ * `pm.environment` script objects with these (issue #281); `loadEnvVars` is
+ * their merge.
+ */
+export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
+  globals: Record<string, string>
+  environment: Record<string, string>
+} {
+  const globals: Record<string, string> = {}
+  const environment: Record<string, string> = {}
   const db = getDb()
 
   if (opts.workspaceId) {
@@ -80,7 +91,7 @@ export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
         'SELECT key, value, initial_value FROM global_variables WHERE workspace_id = ? AND enabled = 1',
       )
       .all(opts.workspaceId) as DualValueRow[]
-    for (const r of rows) vars[r.key] = effectiveValue(r)
+    for (const r of rows) globals[r.key] = effectiveValue(r)
   }
 
   if (opts.projectId) {
@@ -89,7 +100,7 @@ export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
         'SELECT key, value, initial_value FROM global_variables WHERE project_id = ? AND enabled = 1',
       )
       .all(opts.projectId) as DualValueRow[]
-    for (const r of rows) vars[r.key] = effectiveValue(r)
+    for (const r of rows) globals[r.key] = effectiveValue(r)
   }
 
   let effectiveEnvId = opts.environmentId
@@ -109,8 +120,13 @@ export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
         'SELECT key, value, initial_value FROM environment_variables WHERE environment_id = ? AND enabled = 1',
       )
       .all(effectiveEnvId) as DualValueRow[]
-    for (const r of rows) vars[r.key] = effectiveValue(r)
+    for (const r of rows) environment[r.key] = effectiveValue(r)
   }
 
-  return vars
+  return { globals, environment }
+}
+
+export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
+  const { globals, environment } = loadEnvVarScopes(opts)
+  return { ...globals, ...environment }
 }

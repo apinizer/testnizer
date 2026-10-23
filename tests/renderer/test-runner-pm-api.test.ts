@@ -321,13 +321,16 @@ describe('pre-request scripts', () => {
     expect(out.consoleLogs.some((l) => l.level === 'error')).toBe(false)
   })
 
-  it('accessing pm.response in a pre-request script throws a clear error', async () => {
+  it('pm.response does not exist in a pre-request script (Postman; issue #281)', async () => {
+    // postman-sandbox defines pm.response only for the 'test' target, so an
+    // `if (pm.response)` guard must not throw. It used to (BUG-07 getter).
     const pm = makePm(makeResponse(), {}, {}, { eventName: 'prerequest', requestName: 'pre' })
-    const out = await runScript(`var c = pm.response.code`, pm)
-    // The guard throws; runScript captures it as an error console log.
-    const errLog = out.consoleLogs.find((l) => l.level === 'error')
-    expect(errLog).toBeDefined()
-    expect(errLog?.message).toMatch(/pm\.response is not available in pre-request scripts/)
+    const out = await runScript(
+      `pm.environment.set('r', String(pm.response)); pm.environment.set('in', String('response' in pm))`,
+      pm,
+    )
+    expect(out.envUpdates).toEqual({ r: 'undefined', in: 'false' })
+    expect(out.scriptError).toBeUndefined()
   })
 
   it('pm.info exposes eventName and requestName', async () => {

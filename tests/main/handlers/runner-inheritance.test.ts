@@ -6,7 +6,13 @@
  * `runner:execute`, capturing what the (stubbed) HTTP engine actually received.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { setupHandlerHarness, makeElectronMock, createTestDb, seedProject, seedWorkspace } from './helpers'
+import {
+  setupHandlerHarness,
+  makeElectronMock,
+  createTestDb,
+  seedProject,
+  seedWorkspace,
+} from './helpers'
 import crypto from 'node:crypto'
 import type Database from 'better-sqlite3'
 
@@ -138,7 +144,10 @@ describe('runner — folder auth inheritance', () => {
     })) as { success: boolean }
     expect(res.success).toBe(true)
     expect(sent).toHaveLength(1)
-    expect(sent[0].auth).toEqual({ type: 'bearer', bearer: { token: 'SECRET123', prefix: 'Bearer' } })
+    expect(sent[0].auth).toEqual({
+      type: 'bearer',
+      bearer: { token: 'SECRET123', prefix: 'Bearer' },
+    })
   })
 
   it('inner folder auth overrides outer; explicit request auth is not overridden', async () => {
@@ -305,7 +314,10 @@ describe('runner — suite folder cascade', () => {
     })
     expect(sent).toHaveLength(1)
     // Inner folder wins over outer, and its {{tok}} resolves from the env.
-    expect(sent[0].auth).toEqual({ type: 'bearer', bearer: { token: 'SECRET123', prefix: 'Bearer' } })
+    expect(sent[0].auth).toEqual({
+      type: 'bearer',
+      bearer: { token: 'SECRET123', prefix: 'Bearer' },
+    })
   })
 
   it('pm.variables.set propagates to a later request within the same run', async () => {
@@ -386,5 +398,42 @@ describe('runner — suite folder cascade', () => {
       endpointIds: [a, b, c],
     })
     expect(sent.map((s) => s.url)).toEqual(['http://api.test/a', 'http://api.test/c'])
+  })
+
+  it('setNextRequest called from a pm.sendRequest callback still redirects (issue #281)', async () => {
+    // The shared pm factory reports flow control after the script's sends and
+    // tests have drained — a callback that runs late must not be lost.
+    const suiteId = seedSuite(testDb, projectId)
+    const a = seedSuiteItem(testDb, suiteId, null, {
+      name: 'A',
+      url: 'http://api.test/a',
+      method: 'GET',
+      auth: { type: 'none' },
+      postScript:
+        "pm.sendRequest('http://api.test/probe', function () { pm.execution.setNextRequest('C') })",
+    })
+    const b = seedSuiteItem(testDb, suiteId, null, {
+      name: 'B',
+      url: 'http://api.test/b',
+      method: 'GET',
+      auth: { type: 'none' },
+    })
+    const c = seedSuiteItem(testDb, suiteId, null, {
+      name: 'C',
+      url: 'http://api.test/c',
+      method: 'GET',
+      auth: { type: 'none' },
+    })
+
+    await harness.invoke('runner:execute', {
+      projectId,
+      environmentId: envId,
+      endpointIds: [a, b, c],
+    })
+    expect(sent.map((s) => s.url)).toEqual([
+      'http://api.test/a',
+      'http://api.test/probe',
+      'http://api.test/c',
+    ])
   })
 })

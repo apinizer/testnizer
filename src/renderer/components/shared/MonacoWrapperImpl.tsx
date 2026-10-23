@@ -5,6 +5,7 @@ import type { editor } from 'monaco-editor'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import { DYNAMIC_VARIABLES } from '../../../shared/dynamic-variables'
 
 /** CSS class name used by Monaco decorations to colorize {{variables}} */
 const VARIABLE_DECO_CLASS = 'monaco-variable-highlight'
@@ -62,19 +63,8 @@ function applyVariableHighlights(
 // entirely from the app bundle.
 loader.config({ monaco })
 
-/** Built-in dynamic variables for Monaco autocomplete */
-const BUILTIN_DYNAMIC_VARS: { name: string; description: string }[] = [
-  { name: '$randomInt', description: 'Random integer 0-1000' },
-  { name: '$randomInt(min,max)', description: 'Random integer in range' },
-  { name: '$timestamp', description: 'Unix timestamp (seconds)' },
-  { name: '$isoTimestamp', description: 'ISO 8601 date string' },
-  { name: '$randomUUID', description: 'Random UUID v4' },
-  { name: '$randomEmail', description: 'Random email address' },
-  { name: '$randomName', description: 'Random full name' },
-  { name: '$randomString', description: 'Random 8-char string' },
-  { name: '$randomString(n)', description: 'Random n-char string' },
-  { name: '$datetime(format)', description: 'Formatted date (YYYY-MM-DD etc.)' },
-]
+/** Built-in dynamic variables — the shared table Send, Run and Mock resolve (issue #281). */
+const BUILTIN_DYNAMIC_VARS: readonly { name: string; description: string }[] = DYNAMIC_VARIABLES
 
 interface MonacoWrapperProps {
   value: string

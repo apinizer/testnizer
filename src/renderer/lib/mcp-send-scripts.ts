@@ -34,6 +34,12 @@ import { useWorkspaceStore } from '../stores/workspace.store'
 import { useEnvironmentStore } from '../stores/environment.store'
 import { useConsoleStore } from '../stores/console.store'
 import { mcpDisplayTarget } from '../../shared/mcp-call'
+import {
+  absorbScriptWrites,
+  emptyScriptWrites,
+  sendScriptScopes,
+  type SendScriptWrites,
+} from './script-scopes'
 
 /** What the Test Results view of one call shows. */
 export interface McpTestRun {
@@ -56,6 +62,11 @@ export interface McpScriptContext {
   assertions: TestAssertion[]
   /** This send's script writes (local > env > global, like `pm.variables.get`). */
   overrides: Record<string, string>
+  /** The same writes kept per scope, for the next script's pm scopes (issue #281). */
+  writes?: SendScriptWrites
+  /** `pm.info.requestId` and the folder names for `pm.execution.location`. */
+  requestId?: string
+  folderNames?: string[]
   logs: ConsoleLog[]
 }
 
@@ -97,6 +108,8 @@ export function beginMcpScripts(
       .map((h) => ({ key: h.key, value: h.value })),
     assertions,
     overrides: {},
+    writes: emptyScriptWrites(),
+    requestId: tab?.endpointId ?? tab?.savedRequestId,
     logs: [],
   }
   return resolveInheritance({
@@ -111,20 +124,13 @@ export function beginMcpScripts(
     ...base,
     preScripts: inh.preScripts.filter(hasCode),
     postScripts: inh.postScripts.filter(hasCode),
+    folderNames: inh.folderNames ?? [],
   }))
 }
 
 /** The variables a `{{var}}` in this send resolves against (env + script writes). */
 export function mcpSendVars(ctx: McpScriptContext): Record<string, string> {
   return { ...useEnvironmentStore.getState().getActiveVariables(), ...ctx.overrides }
-}
-
-function globalVarMap(): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const gv of useEnvironmentStore.getState().globalVariables || []) {
-    if (gv.enabled) map.set(gv.key, gv.value || gv.initialValue || '')
-  }
-  return map
 }
 
 /** Fold a script's writes into the send and persist env / global ones (HTTP's rule). */
@@ -134,6 +140,7 @@ function absorb(ctx: McpScriptContext, r: ScriptRunResult): void {
     ctx.logs.push({ level, message: log.message, timestamp: log.timestamp })
   }
   Object.assign(ctx.overrides, r.globalUpdates, r.envUpdates, r.varUpdates)
+  absorbScriptWrites((ctx.writes ??= emptyScriptWrites()), r)
   if (Object.keys(r.envUpdates).length > 0 || Object.keys(r.globalUpdates).length > 0) {
     void useEnvironmentStore.getState().applyScriptUpdates(r.envUpdates, r.globalUpdates)
   }
@@ -152,10 +159,13 @@ const EMPTY_RESPONSE = (): ApiResponse => ({
 export async function runMcpPreScripts(ctx: McpScriptContext): Promise<McpPreOutcome> {
   let skipped = false
   for (const script of ctx.preScripts) {
-    const envMap = new Map(Object.entries(mcpSendVars(ctx)))
-    const pmApi = createPmApi(EMPTY_RESPONSE(), envMap, globalVarMap(), {
+    const { envMap, globalMap, localVars } = sendScriptScopes((ctx.writes ??= emptyScriptWrites()))
+    const pmApi = createPmApi(EMPTY_RESPONSE(), envMap, globalMap, {
       eventName: 'prerequest',
       requestName: ctx.requestName,
+      requestId: ctx.requestId,
+      location: [...(ctx.folderNames ?? []), ctx.requestName],
+      localVars,
       request: { method: 'MCP', url: ctx.url, headers: ctx.headers },
       projectId: ctx.projectId,
     })
@@ -220,10 +230,13 @@ export async function runMcpPostChecks(
   const mcp = mcpScriptInfo(outcome) ?? undefined
   let scriptError: string | undefined
   for (const script of ctx.postScripts) {
-    const envMap = new Map(Object.entries(mcpSendVars(ctx)))
-    const pmApi = createPmApi(response, envMap, globalVarMap(), {
+    const { envMap, globalMap, localVars } = sendScriptScopes((ctx.writes ??= emptyScriptWrites()))
+    const pmApi = createPmApi(response, envMap, globalMap, {
       eventName: 'test',
       requestName: ctx.requestName,
+      requestId: ctx.requestId,
+      location: [...(ctx.folderNames ?? []), ctx.requestName],
+      localVars,
       projectId: ctx.projectId,
     })
     const r = await runScript(script, pmApi, { mcp })

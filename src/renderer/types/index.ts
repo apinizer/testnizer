@@ -980,6 +980,8 @@ export interface TestResult {
   passed: boolean
   actual?: string | number
   error?: string
+  /** `pm.test.skip(...)` — never ran; recorded as not-failed (issue #281). */
+  skipped?: boolean
 }
 
 // ─── History ─────────────────────────────────────────────────

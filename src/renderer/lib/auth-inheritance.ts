@@ -29,6 +29,7 @@ export interface StoredProjectSettings {
 export interface FolderLike {
   id: string
   parent_id: string | null
+  name?: string
   auth?: string | null
   pre_script?: string | null
   post_script?: string | null
@@ -141,6 +142,8 @@ interface ResolveOutput {
   auth: AuthConfig | null
   preScripts: string[]
   postScripts: string[]
+  /** Folder names, outermost first — `pm.execution.location` (issue #281). */
+  folderNames: string[]
 }
 
 /**
@@ -154,6 +157,7 @@ export async function resolveInheritance(input: ResolveInput): Promise<ResolveOu
     auth: input.requestAuth && input.requestAuth.type !== 'inherit' ? input.requestAuth : null,
     preScripts: input.requestPre && input.requestPre.trim() ? [input.requestPre] : [],
     postScripts: input.requestPost && input.requestPost.trim() ? [input.requestPost] : [],
+    folderNames: [],
   }
   if (!input.projectId) return fallback
 
@@ -206,7 +210,12 @@ export async function resolveInheritance(input: ResolveInput): Promise<ResolveOu
       input.requestPre,
       input.requestPost,
     )
-    return { auth, preScripts: pre, postScripts: post }
+    return {
+      auth,
+      preScripts: pre,
+      postScripts: post,
+      folderNames: chain.map((f) => f.name ?? ''),
+    }
   } catch {
     return fallback
   }

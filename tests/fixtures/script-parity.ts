@@ -32,7 +32,33 @@ export interface ParityCase {
   /** Deterministic env writes the script must produce (subset match). */
   expectEnv: Record<string, string>
   /** pm.test() / legacy tests[...] outcomes the script must produce. */
-  expectTests: Array<{ name: string; passed: boolean }>
+  expectTests: Array<{ name: string; passed: boolean; skipped?: boolean }>
+  /**
+   * 'prerequest' runs the script as the request's pre-request script (Send:
+   * eventName 'prerequest', no response; Run: the endpoint's preScript).
+   * Default: post-response.
+   */
+  phase?: 'prerequest' | 'test'
+  /** Active-environment / project-global variables both paths start with. */
+  seedEnv?: Record<string, string>
+  seedGlobals?: Record<string, string>
+  /** `pm.info.requestName` (Send meta / Run endpoint name). Default: `name`. */
+  requestName?: string
+  /** The request as defined (Run: the endpoint; Send: createPmApi meta). */
+  request?: {
+    method?: string
+    url?: string
+    headers?: Array<{ key: string; value: string }>
+    body?: {
+      type: string
+      content?: string
+      urlEncoded?: Array<{ key: string; value: string; enabled?: boolean }>
+    }
+  }
+  /** Env keys the script must NOT have written. */
+  expectNoEnv?: string[]
+  /** The request must be skipped (pm.execution.skipRequest()). */
+  expectSkip?: boolean
   /**
    * KNOWN shared-runtime defect this case currently reproduces — set when the
    * expectEnv/expectTests above describe the CORRECT (intended) behaviour that
@@ -47,6 +73,18 @@ export interface ParityCase {
 const TOKEN_BODY = '{"access_token":"TOK"}'
 
 const jsonHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+
+/** Both harness transports answer this URL with `{ method, body }` of the request. */
+export const ECHO_URL = 'http://parity.test/echo'
+
+const GUARD_SCRIPT = `
+  if (pm.response) {
+    pm.environment.set('guard', 'post:' + pm.response.code);
+  } else {
+    pm.environment.set('guard', 'pre');
+  }
+  pm.environment.set('afterGuard', 'ran');
+`
 
 import { assertionsToScript } from '../../src/shared/assertions-to-script'
 
@@ -312,6 +350,53 @@ export const parityCases: ParityCase[] = [
     ],
   },
 
+  // l2. issue #274: `pm.test(name, function (done) { … })` — Postman's
+  //     callback form. Both paths used to call fn() with no argument and record
+  //     a PASS the moment it returned, so a done-style test that failed later
+  //     (in a timer or a pm.sendRequest callback) was a silent false-green, and
+  //     the late `done()` threw "done is not a function" outside any try/catch.
+  //     The result must now be decided by done()/done(err)/a throw.
+  {
+    name: 'pm.test done-callback form waits for done() on BOTH paths (issue #274)',
+    script: `
+      pm.test('done called synchronously', function (done) {
+        pm.expect(pm.response.code).to.equal(200);
+        done();
+      });
+      pm.test('done called later', function (done) {
+        setTimeout(function () {
+          pm.expect(pm.response.json().access_token).to.equal('TOK');
+          done();
+        }, 5);
+      });
+      pm.test('done(err) fails the test', function (done) {
+        setTimeout(function () { done(new Error('late failure')); }, 5);
+      });
+      pm.test('assertion in a timer fails the test', function (done) {
+        setTimeout(function () {
+          pm.expect(1).to.equal(2);
+          done();
+        }, 5);
+      });
+      pm.test('throw before done fails the test', function (done) {
+        throw new Error('early failure');
+      });
+      pm.test('sync form unchanged', function () {
+        pm.expect(true).to.equal(true);
+      });
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {},
+    expectTests: [
+      { name: 'done called synchronously', passed: true },
+      { name: 'done called later', passed: true },
+      { name: 'done(err) fails the test', passed: false },
+      { name: 'assertion in a timer fails the test', passed: false },
+      { name: 'throw before done fails the test', passed: false },
+      { name: 'sync form unchanged', passed: true },
+    ],
+  },
+
   // m. ASYMMETRIC parity. Every earlier jose case is HS256, so nothing proved
   //    that RSA/EC behave identically on the two hosts (Send runs on Chromium's
   //    WebCrypto, Run on Node's). Generate → sign → verify inside the script and
@@ -409,5 +494,293 @@ export const parityCases: ParityCase[] = [
       { name: 'gen json order', passed: false },
       { name: 'gen size', passed: true },
     ],
+  },
+
+  // ── issue #281: one shared `pm` factory (src/shared/script/pm.ts) ─────────
+  // Each case below pins a former Send/Run divergence (research D1–D12) to
+  // Postman's behaviour.
+
+  // D1/D11: `get` of a missing key is `undefined` on every scope (Run said '').
+  {
+    name: 'missing variable is undefined on every scope (issue #281 D1/D11)',
+    script: `
+      pm.environment.set('d1', [
+        typeof pm.environment.get('nope'),
+        typeof pm.globals.get('nope'),
+        typeof pm.collectionVariables.get('nope'),
+        typeof pm.variables.get('nope'),
+        typeof pm.iterationData.get('nope'),
+      ].join(','));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { d1: 'undefined,undefined,undefined,undefined,undefined' },
+    expectTests: [],
+  },
+
+  // D2/D4: globals, environment and local variables are separate scopes; the
+  // merged pm.variables view is local > environment > global. Run used one map
+  // for all three; Send seeded pm.environment with globals too.
+  {
+    name: 'globals / environment / local variables are separate scopes (issue #281 D2/D4)',
+    seedEnv: { shared: 'E', onlyEnv: 'E1' },
+    seedGlobals: { shared: 'G', onlyGlobal: 'G1' },
+    script: `
+      pm.variables.set('loc', 'L');
+      pm.globals.set('gNew', 'GN');
+      pm.environment.set('scopes', [
+        String(pm.environment.get('onlyGlobal')),
+        String(pm.globals.get('onlyEnv')),
+        pm.globals.get('shared'),
+        pm.environment.get('shared'),
+        pm.variables.get('shared'),
+        String(pm.environment.get('loc')),
+        pm.variables.get('loc'),
+        String(pm.environment.get('gNew')),
+        pm.variables.get('gNew'),
+        String(pm.environment.has('onlyGlobal')),
+      ].join(','));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { scopes: 'undefined,undefined,G,E,E,undefined,L,undefined,GN,false' },
+    expectTests: [],
+  },
+
+  // D5/D6: pm.info in a pre-request script (Run said eventName 'test',
+  // requestName ''), plus pm.execution.location (new).
+  {
+    name: 'pm.info and pm.execution.location in a pre-request script (issue #281 D5/D6)',
+    phase: 'prerequest',
+    requestName: 'Get user',
+    script: `
+      pm.environment.set('event', pm.info.eventName);
+      pm.environment.set('reqName', pm.info.requestName);
+      pm.environment.set('loc', JSON.stringify(pm.execution.location) + '|' + pm.execution.location.current);
+      pm.environment.set('respInPre', String(pm.response) + '|' + String('response' in pm));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {
+      event: 'prerequest',
+      reqName: 'Get user',
+      loc: '["Get user"]|Get user',
+      respInPre: 'undefined|false',
+    },
+    expectTests: [],
+  },
+
+  // D7: skipRequest() stops the rest of the script (Run kept running it).
+  {
+    name: 'pm.execution.skipRequest() stops the script and skips the request (issue #281 D7)',
+    phase: 'prerequest',
+    script: `
+      pm.environment.set('beforeSkip', 'yes');
+      pm.execution.skipRequest();
+      pm.environment.set('afterSkip', 'LEAKED');
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { beforeSkip: 'yes' },
+    expectNoEnv: ['afterSkip'],
+    expectSkip: true,
+    expectTests: [],
+  },
+
+  // D8: skipRequest() outside pre-request is an error (Run accepted it silently).
+  {
+    name: 'pm.execution.skipRequest() in a post-response script throws (issue #281 D8)',
+    script: `
+      let msg = 'none';
+      try { pm.execution.skipRequest() } catch (e) { msg = e.message }
+      pm.environment.set('postSkip', msg);
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { postSkip: 'pm.execution.skipRequest() is only available in pre-request scripts' },
+    expectTests: [],
+  },
+
+  // D12: replaceIn resolves {{$dynamic}} too; unknown dynamic names stay as written.
+  {
+    name: 'replaceIn resolves dynamic variables (issue #281 D12)',
+    seedEnv: { host: 'api.test' },
+    script: `
+      const out = pm.variables.replaceIn('{{host}}/{{$guid}}/{{$notAPostmanName}}/{{$randomFirstName}}');
+      const parts = out.split('/');
+      pm.environment.set('ri', [
+        parts[0],
+        /^[0-9a-f-]{36}$/.test(parts[1]) ? 'guid' : parts[1],
+        parts[2],
+        /^[A-Za-z' -]+$/.test(parts[3]) ? 'firstName' : parts[3],
+      ].join('|'));
+      const n = pm.environment.replaceIn('{{$randomInt}}');
+      pm.environment.set('riEnv', /^\\d+$/.test(n) ? 'int' : n);
+      const o = pm.variables.replaceIn({ u: '{{host}}', list: ['{{host}}'] });
+      pm.environment.set('riObj', JSON.stringify(o));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {
+      ri: 'api.test|guid|{{$notAPostmanName}}|firstName',
+      riEnv: 'int',
+      riObj: '{"u":"api.test","list":["api.test"]}',
+    },
+    expectTests: [],
+  },
+
+  // pm.request.url (Url object) + pm.request.body (RequestBody) — strings and
+  // undefined before; signing scripts call getHost()/getPathWithQuery()/body.raw.
+  {
+    name: 'pm.request.url is a Url object and pm.request.body a RequestBody (issue #281)',
+    phase: 'prerequest',
+    request: {
+      method: 'POST',
+      url: 'https://api.parity.test:8443/v1/users?a=1&b=two',
+      headers: [{ key: 'X-H', value: '1' }],
+      body: { type: 'json', content: '{"n":1}' },
+    },
+    script: `
+      const u = pm.request.url;
+      pm.environment.set('url', [
+        u.toString(), u.getHost(), u.getPath(), u.getQueryString(), u.getPathWithQuery(),
+        u.port, u.query.get('b'), String(u.query.count()), u.protocol,
+      ].join('|'));
+      pm.environment.set('urlStr', pm.request.url);
+      const b = pm.request.body;
+      pm.environment.set('body', [b.mode, b.raw, b.options.raw.language, String(b.isEmpty())].join('|'));
+      pm.environment.set('method', pm.request.method);
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {
+      url: 'https://api.parity.test:8443/v1/users?a=1&b=two|api.parity.test|/v1/users|a=1&b=two|/v1/users?a=1&b=two|8443|two|2|https',
+      urlStr: 'https://api.parity.test:8443/v1/users?a=1&b=two',
+      body: 'raw|{"n":1}|json|false',
+      method: 'POST',
+    },
+    expectTests: [],
+  },
+  {
+    name: 'pm.request.body urlencoded mode, post-response (issue #281)',
+    request: {
+      method: 'POST',
+      url: 'http://parity.test/form-body',
+      body: {
+        type: 'urlencoded',
+        urlEncoded: [
+          { key: 'a', value: '1', enabled: true },
+          { key: 'b', value: '2', enabled: false },
+        ],
+      },
+    },
+    script: `
+      const b = pm.request.body;
+      pm.environment.set('ue', b.mode + '|' + JSON.stringify(b.urlencoded.toObject()) + '|' + b.toString());
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { ue: 'urlencoded|{"a":"1"}|a=1' },
+    expectTests: [],
+  },
+
+  // pm.visualizer is a no-op (it threw and aborted the script), pm.test.skip
+  // records a skipped test without running it, pm.test.index() counts.
+  {
+    name: 'pm.visualizer no-op, pm.test.skip and pm.test.index (issue #281)',
+    script: `
+      pm.visualizer.set('<b>{{x}}</b>', { x: 1 });
+      pm.visualizer.clear();
+      pm.test.skip('skipped one', () => { throw new Error('must not run'); });
+      pm.test('counted', () => {});
+      pm.environment.set('idx', String(pm.test.index()));
+      pm.environment.set('afterVis', 'ran');
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { idx: '2', afterVis: 'ran' },
+    expectTests: [
+      { name: 'skipped one', passed: true, skipped: true },
+      { name: 'counted', passed: true },
+    ],
+  },
+
+  // D9: pm.response.responseTime on Run was always 0 (Send had the real time),
+  // and pm.sendRequest answered with two different thin objects. Both paths
+  // now get the engine timing and the full pm.response surface.
+  {
+    name: 'pm.response.responseTime and the pm.sendRequest response match (issue #281 D9)',
+    script: `
+      pm.environment.set('rt', String(pm.response.responseTime));
+      const r = await pm.sendRequest('http://parity.test/aux');
+      pm.environment.set('aux', [
+        r.code, r.status, r.responseTime, typeof r.to.have.jsonBody,
+        JSON.stringify(r.json()), String(r.size().body),
+      ].join('|'));
+      pm.test('aux status', () => r.to.have.status(200));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { rt: '1', aux: '200|OK|1|function|{}|2' },
+    expectTests: [{ name: 'aux status', passed: true }],
+  },
+
+  // `if (pm.response)` guard in a script shared by both phases (collection /
+  // folder level). Postman has no pm.response in pre-request (postman-sandbox
+  // execution.js builds one only for 'test'); Send used to THROW on access and
+  // Run returned null — the guard must simply take the pre-request branch.
+  {
+    name: 'if (pm.response) guard takes the pre-request branch without an error (issue #281)',
+    phase: 'prerequest',
+    script: GUARD_SCRIPT,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { guard: 'pre', afterGuard: 'ran' },
+    expectSkip: false,
+    expectTests: [],
+  },
+  {
+    name: 'if (pm.response) guard takes the post-response branch (issue #281)',
+    script: GUARD_SCRIPT,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { guard: 'post:200', afterGuard: 'ran' },
+    expectTests: [],
+  },
+
+  // pm.sendRequest urlencoded / formdata / raw-language bodies (issue #281).
+  // Both paths dropped every non-raw body. The harness transports echo
+  // `{ method, body }` back for ECHO_URL, so this pins the shared normalizer's
+  // output — what the engine receives — byte for byte on both paths.
+  {
+    name: 'pm.sendRequest sends urlencoded / formdata / raw-language bodies (issue #281)',
+    script: `
+      const post = (body) => pm.sendRequest({ url: '${ECHO_URL}', method: 'POST', body });
+      const ue = await post({
+        mode: 'urlencoded',
+        urlencoded: [{ key: 'a', value: '1' }, { key: 'b', value: 2, disabled: true }],
+      });
+      pm.environment.set('ue', JSON.stringify(ue.json()));
+      const fd = await post({ mode: 'formdata', formdata: [{ key: 'f', value: 'v', type: 'text' }] });
+      pm.environment.set('fd', JSON.stringify(fd.json()));
+      const xml = await post({ mode: 'raw', raw: '<a/>', options: { raw: { language: 'xml' } } });
+      pm.environment.set('xml', JSON.stringify(xml.json()));
+      let fileErr = 'none';
+      try {
+        await post({ mode: 'formdata', formdata: [{ key: 'up', type: 'file', src: '/etc/hosts' }] });
+      } catch (e) { fileErr = e.message }
+      pm.environment.set('fileErr', fileErr);
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {
+      ue: JSON.stringify({
+        method: 'POST',
+        body: {
+          type: 'urlencoded',
+          urlEncoded: [
+            { id: 'pm-ue-0', key: 'a', value: '1', enabled: true },
+            { id: 'pm-ue-1', key: 'b', value: '2', enabled: false },
+          ],
+        },
+      }),
+      fd: JSON.stringify({
+        method: 'POST',
+        body: {
+          type: 'form-data',
+          formData: [{ id: 'pm-fd-0', key: 'f', value: 'v', enabled: true, type: 'text' }],
+        },
+      }),
+      xml: JSON.stringify({ method: 'POST', body: { type: 'xml', content: '<a/>' } }),
+      fileErr: 'pm.sendRequest: file part "up" in a formdata body is not supported in scripts',
+    },
+    expectTests: [],
   },
 ]

@@ -2,20 +2,10 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useUIStore } from '../../stores/ui.store'
+import { DYNAMIC_VARIABLES, isKnownDynamicVariable } from '../../../shared/dynamic-variables'
 
-/** Built-in dynamic variables with $ prefix */
-const BUILTIN_DYNAMIC_VARS: { name: string; description: string }[] = [
-  { name: '$randomInt', description: 'Random integer 0-1000' },
-  { name: '$randomInt(min,max)', description: 'Random integer in range' },
-  { name: '$timestamp', description: 'Unix timestamp (seconds)' },
-  { name: '$isoTimestamp', description: 'ISO 8601 date string' },
-  { name: '$randomUUID', description: 'Random UUID v4' },
-  { name: '$randomEmail', description: 'Random email address' },
-  { name: '$randomName', description: 'Random full name' },
-  { name: '$randomString', description: 'Random 8-char string' },
-  { name: '$randomString(n)', description: 'Random n-char string' },
-  { name: '$datetime(format)', description: 'Formatted date (YYYY-MM-DD etc.)' },
-]
+/** Built-in dynamic variables — the shared table Send, Run and Mock resolve (issue #281). */
+const BUILTIN_DYNAMIC_VARS: readonly { name: string; description: string }[] = DYNAMIC_VARIABLES
 
 type VariableCategory = 'environment' | 'global' | 'dynamic'
 
@@ -116,8 +106,9 @@ export default function VariableAutocompleteInput({
     } => {
       const trimmed = name.trim()
 
-      // Dynamic ($randomInt, $timestamp, …) — resolved at request time
-      if (trimmed.startsWith('$')) {
+      // Dynamic ($randomInt, $timestamp, …) — resolved at request time. An
+      // unknown `$name` is sent as written, so it is shown as unresolved.
+      if (trimmed.startsWith('$') && isKnownDynamicVariable(trimmed)) {
         return { value: '(generated at send time)', category: 'dynamic', envName: null }
       }
 
