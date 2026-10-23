@@ -13,6 +13,13 @@
  *     parsed), else text;
  *   - WebSocket `composerMode` widens from `'json' | 'text'` to every format;
  *   - missing settings take the pre-settings defaults (`shared/realtime.ts`).
+ *
+ * And the other way round: a row written here still opens on an OLDER build
+ * (a teammate pulling a shared project). Next to the new keys the writers
+ * keep the keys that build reads — Socket.IO `subscriptions` (the listened
+ * names) and `emitPayload` (the first argument), WebSocket `composerMode` as
+ * `'json' | 'text'` (the full format lives in `composerType`). The readers
+ * here prefer the new keys. Pinned by `tests/main/realtime-meta-legacy.test.ts`.
  */
 import type { KeyValuePair } from '../types'
 import {
@@ -122,6 +129,9 @@ export function sioMetaOf(s: SioRequestFields): Record<string, unknown> {
     emitArgs: s.emitArgs,
     emitAck: s.emitAck,
     savedMessages: s.savedMessages,
+    // Mirrors for builds before issue #283, which read only these two.
+    subscriptions: s.listeners.filter((l) => l.listen && l.name.trim()).map((l) => l.name),
+    emitPayload: s.emitArgs[0]?.content ?? '',
   }
 }
 
@@ -183,7 +193,10 @@ export function wsMetaOf(s: WsRequestFields): Record<string, unknown> {
     params: s.params,
     settings: s.settings,
     composerContent: s.composerContent,
-    composerMode: s.composerMode,
+    composerType: s.composerMode,
+    // Mirror for builds before issue #282: they read `composerMode` and accept
+    // only json / text — every other format is closest to text.
+    composerMode: s.composerMode === 'json' ? 'json' : 'text',
     autoScroll: s.autoScroll,
     savedMessages: s.savedMessages,
   }
@@ -197,7 +210,9 @@ export function readWsMeta(raw: unknown): Partial<WsRequestFields> {
   if (w.params !== undefined) out.params = toKeyValueRows(w.params)
   out.settings = readWsSettings(w.settings)
   if (typeof w.composerContent === 'string') out.composerContent = w.composerContent
-  if (isRtContentType(w.composerMode)) out.composerMode = w.composerMode
+  // `composerType` (issue #282) wins over the legacy `composerMode` mirror.
+  if (isRtContentType(w.composerType)) out.composerMode = w.composerType
+  else if (isRtContentType(w.composerMode)) out.composerMode = w.composerMode
   if (typeof w.autoScroll === 'boolean') out.autoScroll = w.autoScroll
   if (w.savedMessages !== undefined) out.savedMessages = normalizeWsSaved(w.savedMessages)
   return out
