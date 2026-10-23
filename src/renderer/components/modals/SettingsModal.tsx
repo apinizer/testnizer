@@ -63,6 +63,26 @@ export default function SettingsModal() {
     proxyPort: '',
   })
 
+  // Issue #272: the component stays mounted while closed, so the draft from
+  // the previous opening survives. Theme / language / font size can change
+  // elsewhere in between (command palette, the header) — re-seed them from the
+  // store each time the dialog opens, or Save writes the stale values back.
+  // Only on the closed → open transition, so a store change while the dialog
+  // is open never overwrites the user's draft. (Adjusting state during render
+  // on a prop change, as the React docs recommend, instead of in an effect.)
+  const [wasShown, setWasShown] = useState(show)
+  if (show !== wasShown) {
+    setWasShown(show)
+    if (show) {
+      setSettings((prev) => ({
+        ...prev,
+        theme: currentTheme,
+        language: currentLocale,
+        fontSize: currentFontSize,
+      }))
+    }
+  }
+
   useEffect(() => {
     if (!show) return
     const api = getSettingsApi()
