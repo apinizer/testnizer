@@ -978,6 +978,18 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.next': 'Next',
     'import.typeMismatch':
       'Selected type is {expected} but file appears to be {detected}. Switch type or import a matching file.',
+    'import.result.title': 'Import finished',
+    'import.result.summary':
+      'Imported {endpoints} request(s), {folders} folder(s) and {examples} example(s).',
+    'import.result.environment': 'Environment "{name}" was created or updated.',
+    'import.result.warnings': '{n} item(s) could not be imported as-is',
+    'import.result.showDetails': 'Show details',
+    'import.result.hideDetails': 'Hide details',
+    'import.result.done': 'Done',
+    'import.envNote.title': 'Postman {kind} file',
+    'import.envNote.body': 'It is imported as a project environment — no folder is created.',
+    'import.envNote.environment': 'environment',
+    'import.envNote.globals': 'globals',
 
     // Settings Modal
     'settings.title': 'Settings',
@@ -5077,6 +5089,18 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.next': 'İleri',
     'import.typeMismatch':
       'Seçilen tür {expected}, fakat dosya {detected} formatında görünüyor. Türü değiştirin veya uyumlu bir dosya seçin.',
+    'import.result.title': 'İçe aktarma tamamlandı',
+    'import.result.summary':
+      '{endpoints} istek, {folders} klasör ve {examples} örnek içe aktarıldı.',
+    'import.result.environment': '"{name}" ortamı oluşturuldu ya da güncellendi.',
+    'import.result.warnings': '{n} öğe olduğu gibi içe aktarılamadı',
+    'import.result.showDetails': 'Ayrıntıları göster',
+    'import.result.hideDetails': 'Ayrıntıları gizle',
+    'import.result.done': 'Tamam',
+    'import.envNote.title': 'Postman {kind} dosyası',
+    'import.envNote.body': 'Proje ortamı olarak içe aktarılır — klasör oluşturulmaz.',
+    'import.envNote.environment': 'ortam',
+    'import.envNote.globals': 'global değişken',
 
     // Settings Modal
     'settings.title': 'Ayarlar',

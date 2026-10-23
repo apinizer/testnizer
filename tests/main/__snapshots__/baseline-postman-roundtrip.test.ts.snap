@@ -78,11 +78,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "type": "none",
@@ -105,12 +101,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "apiKey": {
-            "in": "header",
-            "key": "X-Folder-Key",
-            "value": "{{folderKey}}",
-          },
-          "type": "api-key",
+          "type": "inherit",
         },
         "body": {
           "type": "none",
@@ -240,12 +231,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "apiKey": {
-            "in": "header",
-            "key": "X-Folder-Key",
-            "value": "{{folderKey}}",
-          },
-          "type": "api-key",
+          "type": "inherit",
         },
         "body": {
           "content": "plain text body",
@@ -276,11 +262,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "type": "urlencoded",
@@ -323,11 +305,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "formData": [
@@ -374,11 +352,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "content": "{
@@ -494,11 +468,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "type": "none",
@@ -598,6 +568,10 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
     },
   ],
   "project_shared_settings": {
+    "auth": {
+      "bearerToken": "{{collectionToken}}",
+      "type": "bearer",
+    },
     "preScript": "pm.variables.set('collPre', '1');",
     "testScript": "pm.test('collection test', function () {
   pm.expect(1).to.equal(1);
@@ -609,6 +583,16 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
 exports[`baseline Postman v2.1 — import -> DB -> export > export:postman output 1`] = `
 {
   "collection": {
+    "auth": {
+      "bearer": [
+        {
+          "key": "token",
+          "type": "string",
+          "value": "{{collectionToken}}",
+        },
+      ],
+      "type": "bearer",
+    },
     "event": [
       {
         "listen": "prerequest",
@@ -632,6 +616,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
       },
     ],
     "info": {
+      "description": "Constructed fixture for the Postman parity baseline (not a third-party file).",
       "name": "Baseline Project",
       "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     },
@@ -683,6 +668,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               {
                 "name": "Create post (raw xml)",
                 "request": {
+                  "auth": {
+                    "type": "noauth",
+                  },
                   "body": {
                     "mode": "raw",
                     "options": {
@@ -710,26 +698,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               {
                 "name": "Update post (raw text, PUT)",
                 "request": {
-                  "auth": {
-                    "apikey": [
-                      {
-                        "key": "key",
-                        "type": "string",
-                        "value": "X-Folder-Key",
-                      },
-                      {
-                        "key": "value",
-                        "type": "string",
-                        "value": "{{folderKey}}",
-                      },
-                      {
-                        "key": "in",
-                        "type": "string",
-                        "value": "header",
-                      },
-                    ],
-                    "type": "apikey",
-                  },
                   "body": {
                     "mode": "raw",
                     "options": {
@@ -774,26 +742,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
             ],
             "name": "List users",
             "request": {
-              "auth": {
-                "apikey": [
-                  {
-                    "key": "key",
-                    "type": "string",
-                    "value": "X-Folder-Key",
-                  },
-                  {
-                    "key": "value",
-                    "type": "string",
-                    "value": "{{folderKey}}",
-                  },
-                  {
-                    "key": "in",
-                    "type": "string",
-                    "value": "header",
-                  },
-                ],
-                "type": "apikey",
-              },
               "description": "Lists users",
               "header": [
                 {
@@ -896,16 +844,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
           {
             "name": "Login (urlencoded)",
             "request": {
-              "auth": {
-                "bearer": [
-                  {
-                    "key": "token",
-                    "type": "string",
-                    "value": "{{collectionToken}}",
-                  },
-                ],
-                "type": "bearer",
-              },
               "body": {
                 "mode": "urlencoded",
                 "urlencoded": [
@@ -937,16 +875,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
           {
             "name": "Upload (formdata)",
             "request": {
-              "auth": {
-                "bearer": [
-                  {
-                    "key": "token",
-                    "type": "string",
-                    "value": "{{collectionToken}}",
-                  },
-                ],
-                "type": "bearer",
-              },
               "body": {
                 "formdata": [
                   {
@@ -981,16 +909,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
           {
             "name": "GraphQL query",
             "request": {
-              "auth": {
-                "bearer": [
-                  {
-                    "key": "token",
-                    "type": "string",
-                    "value": "{{collectionToken}}",
-                  },
-                ],
-                "type": "bearer",
-              },
               "body": {
                 "graphql": {
                   "query": "query Q($id: ID!) { user(id: $id) { id name } }",
@@ -1117,16 +1035,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
       {
         "name": "Root request (inherits collection bearer)",
         "request": {
-          "auth": {
-            "bearer": [
-              {
-                "key": "token",
-                "type": "string",
-                "value": "{{collectionToken}}",
-              },
-            ],
-            "type": "bearer",
-          },
           "header": [],
           "method": "GET",
           "url": {
@@ -1140,16 +1048,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
       {
         "name": "DELETE with no body",
         "request": {
-          "auth": {
-            "bearer": [
-              {
-                "key": "token",
-                "type": "string",
-                "value": "{{collectionToken}}",
-              },
-            ],
-            "type": "bearer",
-          },
           "header": [
             {
               "key": "X-Reason",
@@ -1221,12 +1119,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "apiKey": {
-            "in": "header",
-            "key": "X-Folder-Key",
-            "value": "{{folderKey}}",
-          },
-          "type": "api-key",
+          "type": "none",
         },
         "body": {
           "content": "<post><title>Hello</title></post>",
@@ -1257,12 +1150,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "apiKey": {
-            "in": "header",
-            "key": "X-Folder-Key",
-            "value": "{{folderKey}}",
-          },
-          "type": "api-key",
+          "type": "inherit",
         },
         "body": {
           "content": "plain text body",
@@ -1293,12 +1181,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "apiKey": {
-            "in": "header",
-            "key": "X-Folder-Key",
-            "value": "{{folderKey}}",
-          },
-          "type": "api-key",
+          "type": "inherit",
         },
         "body": {
           "type": "none",
@@ -1397,11 +1280,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "type": "urlencoded",
@@ -1444,11 +1323,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "formData": [
@@ -1495,11 +1370,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "content": "{
@@ -1615,11 +1486,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "type": "none",
@@ -1642,11 +1509,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "protocol": "http",
       "request_schema": {
         "auth": {
-          "bearer": {
-            "prefix": "Bearer",
-            "token": "{{collectionToken}}",
-          },
-          "type": "bearer",
+          "type": "inherit",
         },
         "body": {
           "type": "none",
@@ -1746,6 +1609,10 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
     },
   ],
   "project_shared_settings": {
+    "auth": {
+      "bearerToken": "{{collectionToken}}",
+      "type": "bearer",
+    },
     "preScript": "pm.variables.set('collPre', '1');",
     "testScript": "pm.test('collection test', function () {
   pm.expect(1).to.equal(1);
@@ -1761,8 +1628,16 @@ exports[`baseline Postman v2.1 — import -> DB -> export > rejects a non-collec
     "success": false,
   },
   "v1": {
-    "error": "Postman v1 collections are not supported. Re-export the collection from Postman as v2.1 (Collections → ⋯ → Export → Collection v2.1) and import the resulting file.",
-    "success": false,
+    "collectionId": "pm-baseline-1",
+    "endpointCount": 0,
+    "endpointIds": [],
+    "folderCount": 0,
+    "success": true,
+    "suggestedEnvVars": undefined,
+    "warnings": [
+      "Converted from Postman collection v1 (Postman itself no longer opens v1 files).",
+      "No requests or folders found in the Postman collection",
+    ],
   },
 }
 `;
@@ -1771,7 +1646,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > second export is sta
 {
   "firstInfoName": "Baseline Project",
   "sameEvents": true,
-  "sameItems": false,
+  "sameItems": true,
   "sameVariables": true,
   "secondInfoName": "Roundtrip Project",
 }

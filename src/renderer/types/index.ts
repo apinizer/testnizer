@@ -1074,7 +1074,12 @@ export interface ImportResult {
   collectionId?: string
   endpointCount?: number
   folderCount?: number
+  /** Saved examples written (Postman `response[]`, issue #276). */
+  exampleCount?: number
+  /** Set when the import wrote an environment (Postman environment / globals file). */
+  environmentName?: string
   suggestedEnvVars?: Record<string, string>
+  /** Everything skipped or degraded, one line per item (shown in the Import result step). */
   warnings?: string[]
   error?: string
 }

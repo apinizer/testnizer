@@ -10,6 +10,7 @@
 // will report a more accurate error if the content is truly bad).
 
 import { startsWithCurl } from '../../shared/curl'
+import { classifyPostmanDocument, classifyPostmanText } from '../../shared/postman-detect'
 
 /**
  * Inspect a content snippet (and optional file path) and return a
@@ -61,6 +62,12 @@ export function detectImportFormat(content: string, filePath?: string | null): s
   // YAML-style OpenAPI/Swagger (no JSON braces)
   if (/^(openapi|swagger)\s*:/m.test(head)) return 'openapi'
 
+  // Postman v3 YAML (`$kind: collection` / `$kind: http-request` …) — routed
+  // to the Postman importer, which explains that v3 arrives later (#276).
+  if (!head.startsWith('{') && !head.startsWith('[') && classifyPostmanText(trimmed)) {
+    return 'postman'
+  }
+
   // JSON-family detection — try to parse
   if (head.startsWith('{') || head.startsWith('[')) {
     try {
@@ -85,22 +92,11 @@ export function detectImportFormat(content: string, filePath?: string | null): s
         if (typeof obj.openapi === 'string' || typeof obj.swagger === 'string') {
           return 'openapi'
         }
-        // Postman collection v2.x: info + (postman id OR schema URL)
-        const info = obj.info as Record<string, unknown> | undefined
-        if (
-          info &&
-          typeof info === 'object' &&
-          (typeof info._postman_id === 'string' ||
-            (typeof info.schema === 'string' && info.schema.includes('postman')))
-        ) {
-          return 'postman'
-        }
-        // Postman environment export — `_postman_variable_scope: "environment"`
-        // plus a `values[]` array. Routed through the Postman import flow; the
-        // main handler dispatches collections vs environments internally.
-        if (obj._postman_variable_scope === 'environment' && Array.isArray(obj.values)) {
-          return 'postman'
-        }
+        // Every Postman artifact — collection v1 / v2.0 / v2.1 (no
+        // `_postman_id` needed), environment, globals, legacy data dump, v3 —
+        // through the ONE shared classifier the main importer uses (#276).
+        // The Postman importer routes each kind itself.
+        if (classifyPostmanDocument(obj)) return 'postman'
         // Insomnia v4 export
         if (obj._type === 'export' && Array.isArray(obj.resources)) {
           return 'insomnia'

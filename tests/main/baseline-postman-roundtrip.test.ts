@@ -14,23 +14,32 @@
  *  - GraphQL body mode imports as `type: 'json'` (query + variables re-serialised
  *    as one JSON text); the exporter re-detects the {query,variables} shape and
  *    writes `mode: 'graphql'` again, so this one round-trips by inference.
- *  - KNOWN-BUG: OAuth2 always imports as grantType 'client_credentials' (the
- *    fixture's grant_type is ignored); only token/URLs/clientId/secret/scope survive
- *    and the export drops key `type`s and writes an empty `accessToken`.
+ *  - KNOWN-BUG: the export drops OAuth2 key `type`s and writes an empty
+ *    `accessToken` (import now maps `grant_type`, issue #276; the fixture uses
+ *    client_credentials so the import snapshot did not move).
  *  - KNOWN-BUG: Bearer prefix is always forced to 'Bearer' on import.
- *  - KNOWN-BUG: collection `info.description` is dropped on import, and the export
- *    names the collection after the PROJECT ("Baseline Project"), not the original
- *    collection name; there is no collection-level `auth` in the export.
+ *  - KNOWN-BUG: the export names the collection after the PROJECT ("Baseline
+ *    Project"), not the original collection name.
  *  - KNOWN-BUG: export item ORDER differs from the import: sub-folders are emitted
- *    before a folder's requests and root-level requests come last (the
- *    "second export" snapshot records `sameItems: false`).
+ *    before a folder's requests and root-level requests come last.
  *  - KNOWN-BUG: collection variable types other than `secret` come back as
  *    'string'; the `secret` variable value is blanked ('') on export (#177).
  *  - KNOWN-BUG: endpoints.path for a URL with a query string keeps the query
  *    (`/{{apiVersion}}/users?page=1&trace=x`) — the column is documented as a path.
- *  - Collection-level auth is baked onto every request lacking its own auth
- *    (no collection-auth object survives the round trip); folder auth is both
- *    stored on the folder row AND baked onto its children.
+ *  - Issue #276 (snapshots regenerated on purpose):
+ *    · the collection-level bearer (`{{collectionToken}}`, a variable reference)
+ *      is now the PROJECT auth and requests without their own auth are stored
+ *      as `{type:'inherit'}`; folder auth stays on the folder row and its
+ *      children inherit it (it used to be baked onto every child). Effective
+ *      auth on Send / Run is unchanged (tests/main/import-postman-276.test.ts).
+ *      A literal collection credential is still baked (#177 rule 5).
+ *    · the export writes the project auth as collection `auth` and an explicit
+ *      "No auth" request as `{type:'noauth'}` — the round trip no longer turns
+ *      the noauth request into the folder's API key, and the second export now
+ *      equals the first (`sameItems: true`).
+ *    · `info.description` becomes the (empty) project description, so the
+ *      export carries it.
+ *    · a v1 collection is converted and imported instead of rejected.
  *  - Collection `variable[]` becomes an environment named "<collection> (imported)".
  *  - Per-request params keep disabled rows; headers keep disabled rows.
  *  - The Postman environment EXPORT lives inline in

@@ -15,12 +15,8 @@ import {
   tokenizeShell,
   type CurlArg,
 } from '../../shared/curl'
-import {
-  withAssertionScript,
-  stripExportedAssertions,
-  type AssertionScriptPrefix,
-} from '../../shared/assertions-to-script'
-import { readSharedProjectSettings, writeSharedProjectSettings } from '../lib/project-settings'
+import { withAssertionScript, type AssertionScriptPrefix } from '../../shared/assertions-to-script'
+import { readSharedProjectSettings, type StoredProjectAuth } from '../lib/project-settings'
 import {
   soapTransportFromMeta,
   withSoapTransportHeaders,
@@ -32,14 +28,35 @@ import {
   type CollectionExportResult,
   type ExportSkippedItem,
 } from '../../shared/collection-export'
-import {
-  isSecretFlag,
-  localSecretsByKey,
-  keepLocalSecretByKey,
-  type LocalSecretsByKey,
-} from '../lib/local-secrets'
-import { storedVariableValue } from '../lib/secret-at-rest'
+import { isSecretFlag, stripProjectSharedSettings } from '../lib/local-secrets'
+import { projectAuthToAuthConfig } from '../lib/auth-inheritance'
 import { isEncryptedSecret } from '../lib/secure-storage'
+import { importPostman, importPostmanEnvironment } from '../import/postman'
+import type {
+  PostmanAuth,
+  PostmanBody,
+  PostmanCollection,
+  PostmanEnvironment,
+  PostmanItem,
+  PostmanRequest,
+  PostmanUrl,
+  PostmanVariable,
+} from '../import/postman/types'
+import { extractPath, genKvId } from '../import/postman/normalize'
+import {
+  assertionsToXApinizer,
+  bodyTypeToApinizerRowType,
+  protocolToApinizerTypes,
+  type TestAssertionLike,
+  type XApinizerExtension,
+} from '../import/postman/x-apinizer'
+
+// Re-exported for existing callers (save.handler suite import, tests).
+export { importPostman, importPostmanEnvironment } from '../import/postman'
+export { reconstructPostmanUrl } from '../import/postman/normalize'
+export { mapPostmanBodyToUi } from '../import/postman/body'
+export { mapPostmanAuthToUi } from '../import/postman/auth'
+export { extractPostmanEventScripts } from '../import/postman/scripts'
 
 interface ImportResult {
   success: boolean
@@ -340,7 +357,7 @@ export function registerImportExportHandlers(): void {
           payload.projectId,
           payload.content,
           payload.folderId ?? null,
-          { projectScripts: true },
+          { apisTree: true },
         )
         return { success: true, data: result }
       } catch (e) {
@@ -388,7 +405,10 @@ export function registerImportExportHandlers(): void {
     async (_event, payload: { projectId: string; content: string }) => {
       try {
         const parsed = JSON.parse(payload.content) as Record<string, unknown>
-        if (!parsed || parsed['_postman_variable_scope'] !== 'environment') {
+        // Environment AND globals exports (issue #276): globals become the
+        // "Globals" project environment.
+        const scope = parsed?.['_postman_variable_scope']
+        if (!parsed || (scope !== 'environment' && scope !== 'globals')) {
           return {
             success: false,
             error: 'Not a Postman environment export (`_postman_variable_scope` missing).',
@@ -1470,152 +1490,9 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
   return { content: JSON.stringify(doc, null, 2), skipped }
 }
 
-// ─── Postman Types ──────────────────────────────────────────
+// ─── Postman import → src/main/import/postman/ (issue #276) ───────────
 
-interface PostmanCollection {
-  info: {
-    name: string
-    description?: string
-    schema: string
-    _postman_id?: string
-  }
-  item: PostmanItem[]
-  variable?: PostmanVariable[]
-  auth?: PostmanAuth
-  /** Collection-level pre-request / test scripts (Testnizer: project scripts). */
-  event?: PostmanEvent[]
-}
-
-interface PostmanItem {
-  name: string
-  request?: PostmanRequest
-  response?: unknown[]
-  item?: PostmanItem[] // folder (item group)
-  description?: string
-  event?: PostmanEvent[]
-  /** Folder-level auth — inherited by descendant requests that don't set
-   *  their own (Postman item-groups can carry an `auth` block). */
-  auth?: PostmanAuth
-  /** Apinizer test-interop extension. Postman v2.1 preserves unknown custom
-   *  keys, so Apinizer's extra fidelity (structured assertions, raw-body
-   *  sub-type, timeout) rides here and round-trips through Testnizer. */
-  'x-apinizer'?: XApinizerExtension
-}
-
-interface PostmanEvent {
-  listen: 'prerequest' | 'test' | string
-  script?: { exec?: string | string[]; type?: string; src?: string }
-}
-
-interface PostmanRequest {
-  method?: string
-  header?: PostmanHeader[]
-  url?: PostmanUrl | string
-  body?: PostmanBody
-  auth?: PostmanAuth
-  description?: string
-}
-
-interface PostmanHeader {
-  key: string
-  value: string
-  description?: string
-  disabled?: boolean
-}
-
-interface PostmanUrl {
-  raw?: string
-  protocol?: string
-  host?: string[] | string
-  port?: string
-  path?: Array<string | { value: string }> | string
-  query?: PostmanQuery[]
-  variable?: Array<{ key: string; value: string }>
-}
-
-interface PostmanQuery {
-  key: string
-  value: string
-  description?: string
-  disabled?: boolean
-}
-
-interface PostmanBody {
-  mode?: string
-  raw?: string
-  formdata?: PostmanFormData[]
-  urlencoded?: PostmanUrlEncoded[]
-  file?: { src?: string; content?: string }
-  graphql?: { query?: string; variables?: string }
-  options?: {
-    raw?: { language?: string }
-  }
-}
-
-interface PostmanFormData {
-  key: string
-  value?: string
-  src?: string | string[]
-  description?: string
-  disabled?: boolean
-  type?: string
-}
-
-interface PostmanUrlEncoded {
-  key: string
-  value: string
-  description?: string
-  disabled?: boolean
-}
-
-// Postman 2.1 stores auth fields as either an array of { key, value } pairs
-// (legacy) or as a flat object (modern). Both are accepted on import.
-interface PostmanAuth {
-  type: string
-  basic?:
-    | Array<{ key: string; value: string; type?: string }>
-    | { username?: string; password?: string }
-  bearer?: Array<{ key: string; value: string; type?: string }> | { token?: string }
-  apikey?:
-    | Array<{ key: string; value: string; type?: string }>
-    | { key?: string; value?: string; in?: string }
-  digest?: Array<{ key: string; value: string }> | { username?: string; password?: string }
-  oauth2?: Array<{ key: string; value: string }> | Record<string, unknown>
-  ntlm?:
-    | Array<{ key: string; value: string }>
-    | { username?: string; password?: string; domain?: string; workstation?: string }
-}
-
-interface PostmanVariable {
-  key: string
-  value: string
-  type?: string
-}
-
-/**
- * Standalone Postman environment export — a separate file type from collection
- * exports (Postman → Environments → Export). Detected by `_postman_variable_scope`.
- * The `values[]` array uses the same shape as `collection.variable[]` but adds
- * an optional `enabled` flag per entry.
- */
-interface PostmanEnvironment {
-  id?: string
-  name: string
-  values?: Array<{
-    key: string
-    value: string
-    type?: string
-    /** Postman omits this field on enabled rows; `false` means the variable is muted. */
-    enabled?: boolean
-  }>
-  _postman_variable_scope?: string
-  _postman_exported_at?: string
-  _postman_exported_using?: string
-}
-
-// ─── Postman Import ─────────────────────────────────────────
-
-// ─── Postman / Insomnia script helpers ─────────────────────
+// ─── Insomnia script helper ────────────────────────────────
 
 /**
  * Insomnia after-response / pre-request scripts are stored VERBATIM — no
@@ -1637,1025 +1514,6 @@ interface PostmanEnvironment {
  */
 export function normalizeInsomniaScript(script: string): string {
   return script ?? ''
-}
-
-/** Pull pre/post scripts from a Postman item.event[] array. */
-export function extractPostmanEventScripts(events: PostmanEvent[] | undefined): {
-  preScript?: string
-  postScript?: string
-} {
-  if (!events) return {}
-  const out: { preScript?: string; postScript?: string } = {}
-  for (const ev of events) {
-    const exec = ev.script?.exec
-    if (!exec) continue
-    const text = Array.isArray(exec) ? exec.join('\n') : exec
-    if (ev.listen === 'prerequest') out.preScript = text
-    else if (ev.listen === 'test') out.postScript = text
-  }
-  return out
-}
-
-// ─── Postman helpers ────────────────────────────────────────
-
-/** Postman 2.x auth field accessor — handles both array-of-{key,value}
- * and flat-object representations. */
-function readAuthField(src: PostmanAuth[keyof PostmanAuth] | undefined, key: string): string {
-  if (!src) return ''
-  if (Array.isArray(src)) {
-    return (src.find((p) => p.key === key)?.value as string) ?? ''
-  }
-  if (typeof src === 'object') {
-    const v = (src as Record<string, unknown>)[key]
-    return typeof v === 'string' ? v : ''
-  }
-  return ''
-}
-
-function genKvId(): string {
-  return Math.random().toString(36).slice(2, 10)
-}
-
-// ─── x-apinizer extension (Apinizer ↔ Testnizer test interop, contract v1.0) ──
-//
-// Postman v2.1 preserves unknown custom keys, so Apinizer ships its extra test
-// fidelity under an `x-apinizer` key on each item — and reads it back on the
-// return trip. We READ it on import (additive; a collection without the key
-// still imports as plain Postman) and WRITE it on export so the round-trip
-// through Testnizer is lossless for the four assertion kinds Apinizer can carry
-// (STATUS_CODE / BODY / JSONPATH / XPATH). Testnizer-only assertion types stay
-// in Testnizer's own `assertions` JSON and are simply omitted from the
-// extension (contract §4.1). See md_files/testnizer-interop/00-shared-contract.md.
-
-type XApinizerKind = 'STATUS_CODE' | 'BODY' | 'JSONPATH' | 'XPATH'
-
-interface XApinizerAssertion {
-  kind: XApinizerKind
-  expected?: string | number
-  /** JSONPath / XPath expression — only present for *PATH kinds. */
-  path?: string
-}
-
-interface XApinizerExtension {
-  schemaVersion?: string
-  source?: string
-  /** Raw-body sub-type Postman can't carry natively: JSON / XML / TEXT / HTML. */
-  bodyRowType?: string
-  timeoutSeconds?: number
-  testType?: string
-  apiType?: string
-  assertions?: XApinizerAssertion[]
-}
-
-/** Minimal Testnizer assertion shape produced/consumed here — mirrors
- *  TestAssertion in renderer types. Kept local to avoid importing renderer
- *  code into the main process (same pattern as runner.handler.ts). */
-interface TestAssertionLike {
-  id: string
-  name: string
-  type: string
-  enabled: boolean
-  expected?: string | number
-  jsonPath?: string
-  xPath?: string
-  headerName?: string
-  rangeMin?: number
-  rangeMax?: number
-}
-
-/**
- * Testnizer row kinds `x-apinizer` restores on import (`xApinizerAssertionsToUi`).
- * Their generated pm.test lines (issue #270) are dropped from the imported test
- * script when the rows come back, or they would run twice.
- */
-const X_APINIZER_RESTORED_KINDS: ReadonlySet<string> = new Set([
-  'status_equals',
-  'body_contains',
-  'body_equals_json',
-  'body_jsonpath',
-  'body_xpath',
-])
-
-/** Major version of the x-apinizer schema this build understands. A collection
- *  tagged with a newer MAJOR falls back to plain Postman (graceful). */
-const X_APINIZER_SCHEMA_MAJOR = 1
-
-/** True when we understand this item's x-apinizer payload. An omitted version is
- *  treated as current; a mismatched MAJOR means ignore-and-fall-back. */
-function xApinizerVersionOk(ext: XApinizerExtension | undefined): boolean {
-  if (!ext) return false
-  const v = ext.schemaVersion
-  if (!v) return true
-  const major = parseInt(String(v).split('.')[0] ?? '', 10)
-  return Number.isFinite(major) && major === X_APINIZER_SCHEMA_MAJOR
-}
-
-/** x-apinizer body row-type (JSON/XML/TEXT/HTML) → Testnizer raw sub-type.
- *  Postman keeps the language in `options.raw.language`, but Apinizer's RAW
- *  export often omits it, collapsing every raw body to plain text — this
- *  recovers the json/xml/html distinction. */
-function apinizerRowTypeToBodyType(rowType: string | undefined): string | undefined {
-  switch ((rowType ?? '').toUpperCase()) {
-    case 'JSON':
-      return 'json'
-    case 'XML':
-      return 'xml'
-    case 'HTML':
-      return 'html'
-    case 'TEXT':
-      return 'text'
-    default:
-      return undefined
-  }
-}
-
-/** Only refine the raw text family — never re-type form-data / urlencoded /
- *  binary / none, which have no row-type. */
-function isRawFamilyBodyType(t: string | undefined): boolean {
-  return t === 'text' || t === 'json' || t === 'xml' || t === 'html' || t === 'raw'
-}
-
-function looksLikeJson(s: string): boolean {
-  const t = s.trim()
-  if (!t || !/^[[{]/.test(t)) return false
-  try {
-    JSON.parse(t)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function truncateLabel(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + '…' : s
-}
-
-/** x-apinizer.assertions[] → Testnizer TestAssertion[]. Unknown kinds are
- *  skipped with a warning (no silent drop). This is the *primary* assertion
- *  source when present — more reliable than parsing the Postman test script. */
-function xApinizerAssertionsToUi(
-  assertions: XApinizerAssertion[] | undefined,
-  warnings: string[],
-): TestAssertionLike[] {
-  if (!Array.isArray(assertions)) return []
-  const out: TestAssertionLike[] = []
-  for (const a of assertions) {
-    const expected = a.expected
-    switch (a.kind) {
-      case 'STATUS_CODE':
-        out.push({
-          id: genKvId(),
-          name: `Status code is ${expected ?? ''}`.trim(),
-          type: 'status_equals',
-          enabled: true,
-          expected,
-        })
-        break
-      case 'BODY': {
-        // Apinizer's BODY assertion is a full-body match. Prefer a JSON deep
-        // equal when the expected value parses as JSON; otherwise fall back to
-        // a substring `contains` (best-effort, per contract §4).
-        const raw = typeof expected === 'string' ? expected : JSON.stringify(expected ?? '')
-        const isJson = looksLikeJson(raw)
-        out.push({
-          id: genKvId(),
-          name: isJson ? 'Body equals JSON' : `Body contains "${truncateLabel(raw, 32)}"`,
-          type: isJson ? 'body_equals_json' : 'body_contains',
-          enabled: true,
-          expected: raw,
-        })
-        break
-      }
-      case 'JSONPATH':
-        out.push({
-          id: genKvId(),
-          name: `JSONPath ${a.path ?? '$'} equals ${expected ?? ''}`.trim(),
-          type: 'body_jsonpath',
-          enabled: true,
-          jsonPath: a.path ?? '$',
-          expected,
-        })
-        break
-      case 'XPATH':
-        out.push({
-          id: genKvId(),
-          name: `XPath ${a.path ?? ''} equals ${expected ?? ''}`.trim(),
-          type: 'body_xpath',
-          enabled: true,
-          xPath: a.path ?? '',
-          expected,
-        })
-        break
-      default:
-        warnings.push(
-          `Skipped unknown x-apinizer assertion kind "${String((a as XApinizerAssertion).kind)}"`,
-        )
-    }
-  }
-  return out
-}
-
-/** Testnizer body sub-type → x-apinizer bodyRowType. Only the raw family maps. */
-function bodyTypeToApinizerRowType(bodyType: string | undefined): string | undefined {
-  switch ((bodyType ?? '').toLowerCase()) {
-    case 'json':
-      return 'JSON'
-    case 'xml':
-      return 'XML'
-    case 'html':
-      return 'HTML'
-    case 'text':
-    case 'raw':
-      return 'TEXT'
-    default:
-      return undefined
-  }
-}
-
-/** Testnizer TestAssertion[] → x-apinizer.assertions[], keeping only the four
- *  kinds Apinizer's boolean-flag model can carry. Unmappable types
- *  (status_in_range, header_*, response_time/size_under, pm_script) are dropped
- *  from the extension — they stay in Testnizer's own `assertions` JSON for a
- *  Testnizer→Testnizer round-trip (contract §4.1). */
-function assertionsToXApinizer(assertions: TestAssertionLike[]): XApinizerAssertion[] {
-  const out: XApinizerAssertion[] = []
-  for (const a of assertions) {
-    switch (a.type) {
-      case 'status_equals':
-        out.push({ kind: 'STATUS_CODE', expected: a.expected })
-        break
-      case 'body_equals_json':
-      case 'body_contains':
-        out.push({ kind: 'BODY', expected: a.expected })
-        break
-      case 'body_jsonpath':
-        out.push({ kind: 'JSONPATH', path: a.jsonPath ?? '$', expected: a.expected })
-        break
-      case 'body_xpath':
-        out.push({ kind: 'XPATH', path: a.xPath ?? '', expected: a.expected })
-        break
-      default:
-        // Unmappable — intentionally skipped (kept in Testnizer's own channel).
-        break
-    }
-  }
-  return out
-}
-
-/**
- * Derive Apinizer's `apiType` (EnumApiType) + `testType`
- * (EnumApiTestConsoleTestType) from the Testnizer protocol.
- *
- * We DERIVE rather than preserve an original value because a test imported into
- * Testnizer loses its Apinizer proxy binding (contract §0/§5.6 — apiProxyID etc.
- * are null), so it is a standalone test regardless of where it came from — the
- * original `PROXY` testType would be wrong to carry back. Deriving gives both
- * natively-authored and round-tripped tests a correct, proxy-free value:
- *   - apiType picks the closest EnumApiType (REST/SOAP/GRPC/WEBSOCKET/AI).
- *   - testType picks a standalone test-console kind: RESOURCE for the REST
- *     family (isRest), WSDL for SOAP (isSoap), API (neutral) for the rest.
- */
-function protocolToApinizerTypes(protocol: string | undefined): {
-  apiType: string
-  testType: string
-} {
-  switch ((protocol ?? 'http').toLowerCase()) {
-    case 'soap':
-      return { apiType: 'SOAP', testType: 'WSDL' }
-    case 'grpc':
-      return { apiType: 'GRPC', testType: 'API' }
-    case 'websocket':
-    case 'socketio':
-      return { apiType: 'WEBSOCKET', testType: 'API' }
-    case 'ai':
-      return { apiType: 'AI', testType: 'API' }
-    default:
-      // http / graphql / sse / mcp — all HTTP/REST-family.
-      return { apiType: 'REST', testType: 'RESOURCE' }
-  }
-}
-
-/** Reconstruct a full URL from a Postman url object or string. Preserves
- * `{{variables}}` and template placeholders as-is — never URL-decodes them. */
-export function reconstructPostmanUrl(url: PostmanUrl | string | undefined): string {
-  if (!url) return ''
-  if (typeof url === 'string') return url
-  if (url.raw) return url.raw
-
-  const protocol = url.protocol ?? 'https'
-  const host = Array.isArray(url.host) ? url.host.join('.') : (url.host ?? '')
-  const port = url.port ? `:${url.port}` : ''
-  const pathParts = Array.isArray(url.path)
-    ? url.path.map((p) => (typeof p === 'string' ? p : (p.value ?? '')))
-    : url.path
-      ? [String(url.path)]
-      : []
-  const path = pathParts.length > 0 ? '/' + pathParts.join('/') : ''
-  return `${protocol}://${host}${port}${path}`
-}
-
-/** Best-effort path extraction for the endpoints.path column. Falls back to
- * the raw URL if the URL contains template variables that break URL parsing. */
-function extractPath(url: string): string {
-  if (!url) return '/'
-  // If the URL contains {{vars}} we can't reliably parse it — use a safe
-  // substitution then strip back the placeholder.
-  const PLACEHOLDER = '__VAR__'
-  const safe = url.replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
-  try {
-    const parsed = new URL(safe)
-    let pathname = parsed.pathname || '/'
-    pathname = pathname.replace(new RegExp(PLACEHOLDER, 'g'), '*')
-    return pathname
-  } catch {
-    // Relative URL or `{{baseUrl}}/path` form — strip protocol/host best-effort.
-    const m = url.match(/(?:https?:\/\/[^/]+)?(\/.*)$/)
-    return m?.[1] ?? url
-  }
-}
-
-/** Map Postman body modes onto the renderer's RequestBody shape. */
-export function mapPostmanBodyToUi(body: PostmanBody | undefined): {
-  type: string
-  content?: string
-  formData?: Array<{
-    id: string
-    key: string
-    value: string
-    enabled: boolean
-    type?: 'text' | 'file'
-    filePath?: string
-  }>
-  urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
-} {
-  if (!body || !body.mode) return { type: 'none' }
-
-  switch (body.mode) {
-    case 'raw': {
-      const lang = body.options?.raw?.language ?? 'text'
-      const map: Record<string, string> = {
-        json: 'json',
-        xml: 'xml',
-        html: 'html',
-        javascript: 'javascript',
-        text: 'text',
-        graphql: 'json',
-      }
-      return { type: map[lang] ?? 'text', content: body.raw ?? '' }
-    }
-    case 'graphql': {
-      const payload = body.graphql
-        ? JSON.stringify(
-            {
-              query: body.graphql.query ?? '',
-              variables: tryParseJson(body.graphql.variables) ?? {},
-            },
-            null,
-            2,
-          )
-        : ''
-      return { type: 'json', content: payload }
-    }
-    case 'formdata': {
-      const formData = (body.formdata ?? []).map((fd) => {
-        const isFile = (fd.type ?? '').toLowerCase() === 'file'
-        const filePath = Array.isArray(fd.src) ? fd.src[0] : fd.src
-        if (isFile) {
-          // For file fields the human-readable filename goes in `value`
-          // and the path the main process opens lives in `filePath`.
-          const fileName = filePath ? (filePath.split(/[\\/]/).pop() ?? filePath) : ''
-          return {
-            id: genKvId(),
-            key: fd.key ?? '',
-            value: fileName,
-            enabled: !fd.disabled,
-            type: 'file' as const,
-            filePath: filePath ?? undefined,
-          }
-        }
-        return {
-          id: genKvId(),
-          key: fd.key ?? '',
-          value: fd.value ?? (Array.isArray(fd.src) ? fd.src.join(',') : (fd.src ?? '')),
-          enabled: !fd.disabled,
-          type: 'text' as const,
-        }
-      })
-      return { type: 'form-data', formData }
-    }
-    case 'urlencoded': {
-      const urlEncoded = (body.urlencoded ?? []).map((ue) => ({
-        id: genKvId(),
-        key: ue.key ?? '',
-        value: ue.value ?? '',
-        enabled: !ue.disabled,
-      }))
-      return { type: 'urlencoded', urlEncoded }
-    }
-    case 'file':
-      // Binary upload — content path can't survive an export, so we record the
-      // hint. The user re-attaches the file in the UI.
-      return { type: 'binary', content: body.file?.src ?? '' }
-    default:
-      return { type: 'none' }
-  }
-}
-
-function tryParseJson(s: string | undefined): unknown {
-  if (!s) return null
-  try {
-    return JSON.parse(s)
-  } catch {
-    return null
-  }
-}
-
-/** Map Postman auth onto the renderer's AuthConfig shape. */
-export function mapPostmanAuthToUi(auth: PostmanAuth | undefined): Record<string, unknown> | null {
-  if (!auth || !auth.type) return null
-
-  const t = auth.type.toLowerCase()
-  switch (t) {
-    case 'noauth':
-      return { type: 'none' }
-    case 'basic':
-      return {
-        type: 'basic',
-        basic: {
-          username: readAuthField(auth.basic, 'username'),
-          password: readAuthField(auth.basic, 'password'),
-        },
-      }
-    case 'bearer':
-      return {
-        type: 'bearer',
-        bearer: { token: readAuthField(auth.bearer, 'token'), prefix: 'Bearer' },
-      }
-    case 'apikey': {
-      const inLocation = readAuthField(auth.apikey, 'in') || 'header'
-      return {
-        type: 'api-key',
-        apiKey: {
-          key: readAuthField(auth.apikey, 'key'),
-          value: readAuthField(auth.apikey, 'value'),
-          in: inLocation === 'query' ? 'query' : 'header',
-        },
-      }
-    }
-    case 'digest':
-      return {
-        type: 'digest',
-        digest: {
-          username: readAuthField(auth.digest, 'username'),
-          password: readAuthField(auth.digest, 'password'),
-        },
-      }
-    case 'ntlm':
-      return {
-        type: 'ntlm',
-        ntlm: {
-          username: readAuthField(auth.ntlm, 'username'),
-          password: readAuthField(auth.ntlm, 'password'),
-          domain: readAuthField(auth.ntlm, 'domain'),
-          workstation: readAuthField(auth.ntlm, 'workstation'),
-        },
-      }
-    case 'oauth2':
-      // Best-effort — Postman has many flows; we capture token only.
-      return {
-        type: 'oauth2',
-        oauth2: {
-          grantType: 'client_credentials',
-          tokenUrl: readAuthField(auth.oauth2, 'accessTokenUrl'),
-          authUrl: readAuthField(auth.oauth2, 'authUrl'),
-          clientId: readAuthField(auth.oauth2, 'clientId'),
-          clientSecret: readAuthField(auth.oauth2, 'clientSecret'),
-          scope: readAuthField(auth.oauth2, 'scope'),
-          token: readAuthField(auth.oauth2, 'accessToken'),
-        },
-      }
-    default:
-      return { type: 'none' }
-  }
-}
-
-// ─── Postman Import ─────────────────────────────────────────
-
-export async function importPostman(
-  projectId: string,
-  content: string,
-  rootFolderId: string | null = null,
-  /**
-   * `projectScripts`: write the collection-level `event` scripts into the
-   * project's own scripts (APIs import only, issue #270). Off for callers that
-   * use this importer as a parser — the Tests-panel suite import must not
-   * change the project's scripts as a side effect.
-   */
-  opts: { projectScripts?: boolean } = {},
-): Promise<ImportResult> {
-  const warnings: string[] = []
-  let parsed: unknown
-
-  try {
-    parsed = JSON.parse(content)
-  } catch (e) {
-    return {
-      success: false,
-      error: 'Failed to parse Postman collection JSON: ' + (e as Error).message,
-    }
-  }
-
-  const root = parsed as Record<string, unknown>
-
-  // Postman v1 legacy collections — `name` + `requests[]` instead of
-  // `info` + `item[]`. Surface a v1-specific message so the user knows
-  // to re-export as v2.1 rather than getting the generic "wrong file
-  // type" error below.
-  const hasV1Markers =
-    typeof root['name'] === 'string' &&
-    Array.isArray(root['requests']) &&
-    !Array.isArray(root['item'])
-  if (hasV1Markers) {
-    return {
-      success: false,
-      error:
-        'Postman v1 collections are not supported. Re-export the collection from Postman as v2.1 ' +
-        '(Collections → ⋯ → Export → Collection v2.1) and import the resulting file.',
-    }
-  }
-
-  // Reject anything that's not actually a Postman v2.x collection. The
-  // APIs Import flow is collection-only — env / test-suite / mock
-  // exports belong in their own importers. Keep the message generic so
-  // we don't have to enumerate every wrong-file shape (env, test suite,
-  // mock, …) — the importer's job is to verify the file it WAS asked
-  // to load matches the format it was asked to load.
-  const looksLikeCollection =
-    root &&
-    typeof root === 'object' &&
-    typeof (root['info'] as Record<string, unknown> | undefined)?.['name'] === 'string' &&
-    Array.isArray(root['item'])
-  if (!looksLikeCollection) {
-    return {
-      success: false,
-      error: "This file is not a Postman collection. You can't upload this file type from here.",
-    }
-  }
-
-  const collection = parsed as PostmanCollection
-
-  // Accept v2.0 and v2.1 schemas (both live under getpostman.com).
-  const schema = collection.info.schema ?? ''
-  if (schema && !/postman|getpostman/i.test(schema)) {
-    warnings.push(`Unknown collection schema "${schema}" — importing best-effort.`)
-  }
-
-  const db = getDb()
-  const now = Date.now()
-  let endpointCount = 0
-  let folderCount = 0
-  const endpointIds: string[] = []
-  const suggestedEnvVars: Record<string, string> = {}
-
-  if (collection.variable) {
-    for (const v of collection.variable) {
-      if (v.key) suggestedEnvVars[v.key] = v.value ?? ''
-    }
-  }
-
-  // Persist collection-level variables to a project-scoped environment so that
-  // the export round-trip is lossless. Postman's `collection.variable[]` has no
-  // first-class equivalent in our schema — the closest analogue is a per-project
-  // environment. We create (or reuse) one named after the collection, stamp it
-  // active, and write each variable as a row. On export we read from the active
-  // environment for this project.
-  if (collection.variable && collection.variable.length > 0) {
-    const projectRow = db
-      .prepare('SELECT workspace_id FROM projects WHERE id = ?')
-      .get(projectId) as { workspace_id: string } | undefined
-    if (projectRow) {
-      const envName = `${collection.info.name} (imported)`
-      // Reuse existing env with the same name if we've already imported this
-      // collection — avoids exploding env count on re-imports.
-      const envRow = db
-        .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-        .get(projectId, envName) as { id: string } | undefined
-      let envId: string
-      // Secret values this machine holds for the env being replaced (issue
-      // #177): our export writes them as '' — a re-import must not blank them.
-      let localSecrets: LocalSecretsByKey = new Map()
-      if (envRow) {
-        envId = envRow.id
-        localSecrets = readEnvSecretsByKey(db, envId)
-        db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
-      } else {
-        envId = randomUUID()
-        // If the project has no active env yet, mark this one active.
-        const hasActive = db
-          .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
-          .get(projectId) as { x: number } | undefined
-        db.prepare(
-          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).run(envId, projectRow.workspace_id, projectId, envName, hasActive ? 0 : 1, now, now)
-      }
-      const insertVar = db.prepare(
-        `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      for (const v of collection.variable) {
-        if (!v.key) continue
-        // `type: "secret"` (Postman, and our own export — issue #177) keeps
-        // the variable masked in the env modal.
-        const isSecret = v.type === 'secret' ? 1 : 0
-        const kept = keepLocalSecretByKey(
-          {
-            key: v.key,
-            secret: isSecret === 1,
-            value: v.value ?? '',
-            initial_value: v.value ?? null,
-          },
-          localSecrets,
-        )
-        // Sealed (issue #239): a kept local value is already ciphertext.
-        insertVar.run(
-          randomUUID(),
-          envId,
-          v.key,
-          storedVariableValue(kept.value, isSecret === 1),
-          null,
-          1,
-          isSecret,
-          storedVariableValue(kept.initial_value, isSecret === 1),
-        )
-      }
-    }
-  }
-
-  function processItems(
-    items: PostmanItem[],
-    parentFolderId: string | null,
-    inheritedAuth: PostmanAuth | undefined,
-  ): void {
-    for (const item of items) {
-      const isFolder = Array.isArray(item.item) && !item.request
-      if (isFolder) {
-        const folderId = randomUUID()
-        // Folder-level cascade metadata — mirror the Insomnia v5 importer so a
-        // Postman "Setup folder → token pre-request script → Bearer inherit"
-        // pattern survives import. Without persisting these, the folder's
-        // scripts/auth were dropped, the suite snapshot copied NULLs into
-        // test_suite_folders, and the run lost the token step → 401 (the exact
-        // parity gap Insomnia already closed).
-        const folderScripts = extractPostmanEventScripts(item.event)
-        const folderAuthUi = mapPostmanAuthToUi(item.auth)
-        db.prepare(
-          `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(
-          folderId,
-          projectId,
-          parentFolderId,
-          item.name || 'Folder',
-          folderCount,
-          folderAuthUi ? JSON.stringify(folderAuthUi) : null,
-          folderScripts.preScript ?? null,
-          folderScripts.postScript ?? null,
-        )
-        folderCount++
-        // A folder's own auth also overrides the inherited one for its whole
-        // subtree on the API-tree send path (which bakes auth onto each child
-        // request); absent a block, inheritance flows straight through.
-        const childAuth = item.auth ?? inheritedAuth
-        processItems(item.item ?? [], folderId, childAuth)
-        continue
-      }
-
-      if (!item.request) {
-        warnings.push(`Skipped item "${item.name ?? '(unnamed)'}" — no request body`)
-        continue
-      }
-
-      const req = item.request
-      const method = (req.method ?? 'GET').toUpperCase()
-      const url = reconstructPostmanUrl(req.url)
-      const path = extractPath(url)
-
-      // Skip Postman placeholder items that have neither a URL nor a name —
-      // those show up after some Postman collection-builder operations and
-      // surfaced as the stray "GET New Request" in v1.3.1 B16. We're
-      // conservative: require BOTH the URL to be empty AND the name to look
-      // like an unedited placeholder, so we don't accidentally drop a real
-      // user-authored request that simply lacks a URL.
-      const looksLikePlaceholder =
-        !url.trim() && (!item.name || /^new request$/i.test(item.name.trim()))
-      if (looksLikePlaceholder) {
-        warnings.push(`Skipped empty placeholder item "${item.name ?? '(unnamed)'}"`)
-        continue
-      }
-
-      // Headers — UI KeyValuePair[]
-      const headers = (req.header ?? []).map((h) => ({
-        id: genKvId(),
-        key: h.key ?? '',
-        value: h.value ?? '',
-        description: h.description,
-        enabled: !h.disabled,
-      }))
-
-      // Query params — UI KeyValuePair[]
-      const params =
-        typeof req.url === 'object' && Array.isArray(req.url?.query)
-          ? req.url!.query!.map((q) => ({
-              id: genKvId(),
-              key: q.key ?? '',
-              value: q.value ?? '',
-              description: q.description,
-              enabled: !q.disabled,
-            }))
-          : []
-
-      const body = mapPostmanBodyToUi(req.body)
-      // A request with no auth inherits the nearest ancestor's (folder →
-      // collection root); an explicit block on the request (incl. `noauth`)
-      // overrides. Previously only the collection root was inherited, so an
-      // auth set on a folder never reached its child requests.
-      const auth = mapPostmanAuthToUi(req.auth ?? inheritedAuth)
-
-      // Pull pre-request + test scripts from item.event[]
-      const { preScript, postScript } = extractPostmanEventScripts(item.event)
-
-      const requestSchema: Record<string, unknown> = {
-        url,
-        method,
-        params,
-        headers,
-        body,
-      }
-      if (auth) requestSchema.auth = auth
-      if (preScript) requestSchema.preScript = preScript
-      if (postScript) requestSchema.postScript = postScript
-
-      // ── Apinizer interop: fold x-apinizer fidelity back in (additive) ──
-      // Structured assertions from the extension are the primary source (more
-      // reliable than re-parsing the Postman test script); the raw-body
-      // sub-type and timeout that Postman can't carry are recovered too. Absent
-      // or unknown-version extensions leave the plain-Postman import untouched.
-      const xa = item['x-apinizer']
-      if (xa && xApinizerVersionOk(xa)) {
-        const xaAssertions = xApinizerAssertionsToUi(xa.assertions, warnings)
-        if (xaAssertions.length > 0) {
-          requestSchema.assertions = xaAssertions
-          // Our own export (issue #270) also wrote these rows as generated
-          // pm.test code — keep only the tests x-apinizer does not restore.
-          if (typeof requestSchema.postScript === 'string') {
-            const kept = stripExportedAssertions(
-              requestSchema.postScript,
-              X_APINIZER_RESTORED_KINDS,
-            )
-            if (kept) requestSchema.postScript = kept
-            else delete requestSchema.postScript
-          }
-        }
-        const refinedBodyType = apinizerRowTypeToBodyType(xa.bodyRowType)
-        if (refinedBodyType && isRawFamilyBodyType(body.type)) {
-          // `body` is the same object stored under requestSchema.body, so
-          // mutating it here updates the persisted schema.
-          body.type = refinedBodyType
-        }
-        // Apinizer carries seconds; Testnizer's one timeout key is the
-        // top-level `timeout` in ms that Send, Ctrl+S and Run all use (issue
-        // #185). `timeoutSeconds` used to be written here and read by nothing.
-        // Apinizer's 0 means "use the default" — left unset (inherit), never
-        // mapped to Testnizer's `timeout: 0` (= no limit).
-        if (
-          typeof xa.timeoutSeconds === 'number' &&
-          Number.isFinite(xa.timeoutSeconds) &&
-          xa.timeoutSeconds > 0
-        ) {
-          requestSchema.timeout = Math.round(xa.timeoutSeconds * 1000)
-        }
-      } else if (xa) {
-        warnings.push(
-          `Ignored x-apinizer extension with unsupported schemaVersion "${
-            xa.schemaVersion ?? '(none)'
-          }" on "${item.name ?? '(unnamed)'}" — imported as plain Postman.`,
-        )
-      }
-
-      const endpointId = randomUUID()
-      db.prepare(
-        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        endpointId,
-        projectId,
-        parentFolderId,
-        item.name || `${method} ${path}`,
-        req.description ?? null,
-        'http',
-        method,
-        path || '/',
-        'developing',
-        JSON.stringify(requestSchema),
-        null,
-        endpointCount,
-        now,
-        now,
-      )
-      endpointIds.push(endpointId)
-      endpointCount++
-    }
-  }
-
-  processItems(collection.item, rootFolderId, collection.auth)
-  try {
-    if (opts.projectScripts) importCollectionScripts(projectId, collection, rootFolderId, warnings)
-    else {
-      const { preScript, postScript } = extractPostmanEventScripts(collection.event)
-      if (preScript?.trim() || postScript?.trim())
-        warnings.push('Collection-level scripts were not imported.')
-    }
-  } catch (e) {
-    // Partial import over a hard fail: the requests are already in.
-    warnings.push(`Collection-level scripts were not imported: ${(e as Error).message}`)
-  }
-
-  if (endpointCount === 0 && folderCount === 0) {
-    warnings.push('No requests or folders found in the Postman collection')
-  }
-
-  return {
-    success: true,
-    collectionId: projectId,
-    endpointCount,
-    folderCount,
-    endpointIds,
-    suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
-    warnings: warnings.length > 0 ? warnings : undefined,
-  }
-}
-
-/**
- * Collection-level `event` scripts → the project's own pre-request / test
- * script (issue #270; the export writes project scripts there). Never
- * overwrites: a project that already has that script keeps it, and an import
- * into a folder leaves the project alone — the script would otherwise start
- * running for every other request of the project. Both cases are reported.
- */
-function importCollectionScripts(
-  projectId: string,
-  collection: PostmanCollection,
-  rootFolderId: string | null,
-  warnings: string[],
-): void {
-  const { preScript, postScript } = extractPostmanEventScripts(collection.event)
-  const incoming: Array<{ key: 'preScript' | 'testScript'; label: string; text?: string }> = [
-    { key: 'preScript', label: 'pre-request', text: preScript },
-    { key: 'testScript', label: 'test', text: postScript },
-  ]
-  const present = incoming.filter((s) => s.text && s.text.trim())
-  if (present.length === 0) return
-  if (rootFolderId) {
-    for (const s of present)
-      warnings.push(
-        `The collection-level ${s.label} script was not imported: the collection went into a folder. ` +
-          'Add it in that folder’s settings if its requests need it.',
-      )
-    return
-  }
-  const current = readSharedProjectSettings(projectId) ?? {}
-  const next: Record<string, unknown> = {}
-  for (const s of present) {
-    const existing = current[s.key]
-    if (typeof existing === 'string' && existing.trim()) {
-      warnings.push(
-        `The collection-level ${s.label} script was not imported: this project already has one.`,
-      )
-    } else {
-      next[s.key] = s.text
-    }
-  }
-  if (Object.keys(next).length > 0) writeSharedProjectSettings(projectId, next)
-}
-
-// ─── Postman Environment Import ─────────────────────────────
-
-/** The secret rows an environment holds right now, by key (read before a re-import's DELETE). */
-function readEnvSecretsByKey(db: ReturnType<typeof getDb>, envId: string): LocalSecretsByKey {
-  return localSecretsByKey(
-    db
-      .prepare(
-        'SELECT key, value, initial_value, secret FROM environment_variables WHERE environment_id = ? AND secret = 1',
-      )
-      .all(envId) as Record<string, unknown>[],
-  )
-}
-
-/**
- * Import a standalone Postman environment export file. Creates (or replaces)
- * a project-scoped environment whose name matches the export's `name` field.
- * Re-importing the same environment is idempotent — existing variables are
- * dropped and re-inserted so renames in Postman don't accumulate dead rows.
- *
- * Returns an ImportResult with `endpointCount: 0` (no endpoints) — callers
- * detect environment imports by the `environmentId` field, which only the
- * env importer populates.
- */
-export async function importPostmanEnvironment(
-  projectId: string,
-  env: PostmanEnvironment,
-): Promise<ImportResult & { environmentId?: string; environmentName?: string }> {
-  const warnings: string[] = []
-
-  if (!env.name || typeof env.name !== 'string') {
-    return {
-      success: false,
-      error: 'Postman environment file is missing `name`',
-    }
-  }
-
-  const values = Array.isArray(env.values) ? env.values : []
-  const db = getDb()
-  const now = Date.now()
-
-  const projectRow = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
-    | { workspace_id: string }
-    | undefined
-  if (!projectRow) {
-    return { success: false, error: 'Project not found: ' + projectId }
-  }
-
-  // Reuse the env when a row with the same name already exists in this project —
-  // Postman's UI never shows duplicate env names so users expect a re-import to
-  // overwrite. Variables are wiped before reinsert (no merge).
-  const existing = db
-    .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-    .get(projectId, env.name) as { id: string } | undefined
-  let envId: string
-  // Secret values this machine holds for the env being replaced (issue #177):
-  // the environment export writes them as '' — a re-import must not blank them.
-  let localSecrets: LocalSecretsByKey = new Map()
-  if (existing) {
-    envId = existing.id
-    localSecrets = readEnvSecretsByKey(db, envId)
-    db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
-  } else {
-    envId = randomUUID()
-    // First env on the project becomes active automatically — matches the
-    // collection variable importer's behaviour and avoids a "select env"
-    // chore right after import.
-    const hasActive = db
-      .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
-      .get(projectId) as { x: number } | undefined
-    db.prepare(
-      `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(envId, projectRow.workspace_id, projectId, env.name, hasActive ? 0 : 1, now, now)
-  }
-
-  const insertVar = db.prepare(
-    `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-  let varCount = 0
-  for (const v of values) {
-    if (!v || typeof v.key !== 'string' || !v.key) continue
-    // Postman flags secret variables with type "secret"; mirror that so the
-    // env modal masks them. Default enabled=true matches Postman's omitted-flag
-    // convention.
-    const isSecret = v.type === 'secret' ? 1 : 0
-    const isEnabled = v.enabled === false ? 0 : 1
-    const kept = keepLocalSecretByKey(
-      { key: v.key, secret: isSecret === 1, value: v.value ?? '', initial_value: v.value ?? null },
-      localSecrets,
-    )
-    // Sealed (issue #239): a kept local value is already ciphertext.
-    insertVar.run(
-      randomUUID(),
-      envId,
-      v.key,
-      storedVariableValue(kept.value, isSecret === 1),
-      null,
-      isEnabled,
-      isSecret,
-      storedVariableValue(kept.initial_value, isSecret === 1),
-    )
-    varCount++
-  }
-
-  if (varCount === 0) {
-    warnings.push('Postman environment had no variables — created an empty environment.')
-  }
-
-  return {
-    success: true,
-    environmentId: envId,
-    environmentName: env.name,
-    endpointCount: 0,
-    folderCount: 0,
-    warnings: warnings.length > 0 ? warnings : undefined,
-  }
 }
 
 // ─── Postman Export ─────────────────────────────────────────
@@ -3264,25 +2122,27 @@ function buildPostmanCollection(
     }
     const url = schema.url ?? ep.path
 
-    const item: PostmanItem = {
-      name: ep.name,
-      request: {
-        method,
-        header: (schema.headers ?? []).map((h) => ({
-          key: h.key,
-          value: h.value,
-          description: h.description,
-          disabled: h.enabled === false ? true : undefined,
-        })),
-        url: buildPostmanUrl(url, schema.params),
-        description: ep.description ?? undefined,
-      },
+    const request: PostmanRequest = {
+      method,
+      header: (schema.headers ?? []).map((h) => ({
+        key: h.key,
+        value: h.value,
+        description: h.description,
+        disabled: h.enabled === false ? true : undefined,
+      })),
+      url: buildPostmanUrl(url, schema.params),
+      description: ep.description ?? undefined,
     }
+    const item: PostmanItem = { name: ep.name, request }
 
     const body = bodyToPostman(schema.body)
-    if (body) item.request!.body = body
+    if (body) request.body = body
     const auth = authToPostman(schema.auth)
-    if (auth) item.request!.auth = auth
+    if (auth) request.auth = auth
+    // An explicit "No auth" must survive the trip: without a block the
+    // request would inherit the folder / collection auth on re-import
+    // (issue #276 — imports now keep inheritance instead of baking).
+    else if (schema.auth?.type === 'none') request.auth = { type: 'noauth' }
 
     const itemAssertions = exportRowAssertions(ep, schema)
 
@@ -3379,7 +2239,31 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
     collectPostmanVariables(db, projectId),
     readProjectScripts(projectId),
   )
+  const projectAuth = readProjectAuthForExport(projectId)
+  if (projectAuth) collection.auth = projectAuth
   return { content: JSON.stringify(collection, null, 2), skipped }
+}
+
+/**
+ * Project auth → collection-level `auth` (issue #276: a Postman import keeps
+ * the collection auth on the project when it can, so the export must give it
+ * back or the inheriting requests lose their auth). Literal credentials are
+ * blanked — project-auth credentials never leave the machine (issue #177
+ * rule 5, same filter as the project file); `{{variable}}` references travel.
+ */
+function readProjectAuthForExport(projectId: string): PostmanAuth | undefined {
+  let raw: unknown
+  try {
+    raw = readSharedProjectSettings(projectId)
+  } catch {
+    return undefined
+  }
+  if (!raw) return undefined
+  const stripped = stripProjectSharedSettings(JSON.stringify(raw))
+  const settings =
+    typeof stripped === 'string' ? (JSON.parse(stripped) as Record<string, unknown>) : null
+  const config = projectAuthToAuthConfig(settings?.auth as StoredProjectAuth | undefined)
+  return config ? authToPostman(config as UiRequestSchema['auth']) : undefined
 }
 
 /** The Postman v2.1 collection text of a project (see `buildPostmanProjectExport`). */

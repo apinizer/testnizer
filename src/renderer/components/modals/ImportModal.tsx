@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   X,
   Upload,
@@ -19,6 +19,12 @@ import { toast } from '../../lib/toast'
 import { detectImportFormat, checkTypeMismatch } from '../../lib/import-format-detect'
 import { startsWithCurl } from '../../../shared/curl'
 import Modal from '../shared/Modal'
+import ImportResultPanel, { type ImportReport } from './ImportResultPanel'
+import {
+  classifyPostmanText,
+  isPostmanVariablesKind,
+  type PostmanArtifactKind,
+} from '../../../shared/postman-detect'
 import type { WsdlParseResult, TreeNode } from '../../types'
 
 interface ImportFormat {
@@ -213,6 +219,19 @@ export default function ImportModal() {
   // WSDL-specific
   const [wsdlParsed, setWsdlParsed] = useState<WsdlParseResult | null>(null)
 
+  // Result step (issue #276): warnings an importer returned, shown before closing.
+  const [importReport, setImportReport] = useState<ImportReport | null>(null)
+
+  // Which Postman artifact the pending file is — one classifier for the
+  // modal and the importer. Environment / globals files never get a folder.
+  const selectedFormatId = IMPORT_FORMATS[selectedIdx]?.id
+  const postmanKind: PostmanArtifactKind | null = useMemo(() => {
+    if (selectedFormatId !== 'postman' && selectedFormatId !== 'apinizer') return null
+    if (!pendingFileContent) return null
+    return classifyPostmanText(pendingFileContent)?.kind ?? null
+  }, [selectedFormatId, pendingFileContent])
+  const envOnlyImport = isPostmanVariablesKind(postmanKind)
+
   if (!showImportModal) return null
 
   const selectedFormat = IMPORT_FORMATS[selectedIdx]
@@ -237,6 +256,7 @@ export default function ImportModal() {
     setImporting(false)
     setWsdlParsed(null)
     setCurlPasteText('')
+    setImportReport(null)
   }
 
   /** Commit a pasted cURL string and advance to the folder step. */
@@ -460,7 +480,16 @@ export default function ImportModal() {
     // remaps under the chosen destination — so an extra placeholder folder
     // would just sit empty (issues #11, #32).
     let folderId: string | null = null
-    if (selectedFormat.id !== 'native' && folderMode === 'new' && newFolderName.trim()) {
+    // A folder this import created — removed again when the import fails, so a
+    // failed import leaves no empty folder behind (the importer itself is
+    // all-or-nothing).
+    let createdFolderId: string | null = null
+    if (
+      selectedFormat.id !== 'native' &&
+      !envOnlyImport &&
+      folderMode === 'new' &&
+      newFolderName.trim()
+    ) {
       try {
         const folderResult = await window.api?.folder?.create({
           project_id: pid,
@@ -469,11 +498,12 @@ export default function ImportModal() {
         })
         if (folderResult?.success && folderResult.data) {
           folderId = (folderResult.data as { id: string }).id
+          createdFolderId = folderId
         }
       } catch {
         /* continue without folder */
       }
-    } else if (folderMode === 'existing' && targetFolderId) {
+    } else if (folderMode === 'existing' && targetFolderId && !envOnlyImport) {
       folderId = targetFolderId
     }
 
@@ -486,7 +516,15 @@ export default function ImportModal() {
       let importResult:
         | {
             success: boolean
-            data?: { success?: boolean; error?: string }
+            data?: {
+              success?: boolean
+              error?: string
+              warnings?: string[]
+              endpointCount?: number
+              folderCount?: number
+              exampleCount?: number
+              environmentName?: string
+            }
             error?: string
           }
         | undefined
@@ -626,8 +664,29 @@ export default function ImportModal() {
           await useEnvironmentStore.getState().fetchEnvironments()
         }
         toast.success(t('toast.imported'))
-        handleClose()
+        // Anything skipped or degraded is listed before the modal closes
+        // (issue #276) — a toast cannot hold the list.
+        const warnings = importResult?.data?.warnings ?? []
+        if (warnings.length > 0) {
+          setImportReport({
+            endpointCount: importResult?.data?.endpointCount,
+            folderCount: importResult?.data?.folderCount,
+            exampleCount: importResult?.data?.exampleCount,
+            environmentName: importResult?.data?.environmentName,
+            warnings,
+          })
+        } else {
+          handleClose()
+        }
       } else {
+        if (createdFolderId) {
+          try {
+            await window.api?.folder?.delete?.(createdFolderId)
+            await refreshTree()
+          } catch {
+            /* best effort — the import itself already rolled back */
+          }
+        }
         // Final-step import failure: surface globally so it's visible even
         // after the modal closes on a successful retry. The parse-step
         // errors above stay in the modal because they relate to the
@@ -934,8 +993,10 @@ export default function ImportModal() {
           </>
         )}
 
+        {importReport && <ImportResultPanel report={importReport} onDone={handleClose} />}
+
         {/* Step 3: Folder / Destination selection */}
-        {step === 3 && (
+        {step === 3 && !importReport && (
           <>
             <div className="space-y-4">
               {/* WSDL summary (if applicable) */}
@@ -976,8 +1037,28 @@ export default function ImportModal() {
                 </div>
               )}
 
+              {/* Postman environment / globals: no destination folder */}
+              {envOnlyImport && (
+                <div
+                  data-testid="import-env-note"
+                  className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-[var(--text)]"
+                >
+                  <div className="font-semibold">
+                    {t('import.envNote.title').replace(
+                      '{kind}',
+                      t(
+                        postmanKind === 'globals'
+                          ? 'import.envNote.globals'
+                          : 'import.envNote.environment',
+                      ),
+                    )}
+                  </div>
+                  <div className="text-[var(--sub)]">{t('import.envNote.body')}</div>
+                </div>
+              )}
+
               {/* Folder Selection */}
-              <div>
+              <div hidden={envOnlyImport}>
                 <div className="mb-3 font-semibold text-[var(--text)]">Import Destination</div>
 
                 {/* New folder */}
@@ -1123,7 +1204,9 @@ export default function ImportModal() {
                 <button
                   type="button"
                   onClick={handleFinalImport}
-                  disabled={importing || (folderMode === 'existing' && !targetFolderId)}
+                  disabled={
+                    importing || (folderMode === 'existing' && !targetFolderId && !envOnlyImport)
+                  }
                   className="flex cursor-pointer items-center gap-1.5 rounded-[7px] border-none bg-[var(--accent)] px-[18px] py-[7px] font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {importing ? (

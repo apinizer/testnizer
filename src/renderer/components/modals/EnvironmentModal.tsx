@@ -24,6 +24,7 @@ import EmptyState from '../shared/EmptyState'
 import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
+import { classifyPostmanDocument, isPostmanVariablesKind } from '../../../shared/postman-detect'
 
 type Pane = { kind: 'globals' } | { kind: 'env'; id: string }
 
@@ -110,8 +111,12 @@ export default function EnvironmentModal() {
       // a collection export) so for Insomnia we route through the same
       // importer that handles the collection — it picks up any environment
       // resources along the way and surfaces them as suggested vars.
-      const isPostmanEnv = !isInsomniaV5Yaml && root['_postman_variable_scope'] === 'environment'
-      const isPostmanCollection = !isInsomniaV5Yaml && root['info'] && Array.isArray(root['item'])
+      // One shared Postman classifier (issue #276): environment AND globals
+      // exports import here (globals → the "Globals" environment); any
+      // collection kind (v1 / v2 / dump / v3) gets the "use APIs Import" hint.
+      const postmanKind = isInsomniaV5Yaml ? null : (classifyPostmanDocument(root)?.kind ?? null)
+      const isPostmanEnv = isPostmanVariablesKind(postmanKind)
+      const isPostmanCollection = !!postmanKind && !isPostmanEnv
       const isInsomniaV4 =
         !isInsomniaV5Yaml && root['_type'] === 'export' && Array.isArray(root['resources'])
       const isInsomniaV5 =
@@ -133,6 +138,7 @@ export default function EnvironmentModal() {
               error?: string
               environmentName?: string
               suggestedEnvVars?: Record<string, string>
+              warnings?: string[]
             }
             error?: string
           }
@@ -174,6 +180,10 @@ export default function EnvironmentModal() {
         await fetchEnvironments()
         const name = result?.data?.environmentName
         toast.success(name ? `${t('env.importSuccess')}: ${name}` : t('env.importSuccess'))
+        // Nothing silently dropped (issue #276): vault-linked secrets, the
+        // Globals note, an inactive imported environment.
+        const warnings = result?.data?.warnings ?? []
+        if (warnings.length > 0) toast.warning(warnings.join(' · '))
       } else {
         const errMsg = result?.data?.error || result?.error || t('env.unknownError')
         toast.error(`${t('env.importFailed')}: ${errMsg}`)
