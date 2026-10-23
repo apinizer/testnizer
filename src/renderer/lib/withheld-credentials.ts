@@ -66,7 +66,21 @@ export interface BoundRow {
 interface IpcEnvelope<T> {
   success: boolean
   data?: T | null
+  /** The row does not exist (main's marker, issue #269). */
+  notFound?: boolean
 }
+
+/**
+ * The read definitively found no row: `get` answered success without data
+ * (endpoint / saved request) or the `notFound` marker (suite item). A failed
+ * read is NOT missing — orphaning a live tab on a transient error would turn
+ * the next save into a duplicate.
+ */
+const rowMissing = (res: IpcEnvelope<unknown> | undefined): boolean =>
+  !!res && ((res.success && (res.data === null || res.data === undefined)) || !!res.notFound)
+
+/** A definitive "no such row" from `readBoundRowState` (issue #269). */
+const ROW_MISSING = 'missing' as const
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -109,6 +123,14 @@ function fromSchema(rawSchema: unknown, url?: unknown): BoundRow | null {
  * endpoint.
  */
 export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | undefined> {
+  const row = await readBoundRowState(tab)
+  return row === ROW_MISSING ? null : row
+}
+
+/** `readBoundRow`, telling a row that is gone (`ROW_MISSING`) from an unreadable one (`null`). */
+async function readBoundRowState(
+  tab: BoundTab,
+): Promise<BoundRow | null | undefined | typeof ROW_MISSING> {
   const api = window.api
   try {
     if (tab.testSuiteItemId) {
@@ -120,6 +142,7 @@ export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | und
             assertions?: string | null
           }>
         | undefined
+      if (rowMissing(res)) return ROW_MISSING
       if (!res?.success || !res.data) return null
       const row = fromSchema(res.data.request_schema, res.data.url ?? undefined)
       // A suite item keeps its method and assertions in columns of their own.
@@ -147,6 +170,7 @@ export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | und
             metadata?: string | null
           }>
         | undefined
+      if (rowMissing(res)) return ROW_MISSING
       if (!res?.success || !res.data) return null
       const params = parseColumn(res.data.params)
       const body = parseColumn(res.data.body)
@@ -175,6 +199,7 @@ export async function readBoundRow(tab: BoundTab): Promise<BoundRow | null | und
       const res = (await api?.endpoint?.get(tab.endpointId)) as
         | IpcEnvelope<{ request_schema?: string; path?: string; method?: string }>
         | undefined
+      if (rowMissing(res)) return ROW_MISSING
       if (!res?.success || !res.data) return null
       const row = fromSchema(res.data.request_schema, res.data.path)
       // Same fallback as `openEndpointTab`: the row's method when the schema has none.
@@ -402,7 +427,17 @@ function adaptersFor(tab: BoundTab): WithheldAdapter[] {
   return ADAPTERS.filter((a) => (!a.protocol || a.protocol === protocol) && a.pending(tab.id))
 }
 
-export type WithheldReload = { ok: true } | { ok: false; error: string }
+export type WithheldReload =
+  | { ok: true }
+  | {
+      ok: false
+      error: string
+      /**
+       * The bound row no longer exists (issue #269): the caller orphans the
+       * tab (`lib/orphan-tab.ts`) and routes to Save As — nothing to protect.
+       */
+      missing?: true
+    }
 
 /** The refusal when a not-loaded tab is still not loaded (in-place save guard). */
 export const NOT_LOADED_ERROR = 'Could not reload the saved request; the request was not saved.'
@@ -422,9 +457,17 @@ export function ensureWithheldCredentialsLoaded(tab: BoundTab): Promise<Withheld
   const pending = inflight.get(tab.id)
   if (pending) return pending
   const run = (async (): Promise<WithheldReload> => {
-    const row = await readBoundRow(tab)
+    const row = await readBoundRowState(tab)
     // Re-check after the await: an edit meanwhile may have cleared a marker.
     const waiting = adaptersFor(tab)
+    if (row === ROW_MISSING) {
+      // Checked before the not-loaded guard: a vanished row is not a refusal.
+      return {
+        ok: false,
+        missing: true,
+        error: 'The saved request no longer exists; the request was not saved.',
+      }
+    }
     if (row === null) {
       if (waiting.length === 0) return { ok: true }
       const what = waiting

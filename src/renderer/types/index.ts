@@ -1124,6 +1124,12 @@ export interface Tab {
   isLoading: boolean
   /** Preview tabs are replaced when another item is single-clicked. Double-click pins them. */
   isPreview?: boolean
+  /**
+   * The tab's saved row was deleted while it was open (issue #269): it is no
+   * longer bound to one, and the next save goes through Save As with a notice
+   * saying why. Cleared when Save As binds it to a new row.
+   */
+  orphaned?: boolean
 }
 
 export interface UIState {

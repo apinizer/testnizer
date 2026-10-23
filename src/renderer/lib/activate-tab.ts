@@ -45,6 +45,11 @@ const protocolLostAtStartup = new Set(
     .map((t) => t.id),
 )
 
+/** A tab unbound from its (deleted) row has no protocol slice to reload (issue #269). */
+export function forgetProtocolLost(tabId: string): void {
+  protocolLostAtStartup.delete(tabId)
+}
+
 /**
  * Point every protocol store's live slice at `tabId`.
  *

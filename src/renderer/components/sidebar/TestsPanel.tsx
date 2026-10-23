@@ -40,6 +40,7 @@ import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import { formatExportSkipped } from '../../lib/export-skipped'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
+import { orphanTab, orphanTabsForRows, suiteFolderItemIds } from '../../lib/orphan-tab'
 import { openOrReuseRunnerTab as sharedOpenRunnerTab } from '../../lib/open-runner-tab'
 
 /* ── Types ─────────────────────────────────────────────────── */
@@ -204,11 +205,24 @@ export default function TestsPanel() {
   // ─── Delete suite ─────────────────────────────────────────
   const handleDeleteSuite = useCallback(async () => {
     if (!deleteTarget) return
-    await api().testSuite.delete(deleteTarget.id)
+    // Issue #269: open tabs of the suite's items stay open + dirty, unbound,
+    // so Ctrl+S goes to Save As. A collapsed suite has no loaded contents —
+    // read its items before they are gone.
+    const contents =
+      suiteContents[deleteTarget.id] ??
+      (
+        (await api().testSuite.listEndpoints(deleteTarget.id)) as
+          | { success?: boolean; data?: SuiteContents }
+          | undefined
+      )?.data
+    const res = (await api().testSuite.delete(deleteTarget.id)) as { success?: boolean } | undefined
+    if (res?.success && contents) {
+      orphanTabsForRows({ testSuiteItemIds: contents.items.map((i) => i.id) })
+    }
     setDeleteTarget(null)
     setContextMenu(null)
     await loadSuites()
-  }, [deleteTarget, loadSuites])
+  }, [deleteTarget, loadSuites, suiteContents])
 
   // ─── Rename suite ─────────────────────────────────────────
   const handleRenameSuite = useCallback(async () => {
@@ -302,10 +316,13 @@ export default function TestsPanel() {
     async (suiteId: string, itemId: string) => {
       await api().testSuiteItem.delete(itemId)
       await loadSuiteContents(suiteId)
-      // Close the tab if the deleted item was open.
+      // Close the tab if the deleted item was open — unless it holds unsaved
+      // edits: then it stays open, unbound and dirty, so Ctrl+S offers Save As
+      // instead of the edits vanishing with the tab (issue #269).
       const tabs = useTabsStore.getState().tabs
       const openTab = tabs.find((t) => t.testSuiteItemId === itemId)
-      if (openTab) useTabsStore.getState().closeTab(openTab.id)
+      if (openTab?.isDirty) orphanTab(openTab.id)
+      else if (openTab) useTabsStore.getState().closeTab(openTab.id)
     },
     [loadSuiteContents],
   )
@@ -453,10 +470,17 @@ export default function TestsPanel() {
 
   const handleDeleteFolder = useCallback(
     async (suiteId: string, folderId: string) => {
-      await api().testSuiteFolder.delete(folderId)
+      // Items in the folder and its subfolders go with it (FK cascade) — their
+      // open tabs stay open + dirty, unbound (issue #269).
+      const contents = suiteContents[suiteId]
+      const itemIds = contents ? suiteFolderItemIds(contents, folderId) : []
+      const res = (await api().testSuiteFolder.delete(folderId)) as
+        | { success?: boolean }
+        | undefined
+      if (res?.success) orphanTabsForRows({ testSuiteItemIds: itemIds })
       await loadSuiteContents(suiteId)
     },
-    [loadSuiteContents],
+    [loadSuiteContents, suiteContents],
   )
 
   // Drag-drop move/reparent a folder. The backend rejects a move into the

@@ -18,6 +18,24 @@ export interface IpcResult<T> {
   success: boolean
   data?: T
   error?: string
+  /**
+   * The row the call targets does not exist (issue #269). Set only by a
+   * thrown `NotFoundError`; the renderer turns it into "this request no
+   * longer exists" instead of reporting a save that wrote nothing.
+   */
+  notFound?: true
+}
+
+/**
+ * Thrown by a handler whose target row is gone — deleted from the sidebar,
+ * or dropped by a git switch / pull replace. `ipcFail` answers it with
+ * `{ success: false, notFound: true }`.
+ */
+export class NotFoundError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NotFoundError'
+  }
 }
 
 export function ipcOk<T>(data?: T): IpcResult<T> {
@@ -28,6 +46,7 @@ export function ipcFail(error: unknown): IpcResult<never> {
   return {
     success: false,
     error: error instanceof Error ? error.message : String(error),
+    ...(error instanceof NotFoundError ? { notFound: true as const } : {}),
   }
 }
 

@@ -512,8 +512,11 @@ export function EndpointTabBar() {
         // plain × closes without prompting. Previously this branch fell
         // through to doCloseTab, so "Save & Close" on a new tab silently
         // discarded the edits (issue #101).
+        // A tab whose row was deleted (issue #269) lands here too — unbound
+        // and still dirty, so it stays open and goes to Save As like a draft.
         setCloseSaving(false)
         setCloseConfirmTabId(null)
+        if (result.orphaned) toast.info(t('toast.requestOrphaned'))
         const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)
         if (tab && isRequestLikeTab(tab)) {
           useUIStore.getState().setShowEndpointSaveModal(true)

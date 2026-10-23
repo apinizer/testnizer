@@ -12,6 +12,7 @@ import {
 import { useTranslation } from '../../lib/i18n'
 import { autoRequestName } from '../../lib/endpoint-name'
 import { ensureWithheldCredentialsLoaded, isTabUnloaded } from '../../lib/withheld-credentials'
+import { orphanTab } from '../../lib/orphan-tab'
 import {
   requestSettingsFor,
   savedRequestMetadata,
@@ -168,11 +169,18 @@ export default function EndpointSaveModal() {
       // new row is written either way (best effort); updating the tab's own
       // saved request in place is refused instead of writing empty fields
       // over the stored values.
+      // The saved request this dialog would update. Dropped when its row is
+      // gone (issue #269): the tab is unbound and the save creates a new row.
+      let updateId = isUpdate ? existingSavedRequestId : undefined
       if (activeTab) {
         const reload = await ensureWithheldCredentialsLoaded(activeTab)
+        if (!reload.ok && reload.missing) {
+          orphanTab(activeTab.id)
+          updateId = undefined
+        }
         // A tab whose state was never loaded from its row (dropped from the
         // tab cache) would be copied empty — refused for a new row as well.
-        if (!reload.ok && ((isUpdate && existingSavedRequestId) || isTabUnloaded(activeTab.id))) {
+        if (!reload.ok && !reload.missing && (updateId || isTabUnloaded(activeTab.id))) {
           setSaveError(reload.error)
           return
         }
@@ -211,16 +219,27 @@ export default function EndpointSaveModal() {
 
       let savedId: string | undefined
 
-      if (isUpdate && existingSavedRequestId) {
+      if (updateId) {
         // Update + move (folder change is included in the same call).
-        const result = (await window.api?.savedRequest?.update(
-          existingSavedRequestId,
-          payload,
-        )) as { success: boolean; data?: { id: string } }
-        if (result?.success) {
-          savedId = existingSavedRequestId
+        const result = (await window.api?.savedRequest?.update(updateId, payload)) as {
+          success: boolean
+          data?: { id: string }
+          error?: string
+          notFound?: boolean
         }
-      } else {
+        if (result?.success) {
+          savedId = updateId
+        } else if (result?.notFound && activeTab) {
+          // Deleted meanwhile (issue #269): the update wrote nothing — unbind
+          // the tab and save it as a new request instead of silently doing nothing.
+          orphanTab(activeTab.id)
+          updateId = undefined
+        } else {
+          setSaveError(result?.error || t('toast.saveFailed'))
+          return
+        }
+      }
+      if (!updateId && !savedId) {
         const result = (await window.api?.savedRequest?.create({
           project_id: activeProjectId,
           ...payload,
@@ -252,6 +271,8 @@ export default function EndpointSaveModal() {
           useTabsStore.getState().updateTab(tabId, {
             name: endpointName.trim() || 'Untitled',
             savedRequestId: savedId,
+            // Bound again — no longer an orphan of a deleted row (issue #269).
+            orphaned: undefined,
             // Sync the tab badge with the current method so changing
             // GET → POST in the URL bar then saving updates the
             // method chip on the tab immediately, without requiring a
