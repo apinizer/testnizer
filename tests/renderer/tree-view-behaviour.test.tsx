@@ -62,6 +62,7 @@ vi.hoisted(() => {
         created.folders.push(payload)
         return Promise.resolve({ success: true, data: { id: 'fld-new' } })
       },
+      delete: () => Promise.resolve({ success: true, data: true }),
     },
   }
   const g = globalThis as unknown as { window?: { api?: unknown } }
@@ -198,5 +199,33 @@ describe('APIs tree (issues #68 / #69 / #70)', () => {
 
     useWorkspaceStore.getState().expandAllNodes()
     await waitFor(() => expect(screen.getByText('Charge card')).toBeTruthy())
+  })
+
+  it('#269: deleting a folder unbinds the open tabs of its requests, keeping them open and dirty', async () => {
+    useTabsStore.setState({
+      tabs: [
+        { id: 'tab-e1', name: 'Charge card', protocol: 'http', endpointId: 'e1' },
+        { id: 'tab-other', name: 'Other', protocol: 'http', endpointId: 'elsewhere' },
+      ].map((t) => ({ ...t, isDirty: false, isLoading: false })) as never,
+      activeTabId: 'tab-e1',
+    })
+    render(<TreeView />)
+    openContextMenu('Payments')
+    fireEvent.click(screen.getByText('Delete'))
+    fireEvent.change(await screen.findByTestId('delete-confirm-input'), {
+      target: { value: 'delete' },
+    })
+    fireEvent.click(screen.getByTestId('delete-confirm-btn'))
+
+    await waitFor(() =>
+      expect(
+        useTabsStore.getState().tabs.find((t) => t.id === 'tab-e1')?.endpointId,
+      ).toBeUndefined(),
+    )
+    const tabs = useTabsStore.getState().tabs
+    expect(tabs).toHaveLength(2)
+    expect(tabs.find((t) => t.id === 'tab-e1')?.isDirty).toBe(true)
+    expect(tabs.find((t) => t.id === 'tab-other')?.endpointId).toBe('elsewhere')
+    expect(tabs.find((t) => t.id === 'tab-other')?.isDirty).toBe(false)
   })
 })

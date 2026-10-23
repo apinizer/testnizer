@@ -84,4 +84,42 @@ describe('saveDirtyRunItemsBeforeRun', () => {
     expect(warn).not.toHaveBeenCalled()
     expect(warned).toEqual([])
   })
+
+  it('an active run member whose row is gone (orphaned on save) is announced, not run silently (issue #269)', async () => {
+    tabsState = {
+      activeTabId: 'a',
+      tabs: [tab({ id: 'a', testSuiteItemId: 'item-1', isDirty: true, name: 'Deleted item' })],
+    }
+    saveActiveRequestInPlace.mockImplementation((async () => {
+      // The save helper unbinds the tab and keeps it dirty.
+      tabsState.tabs = tabsState.tabs.map((t) => ({ ...t, testSuiteItemId: undefined }))
+      return { success: false, notApplicable: true, orphaned: true }
+    }) as never)
+    const warned = await saveDirtyRunItemsBeforeRun(['item-1'])
+    expect(warned).toEqual(['Deleted item'])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain('Deleted item')
+    expect(warn.mock.calls[0][0]).toContain('no longer exists')
+  })
+
+  it('the warnings are translated (Turkish)', async () => {
+    const { setLocale } = await import('../../src/renderer/lib/i18n')
+    setLocale('tr')
+    try {
+      tabsState = {
+        activeTabId: 'a',
+        tabs: [
+          tab({ id: 'a', endpointId: 'ep-active', isDirty: false }),
+          tab({ id: 'b', testSuiteItemId: 'item-2', isDirty: true, name: 'Arka plan' }),
+        ],
+      }
+      await saveDirtyRunItemsBeforeRun(['item-2'])
+      expect(warn.mock.calls[0][0]).toBe(
+        '1 açık istekte kaydedilmemiş değişiklik var; son kaydedilen sürümleri çalıştırılacak: ' +
+          'Arka plan. Değişikliklerin dahil olması için kaydedip (Ctrl+S) yeniden çalıştırın.',
+      )
+    } finally {
+      setLocale('en')
+    }
+  })
 })

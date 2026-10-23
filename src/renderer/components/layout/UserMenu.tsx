@@ -100,19 +100,38 @@ export default function UserMenu() {
           </div>
 
           {protectedMode ? (
-            <button
-              type="button"
-              style={itemStyle}
-              onMouseEnter={(e) => (e.currentTarget.style.background = T.surface)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-              onClick={() => {
-                setOpen(false)
-                void logout()
-              }}
-            >
-              <Lock size={13} aria-hidden="true" />
-              {t('userMenu.lock')}
-            </button>
+            <>
+              <button
+                type="button"
+                style={itemStyle}
+                onMouseEnter={(e) => (e.currentTarget.style.background = T.surface)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                data-testid="user-menu-manage-password"
+                onClick={() => {
+                  // Issue #268: protected mode had no path to change or turn
+                  // off the password. Opens Settings at the App password
+                  // section (Change / Turn off) without opening a form.
+                  setOpen(false)
+                  openSettingsAt('appPassword')
+                }}
+              >
+                <KeyRound size={13} aria-hidden="true" />
+                {t('userMenu.managePassword')}
+              </button>
+              <button
+                type="button"
+                style={itemStyle}
+                onMouseEnter={(e) => (e.currentTarget.style.background = T.surface)}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                onClick={() => {
+                  setOpen(false)
+                  void logout()
+                }}
+              >
+                <Lock size={13} aria-hidden="true" />
+                {t('userMenu.lock')}
+              </button>
+            </>
           ) : (
             <button
               type="button"

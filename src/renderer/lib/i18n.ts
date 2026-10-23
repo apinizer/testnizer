@@ -169,6 +169,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'userMenu.title': 'Session',
     'userMenu.protected': 'Protected — local password set',
     'userMenu.guest': 'Quick Test (guest) — no password',
+    'userMenu.managePassword': 'Manage password…',
     'userMenu.lock': 'Lock',
     'userMenu.setPassword': 'Set a password…',
     'userMenu.about': 'About Testnizer',
@@ -1262,6 +1263,10 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Collection Runner
     'runner.title': 'Collection Runner',
+    'runner.unsavedRunItems':
+      '{count} open request(s) have unsaved edits and will run their last saved version: {names}. Save them (Ctrl+S) and re-run to include the changes.',
+    'runner.orphanedRunItems':
+      '{names}: this request no longer exists in the collection, so the run cannot include your edits. Save it from its tab (Ctrl+S) to choose a new place.',
     'runner.runCollection': 'Run Collection',
     'runner.stop': 'Stop',
     'runner.exportJson': 'Export JSON',
@@ -2856,6 +2861,8 @@ const translations: Record<Locale, Record<string, string>> = {
     // Toast notifications — global feedback for save/import/auth/branch/etc.
     'toast.saved': 'Saved',
     'toast.requestSaved': 'Request saved',
+    'toast.requestOrphaned':
+      'This request no longer exists in the collection. Choose where to save it.',
     'toast.saveFailed': 'Save failed',
     'toast.imported': 'Imported successfully',
     'toast.importFailed': 'Import failed',
@@ -4132,6 +4139,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'userMenu.title': 'Oturum',
     'userMenu.protected': 'Korumalı — yerel şifre tanımlı',
     'userMenu.guest': 'Hızlı Test (misafir) — şifre yok',
+    'userMenu.managePassword': 'Şifreyi yönet…',
     'userMenu.lock': 'Kilitle',
     'userMenu.setPassword': 'Şifre belirle…',
     'userMenu.about': 'Testnizer Hakkında',
@@ -5226,6 +5234,10 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // Collection Runner
     'runner.title': 'Koleksiyon Çalıştırıcısı',
+    'runner.unsavedRunItems':
+      '{count} açık istekte kaydedilmemiş değişiklik var; son kaydedilen sürümleri çalıştırılacak: {names}. Değişikliklerin dahil olması için kaydedip (Ctrl+S) yeniden çalıştırın.',
+    'runner.orphanedRunItems':
+      '{names}: bu istek artık koleksiyonda yok, bu yüzden çalıştırma değişikliklerinizi içeremez. Yeni bir yer seçmek için sekmesinden kaydedin (Ctrl+S).',
     'runner.runCollection': 'Koleksiyonu Çalıştır',
     'runner.stop': 'Durdur',
     'runner.exportJson': 'JSON Dışarı Aktar',
@@ -6829,6 +6841,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // Toast notifications — global feedback
     'toast.saved': 'Kaydedildi',
     'toast.requestSaved': 'İstek kaydedildi',
+    'toast.requestOrphaned': 'Bu istek artık koleksiyonda yok. Nereye kaydedileceğini seçin.',
     'toast.saveFailed': 'Kaydetme başarısız',
     'toast.imported': 'İçe aktarıldı',
     'toast.importFailed': 'İçe aktarma başarısız',

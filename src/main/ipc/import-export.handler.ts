@@ -8,6 +8,12 @@ import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-fil
 import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import {
+  withAssertionScript,
+  stripExportedAssertions,
+  type AssertionScriptPrefix,
+} from '../../shared/assertions-to-script'
+import { readSharedProjectSettings, writeSharedProjectSettings } from '../lib/project-settings'
+import {
   soapTransportFromMeta,
   withSoapTransportHeaders,
   type SoapTransportMeta,
@@ -326,6 +332,7 @@ export function registerImportExportHandlers(): void {
           payload.projectId,
           payload.content,
           payload.folderId ?? null,
+          { projectScripts: true },
         )
         return { success: true, data: result }
       } catch (e) {
@@ -1467,6 +1474,8 @@ interface PostmanCollection {
   item: PostmanItem[]
   variable?: PostmanVariable[]
   auth?: PostmanAuth
+  /** Collection-level pre-request / test scripts (Testnizer: project scripts). */
+  event?: PostmanEvent[]
 }
 
 interface PostmanItem {
@@ -1701,7 +1710,23 @@ interface TestAssertionLike {
   expected?: string | number
   jsonPath?: string
   xPath?: string
+  headerName?: string
+  rangeMin?: number
+  rangeMax?: number
 }
+
+/**
+ * Testnizer row kinds `x-apinizer` restores on import (`xApinizerAssertionsToUi`).
+ * Their generated pm.test lines (issue #270) are dropped from the imported test
+ * script when the rows come back, or they would run twice.
+ */
+const X_APINIZER_RESTORED_KINDS: ReadonlySet<string> = new Set([
+  'status_equals',
+  'body_contains',
+  'body_equals_json',
+  'body_jsonpath',
+  'body_xpath',
+])
 
 /** Major version of the x-apinizer schema this build understands. A collection
  *  tagged with a newer MAJOR falls back to plain Postman (graceful). */
@@ -2112,6 +2137,13 @@ export async function importPostman(
   projectId: string,
   content: string,
   rootFolderId: string | null = null,
+  /**
+   * `projectScripts`: write the collection-level `event` scripts into the
+   * project's own scripts (APIs import only, issue #270). Off for callers that
+   * use this importer as a parser — the Tests-panel suite import must not
+   * change the project's scripts as a side effect.
+   */
+  opts: { projectScripts?: boolean } = {},
 ): Promise<ImportResult> {
   const warnings: string[] = []
   let parsed: unknown
@@ -2364,7 +2396,19 @@ export async function importPostman(
       const xa = item['x-apinizer']
       if (xa && xApinizerVersionOk(xa)) {
         const xaAssertions = xApinizerAssertionsToUi(xa.assertions, warnings)
-        if (xaAssertions.length > 0) requestSchema.assertions = xaAssertions
+        if (xaAssertions.length > 0) {
+          requestSchema.assertions = xaAssertions
+          // Our own export (issue #270) also wrote these rows as generated
+          // pm.test code — keep only the tests x-apinizer does not restore.
+          if (typeof requestSchema.postScript === 'string') {
+            const kept = stripExportedAssertions(
+              requestSchema.postScript,
+              X_APINIZER_RESTORED_KINDS,
+            )
+            if (kept) requestSchema.postScript = kept
+            else delete requestSchema.postScript
+          }
+        }
         const refinedBodyType = apinizerRowTypeToBodyType(xa.bodyRowType)
         if (refinedBodyType && isRawFamilyBodyType(body.type)) {
           // `body` is the same object stored under requestSchema.body, so
@@ -2417,6 +2461,17 @@ export async function importPostman(
   }
 
   processItems(collection.item, rootFolderId, collection.auth)
+  try {
+    if (opts.projectScripts) importCollectionScripts(projectId, collection, rootFolderId, warnings)
+    else {
+      const { preScript, postScript } = extractPostmanEventScripts(collection.event)
+      if (preScript?.trim() || postScript?.trim())
+        warnings.push('Collection-level scripts were not imported.')
+    }
+  } catch (e) {
+    // Partial import over a hard fail: the requests are already in.
+    warnings.push(`Collection-level scripts were not imported: ${(e as Error).message}`)
+  }
 
   if (endpointCount === 0 && folderCount === 0) {
     warnings.push('No requests or folders found in the Postman collection')
@@ -2431,6 +2486,49 @@ export async function importPostman(
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   }
+}
+
+/**
+ * Collection-level `event` scripts → the project's own pre-request / test
+ * script (issue #270; the export writes project scripts there). Never
+ * overwrites: a project that already has that script keeps it, and an import
+ * into a folder leaves the project alone — the script would otherwise start
+ * running for every other request of the project. Both cases are reported.
+ */
+function importCollectionScripts(
+  projectId: string,
+  collection: PostmanCollection,
+  rootFolderId: string | null,
+  warnings: string[],
+): void {
+  const { preScript, postScript } = extractPostmanEventScripts(collection.event)
+  const incoming: Array<{ key: 'preScript' | 'testScript'; label: string; text?: string }> = [
+    { key: 'preScript', label: 'pre-request', text: preScript },
+    { key: 'testScript', label: 'test', text: postScript },
+  ]
+  const present = incoming.filter((s) => s.text && s.text.trim())
+  if (present.length === 0) return
+  if (rootFolderId) {
+    for (const s of present)
+      warnings.push(
+        `The collection-level ${s.label} script was not imported: the collection went into a folder. ` +
+          'Add it in that folder’s settings if its requests need it.',
+      )
+    return
+  }
+  const current = readSharedProjectSettings(projectId) ?? {}
+  const next: Record<string, unknown> = {}
+  for (const s of present) {
+    const existing = current[s.key]
+    if (typeof existing === 'string' && existing.trim()) {
+      warnings.push(
+        `The collection-level ${s.label} script was not imported: this project already has one.`,
+      )
+    } else {
+      next[s.key] = s.text
+    }
+  }
+  if (Object.keys(next).length > 0) writeSharedProjectSettings(projectId, next)
 }
 
 // ─── Postman Environment Import ─────────────────────────────
@@ -3000,6 +3098,51 @@ type PostmanScriptEvent = {
   script: { type: string; exec: string[] }
 }
 
+/**
+ * A row's Tests-tab assertions: suite items keep them in their own column,
+ * project endpoints / saved requests inside request_schema — prefer the
+ * column, fall back to the schema. Shared by the Postman and Insomnia builders.
+ */
+function exportRowAssertions(ep: ExportEndpointRow, schema: UiRequestSchema): TestAssertionLike[] {
+  if (ep.assertions) {
+    try {
+      const parsed = JSON.parse(ep.assertions) as TestAssertionLike[]
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed
+    } catch {
+      /* malformed assertions column — fall back to the schema */
+    }
+  }
+  return Array.isArray(schema.assertions) ? schema.assertions : []
+}
+
+/** Project-level pre/test scripts (`projects.shared_settings`) carried by a collection export. */
+interface ProjectScripts {
+  preScript?: string
+  testScript?: string
+}
+
+/**
+ * The project's own pre-request / test scripts — the first link of the
+ * project → folder → request cascade Send and Run both apply. Only the two
+ * scripts: project auth may hold literal credentials (issue #177) and stays out.
+ */
+function readProjectScripts(projectId: string): ProjectScripts | undefined {
+  let shared: Record<string, unknown> | null
+  try {
+    shared = readSharedProjectSettings(projectId)
+  } catch {
+    return undefined // best effort — never fail an export over the project scripts
+  }
+  if (!shared) return undefined
+  const pick = (v: unknown): string | undefined =>
+    typeof v === 'string' && v.trim() ? v : undefined
+  const out: ProjectScripts = {
+    preScript: pick(shared.preScript),
+    testScript: pick(shared.testScript),
+  }
+  return out.preScript || out.testScript ? out : undefined
+}
+
 /** Map a request schema's pre/post scripts onto Postman's event[]. */
 function scriptsToPostmanEvents(pre?: string | null, post?: string | null): PostmanScriptEvent[] {
   const events: PostmanScriptEvent[] = []
@@ -3065,6 +3208,8 @@ function buildPostmanCollection(
   folders: ExportFolderRow[],
   endpoints: ExportEndpointRow[],
   variables?: PostmanVariable[],
+  /** Project-level pre/test scripts → collection-level `event` (issue #270). */
+  collectionScripts?: ProjectScripts,
 ): PostmanCollection {
   type PostmanFolderNode = PostmanItem & {
     auth?: ReturnType<typeof authToPostman>
@@ -3131,30 +3276,23 @@ function buildPostmanCollection(
     const auth = authToPostman(schema.auth)
     if (auth) item.request!.auth = auth
 
-    // Pre-request and test scripts → Postman event[]
-    const events = scriptsToPostmanEvents(schema.preScript, schema.postScript)
+    const itemAssertions = exportRowAssertions(ep, schema)
+
+    // Pre-request and test scripts → Postman event[]. The Tests-tab rows ride
+    // in the test script as generated pm.test code (issue #270) — Postman and
+    // Newman ignore x-apinizer, so without it the checks never ran there.
+    const events = scriptsToPostmanEvents(
+      schema.preScript,
+      withAssertionScript(schema.postScript, itemAssertions, 'pm'),
+    )
     if (events.length > 0) {
       ;(item as PostmanItem & { event?: PostmanScriptEvent[] }).event = events
     }
 
     // ── Apinizer interop: attach x-apinizer when there's carryable fidelity ──
-    // Assertions live either on a threaded column (suite items) or inside
-    // request_schema (project endpoints) — prefer the column, fall back to the
-    // schema. We only attach the extension when there's something Apinizer can
+    // We only attach the extension when there's something Apinizer can
     // actually carry (mapped assertions or a timeout) so pure Postman exports
     // stay clean.
-    let itemAssertions: TestAssertionLike[] = []
-    if (ep.assertions) {
-      try {
-        const parsed = JSON.parse(ep.assertions) as TestAssertionLike[]
-        if (Array.isArray(parsed)) itemAssertions = parsed
-      } catch {
-        /* malformed assertions column — skip */
-      }
-    }
-    if (itemAssertions.length === 0 && Array.isArray(schema.assertions)) {
-      itemAssertions = schema.assertions
-    }
     const xaAssertions = assertionsToXApinizer(itemAssertions)
     // `timeout` (ms) is the request's own timeout (issue #185); rows imported
     // before it carry the legacy `timeoutSeconds` — `readRequestSettings`
@@ -3195,6 +3333,11 @@ function buildPostmanCollection(
     item: rootItems,
   }
   if (variables) collection.variable = variables
+  const collectionEvents = scriptsToPostmanEvents(
+    collectionScripts?.preScript,
+    collectionScripts?.testScript,
+  )
+  if (collectionEvents.length > 0) collection.event = collectionEvents
   return collection
 }
 
@@ -3210,10 +3353,13 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
     | undefined
   if (!project) throw new Error('Project not found')
 
-  // Project folders don't surface cascade auth/scripts in the collection — keep
-  // the historical shape by selecting only id/parent_id/name.
+  // Folder auth + pre/post scripts cascade on Send and Run (issue #270) — the
+  // collection carries them as folder-level auth / event, like a suite export.
   const folders = db
-    .prepare('SELECT id, parent_id, name FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+    .prepare(
+      `SELECT id, parent_id, name, auth, pre_script, post_script
+       FROM folders WHERE project_id = ? ORDER BY sort_order ASC`,
+    )
     .all(projectId) as ExportFolderRow[]
   const { rows: endpoints, skipped } = partitionExportable(loadProjectExportRows(db, projectId))
 
@@ -3223,6 +3369,7 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
     folders,
     endpoints,
     collectPostmanVariables(db, projectId),
+    readProjectScripts(projectId),
   )
   return { content: JSON.stringify(collection, null, 2), skipped }
 }
@@ -3296,6 +3443,8 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     folders,
     rows,
     collectPostmanVariables(db, suite.project_id),
+    // A suite Run cascades its project's scripts too.
+    readProjectScripts(suite.project_id),
   )
   // Postman runs a collection in array order. The builder lists a level's
   // folders before its requests; a suite runs a level's own requests first,
@@ -5011,6 +5160,9 @@ function authToInsomnia(auth: UiRequestSchema['auth']): InsomniaAuth | undefined
   }
 }
 
+/** Insomnia's scripts use its own `insomnia` object (it does not bind `pm`). */
+const INSOMNIA_SCRIPT_PREFIX: AssertionScriptPrefix = 'insomnia'
+
 /** Build Insomnia v4 resources from folder + endpoint rows (shared by project & suite export). */
 function buildInsomniaResources(
   workspaceId: string,
@@ -5132,8 +5284,14 @@ function buildInsomniaResources(
     if (authentication) resource.authentication = authentication
     // Scripts — the v4 importer reads these same two fields back.
     if (schema.preScript && schema.preScript.trim()) resource.preRequestScript = schema.preScript
-    if (schema.postScript && schema.postScript.trim())
-      resource.afterResponseScript = schema.postScript
+    // Tests-tab rows → generated `insomnia.test` code ahead of the user's
+    // after-response script (issue #270); Insomnia has no x-apinizer channel.
+    const afterResponse = withAssertionScript(
+      schema.postScript,
+      exportRowAssertions(ep, schema),
+      INSOMNIA_SCRIPT_PREFIX,
+    )
+    if (afterResponse) resource.afterResponseScript = afterResponse
     const key = sortKeys.get(resource._id)
     if (key !== undefined) resource.metaSortKey = key
 
@@ -5165,8 +5323,12 @@ export function buildInsomniaProjectExport(projectId: string): CollectionExportR
     | undefined
   if (!project) throw new Error('Project not found')
 
+  // Folder auth + scripts travel like a suite export's (issue #270).
   const folders = db
-    .prepare('SELECT id, parent_id, name FROM folders WHERE project_id = ? ORDER BY sort_order ASC')
+    .prepare(
+      `SELECT id, parent_id, name, auth, pre_script, post_script
+       FROM folders WHERE project_id = ? ORDER BY sort_order ASC`,
+    )
     .all(projectId) as ExportFolderRow[]
   const { rows: endpoints, skipped } = partitionExportable(loadProjectExportRows(db, projectId))
 
@@ -5219,6 +5381,7 @@ export function buildInsomniaSuiteExport(suiteId: string): CollectionExportResul
       url: string | null
       name: string
       request_schema: string | null
+      assertions: string | null
       protocol: string | null
       sort_order: number
       created_at: number
@@ -5234,6 +5397,8 @@ export function buildInsomniaSuiteExport(suiteId: string): CollectionExportResul
       name: it.name,
       description: null,
       request_schema: it.request_schema,
+      // Suite items keep their Tests-tab rows in their own column (issue #270).
+      assertions: it.assertions,
       protocol: it.protocol,
     })),
   )

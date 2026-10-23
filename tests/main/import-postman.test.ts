@@ -39,7 +39,8 @@ beforeEach(async () => {
       type TEXT NOT NULL DEFAULT 'http',
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL
+      updated_at INTEGER NOT NULL,
+      shared_settings TEXT
     );
     CREATE TABLE folders (
       id TEXT PRIMARY KEY,

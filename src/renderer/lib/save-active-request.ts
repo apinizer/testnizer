@@ -30,6 +30,7 @@ import {
   isTabUnloaded,
   NOT_LOADED_ERROR,
 } from './withheld-credentials'
+import { orphanTab } from './orphan-tab'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
@@ -41,6 +42,22 @@ export interface InPlaceSaveResult {
   error?: string
   /** True when no in-place row was found (caller should fall back to modal). */
   notApplicable?: boolean
+  /**
+   * The tab WAS bound to a row that no longer exists (deleted from the
+   * sidebar, dropped by a git switch / pull — issue #269). The tab has been
+   * unbound and kept dirty; the caller opens Save As and says why
+   * (`toast.requestOrphaned`). Always comes with `notApplicable`.
+   */
+  orphaned?: boolean
+}
+
+/** The update IPC answered that its row does not exist (main's `notFound` marker). */
+type UpdateEnvelope = { success: boolean; error?: string; notFound?: boolean } | undefined
+
+/** Unbind the active tab from its vanished row; never marks it clean (issue #269). */
+function orphaned(tabId: string): InPlaceSaveResult {
+  orphanTab(tabId)
+  return { success: false, notApplicable: true, orphaned: true }
 }
 
 export interface ProtocolSnapshot {
@@ -604,7 +621,9 @@ async function refreshApisTree(): Promise<void> {
  * Persist the active tab's edits in place when the tab already maps to a
  * backing row (saved_request or test_suite_item). Returns
  * `{ notApplicable: true }` when the caller should fall back to the
- * "save as" modal (no row exists yet, or the tab type isn't savable).
+ * "save as" modal (no row exists yet, or the tab type isn't savable), plus
+ * `orphaned: true` when the tab's row has vanished (issue #269) — the tab is
+ * then unbound and stays dirty; it is never reported saved.
  */
 export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   const tabs = useTabsStore.getState()
@@ -617,6 +636,9 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   // be read, do not save rather than write the empty fields over them.
   if (activeTab.endpointId || activeTab.savedRequestId || activeTab.testSuiteItemId) {
     const reload = await ensureWithheldCredentialsLoaded(activeTab)
+    // The row is gone (issue #269): checked before the not-loaded guard —
+    // there is nothing left to overwrite, the edits go to Save As.
+    if (!reload.ok && reload.missing) return orphaned(activeTab.id)
     if (!reload.ok) return { success: false, error: reload.error }
     // Belt and braces (P0): a state that was never loaded from the row — the
     // cache cap dropped it, the startup snapshot lacked it — is never written
@@ -656,7 +678,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
         url: effectiveUrl,
         request_schema: JSON.stringify(schema),
         assertions: JSON.stringify(req.assertions ?? []),
-      })) as { success: boolean; error?: string } | undefined
+      })) as UpdateEnvelope
+      if (result?.notFound) return orphaned(activeTab.id)
       if (result?.success) {
         tabs.markDirty(activeTab.id, false)
         // Sync the tab badge with the post-save method + URL — symmetric
@@ -697,9 +720,11 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       metadata: savedRequestMetadata(protocolMeta, settings),
     }
     try {
-      const result = (await window.api?.savedRequest?.update(activeTab.savedRequestId, payload)) as
-        | { success: boolean; error?: string }
-        | undefined
+      const result = (await window.api?.savedRequest?.update(
+        activeTab.savedRequestId,
+        payload,
+      )) as UpdateEnvelope
+      if (result?.notFound) return orphaned(activeTab.id)
       if (result?.success) {
         tabs.markDirty(activeTab.id, false)
         tabs.updateTab(activeTab.id, {
@@ -743,7 +768,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
         method: effectiveMethod,
         path: effectiveUrl,
         request_schema: JSON.stringify(schema),
-      })) as { success: boolean; error?: string } | undefined
+      })) as UpdateEnvelope
+      if (result?.notFound) return orphaned(activeTab.id)
       if (result?.success) {
         tabs.markDirty(activeTab.id, false)
         tabs.updateTab(activeTab.id, {
@@ -760,5 +786,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
     }
   }
 
-  return { success: false, notApplicable: true }
+  // A tab unbound earlier — its row deleted from the sidebar (issue #269) —
+  // still reports why Save As opens.
+  return { success: false, notApplicable: true, ...(activeTab.orphaned ? { orphaned: true } : {}) }
 }

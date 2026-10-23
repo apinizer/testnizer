@@ -33,10 +33,15 @@ export default function SettingsAppPasswordSection() {
       : 'idle',
   )
   const rootRef = useRef<HTMLDivElement>(null)
+  const changeRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
-    if (useUIStore.getState().settingsFocus !== 'appPasswordSet') return
+    const focus = useUIStore.getState().settingsFocus
+    if (focus !== 'appPasswordSet' && focus !== 'appPassword') return
     useUIStore.setState({ settingsFocus: null })
     rootRef.current?.scrollIntoView?.({ block: 'nearest' })
+    // "Manage password…" (issue #268): no form opens; keyboard focus lands on
+    // Change so the next step is one key away.
+    if (focus === 'appPassword') changeRef.current?.focus()
   }, [])
 
   // null = not checked yet: say so instead of guessing "off".
@@ -68,6 +73,7 @@ export default function SettingsAppPasswordSection() {
             {canManage && (
               <>
                 <button
+                  ref={changeRef}
                   type="button"
                   data-testid="settings-app-password-change"
                   onClick={() => setMode('change')}

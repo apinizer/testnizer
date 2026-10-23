@@ -127,6 +127,9 @@ export function useKeyboardShortcuts(): void {
             if (active && (active.endpointId || active.savedRequestId || active.testSuiteItemId)) {
               void saveActiveRequestInPlace().then((result) => {
                 if (result.notApplicable) {
+                  // The tab's row was deleted (issue #269): it is unbound and
+                  // still dirty — say why the Save dialog opened.
+                  if (result.orphaned) toast.info(t('toast.requestOrphaned'))
                   ui.setShowEndpointSaveModal(true)
                   return
                 }
@@ -142,6 +145,8 @@ export function useKeyboardShortcuts(): void {
               })
               return
             }
+            // Unbound because its row was deleted from the sidebar (issue #269).
+            if (active?.orphaned) toast.info(t('toast.requestOrphaned'))
             ui.setShowEndpointSaveModal(true)
           },
         },

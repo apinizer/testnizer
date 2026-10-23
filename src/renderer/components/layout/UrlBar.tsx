@@ -5,6 +5,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { saveActiveRequestInPlace } from '../../lib/save-active-request'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import MethodBadge from '../shared/MethodBadge'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import { T, BTN_P, BTN_S, BASE_INP } from '../../styles/tokens'
@@ -390,7 +391,9 @@ export default function UrlBar() {
           const isSaved =
             activeTab?.savedRequestId || activeTab?.endpointId || activeTab?.testSuiteItemId
           if (!isSaved) {
-            // Not saved yet — open save modal
+            // Not saved yet — open save modal. A tab whose row was deleted
+            // from the sidebar says so (issue #269).
+            if (activeTab?.orphaned) toast.info(t('toast.requestOrphaned'))
             setShowEndpointSaveModal(true)
             return
           }
@@ -403,6 +406,14 @@ export default function UrlBar() {
           setSaveError(null)
           try {
             const result = await saveActiveRequestInPlace()
+            if (result.notApplicable) {
+              // No row to write in place — the tab's row was deleted (issue
+              // #269) or it never had one. Same fallback as Ctrl+S: the Save
+              // dialog; it used to throw here and show only a red ✗.
+              if (result.orphaned) toast.info(t('toast.requestOrphaned'))
+              setShowEndpointSaveModal(true)
+              return
+            }
             if (!result.success) throw new Error(result.error || 'Save failed')
             setSaveOk(true)
             setTimeout(() => setSaveOk(false), 1500)

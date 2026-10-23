@@ -150,6 +150,8 @@ const h = vi.hoisted(() => {
 import TestsPanel from '../../src/renderer/components/sidebar/TestsPanel'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { toast } from '../../src/renderer/lib/toast'
+import { useTabsStore } from '../../src/renderer/stores/tabs.store'
+import type { Tab } from '../../src/renderer/types'
 
 const callsTo = (channel: string): unknown[] =>
   h.state.calls.filter((c) => c.channel === channel).map((c) => c.payload)
@@ -308,5 +310,67 @@ describe('TestsPanel — suite export reports items left out (issue #197)', () =
     } finally {
       warn.mockRestore()
     }
+  })
+})
+
+// Issue #269 — deleting a suite item used to close its open tab even with
+// unsaved edits, dropping them. A dirty tab now stays open, unbound and dirty
+// (Ctrl+S goes to Save As); a clean one still closes.
+describe('TestsPanel — deleting an item with an open tab (issue #269)', () => {
+  function seedItem(): void {
+    h.state.items.push({
+      id: 'item-x',
+      suite_id: 'suite-1',
+      folder_id: null,
+      name: 'Charge card',
+      protocol: 'http',
+      method: 'POST',
+      url: '',
+      sort_order: 0,
+    })
+  }
+
+  async function deleteItem(): Promise<void> {
+    await renderWithSuite()
+    fireEvent.contextMenu(await screen.findByText('Charge card'))
+    fireEvent.click(await screen.findByText('Delete'))
+  }
+
+  const itemTab = (): Tab | undefined =>
+    useTabsStore.getState().tabs.find((t) => t.id === 'tab-item-x')
+
+  function openItemTab(isDirty: boolean): void {
+    useTabsStore.setState({
+      tabs: [
+        {
+          id: 'tab-item-x',
+          name: 'Charge card',
+          protocol: 'http',
+          testSuiteItemId: 'item-x',
+          isDirty,
+          isLoading: false,
+        } as Tab,
+      ],
+      activeTabId: 'tab-item-x',
+    })
+  }
+
+  it('a dirty tab stays open, unbound and dirty', async () => {
+    seedItem()
+    openItemTab(true)
+    await deleteItem()
+
+    // (Expanding the suite also opens the runner tab — look the item tab up by id.)
+    await waitFor(() => expect(itemTab()?.testSuiteItemId).toBeUndefined())
+    expect(itemTab()).toBeDefined()
+    expect(itemTab()?.isDirty).toBe(true)
+  })
+
+  it('a clean tab still closes', async () => {
+    seedItem()
+    openItemTab(false)
+    await deleteItem()
+
+    await waitFor(() => expect(itemTab()).toBeUndefined())
   })
 })

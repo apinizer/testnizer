@@ -27,6 +27,7 @@ import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { exportProjectAs, type ProjectExportFormat } from '../../lib/project-export'
 import { openExampleTab } from '../../lib/open-example-tab'
+import { orphanTabsForRows, treeRowIds } from '../../lib/orphan-tab'
 import { useSavedResponseStore } from '../../stores/saved-response.store'
 import {
   requestStoreSettings,
@@ -620,17 +621,25 @@ export default function TreeView() {
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTarget) return
     try {
+      // Issue #269: open tabs of the deleted rows (a folder's whole subtree
+      // included) lose their binding and stay open + dirty, so Ctrl+S goes to
+      // Save As instead of "saving" into a row that is gone. Collected from the
+      // unfiltered tree BEFORE the delete — the search view prunes children.
+      const tree = useWorkspaceStore.getState().treeData
+      const rows = treeRowIds(tree, deleteTarget.id)
+      let res: { success?: boolean } | undefined
       if (deleteTarget.type === 'example') {
         // The store closes an open example tab and refreshes the tree itself,
         // and keeps the response pane's Saved tab in sync.
         await useSavedResponseStore.getState().remove(deleteTarget.id)
       } else if (deleteTarget.type === 'request') {
-        await window.api?.savedRequest?.delete(deleteTarget.id)
+        res = (await window.api?.savedRequest?.delete(deleteTarget.id)) as typeof res
       } else if (deleteTarget.type === 'endpoint') {
-        await window.api?.endpoint?.delete(deleteTarget.id)
+        res = (await window.api?.endpoint?.delete(deleteTarget.id)) as typeof res
       } else if (deleteTarget.type === 'folder') {
-        await window.api?.folder?.delete(deleteTarget.id)
+        res = (await window.api?.folder?.delete(deleteTarget.id)) as typeof res
       }
+      if (res?.success) orphanTabsForRows(rows)
       await refreshTree()
     } catch {
       /* ignore */

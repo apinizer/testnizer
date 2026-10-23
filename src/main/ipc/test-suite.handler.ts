@@ -807,7 +807,7 @@ export function registerTestSuiteHandlers(): void {
   ipcMain.handle('testSuiteItem:get', async (_event, id: string) => {
     try {
       const row = getItemById(id)
-      if (!row) return { success: false, error: 'Item not found' }
+      if (!row) return { success: false, error: 'Item not found', notFound: true }
       return { success: true, data: row }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -866,7 +866,8 @@ export function registerTestSuiteHandlers(): void {
     ) => {
       try {
         const row = updateItem(id, patch)
-        if (!row) return { success: false, error: 'Item not found' }
+        // `notFound` lets the renderer offer Save As for a deleted item (issue #269).
+        if (!row) return { success: false, error: 'Item not found', notFound: true }
         return { success: true, data: row }
       } catch (e) {
         return { success: false, error: (e as Error).message }

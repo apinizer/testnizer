@@ -48,6 +48,8 @@ const TOKEN_BODY = '{"access_token":"TOK"}'
 
 const jsonHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
 
+import { assertionsToScript } from '../../src/shared/assertions-to-script'
+
 export const parityCases: ParityCase[] = [
   // a. Postman pm token script: json() → environment.set + pm.test on code.
   {
@@ -356,5 +358,56 @@ export const parityCases: ParityCase[] = [
       eddsa: 'refused',
     },
     expectTests: [],
+  },
+  // m. Issue #270: Tests-tab rows exported as generated pm.test code run the
+  //    same on Send and Run (a re-imported collection runs this block).
+  {
+    name: 'exported Tests-tab assertion block (issue #270)',
+    script: assertionsToScript([
+      { name: 'gen status', type: 'status_equals', enabled: true, expected: 201 },
+      { name: 'gen status wrong', type: 'status_equals', enabled: true, expected: 200 },
+      { name: 'gen range', type: 'status_in_range', enabled: true, rangeMin: 200, rangeMax: 299 },
+      {
+        name: 'gen header case',
+        type: 'header_equals',
+        enabled: true,
+        headerName: ' x-trace ',
+        expected: 'abc',
+      },
+      { name: 'gen header missing', type: 'header_exists', enabled: true, headerName: 'X-Nope' },
+      { name: 'gen contains', type: 'body_contains', enabled: true, expected: '"n":2' },
+      {
+        name: 'gen jsonpath',
+        type: 'body_jsonpath',
+        enabled: true,
+        jsonPath: '$.items[*].n',
+        expected: '[1,2]',
+      },
+      {
+        name: 'gen json order',
+        type: 'body_equals_json',
+        enabled: true,
+        expected: '{"items":[{"n":1},{"n":2}],"id":1}',
+      },
+      { name: 'gen size', type: 'response_size_under', enabled: true, expected: 1000 },
+    ]),
+    response: {
+      status: 201,
+      statusText: 'Created',
+      headers: { 'Content-Type': 'application/json', 'X-Trace': ' abc ' },
+      body: '{"id":1,"items":[{"n":1},{"n":2}]}',
+    },
+    expectEnv: {},
+    expectTests: [
+      { name: 'gen status', passed: true },
+      { name: 'gen status wrong', passed: false },
+      { name: 'gen range', passed: true },
+      { name: 'gen header case', passed: true },
+      { name: 'gen header missing', passed: false },
+      { name: 'gen contains', passed: true },
+      { name: 'gen jsonpath', passed: true },
+      { name: 'gen json order', passed: false },
+      { name: 'gen size', passed: true },
+    ],
   },
 ]

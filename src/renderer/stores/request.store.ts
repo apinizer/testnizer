@@ -298,6 +298,12 @@ interface RequestStore extends TabRequestState {
   /** Remove cached state for a closed tab */
   removeTabState: (tabId: string) => void
   /**
+   * Drop the "not loaded" marks of a tab that is no longer bound to a saved
+   * row (its row was deleted — issue #269). There is no row to reload from,
+   * so the marks would only block Save As; the tab's state is kept as is.
+   */
+  forgetUnloaded: (tabId: string) => void
+  /**
    * Copy a tab's cached state to a new tab id. Used by the tab bar's
    * "Duplicate Tab" action so the cloned tab inherits unsaved edits, not
    * just the metadata stored on the Tab object.
@@ -543,6 +549,21 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       _tabStates: tabStates,
       _currentTabId: tabId,
     })
+  },
+
+  forgetUnloaded: (tabId) => {
+    unloadedTabIds.delete(tabId)
+    const state = get()
+    if (state._currentTabId === tabId) {
+      if (state.unloaded || state.unloadedProtocol)
+        set({ unloaded: false, unloadedProtocol: false })
+      return
+    }
+    const cached = state._tabStates.get(tabId)
+    if (!cached || (!cached.unloaded && !cached.unloadedProtocol)) return
+    const tabStates = new Map(state._tabStates)
+    tabStates.set(tabId, { ...cached, unloaded: false, unloadedProtocol: false })
+    set({ _tabStates: tabStates })
   },
 
   removeTabState: (tabId) => {

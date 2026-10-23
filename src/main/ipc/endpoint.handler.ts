@@ -3,7 +3,7 @@ import * as endpointRepo from '../db/endpoint.repo'
 import * as projectRepo from '../db/project.repo'
 import * as aiConversationRepo from '../db/ai-conversation.repo'
 import { getDb } from '../db/database'
-import { ipcResult } from '../lib/ipc-helpers'
+import { ipcResult, NotFoundError } from '../lib/ipc-helpers'
 
 export function registerEndpointHandlers(): void {
   // ─── Endpoints ───────────────────────────────────────────
@@ -65,14 +65,19 @@ export function registerEndpointHandlers(): void {
         // foreign project's tree.
         if (payload.folder_id !== undefined && payload.folder_id !== null) {
           const ep = endpointRepo.getEndpointById(id)
-          if (!ep) throw new Error('Endpoint not found')
+          if (!ep) throw new NotFoundError('Endpoint not found')
           const folder = projectRepo.getFolderById(payload.folder_id)
           if (!folder) throw new Error('Target folder not found')
           if (folder.project_id !== ep.project_id) {
             throw new Error('Cannot move endpoint across projects')
           }
         }
-        return endpointRepo.updateEndpoint(id, payload)
+        // A missing row is a failure, not `{ success: true }` with no data:
+        // the renderer used to report "Request saved" for a request deleted
+        // from the sidebar while nothing was written (issue #269).
+        const row = endpointRepo.updateEndpoint(id, payload)
+        if (!row) throw new NotFoundError('Endpoint not found')
+        return row
       }),
   )
 
@@ -178,14 +183,16 @@ export function registerEndpointHandlers(): void {
         // be moved between folders too.
         if (payload.folder_id !== undefined && payload.folder_id !== null) {
           const sr = endpointRepo.getSavedRequestById(id)
-          if (!sr) throw new Error('Saved request not found')
+          if (!sr) throw new NotFoundError('Saved request not found')
           const folder = projectRepo.getFolderById(payload.folder_id)
           if (!folder) throw new Error('Target folder not found')
           if (sr.project_id && folder.project_id !== sr.project_id) {
             throw new Error('Cannot move saved request across projects')
           }
         }
-        return endpointRepo.updateSavedRequest(id, payload)
+        const row = endpointRepo.updateSavedRequest(id, payload)
+        if (!row) throw new NotFoundError('Saved request not found') // issue #269
+        return row
       }),
   )
 
