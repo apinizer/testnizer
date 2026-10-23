@@ -8,6 +8,21 @@ import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-fil
 import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import {
+  applyPathVariables,
+  readPathVariables,
+  type PathVariableLike,
+} from '../../shared/path-variables'
+import {
+  buildFolderChain,
+  resolveStoredRequestAuth,
+  type StoredRequestRef,
+} from '../lib/folder-chain'
+import {
+  projectAuthToAuthConfig,
+  resolveEffectiveAuth,
+  type AuthConfigLike,
+} from '../lib/auth-inheritance'
+import {
   curlToRequest,
   parseCurl,
   renderCurl,
@@ -29,7 +44,6 @@ import {
   type ExportSkippedItem,
 } from '../../shared/collection-export'
 import { isSecretFlag, stripProjectSharedSettings } from '../lib/local-secrets'
-import { projectAuthToAuthConfig } from '../lib/auth-inheritance'
 import { isEncryptedSecret } from '../lib/secure-storage'
 import { importPostman, importPostmanEnvironment } from '../import/postman'
 import type {
@@ -509,7 +523,7 @@ export function registerImportExportHandlers(): void {
   // ─── cURL Export ──────────────────────────────────────────
   ipcMain.handle('export:curl', async (_event, request: CurlExportRequest) => {
     try {
-      const curl = exportAsCurl(request)
+      const curl = exportAsCurl(await withEffectiveCurlAuth(request))
       return { success: true, data: curl }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -1139,9 +1153,16 @@ function safeDecodeQueryComponent(s: string): string {
   }
 }
 
-/** `{{ name }}` → `{name}` — app variables in a path key become OpenAPI templates. */
+/**
+ * `{{ name }}` → `{name}` — app variables in a path key become OpenAPI
+ * templates; so do Postman-style `:name` path variables (issue #276).
+ */
 function toOpenApiTemplates(path: string): string {
-  return path.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_m, name: string) => `{${name}}`)
+  return path
+    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_m, name: string) => `{${name}}`)
+    .split('/')
+    .map((seg) => (seg.length > 1 && seg.startsWith(':') ? `{${seg.slice(1)}}` : seg))
+    .join('/')
 }
 
 /** The path part of a stored URL (query string already removed). */
@@ -1225,6 +1246,9 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
   // Accumulate distinct security schemes across all endpoints so we can emit a
   // single `components.securitySchemes` block at the end.
   const securitySchemes: Record<string, OpenApiSecurityScheme> = {}
+  // An `inherit` request's security is its folder's / the project's (issue
+  // #276) — only the scheme TYPE reaches the document, never a value.
+  const projectAuth = readProjectAuthConfig(projectId)
 
   for (const ep of endpoints) {
     const { path, query: urlQuery } = openApiPathAndQuery(ep.path || '/')
@@ -1271,7 +1295,11 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
       }
     }
     const openApiMeta: OpenApiRoundtripMeta | undefined = schema.openApi
-    const storedAuth: UiRequestSchema['auth'] | undefined = schema.auth
+    const storedAuth = (resolveEffectiveAuth(
+      schema.auth as AuthConfigLike | undefined,
+      buildFolderChain(ep.folder_id),
+      projectAuth,
+    ) ?? undefined) as UiRequestSchema['auth'] | undefined
     const params: Array<Record<string, unknown>> = []
     const paramMeta = openApiMeta?.parameters ?? {}
 
@@ -1564,7 +1592,11 @@ interface UiRequestSchema {
   openApi?: OpenApiRoundtripMeta
 }
 
-function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): PostmanUrl {
+function buildPostmanUrl(
+  rawUrl: string,
+  params: UiKeyValuePair[] = [],
+  pathVariables: readonly PathVariableLike[] = [],
+): PostmanUrl {
   const PLACEHOLDER = '__VAR__'
   const safe = (rawUrl || '').replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
   let parsed: URL | null = null
@@ -1592,6 +1624,15 @@ function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): Postman
       value: p.value,
       description: p.description,
       disabled: p.enabled === false ? true : undefined,
+    }))
+  }
+
+  // `:name` path variable values (issue #276) — Postman's `url.variable[]`.
+  if (pathVariables.length > 0) {
+    result.variable = pathVariables.map((v) => ({
+      key: v.key,
+      value: v.value,
+      ...(v.description ? { description: v.description } : {}),
     }))
   }
 
@@ -2130,7 +2171,7 @@ function buildPostmanCollection(
         description: h.description,
         disabled: h.enabled === false ? true : undefined,
       })),
-      url: buildPostmanUrl(url, schema.params),
+      url: buildPostmanUrl(url, schema.params, readPathVariables(schema)),
       description: ep.description ?? undefined,
     }
     const item: PostmanItem = { name: ep.name, request }
@@ -2251,18 +2292,26 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
  * blanked — project-auth credentials never leave the machine (issue #177
  * rule 5, same filter as the project file); `{{variable}}` references travel.
  */
-function readProjectAuthForExport(projectId: string): PostmanAuth | undefined {
+/**
+ * The project auth as an AuthConfig, literal credentials blanked (#177 rule
+ * 5) — what a file export may carry. `null` when the project sets none.
+ */
+function readProjectAuthConfig(projectId: string): AuthConfigLike | null {
   let raw: unknown
   try {
     raw = readSharedProjectSettings(projectId)
   } catch {
-    return undefined
+    return null
   }
-  if (!raw) return undefined
+  if (!raw) return null
   const stripped = stripProjectSharedSettings(JSON.stringify(raw))
   const settings =
     typeof stripped === 'string' ? (JSON.parse(stripped) as Record<string, unknown>) : null
-  const config = projectAuthToAuthConfig(settings?.auth as StoredProjectAuth | undefined)
+  return projectAuthToAuthConfig(settings?.auth as StoredProjectAuth | undefined)
+}
+
+function readProjectAuthForExport(projectId: string): PostmanAuth | undefined {
+  const config = readProjectAuthConfig(projectId)
   return config ? authToPostman(config as UiRequestSchema['auth']) : undefined
 }
 
@@ -2377,9 +2426,41 @@ interface CurlExportRequest {
     type: string
     basic?: { username: string; password: string }
     bearer?: { token: string; prefix?: string }
+    apiKey?: { key: string; value: string; in?: 'header' | 'query' }
   }
   sslVerification?: boolean
   cookies?: string
+  /** `:name` path variable values (issue #276) — substituted into the URL. */
+  pathVariables?: PathVariableLike[]
+  /**
+   * The stored request this is (optional). With it, an `inherit` (or absent)
+   * auth resolves through the folder chain / project like Send and Run.
+   */
+  endpointId?: string
+  savedRequestId?: string
+  testSuiteItemId?: string
+  projectId?: string
+}
+
+/** `export:curl` input with `inherit` auth replaced by the effective one. */
+export async function withEffectiveCurlAuth(
+  request: CurlExportRequest,
+): Promise<CurlExportRequest> {
+  const ref: StoredRequestRef | null = request.endpointId
+    ? { endpointId: request.endpointId }
+    : request.savedRequestId
+      ? { savedRequestId: request.savedRequestId }
+      : request.testSuiteItemId
+        ? { testSuiteItemId: request.testSuiteItemId }
+        : null
+  const inherits = !request.auth || request.auth.type === 'inherit'
+  if (!ref || !inherits) return request
+  const auth = await resolveStoredRequestAuth(
+    ref,
+    request.auth as AuthConfigLike | undefined,
+    request.projectId,
+  )
+  return { ...request, auth: (auth ?? undefined) as CurlExportRequest['auth'] }
 }
 
 // ─── cURL Import ────────────────────────────────────────────
@@ -2540,10 +2621,20 @@ export function exportAsCurl(request: CurlExportRequest): string {
   if (request.method && request.method !== 'GET') {
     args.push({ flag: '-X', value: request.method.toUpperCase(), literal: true })
   }
-  args.push({ value: request.url })
+  // `:name` path segments (issue #276) — the helper Send and Run use.
+  let url = applyPathVariables(request.url, request.pathVariables)
+  const apiKey = request.auth?.type === 'api-key' ? request.auth.apiKey : undefined
+  if (apiKey?.key && apiKey.in === 'query') {
+    const pair = `${encodeURIComponent(apiKey.key)}=${encodeURIComponent(apiKey.value ?? '')}`
+    url = url.includes('?') ? `${url}&${pair}` : `${url}?${pair}`
+  }
+  args.push({ value: url })
 
   for (const h of request.headers ?? []) {
     if (h.enabled && h.key) args.push({ flag: '-H', value: `${h.key}: ${h.value}` })
+  }
+  if (apiKey?.key && apiKey.in !== 'query') {
+    args.push({ flag: '-H', value: `${apiKey.key}: ${apiKey.value ?? ''}` })
   }
 
   if (request.auth?.type === 'basic' && request.auth.basic) {
@@ -3676,6 +3767,53 @@ function authToInsomnia(auth: UiRequestSchema['auth']): InsomniaAuth | undefined
   }
 }
 
+/**
+ * A request's Insomnia `authentication` (issue #276). Insomnia reads a
+ * missing block as "inherit from the folder", so:
+ *  - own concrete auth → that auth;
+ *  - own `none` → an explicit `{type:'none'}` when an ancestor would
+ *    otherwise give it one (left out it would silently inherit);
+ *  - `inherit` → left out when a folder carries auth (Insomnia inherits it),
+ *    otherwise the project auth, which Insomnia has no place for.
+ */
+function insomniaRequestAuth(
+  auth: UiRequestSchema['auth'],
+  folderId: string | null | undefined,
+  folders: readonly ExportFolderRow[],
+  projectAuth: AuthConfigLike | null | undefined,
+): InsomniaAuth | undefined {
+  const own = authToInsomnia(auth)
+  if (own) return own
+  // A type Insomnia cannot carry (awsv4, hawk, …) is not "inherit".
+  const ownType = auth?.type
+  if (ownType && ownType !== 'none' && ownType !== 'inherit') return undefined
+  const byId = new Map(folders.map((f) => [f.id, f]))
+  let folderGivesAuth = false
+  const seen = new Set<string>()
+  for (let id = folderId ?? null; id && !seen.has(id); ) {
+    seen.add(id)
+    const f = byId.get(id)
+    if (!f) break
+    if (f.auth) {
+      try {
+        const a = JSON.parse(f.auth) as { type?: string }
+        if (a && a.type && a.type !== 'inherit') {
+          folderGivesAuth = true
+          break
+        }
+      } catch {
+        /* unparseable folder auth — ignored like the folder export does */
+      }
+    }
+    id = f.parent_id
+  }
+  if (auth?.type === 'none') {
+    return folderGivesAuth || projectAuth ? { type: 'none' } : undefined
+  }
+  if (folderGivesAuth || !projectAuth) return undefined
+  return authToInsomnia(projectAuth as UiRequestSchema['auth'])
+}
+
 /** Insomnia's scripts use its own `insomnia` object (it does not bind `pm`). */
 const INSOMNIA_SCRIPT_PREFIX: AssertionScriptPrefix = 'insomnia'
 
@@ -3692,7 +3830,14 @@ function buildInsomniaResources(
    * siblings by that key and not by array position, runs them in that order:
    * a level's own requests first, then its subfolders.
    */
-  opts: { executionOrder?: boolean } = {},
+  opts: {
+    executionOrder?: boolean
+    /**
+     * The project auth (issue #276). Insomnia has no workspace-level auth, so
+     * an `inherit` request no folder gives an auth to carries it itself.
+     */
+    projectAuth?: AuthConfigLike | null
+  } = {},
 ): InsomniaResource[] {
   const resources: InsomniaResource[] = []
   const sortKeys = new Map<string, number>()
@@ -3783,7 +3928,7 @@ function buildInsomniaResources(
     }))
 
     const body = bodyToInsomnia(schema.body)
-    const authentication = authToInsomnia(schema.auth)
+    const authentication = insomniaRequestAuth(schema.auth, ep.folder_id, folders, opts.projectAuth)
 
     const resource: InsomniaResource = {
       _id: `req_${ep.id}`,
@@ -3854,6 +3999,7 @@ export function buildInsomniaProjectExport(projectId: string): CollectionExportR
     project.description ?? null,
     folders,
     endpoints,
+    { projectAuth: readProjectAuthConfig(projectId) },
   )
   return { content: JSON.stringify(wrapInsomniaExport(resources), null, 2), skipped }
 }

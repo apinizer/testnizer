@@ -286,15 +286,17 @@ function collectTreeVariables(
 
 /** Path variables (`url.variable[]`) of a request, `:name` kept in the URL. */
 function pathVariablesOf(url: PostmanUrl | string | undefined): Array<{
+  id: string
   key: string
   value: string
   description?: string
 }> {
   if (!url || typeof url === 'string' || !Array.isArray(url.variable)) return []
-  const out: Array<{ key: string; value: string; description?: string }> = []
+  const out: Array<{ id: string; key: string; value: string; description?: string }> = []
   for (const v of url.variable) {
     if (!v || typeof v !== 'object' || typeof v.key !== 'string' || !v.key) continue
     out.push({
+      id: genKvId(),
       key: v.key,
       value: toText(v.value),
       description: descriptionText(v.description) ?? undefined,
@@ -467,7 +469,6 @@ export function importCollectionTx(
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   )
   const undocumentedFolders: string[] = []
-  const pathVarRequests: string[] = []
 
   const walk = (list: PostmanItem[], parentFolderId: string | null, ctx: WalkCtx): void => {
     for (const item of list) {
@@ -553,13 +554,10 @@ export function importCollectionTx(
       if (preScript) requestSchema.preScript = preScript
       if (postScript) requestSchema.postScript = postScript
       Object.assign(requestSchema, settings)
+      // `:name` values → the Params tab's Path Variables (issue #276);
+      // Send / Run / codegen substitute them (`src/shared/path-variables.ts`).
       const pathVariables = pathVariablesOf(req.url)
-      if (pathVariables.length > 0) {
-        requestSchema.pathVariables = pathVariables
-        pathVarRequests.push(
-          `${label} (${pathVariables.map((p) => `:${p.key}=${p.value || '""'}`).join(', ')})`,
-        )
-      }
+      if (pathVariables.length > 0) requestSchema.pathVariables = pathVariables
 
       // ── Apinizer interop: fold x-apinizer fidelity back in (additive) ──
       const xa = item['x-apinizer']
@@ -655,14 +653,6 @@ export function importCollectionTx(
   if (undocumentedFolders.length > 0) {
     warnings.push(
       `Folder descriptions were not imported (Testnizer folders have no description field): ${undocumentedFolders.join('; ')}.`,
-    )
-  }
-  if (pathVarRequests.length > 0) {
-    warnings.push(
-      'Path variables kept as ":name" in the URL — Testnizer does not substitute ":name" segments yet, ' +
-        'so replace each with a value or a {{variable}} before sending. Values from Postman: ' +
-        pathVarRequests.join('; ') +
-        '.',
     )
   }
   return { suggestedEnvVars, environmentId, environmentName }

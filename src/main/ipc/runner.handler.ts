@@ -22,7 +22,12 @@ import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
 import * as envRepo from '../db/environment.repo'
 import { getDb } from '../db/database'
-import type { FolderRow } from '../db/project.repo'
+import { buildFolderChain, buildSuiteFolderChain } from '../lib/folder-chain'
+import {
+  applyPathVariables,
+  readPathVariables,
+  readPathVariablesJson,
+} from '../../shared/path-variables'
 import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
 import { loadEnvVarScopes } from '../lib/env-vars'
@@ -313,6 +318,8 @@ function savedRequestToEndpoint(saved: endpointRepo.SavedRequestRow): endpointRe
     // Timeout / redirects / SSL ride in `metadata` on this table (issue #185);
     // lifted to the top level where endpoint rows keep them.
     ...readRequestSettingsJson(saved.metadata),
+    // `:name` path variable values sit there too (issue #276).
+    pathVariables: readPathVariablesJson(saved.metadata),
   })
   return {
     id: saved.id,
@@ -391,70 +398,6 @@ function getRunnableEntity(id: string): RunnableEntity | undefined {
   const suiteItem = tsiRepo.getItemById(id)
   if (suiteItem) return { row: suiteItemToEndpoint(suiteItem), kind: 'suite' }
   return undefined
-}
-
-/**
- * Walk an endpoint's ancestor folder chain, outermost → innermost (leaf). Used
- * to resolve inherited auth and cascade scripts. Cycle-guarded so a corrupt
- * parent_id loop can't hang the run.
- */
-function buildFolderChain(folderId: string | null | undefined): FolderRow[] {
-  if (!folderId) return []
-  const db = getDb()
-  const chain: FolderRow[] = []
-  const seen = new Set<string>()
-  let id: string | null = folderId
-  while (id && !seen.has(id)) {
-    seen.add(id)
-    const folder = db.prepare('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined
-    if (!folder) break
-    chain.unshift(folder)
-    id = folder.parent_id
-  }
-  return chain
-}
-
-/**
- * Suite-item variant of buildFolderChain: walks `test_suite_folders` instead of
- * the APIs `folders` table so an imported collection's folder-level auth +
- * pre/post scripts cascade at run time (project → folder(s) → request). Adapts
- * each row to the FolderRow shape so it feeds the SAME resolveEffectiveAuth /
- * collectCascadeScripts the APIs path uses. `project_id` is unused by those and
- * filled with '' (test_suite_folders has no such column).
- */
-function buildSuiteFolderChain(folderId: string | null | undefined): FolderRow[] {
-  if (!folderId) return []
-  const db = getDb()
-  const chain: FolderRow[] = []
-  const seen = new Set<string>()
-  let id: string | null = folderId
-  while (id && !seen.has(id)) {
-    seen.add(id)
-    const f = db.prepare('SELECT * FROM test_suite_folders WHERE id = ?').get(id) as
-      | {
-          id: string
-          parent_id: string | null
-          name: string
-          sort_order: number
-          auth?: string | null
-          pre_script?: string | null
-          post_script?: string | null
-        }
-      | undefined
-    if (!f) break
-    chain.unshift({
-      id: f.id,
-      project_id: '',
-      parent_id: f.parent_id,
-      name: f.name,
-      sort_order: f.sort_order,
-      auth: f.auth ?? null,
-      pre_script: f.pre_script ?? null,
-      post_script: f.post_script ?? null,
-    })
-    id = f.parent_id
-  }
-  return chain
 }
 
 function headersArrayToRecord(
@@ -1688,6 +1631,13 @@ async function runEndpointStep(
       return recordStep(ctx, skipResult)
     }
 
+    // `:name` path segments first (issue #276) — the same helper and the same
+    // stage as Send: after the pre-request scripts (which read the URL as
+    // typed), right before `{{var}}` resolution.
+    requestOptions.url = applyPathVariables(
+      requestOptions.url,
+      readPathVariables(parseJsonSafe<unknown>(endpoint.request_schema, {})),
+    )
     // Resolve environment variables in request
     const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
     // The resolved auth's secrets — masked from the Console entry, the History

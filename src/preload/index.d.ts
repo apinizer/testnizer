@@ -635,9 +635,17 @@ interface CurlExportRequest {
     type: string
     basic?: { username: string; password: string }
     bearer?: { token: string; prefix?: string }
+    apiKey?: { key: string; value: string; in?: 'header' | 'query' }
   }
   sslVerification?: boolean
   cookies?: string
+  /** `:name` path variable values (issue #276). */
+  pathVariables?: Array<{ key: string; value: string; description?: string }>
+  /** The stored request — an `inherit` auth then resolves via folder / project. */
+  endpointId?: string
+  savedRequestId?: string
+  testSuiteItemId?: string
+  projectId?: string
 }
 
 // ─── SOAP ────────────────────────────────────────────────────────

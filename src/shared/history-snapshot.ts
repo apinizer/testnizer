@@ -20,6 +20,8 @@ export interface HistoryConfigured {
   method?: string
   url?: string
   params?: unknown
+  /** `:name` path variable rows (issue #276). */
+  pathVariables?: unknown
   headers?: unknown
   body?: unknown
   auth?: unknown

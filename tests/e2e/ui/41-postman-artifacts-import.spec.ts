@@ -18,7 +18,12 @@ import os from 'node:os'
 import path from 'node:path'
 import { expect, type ElectronApplication, type Page } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, ensureCanonicalProject, navigateSidebar } from '../helpers/ui/bootstrap'
+import {
+  dismissOverlays,
+  ensureCanonicalProject,
+  navigateSidebar,
+  openHttpRequestTab,
+} from '../helpers/ui/bootstrap'
 import {
   finishImportWizard,
   openImportDropdown,
@@ -31,6 +36,9 @@ import {
   listEnvVariables,
 } from '../helpers/ui/assert-ipc'
 import { treeClearSearch, treeSearch } from '../helpers/ui/tree'
+import { fillUrl, clickRequestTab } from '../helpers/ui/request-flow'
+import { sendAndReadBody } from '../helpers/ui/http-extra'
+import { localHttpBin } from '../helpers/test-servers'
 
 const TRANSFORMER = path.resolve(__dirname, '../../fixtures/postman/transformer')
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -175,5 +183,34 @@ uiTest.describe('Issue #276 — Postman v1 / v2.0 / globals through the Import U
       await restore()
       fs.rmSync(file, { force: true })
     }
+  })
+
+  // Path variables (issue #276): a `:name` segment gets a row in Params →
+  // Path Variables; its value is substituted on Send. The local echo server's
+  // `/get` answers only when `:ep` really became `get` (`/:ep` would 404).
+  uiTest('a :name path variable is listed under Params and substituted on Send', async ({
+    window,
+  }) => {
+    await openHttpRequestTab(window)
+    await expect(window.getByTestId('send-btn')).toBeVisible({ timeout: 10_000 })
+    await fillUrl(window, `${localHttpBin()}/:ep?pv=1`)
+    await clickRequestTab(window, 'params')
+    const row = window.getByTestId('path-var-row-ep')
+    await expect(row).toBeVisible({ timeout: 10_000 })
+    await row.getByTestId('path-var-value').fill('get')
+    await row.getByTestId('path-var-description').fill('echo route')
+
+    // 200 only if `/:ep` became `/get` (the echo server 404s anything else).
+    const { status } = await sendAndReadBody(window)
+    expect(status).toBe(200)
+    // `/get` echoes its query: the request reached that route with `?pv=1`.
+    // (The editor virtualises lines, so the echoed `url` line may be off-screen.)
+    await expect(window.getByTestId('res-body-content')).toContainText('"pv": "1"', {
+      timeout: 15_000,
+    })
+
+    // Removing the segment removes the row.
+    await fillUrl(window, `${localHttpBin()}/get`)
+    await expect(window.getByTestId('path-variables')).toHaveCount(0)
   })
 })

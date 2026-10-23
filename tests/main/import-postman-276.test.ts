@@ -441,7 +441,7 @@ describe('issue #276 — saved examples (response[]) become saved responses', ()
 // ─── 5. Path variables, settings, scripts, body ──────────────────────────────
 
 describe('issue #276 — path variables, protocolProfileBehavior, scripts, body modes', () => {
-  it('keeps :id in the URL, stores the values, reports it', async () => {
+  it('keeps :id in the URL and stores the values as the Path Variables rows', async () => {
     const pid = newProject()
     const data = await importDoc(pid, {
       info: { name: 'PV', schema: SCHEMA },
@@ -461,13 +461,10 @@ describe('issue #276 — path variables, protocolProfileBehavior, scripts, body 
     const ep = byName(pid, 'Get')
     expect(ep.schema.url).toBe('{{base}}/users/:id')
     expect(ep.schema.pathVariables).toEqual([
-      { key: 'id', value: '{{userId}}', description: 'user' },
+      { id: expect.any(String), key: 'id', value: '{{userId}}', description: 'user' },
     ])
-    expect(
-      data.warnings?.some(
-        (w) => /Path variables kept as ":name"/.test(w) && /:id=\{\{userId\}\}/.test(w),
-      ),
-    ).toBe(true)
+    // Path variables now work (Send / Run / codegen substitute them) — no warning.
+    expect(data.warnings?.some((w) => /Path variables/.test(w)) ?? false).toBe(false)
   })
 
   it('maps followRedirects / maxRedirects / strictSSL, inherits from collection + folder, reports the rest once', async () => {

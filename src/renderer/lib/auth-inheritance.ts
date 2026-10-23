@@ -133,6 +133,12 @@ interface ResolveInput {
   projectId: string | null | undefined
   endpointId?: string
   savedRequestId?: string
+  /**
+   * A Test Suite item: its chain is the suite's own folders
+   * (`test_suite_folders`), like Run's `buildSuiteFolderChain` (issue #276 —
+   * a suite built from an imported folder keeps the auth on a suite folder).
+   */
+  testSuiteItemId?: string
   requestAuth: AuthConfig | null | undefined
   requestPre: string | null | undefined
   requestPost: string | null | undefined
@@ -170,6 +176,17 @@ export async function resolveInheritance(input: ResolveInput): Promise<ResolveOu
       savedRequest?: {
         get?: (id: string) => Promise<{ success: boolean; data?: { folder_id?: string | null } }>
       }
+      testSuiteItem?: {
+        get?: (id: string) => Promise<{
+          success: boolean
+          data?: { folder_id?: string | null; suite_id?: string }
+        }>
+      }
+      testSuite?: {
+        listEndpoints?: (
+          suiteId: string,
+        ) => Promise<{ success: boolean; data?: { folders?: FolderLike[] } }>
+      }
       settings?: {
         get?: (k: string) => Promise<{ success: boolean; data?: StoredProjectSettings }>
       }
@@ -187,7 +204,20 @@ export async function resolveInheritance(input: ResolveInput): Promise<ResolveOu
 
     // 2. Build the folder chain.
     let chain: FolderLike[] = []
-    if (folderId && api.folder?.list) {
+    if (input.testSuiteItemId && !input.endpointId && !input.savedRequestId) {
+      // Suite item → the suite's folders (same table Run walks).
+      const item = api.testSuiteItem?.get
+        ? await api.testSuiteItem.get(input.testSuiteItemId)
+        : null
+      const suiteFolderId = item?.success ? (item.data?.folder_id ?? null) : null
+      const suiteId = item?.success ? item.data?.suite_id : undefined
+      if (suiteFolderId && suiteId && api.testSuite?.listEndpoints) {
+        const r = await api.testSuite.listEndpoints(suiteId)
+        if (r?.success && Array.isArray(r.data?.folders)) {
+          chain = buildFolderChain(suiteFolderId, new Map(r.data.folders.map((f) => [f.id, f])))
+        }
+      }
+    } else if (folderId && api.folder?.list) {
       const r = await api.folder.list(input.projectId)
       if (r?.success && Array.isArray(r.data)) {
         const byId = new Map(r.data.map((f) => [f.id, f]))

@@ -45,6 +45,7 @@ import { makeId } from '../lib/utils'
 import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
 import { httpMaskedSendError } from '../lib/masked-send-guard'
 import { resolveHttpTimeout } from '../../shared/request-settings'
+import { applyPathVariables, syncPathVariables } from '../../shared/path-variables'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
 // is consistent across request types (issue #8). Aliased to keep the existing
 // `markActiveDirty()` call sites unchanged.
@@ -52,6 +53,11 @@ import { markActiveTabDirty as markActiveDirty } from '../lib/mark-dirty'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
+}
+
+/** The Path Variables rows the URL's `:name` segments call for (issue #276). */
+function pathRowsFor(url: string, rows: readonly KeyValuePair[]): KeyValuePair[] {
+  return syncPathVariables(url, rows, (key) => defaultKv(key, ''))
 }
 
 // URL ⇄ Query-param sync (issue #22): `lib/url-query-sync.ts`, shared with
@@ -62,6 +68,12 @@ interface TabRequestState extends WithheldState {
   method: HttpMethod
   url: string
   params: KeyValuePair[]
+  /**
+   * Values of the URL's `:name` path segments (issue #276) — one row per
+   * name, derived from the URL (`src/shared/path-variables.ts`). Stored as
+   * `pathVariables` with the request; Send / Run / codegen substitute them.
+   */
+  pathVariables: KeyValuePair[]
   headers: KeyValuePair[]
   body: RequestBody
   auth: AuthConfig
@@ -102,6 +114,7 @@ function emptyTabState(): TabRequestState {
     method: 'GET',
     url: '',
     params: [],
+    pathVariables: [],
     headers: [],
     body: { type: 'none' },
     // New requests default to inheriting auth from their folder / project
@@ -169,6 +182,7 @@ export const HTTP_CREDENTIALS: CredentialSpec = {
   rows: [
     credentialRows('headers'),
     argRows('params'),
+    argRows('pathVariables'),
     argRows('body.formData', (r) => r.type === 'file'),
     argRows('body.urlEncoded'),
   ],
@@ -214,6 +228,11 @@ interface RequestStore extends TabRequestState {
   addParam: () => void
   updateParam: (id: string, updates: Partial<KeyValuePair>) => void
   removeParam: (id: string) => void
+  /** Edit a Path Variables row's value / description (its key follows the URL). */
+  updatePathVariable: (
+    id: string,
+    updates: Partial<Pick<KeyValuePair, 'value' | 'description'>>,
+  ) => void
   setHeaders: (headers: KeyValuePair[]) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
@@ -237,6 +256,8 @@ interface RequestStore extends TabRequestState {
       method: HttpMethod
       url: string
       params?: KeyValuePair[]
+      /** Stored rows (`readPathVariables`); re-derived from `url` on load. */
+      pathVariables?: Array<Partial<KeyValuePair> & { key: string; value: string }>
       headers?: KeyValuePair[]
       body?: RequestBody
       auth?: AuthConfig
@@ -280,6 +301,7 @@ function extractState(s: RequestStore): TabRequestState {
     method: s.method,
     url: s.url,
     params: s.params,
+    pathVariables: s.pathVariables,
     headers: s.headers,
     body: s.body,
     auth: s.auth,
@@ -353,6 +375,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   maxRedirects: persisted.current.maxRedirects ?? 5,
   sslVerification: persisted.current.sslVerification ?? true,
   requestTimeout: persisted.current.requestTimeout ?? null,
+  pathVariables: persisted.current.pathVariables ?? [],
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
   _inflightByTab: {},
@@ -369,7 +392,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
   setUrl: (url) => {
     // Keep the Params tab in sync with the query the user typed (#22).
-    set((state) => ({ url, params: mergeParamsFromUrl(url, state.params) }))
+    set((state) => ({
+      url,
+      params: mergeParamsFromUrl(url, state.params),
+      // Rows follow the URL's `:name` segments (issue #276).
+      pathVariables: pathRowsFor(url, state.pathVariables ?? []),
+    }))
     markActiveDirty()
   },
 
@@ -396,6 +424,20 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       const params = state.params.filter((p) => p.id !== id)
       return { params, url: applyParamsToUrl(state.url, params) }
     })
+    markActiveDirty()
+  },
+  updatePathVariable: (id, updates) => {
+    set((state) => ({
+      pathVariables: (state.pathVariables ?? []).map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              ...(updates.value !== undefined ? { value: updates.value } : {}),
+              ...(updates.description !== undefined ? { description: updates.description } : {}),
+            }
+          : p,
+      ),
+    }))
     markActiveDirty()
   },
 
@@ -557,6 +599,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     tabStates.set(dstTabId, {
       ...srcState,
       params: srcState.params.map(restamp),
+      pathVariables: (srcState.pathVariables ?? []).map(restamp),
       headers,
       assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
       // Issue #244: a value still withheld on the source stays withheld on
@@ -575,6 +618,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // A saved tab whose state was dropped from the cache is reloaded from its row.
     if (get().withheldCredentials.length > 0 || get().unloaded) await reloadWithheldBeforeSend()
     const { method, url, params, headers, body, auth, preScript } = get()
+    const pathVariables = get().pathVariables ?? []
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const envStore = useEnvironmentStore.getState()
@@ -602,6 +646,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       projectId: wsStore.activeProjectId,
       endpointId: activeTab?.endpointId,
       savedRequestId: activeTab?.savedRequestId,
+      testSuiteItemId: activeTab?.testSuiteItemId,
       requestAuth: auth,
       requestPre: preScript,
       requestPost: get().postScript,
@@ -775,7 +820,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // Resolve {{variable}} placeholders (after pre-request script has had
     // a chance to mutate env/globals).
     const activeVars = { ...envStore.getActiveVariables(), ...scriptOverrides }
-    const resolvedUrl = resolveVariables(url, activeVars)
+    // `:name` path segments first (issue #276) — the same helper Run uses;
+    // a value's own `{{var}}` is resolved with the rest of the URL.
+    const resolvedUrl = resolveVariables(applyPathVariables(url, pathVariables), activeVars)
     const resolvedParams = resolveKeyValuePairs(
       params.filter((p) => p.enabled),
       activeVars,
@@ -937,6 +984,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           method,
           url,
           params,
+          ...(pathVariables.length > 0 ? { pathVariables } : {}),
           headers,
           body,
           auth: effectiveAuth ?? auth,
@@ -1108,6 +1156,16 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       method: data.method,
       url: data.url,
       params: data.params || [],
+      pathVariables: pathRowsFor(
+        data.url ?? '',
+        (data.pathVariables ?? []).map((p) => ({
+          id: p.id || makeId(),
+          key: p.key,
+          value: p.value,
+          enabled: true,
+          ...(p.description ? { description: p.description } : {}),
+        })),
+      ),
       headers: data.headers || [],
       body: data.body || { type: 'none' },
       auth: data.auth || { type: 'none' },

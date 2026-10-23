@@ -2,6 +2,7 @@ import type { HttpMethod, KeyValuePair, RequestBody, AuthConfig, CodeLanguage } 
 import { resolveAuth, resolveVariables } from './variable-resolver'
 import { snippetVariables } from './secret-variables'
 import { generateCurl, type CurlDialect, type CurlGenRequest } from '../../shared/curl'
+import { applyPathVariables, type PathVariableLike } from '../../shared/path-variables'
 
 export interface CodeGenRequest {
   method: HttpMethod
@@ -9,7 +10,13 @@ export interface CodeGenRequest {
   params: KeyValuePair[]
   headers: KeyValuePair[]
   body?: RequestBody
+  /**
+   * The EFFECTIVE auth — an `inherit` request passes what its folder / project
+   * resolves to (`useGeneratedCode` → `resolveInheritance`), like Send.
+   */
   auth?: AuthConfig
+  /** `:name` path variable values (issue #276) — substituted like Send does. */
+  pathVariables?: readonly PathVariableLike[]
   /** Per-request settings the snippet reflects (cURL: SSL verification off → `-k`). */
   settings?: { sslVerification?: boolean }
 }
@@ -528,7 +535,11 @@ export function generateCode(
         options.includeSecrets === true,
       )
     : undefined
-  const effective = vars ? resolveRequest(req, vars) : req
+  // `:name` path segments first, then `{{var}}` — the order Send and Run use.
+  const withPath = req.pathVariables?.length
+    ? { ...req, url: applyPathVariables(req.url, req.pathVariables) }
+    : req
+  const effective = vars ? resolveRequest(withPath, vars) : withPath
   if (language === 'curl') return genCurl(effective, options?.curl)
   return gen(effective)
 }

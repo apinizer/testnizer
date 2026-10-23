@@ -36,6 +36,7 @@ import { mergeParamsFromUrl } from './url-query-sync'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
+import { pathVariablesField, type PathVariableLike } from '../../shared/path-variables'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
@@ -293,13 +294,26 @@ export function requestSettingsFor(tab: Tab): RequestSettings {
 }
 
 /**
+ * The Path Variables rows Ctrl+S / Save As persist with the row (issue #276):
+ * `{pathVariables}` next to the settings — top level of `request_schema`, or
+ * of `metadata` on saved_requests. HTTP only (the request store's URL). A URL
+ * without `:name` writes no key; a `:name` row left empty is stored empty and
+ * still sends `:name` literally (`applyPathVariables`), exactly as before.
+ */
+export function pathVariablesFor(tab: Tab): { pathVariables?: PathVariableLike[] } {
+  const protocol = (tab.protocol ?? 'http') as string
+  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return {}
+  return pathVariablesField(useRequestStore.getState().pathVariables)
+}
+
+/**
  * saved_requests has no `request_schema`: the settings sit at the top of its
  * `metadata` JSON next to the protocol blocks. `undefined` when there is
  * nothing to store (the update then keeps the column as it was).
  */
 export function savedRequestMetadata(
   protocolMeta: Record<string, unknown>,
-  settings: RequestSettings,
+  settings: RequestSettings & { pathVariables?: PathVariableLike[] },
 ): string | undefined {
   const merged = { ...protocolMeta, ...settings }
   return Object.keys(merged).length > 0 ? JSON.stringify(merged) : undefined
@@ -641,6 +655,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   // Timeout / redirects / SSL (issue #185) — top-level keys, read back by the
   // tab-open paths and the Runner through `readRequestSettings`.
   const settings = requestSettingsFor(activeTab)
+  // `:name` path variable values (issue #276) ride next to the settings.
+  const pathVars = pathVariablesFor(activeTab)
   // Issue #201: an HTTP request still carrying a placeholder name ('New
   // Endpoint' from the tree's Add Request, 'Yeni Uç Nokta', …) is saved under
   // a name derived from its URL. A name the user typed is never replaced.
@@ -657,6 +673,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       preScript: req.preScript,
       postScript: req.postScript,
       ...settings,
+      ...pathVars,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {
@@ -706,7 +723,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       post_script: req.postScript,
       assertions: JSON.stringify(req.assertions ?? []),
       // No request_schema on this table: settings ride in `metadata`.
-      metadata: savedRequestMetadata(protocolMeta, settings),
+      metadata: savedRequestMetadata(protocolMeta, { ...settings, ...pathVars }),
     }
     try {
       const result = (await window.api?.savedRequest?.update(
@@ -747,6 +764,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       postScript: req.postScript,
       assertions: req.assertions ?? [],
       ...settings,
+      ...pathVars,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {
