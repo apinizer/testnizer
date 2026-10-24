@@ -45,6 +45,8 @@ let exportProject: ReturnType<typeof vi.fn>
 let exportPostman: ReturnType<typeof vi.fn>
 let exportOpenApi: ReturnType<typeof vi.fn>
 let exportInsomnia: ReturnType<typeof vi.fn>
+let exportPostmanV3Json: ReturnType<typeof vi.fn>
+let exportPostmanV3Folder: ReturnType<typeof vi.fn>
 let saveFile: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
@@ -57,13 +59,32 @@ beforeEach(() => {
   exportPostman = vi.fn(async () => ({ success: true, data: '{"info":{}}', skipped: [] }))
   exportOpenApi = vi.fn(async () => ({ success: true, data: '{"openapi":"3.0.3"}', skipped: [] }))
   exportInsomnia = vi.fn(async () => ({ success: true, data: '{"resources":[]}', skipped: [] }))
+  exportPostmanV3Json = vi.fn(async () => ({
+    success: true,
+    data: '{"$kind":"collection"}',
+    skipped: [],
+    notes: [],
+  }))
+  exportPostmanV3Folder = vi.fn(async () => ({
+    success: true,
+    data: '/tmp/out/My API',
+    skipped: [],
+    notes: [],
+  }))
   saveFile = vi.fn(async (_content: string, name: string) => ({
     success: true,
     data: `/tmp/${name}`,
   }))
   mockWindowApi({
     save: { exportProject },
-    importExport: { exportPostman, exportOpenApi, exportInsomnia, saveFile },
+    importExport: {
+      exportPostman,
+      exportOpenApi,
+      exportInsomnia,
+      exportPostmanV3Json,
+      exportPostmanV3Folder,
+      saveFile,
+    },
   })
   useWorkspaceStore.setState({
     projects: [{ id: PID, name: 'my-api', display_name: 'My API' } as Project],
@@ -71,10 +92,12 @@ beforeEach(() => {
 })
 
 describe('exportProjectAs — each format reaches its own IPC (issue #208)', () => {
-  it('lists the four formats in picker order', () => {
+  it('lists the six formats in picker order (Postman v3 folder + JSON since issue #277)', () => {
     expect(PROJECT_EXPORT_FORMATS.map((f) => f.id)).toEqual([
       'testnizer',
       'postman',
+      'postman-v3-folder',
+      'postman-v3',
       'openapi',
       'insomnia',
     ])
@@ -98,6 +121,12 @@ describe('exportProjectAs — each format reaches its own IPC (issue #208)', () 
     ['postman', () => exportPostman, '{"info":{}}', 'My API.postman_collection.json'],
     ['openapi', () => exportOpenApi, '{"openapi":"3.0.3"}', 'My API.openapi.json'],
     ['insomnia', () => exportInsomnia, '{"resources":[]}', 'My API.insomnia.json'],
+    [
+      'postman-v3',
+      () => exportPostmanV3Json,
+      '{"$kind":"collection"}',
+      'My API.postman_collection.v3.json',
+    ],
   ] as const)(
     '%s → its export IPC, then saveFile with a format-specific name',
     async (format, exporter, content, fileName) => {
@@ -171,5 +200,45 @@ describe('projectExportFileName', () => {
     expect(projectExportFileName('a:b*c?', 'postman')).toBe('a-b-c-.postman_collection.json')
     expect(projectExportFileName('   ', 'openapi')).toBe('project.openapi.json')
     expect(projectExportFileName(undefined, 'insomnia')).toBe('project.insomnia.json')
+  })
+})
+
+describe('exportProjectAs — Postman v3 folder (issue #277)', () => {
+  it('main picks the folder and writes it; the toast names the created folder', async () => {
+    await expect(exportProjectAs(PID, 'postman-v3-folder')).resolves.toBe(true)
+    expect(exportPostmanV3Folder).toHaveBeenCalledWith(PID)
+    expect(saveFile).not.toHaveBeenCalled()
+    expect(toastMock.success).toHaveBeenCalledWith(
+      'Exported My API',
+      expect.objectContaining({ description: '/tmp/out/My API' }),
+    )
+    expect(toastMock.warning).not.toHaveBeenCalled()
+  })
+
+  it('a dismissed folder dialog is silent', async () => {
+    exportPostmanV3Folder.mockResolvedValueOnce({ success: true, data: null })
+    await expect(exportProjectAs(PID, 'postman-v3-folder')).resolves.toBe(false)
+    expect(toastMock.success).not.toHaveBeenCalled()
+    expect(toastMock.error).not.toHaveBeenCalled()
+  })
+
+  it('what v3 could not carry becomes one warning toast', async () => {
+    exportPostmanV3Folder.mockResolvedValueOnce({
+      success: true,
+      data: '/tmp/out/My API',
+      skipped: [],
+      notes: ['"Slow": the 5000 ms timeout has no Postman v3 field.'],
+    })
+    await exportProjectAs(PID, 'postman-v3-folder')
+    expect(toastMock.warning).toHaveBeenCalledWith(
+      '1 detail(s) could not be carried into Postman v3',
+      expect.objectContaining({ description: expect.stringContaining('timeout') }),
+    )
+  })
+
+  it('a failure is reported', async () => {
+    exportPostmanV3Folder.mockResolvedValueOnce({ success: false, error: 'EACCES' })
+    await expect(exportProjectAs(PID, 'postman-v3-folder')).resolves.toBe(false)
+    expect(toastMock.error).toHaveBeenCalled()
   })
 })

@@ -159,6 +159,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.exportEnvironmentHint':
       'Export the selected environment as a Postman-compatible .json file.',
     'env.exportEnvironmentSelectHint': 'Select an environment on the left to export it.',
+    'env.exportGlobals': 'Export Globals',
+    'env.exportGlobalsHint':
+      'Save the global variables as a Postman globals file. Secret values are left empty.',
     'env.secretStaysLocal':
       'Secret values stay on this computer. They are not written to the project file or git.',
     'env.decryptFailed':
@@ -1410,6 +1413,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'projectExport.format.postman': 'Postman v2.1',
     'projectExport.format.postmanDesc':
       'Collection with folders, requests, auth and scripts. HTTP, SOAP, GraphQL and SSE only.',
+    'projectExport.format.postmanV3Folder': 'Postman v3 (folder)',
+    'projectExport.format.postmanV3FolderDesc':
+      'A Postman 12 folder (YAML files) with every request type and the environments — for Postman Local View or Git.',
+    'projectExport.format.postmanV3Json': 'Postman v3 (JSON)',
+    'projectExport.format.postmanV3JsonDesc':
+      'One Postman v3 collection file with every request type: WebSocket, Socket.IO, gRPC, GraphQL, MCP and AI included.',
     'projectExport.format.openapi': 'OpenAPI 3',
     'projectExport.format.openapiDesc': 'API description of the HTTP requests, tagged by folder.',
     'projectExport.format.insomnia': 'Insomnia',
@@ -1817,10 +1826,13 @@ const translations: Record<Locale, Record<string, string>> = {
     'testsPanel.export': 'Export',
     'testsPanel.exportTestnizer': 'Export (Testnizer)',
     'testsPanel.exportPostman': 'Export as Postman v2.1',
+    'testsPanel.exportPostmanV3Folder': 'Export as Postman v3 (folder)',
+    'testsPanel.exportPostmanV3Json': 'Export as Postman v3 (JSON)',
     'testsPanel.exportInsomnia': 'Export as Insomnia',
     // Collection export: items the format cannot carry (issue #197)
     'export.skipped': '{count} item(s) left out of the {format} export: {names}',
     'export.skippedMore': 'and {count} more',
+    'export.v3Notes': '{count} detail(s) could not be carried into Postman v3',
     'testsPanel.import': 'Import…',
     'testsPanel.duplicate': 'Duplicate',
     'testsPanel.delete': 'Delete',
@@ -4298,6 +4310,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.exportEnvironmentHint':
       'Seçili ortamı Postman uyumlu bir .json dosyası olarak dışa aktarır.',
     'env.exportEnvironmentSelectHint': 'Dışa aktarmak için soldan bir ortam seçin.',
+    'env.exportGlobals': 'Global Değişkenleri Dışa Aktar',
+    'env.exportGlobalsHint':
+      'Global değişkenleri Postman globals dosyası olarak kaydeder. Gizli değerler boş bırakılır.',
     'env.secretStaysLocal':
       'Gizli değerler bu bilgisayarda kalır; proje dosyasına ve git’e yazılmaz.',
     'env.decryptFailed':
@@ -5550,6 +5565,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'projectExport.format.postman': 'Postman v2.1',
     'projectExport.format.postmanDesc':
       'Klasörler, istekler, kimlik doğrulama ve script’lerle koleksiyon. Yalnız HTTP, SOAP, GraphQL ve SSE.',
+    'projectExport.format.postmanV3Folder': 'Postman v3 (klasör)',
+    'projectExport.format.postmanV3FolderDesc':
+      'Tüm istek türleri ve ortamlarla bir Postman 12 klasörü (YAML dosyaları) — Postman Local View ya da Git için.',
+    'projectExport.format.postmanV3Json': 'Postman v3 (JSON)',
+    'projectExport.format.postmanV3JsonDesc':
+      'Tüm istek türleriyle tek bir Postman v3 koleksiyon dosyası: WebSocket, Socket.IO, gRPC, GraphQL, MCP ve AI dahil.',
     'projectExport.format.openapi': 'OpenAPI 3',
     'projectExport.format.openapiDesc': 'HTTP isteklerinin klasöre göre etiketlenmiş API tanımı.',
     'projectExport.format.insomnia': 'Insomnia',
@@ -5962,9 +5983,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'testsPanel.export': 'Dışa Aktar',
     'testsPanel.exportTestnizer': 'Dışa Aktar (Testnizer)',
     'testsPanel.exportPostman': 'Postman v2.1 olarak dışa aktar',
+    'testsPanel.exportPostmanV3Folder': 'Postman v3 (klasör) olarak dışa aktar',
+    'testsPanel.exportPostmanV3Json': 'Postman v3 (JSON) olarak dışa aktar',
     'testsPanel.exportInsomnia': 'Insomnia olarak dışa aktar',
     'export.skipped': '{count} öğe {format} dışa aktarımına dahil edilmedi: {names}',
     'export.skippedMore': 've {count} öğe daha',
+    'export.v3Notes': '{count} ayrıntı Postman v3’e aktarılamadı',
     'testsPanel.import': 'İçe Aktar…',
     'testsPanel.duplicate': 'Çoğalt',
     'testsPanel.delete': 'Sil',

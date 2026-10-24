@@ -275,6 +275,10 @@ const api = {
       ipcRenderer.invoke('import:postmanEnvironment', payload),
     exportPostman: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('export:postman', projectId),
+    exportPostmanV3Json: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('export:postmanV3Json', projectId),
+    exportPostmanV3Folder: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('export:postmanV3Folder', projectId),
     pickPostmanFolder: (): Promise<unknown> => ipcRenderer.invoke('import:pickPostmanFolder'),
     importPostmanFolder: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:postmanFolder', payload),
@@ -810,7 +814,7 @@ const api = {
       ipcRenderer.invoke('save:exportFolder', folderId),
     exportTestSuite: (
       suiteId: string,
-      format?: 'testnizer' | 'postman' | 'insomnia',
+      format?: 'testnizer' | 'postman' | 'insomnia' | 'postman-v3' | 'postman-v3-folder',
     ): Promise<unknown> => ipcRenderer.invoke('save:exportTestSuite', suiteId, format),
     importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importProject', payload),

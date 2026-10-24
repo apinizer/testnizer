@@ -52,6 +52,14 @@ import {
   takePickedFolder,
 } from '../import/postman/v3/picked-folders'
 import { importV3FolderContent, readV3Folder, V3InputError } from '../import/postman/v3'
+import { authToPostmanParts } from '../export/postman-v3/auth'
+import { loadExamples } from '../export/postman-v3/rows'
+import {
+  buildPostmanV3ProjectExport,
+  v3FolderBundle,
+  v3JsonText,
+  writeV3Folder,
+} from '../export/postman-v3'
 import type {
   PostmanAuth,
   PostmanBody,
@@ -59,6 +67,7 @@ import type {
   PostmanEnvironment,
   PostmanItem,
   PostmanRequest,
+  PostmanResponse,
   PostmanUrl,
   PostmanVariable,
 } from '../import/postman/types'
@@ -442,6 +451,34 @@ export function registerImportExportHandlers(): void {
     try {
       const { content, skipped } = buildPostmanProjectExport(projectId)
       return { success: true, data: content, skipped }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Postman v3 Export (issue #277) ─────────────────────────
+  // JSON: the monolith the public v3 JSON Schema validates; the renderer saves
+  // it like the other collection formats. Folder: main asks where to create
+  // the Native Git folder and writes it (never overwrites — see folder-writer).
+  ipcMain.handle('export:postmanV3Json', async (_event, projectId: string) => {
+    try {
+      const r = buildPostmanV3ProjectExport(projectId)
+      return { success: true, data: v3JsonText(r), skipped: r.skipped, notes: r.notes }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('export:postmanV3Folder', async (_event, projectId: string) => {
+    try {
+      const r = buildPostmanV3ProjectExport(projectId)
+      const picked = await dialog.showOpenDialog({
+        title: 'Choose where to create the Postman v3 folder',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      if (picked.canceled || picked.filePaths.length === 0) return { success: true, data: null }
+      const written = writeV3Folder(picked.filePaths[0], v3FolderBundle(r))
+      return { success: true, data: written, skipped: r.skipped, notes: r.notes }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -1836,8 +1873,16 @@ function authToPostman(auth: UiRequestSchema['auth']): PostmanAuth | undefined {
         ],
       }
     }
-    default:
-      return undefined
+    default: {
+      // AWS Signature, Hawk (issue #277): the shared attribute writer, the
+      // inverse of the importer's mapping.
+      const parts = authToPostmanParts(auth)
+      if (!parts || parts.type === 'noauth' || parts.type === 'inherit') return undefined
+      return {
+        type: parts.type,
+        [parts.type]: parts.attrs.map((a) => ({ key: a.key, value: a.value, type: 'string' })),
+      }
+    }
   }
 }
 
@@ -1873,6 +1918,8 @@ interface ExportEndpointRow {
   protocol?: string | null
   /** OpenAPI export only — the endpoint's stored response schemas. */
   response_schemas?: string | null
+  /** Which table the row comes from — the owner type of its saved examples. */
+  owner_type?: 'endpoint' | 'saved_request' | 'test_suite_item'
 }
 
 /** A `saved_requests` row (Ctrl+S) as the collection exports read it. */
@@ -2008,6 +2055,7 @@ function savedRequestToExportRow(row: SavedRequestExportRow): ExportEndpointRow 
     request_schema: JSON.stringify(schema),
     protocol: row.protocol,
     sort_order: row.sort_order,
+    owner_type: 'saved_request',
   }
 }
 
@@ -2029,9 +2077,10 @@ function loadProjectExportRows(
   const saved = db
     .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
     .all(projectId) as SavedRequestExportRow[]
-  return [...endpoints, ...saved.map(savedRequestToExportRow)].sort(
-    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
-  )
+  return [
+    ...endpoints.map((e) => ({ ...e, owner_type: 'endpoint' as const })),
+    ...saved.map(savedRequestToExportRow),
+  ].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 }
 
 /**
@@ -2165,6 +2214,88 @@ function collectPostmanVariables(
   )
 }
 
+/** Request settings (issue #185) → `protocolProfileBehavior` (issue #277); undefined when none is set. */
+function ppbFromSettings(schema: UiRequestSchema): Record<string, unknown> | undefined {
+  const s = readRequestSettings(schema)
+  const out: Record<string, unknown> = {}
+  if (s.followRedirects !== undefined) out.followRedirects = s.followRedirects
+  if (s.maxRedirects !== undefined) out.maxRedirects = s.maxRedirects
+  if (s.sslVerification !== undefined) out.strictSSL = s.sslVerification
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/** `_postman_previewlanguage` of an example from its Content-Type. */
+function previewLanguage(headers: Record<string, string>): string {
+  const ct = (
+    Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? ''
+  ).toLowerCase()
+  if (ct.includes('json')) return 'json'
+  if (ct.includes('xml')) return 'xml'
+  if (ct.includes('html')) return 'html'
+  if (ct.includes('javascript')) return 'javascript'
+  return 'text'
+}
+
+/**
+ * Saved examples of one row (`saved_responses`) → v2.1 `response[]` with the
+ * example's own request as `originalRequest` (issue #277). The importer maps
+ * `response[]` back to saved examples (issue #276).
+ */
+function postmanResponsesOf(
+  db: ReturnType<typeof getDb>,
+  ep: ExportEndpointRow,
+  itemRequest: PostmanRequest,
+): PostmanResponse[] {
+  if (!ep.owner_type) return []
+  const out: PostmanResponse[] = []
+  for (const e of loadExamples(db, ep.owner_type, ep.id)) {
+    const r = e.response as {
+      status?: number
+      statusText?: string
+      headers?: Record<string, unknown>
+      body?: unknown
+      timing?: { total?: number }
+    }
+    const headers: Record<string, string> = {}
+    if (r.headers && typeof r.headers === 'object') {
+      for (const [k, v] of Object.entries(r.headers)) headers[k] = v == null ? '' : String(v)
+    }
+    const c = (e.configured ?? {}) as {
+      method?: string
+      url?: string
+      params?: UiKeyValuePair[]
+      headers?: UiKeyValuePair[]
+      body?: UiRequestSchema['body']
+    }
+    const originalRequest: PostmanRequest = e.configured
+      ? {
+          method: (c.method || e.method || itemRequest.method || 'GET').toUpperCase(),
+          header: (c.headers ?? []).map((h) => ({
+            key: h.key,
+            value: h.value,
+            disabled: h.enabled === false ? true : undefined,
+          })),
+          url: buildPostmanUrl(c.url || e.url || '', c.params ?? []),
+          ...(bodyToPostman(c.body) ? { body: bodyToPostman(c.body) } : {}),
+        }
+      : itemRequest
+    const code = e.statusCode ?? (typeof r.status === 'number' ? r.status : undefined)
+    out.push({
+      name: e.name,
+      originalRequest,
+      status: r.statusText ?? '',
+      code,
+      header: Object.entries(headers).map(([key, value]) => ({ key, value })),
+      body: typeof r.body === 'string' ? r.body : r.body == null ? '' : JSON.stringify(r.body),
+      _postman_previewlanguage: previewLanguage(headers),
+      ...(typeof r.timing?.total === 'number' && r.timing.total > 0
+        ? { responseTime: r.timing.total }
+        : {}),
+    })
+  }
+  return out
+}
+
 /** Build a Postman v2.1 collection from folder + endpoint rows (shared by project & suite export). */
 function buildPostmanCollection(
   name: string,
@@ -2174,6 +2305,14 @@ function buildPostmanCollection(
   variables?: PostmanVariable[],
   /** Project-level pre/test scripts → collection-level `event` (issue #270). */
   collectionScripts?: ProjectScripts,
+  /**
+   * Issue #277: `info._postman_id` (stable — the project / suite id) and
+   * the saved examples of each row as `response[]`.
+   */
+  extra: {
+    postmanId?: string
+    responsesOf?: (ep: ExportEndpointRow, request: PostmanRequest) => PostmanResponse[]
+  } = {},
 ): PostmanCollection {
   type PostmanFolderNode = PostmanItem & {
     auth?: ReturnType<typeof authToPostman>
@@ -2255,6 +2394,13 @@ function buildPostmanCollection(
       ;(item as PostmanItem & { event?: PostmanScriptEvent[] }).event = events
     }
 
+    // Request settings → protocolProfileBehavior; saved examples → response[]
+    // (issue #277) — both read back by the importer (issue #276).
+    const ppb = ppbFromSettings(schema)
+    if (ppb) item.protocolProfileBehavior = ppb
+    const responses = extra.responsesOf?.(ep, request) ?? []
+    if (responses.length > 0) item.response = responses
+
     // ── Apinizer interop: attach x-apinizer when there's carryable fidelity ──
     // We only attach the extension when there's something Apinizer can
     // actually carry (mapped assertions or a timeout) so pure Postman exports
@@ -2292,6 +2438,7 @@ function buildPostmanCollection(
 
   const collection: PostmanCollection = {
     info: {
+      ...(extra.postmanId ? { _postman_id: extra.postmanId } : {}),
       name,
       description: description ?? undefined,
       schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
@@ -2336,6 +2483,10 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
     endpoints,
     collectPostmanVariables(db, projectId),
     readProjectScripts(projectId),
+    {
+      postmanId: projectId,
+      responsesOf: (ep, request) => postmanResponsesOf(db, ep, request),
+    },
   )
   const projectAuth = readProjectAuthForExport(projectId)
   if (projectAuth) collection.auth = projectAuth
@@ -2432,6 +2583,7 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     // x-apinizer export can emit them.
     assertions: it.assertions,
     protocol: it.protocol,
+    owner_type: 'test_suite_item' as const,
   }))
   const { rows, skipped } = partitionExportable(endpoints)
 
@@ -2443,6 +2595,10 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     collectPostmanVariables(db, suite.project_id),
     // A suite Run cascades its project's scripts too.
     readProjectScripts(suite.project_id),
+    {
+      postmanId: suiteId,
+      responsesOf: (ep, request) => postmanResponsesOf(db, ep, request),
+    },
   )
   // Postman runs a collection in array order. The builder lists a level's
   // folders before its requests; a suite runs a level's own requests first,

@@ -40,6 +40,11 @@
  *    · `info.description` becomes the (empty) project description, so the
  *      export carries it.
  *    · a v1 collection is converted and imported instead of rejected.
+ *  - Issue #277 (snapshot regenerated on purpose): the export writes
+ *    `info._postman_id` = the project id (stable across exports). The fixture
+ *    has no saved examples and no request settings, so `response[]` /
+ *    `protocolProfileBehavior` (also new) do not show here — they are pinned
+ *    in tests/main/export-postman-v21-277.test.ts.
  *  - Collection `variable[]` becomes an environment named "<collection> (imported)".
  *  - Per-request params keep disabled rows; headers keep disabled rows.
  *  - The Postman environment EXPORT lives inline in

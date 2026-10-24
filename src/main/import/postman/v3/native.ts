@@ -585,7 +585,10 @@ function writeLlm(a: NativeWriteArgs): string {
   const provider = aiProviderOf(str(config.provider))
   const url = (str(doc.url) ?? '').trim()
   const customUrl = url || (provider === 'custom' ? '' : resolveProviderUrl(provider))
-  if (provider === 'custom' && str(config.provider)) {
+  // `custom` itself (what a Testnizer export writes for a Custom endpoint) is
+  // not a lossy mapping — no warning.
+  const rawProvider = (str(config.provider) ?? '').trim().toLowerCase()
+  if (provider === 'custom' && rawProvider && rawProvider !== 'custom') {
     a.warnings.push(
       `"${label}": provider "${str(config.provider)}" is imported as a Custom (OpenAI-compatible) endpoint.`,
     )

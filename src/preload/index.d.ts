@@ -586,6 +586,12 @@ interface ImportExportApi {
    * and checks the folder, and returns an opaque handle + summary (null data
    * = cancelled). The handle is single-use.
    */
+  /** Postman v3 (issue #277): the single v3 JSON file's text + what it left out / could not carry. */
+  exportPostmanV3Json(projectId: string): Promise<CollectionExportIpcResult & { notes?: string[] }>
+  /** Postman v3 folder: main asks where, writes it and returns the created folder (null = cancelled). */
+  exportPostmanV3Folder(
+    projectId: string,
+  ): Promise<IpcResult<string | null> & { skipped?: ExportSkippedItem[]; notes?: string[] }>
   pickPostmanFolder(): Promise<IpcResult<PostmanFolderPick | null>>
   importPostmanFolder(payload: {
     projectId: string
@@ -2263,8 +2269,8 @@ interface SaveApi {
   exportFolder(folderId: string): Promise<IpcResult<{ path: string }>>
   exportTestSuite(
     suiteId: string,
-    format?: 'testnizer' | 'postman' | 'insomnia',
-  ): Promise<IpcResult<{ path: string; skipped?: ExportSkippedItem[] }>>
+    format?: 'testnizer' | 'postman' | 'insomnia' | 'postman-v3' | 'postman-v3-folder',
+  ): Promise<IpcResult<{ path: string; skipped?: ExportSkippedItem[]; notes?: string[] }>>
   importProject(payload: {
     workspaceId: string
     name?: string

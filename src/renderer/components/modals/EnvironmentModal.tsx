@@ -18,6 +18,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
+import { buildVariablesExport } from '../../lib/variables-export'
 import DeleteConfirmDialog from './DeleteConfirmDialog'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
@@ -406,28 +407,24 @@ export default function EnvironmentModal() {
              *  so exports aren't Postman-branded (issue #7; export added #15). */}
             <button
               type="button"
+              data-testid={
+                pane.kind === 'globals' ? 'env-export-globals' : 'env-export-environment'
+              }
               onClick={() => {
-                if (!selectedEnv) return
-                const doc = {
-                  id: selectedEnv.id,
-                  name: selectedEnv.name,
-                  // Values marked secret stay on this computer (issue #177):
-                  // the file keeps the key and the `secret` type, never the value.
-                  values: selectedEnv.variables.map((v) => ({
-                    key: v.key,
-                    value: v.secret ? '' : v.value || v.initialValue || '',
-                    enabled: v.enabled,
-                    type: v.secret ? 'secret' : 'default',
-                  })),
-                  _postman_variable_scope: 'environment',
-                  _postman_exported_using: 'Testnizer',
-                }
+                // Globals pane → a Postman globals export (issue #277); an
+                // environment → the environment export. Same Postman shape,
+                // `_postman_variable_scope` tells them apart on import.
+                const exported = buildVariablesExport(
+                  pane.kind === 'globals' ? null : selectedEnv,
+                  globalVariables,
+                )
+                if (!exported) return
                 void window.api?.importExport?.saveFile(
-                  JSON.stringify(doc, null, 2),
-                  `${selectedEnv.name || 'environment'}.testnizer_environment.json`,
+                  JSON.stringify(exported.doc, null, 2),
+                  exported.fileName,
                 )
               }}
-              disabled={!selectedEnv}
+              disabled={pane.kind !== 'globals' && !selectedEnv}
               className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5 disabled:cursor-default disabled:opacity-60"
               style={{
                 background: 'var(--white)',
@@ -436,11 +433,15 @@ export default function EnvironmentModal() {
                 fontWeight: 500,
               }}
               title={
-                selectedEnv ? t('env.exportEnvironmentHint') : t('env.exportEnvironmentSelectHint')
+                pane.kind === 'globals'
+                  ? t('env.exportGlobalsHint')
+                  : selectedEnv
+                    ? t('env.exportEnvironmentHint')
+                    : t('env.exportEnvironmentSelectHint')
               }
             >
               <Upload size={12} />
-              {t('env.exportEnvironment')}
+              {pane.kind === 'globals' ? t('env.exportGlobals') : t('env.exportEnvironment')}
             </button>
           </div>
         </div>

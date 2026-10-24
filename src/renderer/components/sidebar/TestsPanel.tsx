@@ -508,7 +508,15 @@ export default function TestsPanel() {
   // Postman v2.1 / Insomnia collection so the suite can be carried into those
   // tools (folder tree + per-item request snapshot + cascade scripts).
   const handleExportSuite = useCallback(
-    async (suiteId: string, format: 'testnizer' | 'postman' | 'insomnia' = 'testnizer') => {
+    async (
+      suiteId: string,
+      format:
+        | 'testnizer'
+        | 'postman'
+        | 'insomnia'
+        | 'postman-v3'
+        | 'postman-v3-folder' = 'testnizer',
+    ) => {
       try {
         const result = await api().save?.exportTestSuite?.(suiteId, format)
         if (!result?.success && result?.error && result.error !== 'Cancelled') {
@@ -518,8 +526,18 @@ export default function TestsPanel() {
         // WebSocket, gRPC, AI …) left out of the file instead of dropping them
         // silently (issue #197).
         if (result?.success && format !== 'testnizer') {
-          const msg = formatExportSkipped(result.data?.skipped, format, t)
+          const msg = formatExportSkipped(
+            result.data?.skipped,
+            format === 'postman-v3-folder' ? 'postman-v3' : format,
+            t,
+          )
           if (msg) toast.warning(msg)
+          const notes = result.data?.notes ?? []
+          if (notes.length > 0) {
+            toast.warning(t('export.v3Notes').replace('{count}', String(notes.length)), {
+              description: notes.slice(0, 3).join('\n') + (notes.length > 3 ? '\n…' : ''),
+            })
+          }
         }
       } catch (err) {
         console.error(err)
@@ -858,6 +876,18 @@ export default function TestsPanel() {
                 icon={<Upload size={13} />}
                 label={t('testsPanel.exportPostman')}
                 onClick={() => handleExportSuite(suite.id, 'postman')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.exportPostmanV3Folder')}
+                testId="suite-export-postman-v3-folder"
+                onClick={() => handleExportSuite(suite.id, 'postman-v3-folder')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.exportPostmanV3Json')}
+                testId="suite-export-postman-v3-json"
+                onClick={() => handleExportSuite(suite.id, 'postman-v3')}
               />
               <ContextMenuItem
                 icon={<Upload size={13} />}
@@ -1701,15 +1731,18 @@ function ContextMenuItem({
   label,
   danger,
   onClick,
+  testId,
 }: {
   icon: React.ReactNode
   label: string
   danger?: boolean
   onClick: () => void
+  testId?: string
 }) {
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={(e) => {
         e.stopPropagation()
         onClick()

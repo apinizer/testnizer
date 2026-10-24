@@ -616,6 +616,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
       },
     ],
     "info": {
+      "_postman_id": "pm-baseline-1",
       "description": "Constructed fixture for the Postman parity baseline (not a third-party file).",
       "name": "Baseline Project",
       "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
