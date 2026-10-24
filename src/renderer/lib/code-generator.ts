@@ -1,15 +1,40 @@
+/**
+ * Generate Code — renderer facade over `src/shared/codegen/` (issue #280).
+ *
+ * What stays here is renderer-only: `{{var}}` resolution through the active
+ * variables (secret variables stay `{{name}}` unless "Include secret values"),
+ * path variables applied BEFORE it (the order Send and Run use). Normalising
+ * the request and rendering each language variant is the shared module's job.
+ *
+ * `generateCode(legacyId, …)` and `CODE_LANGUAGES` keep the 11 pre-#280 ids
+ * working; the UI calls `generateSnippet(variantId, …)`.
+ */
 import type { HttpMethod, KeyValuePair, RequestBody, AuthConfig, CodeLanguage } from '../types'
 import { resolveAuth, resolveVariables } from './variable-resolver'
 import { snippetVariables } from './secret-variables'
-import { generateCurl, type CurlDialect, type CurlGenRequest } from '../../shared/curl'
+import type { CurlDialect } from '../../shared/curl'
 import { applyPathVariables, type PathVariableLike } from '../../shared/path-variables'
+import {
+  curlVariantId,
+  findVariant,
+  normalizeRequest,
+  renderSnippet,
+  type CodegenInputBody,
+  type CodegenOptions,
+} from '../../shared/codegen'
+
+/** A GraphQL tab's body: Send posts `{query, variables}` as JSON. */
+export interface GraphqlCodeBody {
+  type: 'graphql'
+  graphql: { query: string; variables: string }
+}
 
 export interface CodeGenRequest {
-  method: HttpMethod
+  method: HttpMethod | string
   url: string
   params: KeyValuePair[]
   headers: KeyValuePair[]
-  body?: RequestBody
+  body?: RequestBody | GraphqlCodeBody
   /**
    * The EFFECTIVE auth — an `inherit` request passes what its folder / project
    * resolves to (`useGeneratedCode` → `resolveInheritance`), like Send.
@@ -17,8 +42,8 @@ export interface CodeGenRequest {
   auth?: AuthConfig
   /** `:name` path variable values (issue #276) — substituted like Send does. */
   pathVariables?: readonly PathVariableLike[]
-  /** Per-request settings the snippet reflects (cURL: SSL verification off → `-k`). */
-  settings?: { sslVerification?: boolean }
+  /** Per-request settings the snippet reflects (SSL off, explicit timeout, redirects off). */
+  settings?: { sslVerification?: boolean; timeout?: number | null; followRedirects?: boolean }
 }
 
 /** The cURL variant (issue #279): shell + one line or one option per line. */
@@ -28,8 +53,10 @@ export interface CurlSnippetOptions {
 }
 
 export interface CodeGenOptions {
-  /** Only read by the `curl` language. Default: bash, multi-line. */
+  /** Only read by the legacy `curl` id. Default: bash, multi-line. */
   curl?: CurlSnippetOptions
+  /** Per-variant snippet options (indent, timeout, redirects…) — issue #280. */
+  variantOptions?: CodegenOptions
   /**
    * Optional variable scope used to substitute `{{var}}` placeholders before
    * the request is rendered into a code snippet. Without this, suite items
@@ -55,22 +82,32 @@ function resolveKvList(list: KeyValuePair[], vars: Record<string, string>): KeyV
 }
 
 function resolveBody(
-  body: RequestBody | undefined,
+  body: CodeGenRequest['body'],
   vars: Record<string, string>,
-): RequestBody | undefined {
+): CodeGenRequest['body'] {
   if (!body) return body
+  if (body.type === 'graphql') {
+    const g = (body as GraphqlCodeBody).graphql
+    // Resolved BEFORE the JSON is built (Send's order), so a value with a
+    // quote cannot break the JSON body.
+    return {
+      type: 'graphql',
+      graphql: {
+        query: resolveVariables(g.query, vars),
+        variables: resolveVariables(g.variables, vars),
+      },
+    }
+  }
+  const b = body as RequestBody
   return {
-    ...body,
-    // `body.content` covers raw / json / xml / text / html / javascript
-    // — the same set `bodyString()` reads below. The other body types
-    // route through formData / urlEncoded so we resolve those rows too.
-    // binaryPath is here for parity with `resolveRequestBody()` in
+    ...b,
+    // binaryPath too, for parity with `resolveRequestBody()` in
     // variable-resolver.ts so `{{fixturesDir}}/foo.bin` works in both
     // the code panel and the live request engine.
-    content: body.content ? resolveVariables(body.content, vars) : body.content,
-    formData: body.formData ? resolveKvList(body.formData, vars) : body.formData,
-    urlEncoded: body.urlEncoded ? resolveKvList(body.urlEncoded, vars) : body.urlEncoded,
-    binaryPath: body.binaryPath ? resolveVariables(body.binaryPath, vars) : body.binaryPath,
+    content: b.content ? resolveVariables(b.content, vars) : b.content,
+    formData: b.formData ? resolveKvList(b.formData, vars) : b.formData,
+    urlEncoded: b.urlEncoded ? resolveKvList(b.urlEncoded, vars) : b.urlEncoded,
+    binaryPath: b.binaryPath ? resolveVariables(b.binaryPath, vars) : b.binaryPath,
   }
 }
 
@@ -87,447 +124,8 @@ function resolveRequest(req: CodeGenRequest, vars: Record<string, string>): Code
   }
 }
 
-/** Query keys the URL's own query string carries (raw, as typed). */
-function urlQueryKeys(url: string): Set<string> {
-  const keys = new Set<string>()
-  const start = url.indexOf('?')
-  if (start === -1) return keys
-  for (const pair of url
-    .slice(start + 1)
-    .split('#')[0]
-    .split('&')) {
-    if (!pair) continue
-    const eq = pair.indexOf('=')
-    keys.add(eq === -1 ? pair : pair.slice(0, eq))
-  }
-  return keys
-}
-
-/** Percent-encode a query part, keeping a `{{name}}` placeholder readable. */
-function encodeQueryPart(s: string): string {
-  return encodeURIComponent(s).replace(/%7B%7B(.+?)%7D%7D/g, (_m, name: string) => {
-    return `{{${decodeURIComponent(name)}}}`
-  })
-}
-
-/**
- * The URL plus the params table — minus any key the URL's query ALREADY
- * carries. The request editor keeps URL and Params in sync (issue #22), so
- * appending every row duplicated the whole query (`?api_key=X&api_key=X`).
- * Same rule as the HTTP engine (`src/main/protocols/http.engine.ts`, issue
- * #17): the URL's query wins and stays untouched (a repeated `?id=1&id=2`
- * survives), only table rows that would duplicate it are dropped.
- */
-function buildFullUrl(url: string, params: KeyValuePair[]): string {
-  const inUrl = urlQueryKeys(url)
-  const extra = params.filter((p) => p.enabled && p.key && !inUrl.has(p.key))
-  if (extra.length === 0) return url
-  const qs = extra.map((p) => `${encodeQueryPart(p.key)}=${encodeQueryPart(p.value)}`).join('&')
-  return url.includes('?') ? `${url}&${qs}` : `${url}?${qs}`
-}
-
-function activeHeaders(headers: KeyValuePair[], auth?: AuthConfig): Record<string, string> {
-  const h: Record<string, string> = {}
-  headers
-    .filter((hd) => hd.enabled && hd.key)
-    .forEach((hd) => {
-      h[hd.key] = hd.value
-    })
-  if (auth?.type === 'bearer' && auth.bearer?.token) {
-    h['Authorization'] = `${auth.bearer.prefix || 'Bearer'} ${auth.bearer.token}`
-  } else if (auth?.type === 'basic' && auth.basic) {
-    h['Authorization'] = `Basic <base64(${auth.basic.username}:${auth.basic.password})>`
-  } else if (auth?.type === 'api-key' && auth.apiKey?.in === 'header' && auth.apiKey.key) {
-    h[auth.apiKey.key] = auth.apiKey.value
-  }
-  return h
-}
-
-function bodyString(body?: RequestBody): string | null {
-  if (!body || body.type === 'none') return null
-  if (
-    body.type === 'json' ||
-    body.type === 'xml' ||
-    body.type === 'text' ||
-    body.type === 'html' ||
-    body.type === 'javascript'
-  ) {
-    return body.content || null
-  }
-  if (body.type === 'urlencoded' && body.urlEncoded) {
-    return body.urlEncoded
-      .filter((p) => p.enabled && p.key)
-      .map((p) => `${encodeQueryPart(p.key)}=${encodeQueryPart(p.value)}`)
-      .join('&')
-  }
-  return null
-}
-
-function escapeString(s: string, quote = "'"): string {
-  if (quote === "'") return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-  return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
-}
-
-/**
- * cURL in the chosen shell (issue #279): quoting + layout are the shared
- * generator (`src/shared/curl/generate.ts`); the bash multi-line output is
- * byte-identical to the pre-#279 snippet except two fixed bugs — Basic auth is
- * `-u 'user:pass'` (was the literal text `Basic <base64(user:pass)>`) and an
- * API key "in query" is appended to the URL (was dropped). Digest / NTLM get
- * `-u … --digest|--ntlm`, a binary body `--data-binary '@path'`, SSL
- * verification off `-k`.
- */
-function genCurl(req: CodeGenRequest, opts?: CurlSnippetOptions): string {
-  const auth = req.auth
-  let headerAuth = auth
-  let user: CurlGenRequest['user']
-  const params = [...req.params]
-  if (auth?.type === 'basic' && auth.basic) {
-    user = { username: auth.basic.username, password: auth.basic.password }
-    headerAuth = undefined
-  } else if (auth?.type === 'digest' && auth.digest) {
-    user = { username: auth.digest.username, password: auth.digest.password, scheme: 'digest' }
-    headerAuth = undefined
-  } else if (auth?.type === 'ntlm' && auth.ntlm) {
-    const { username, password, domain } = auth.ntlm
-    user = { username: domain ? `${domain}\\${username}` : username, password, scheme: 'ntlm' }
-    headerAuth = undefined
-  } else if (auth?.type === 'api-key' && auth.apiKey?.in === 'query' && auth.apiKey.key) {
-    params.push({
-      id: 'auth-api-key',
-      key: auth.apiKey.key,
-      value: auth.apiKey.value,
-      enabled: true,
-    })
-  }
-  const hdrs = activeHeaders(req.headers, headerAuth)
-  // Skip an explicit Content-Type header for form-data — let curl emit the
-  // multipart boundary itself; otherwise we'd ship a header that doesn't
-  // match the body curl just generated, which is the classic Postman gotcha.
-  const isFormData = req.body?.type === 'form-data' && Array.isArray(req.body.formData)
-  const headers = Object.entries(hdrs)
-    .filter(([k]) => !(isFormData && k.toLowerCase() === 'content-type'))
-    .map(([key, value]) => ({ key, value }))
-  let body: CurlGenRequest['body']
-  if (isFormData) {
-    body = {
-      kind: 'form',
-      parts: (req.body!.formData || [])
-        .filter((p) => p.enabled && p.key)
-        .map((p) => ({
-          key: p.key,
-          value: p.value,
-          filePath: p.type === 'file' && p.filePath ? p.filePath : undefined,
-        })),
-    }
-  } else if (req.body?.type === 'binary' && req.body.binaryPath) {
-    body = { kind: 'binary', path: req.body.binaryPath }
-  } else {
-    const bd = bodyString(req.body)
-    if (bd) body = { kind: 'raw', content: bd }
-  }
-  return generateCurl(
-    {
-      method: req.method,
-      url: buildFullUrl(req.url, params),
-      headers,
-      user,
-      body,
-      insecure: req.settings?.sslVerification === false,
-    },
-    { dialect: opts?.dialect ?? 'bash', multiLine: opts?.multiLine ?? true },
-  )
-}
-
-function genJsFetch(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const opts: string[] = [`  method: '${req.method}'`]
-  if (Object.keys(hdrs).length > 0) {
-    opts.push(`  headers: ${JSON.stringify(hdrs, null, 4).replace(/\n/g, '\n  ')}`)
-  }
-  if (bd) {
-    opts.push(`  body: ${JSON.stringify(bd)}`)
-  }
-  return `const response = await fetch('${escapeString(fullUrl)}', {
-${opts.join(',\n')}
-});
-
-const data = await response.json();
-console.log(data);`
-}
-
-function genJsAxios(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const cfg: string[] = [
-    `  method: '${req.method.toLowerCase()}'`,
-    `  url: '${escapeString(fullUrl)}'`,
-  ]
-  if (Object.keys(hdrs).length > 0) {
-    cfg.push(`  headers: ${JSON.stringify(hdrs, null, 4).replace(/\n/g, '\n  ')}`)
-  }
-  if (bd) {
-    cfg.push(`  data: ${JSON.stringify(bd)}`)
-  }
-  return `const axios = require('axios');
-
-const response = await axios({
-${cfg.join(',\n')}
-});
-
-console.log(response.data);`
-}
-
-function genPython(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = ['import requests', '']
-  if (Object.keys(hdrs).length > 0) {
-    lines.push(`headers = ${JSON.stringify(hdrs, null, 4)}`)
-    lines.push('')
-  }
-  const args: string[] = [`'${escapeString(fullUrl)}'`]
-  if (Object.keys(hdrs).length > 0) args.push('headers=headers')
-  if (bd) {
-    if (req.body?.type === 'json') {
-      lines.splice(1, 0, 'import json')
-      lines.push(`payload = ${bd}`)
-      lines.push('')
-      args.push('json=payload')
-    } else {
-      lines.push(`data = '${escapeString(bd)}'`)
-      lines.push('')
-      args.push('data=data')
-    }
-  }
-  lines.push(`response = requests.${req.method.toLowerCase()}(${args.join(', ')})`)
-  lines.push('')
-  lines.push('print(response.status_code)')
-  lines.push('print(response.json())')
-  return lines.join('\n')
-}
-
-function genJava(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = ['OkHttpClient client = new OkHttpClient();', '']
-  if (bd) {
-    lines.push(
-      `MediaType mediaType = MediaType.parse("${req.body?.type === 'json' ? 'application/json' : 'text/plain'}");`,
-    )
-    lines.push(`RequestBody body = RequestBody.create(mediaType, ${JSON.stringify(bd)});`)
-    lines.push('')
-  }
-  lines.push('Request request = new Request.Builder()')
-  lines.push(`    .url("${escapeString(fullUrl, '"')}")`)
-  lines.push(`    .method("${req.method}"${bd ? ', body' : ', null'})`)
-  Object.entries(hdrs).forEach(([k, v]) => {
-    lines.push(`    .addHeader("${escapeString(k, '"')}", "${escapeString(v, '"')}")`)
-  })
-  lines.push('    .build();')
-  lines.push('')
-  lines.push('Response response = client.newCall(request).execute();')
-  lines.push('System.out.println(response.body().string());')
-  return lines.join('\n')
-}
-
-function genGo(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = [
-    'package main',
-    '',
-    'import (',
-    '    "fmt"',
-    '    "io/ioutil"',
-    '    "net/http"',
-  ]
-  if (bd) lines.push('    "strings"')
-  lines.push(')', '')
-  lines.push('func main() {')
-  if (bd) {
-    lines.push(`    payload := strings.NewReader(${JSON.stringify(bd)})`)
-    lines.push(
-      `    req, _ := http.NewRequest("${req.method}", "${escapeString(fullUrl, '"')}", payload)`,
-    )
-  } else {
-    lines.push(
-      `    req, _ := http.NewRequest("${req.method}", "${escapeString(fullUrl, '"')}", nil)`,
-    )
-  }
-  Object.entries(hdrs).forEach(([k, v]) => {
-    lines.push(`    req.Header.Add("${escapeString(k, '"')}", "${escapeString(v, '"')}")`)
-  })
-  lines.push('')
-  lines.push('    res, _ := http.DefaultClient.Do(req)')
-  lines.push('    defer res.Body.Close()')
-  lines.push('    body, _ := ioutil.ReadAll(res.Body)')
-  lines.push('    fmt.Println(string(body))')
-  lines.push('}')
-  return lines.join('\n')
-}
-
-function genPhp(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = ['<?php', '', '$curl = curl_init();', '', 'curl_setopt_array($curl, [']
-  lines.push(`    CURLOPT_URL => "${escapeString(fullUrl, '"')}",`)
-  lines.push('    CURLOPT_RETURNTRANSFER => true,')
-  lines.push(`    CURLOPT_CUSTOMREQUEST => "${req.method}",`)
-  if (bd) {
-    lines.push(`    CURLOPT_POSTFIELDS => ${JSON.stringify(bd)},`)
-  }
-  if (Object.keys(hdrs).length > 0) {
-    lines.push('    CURLOPT_HTTPHEADER => [')
-    Object.entries(hdrs).forEach(([k, v]) => {
-      lines.push(`        "${escapeString(k, '"')}: ${escapeString(v, '"')}",`)
-    })
-    lines.push('    ],')
-  }
-  lines.push(']);', '')
-  lines.push('$response = curl_exec($curl);')
-  lines.push('curl_close($curl);')
-  lines.push('')
-  lines.push('echo $response;')
-  return lines.join('\n')
-}
-
-function genRuby(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = [
-    "require 'net/http'",
-    "require 'uri'",
-    "require 'json'",
-    '',
-    `uri = URI.parse('${escapeString(fullUrl)}')`,
-    `request = Net::HTTP::${req.method.charAt(0) + req.method.slice(1).toLowerCase()}.new(uri)`,
-  ]
-  Object.entries(hdrs).forEach(([k, v]) => {
-    lines.push(`request['${escapeString(k)}'] = '${escapeString(v)}'`)
-  })
-  if (bd) {
-    lines.push(`request.body = ${JSON.stringify(bd)}`)
-  }
-  lines.push('')
-  lines.push(
-    'response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == "https") do |http|',
-  )
-  lines.push('  http.request(request)')
-  lines.push('end')
-  lines.push('')
-  lines.push('puts response.body')
-  return lines.join('\n')
-}
-
-function genSwift(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = [
-    'import Foundation',
-    '',
-    `let url = URL(string: "${escapeString(fullUrl, '"')}")!`,
-    'var request = URLRequest(url: url)',
-    `request.httpMethod = "${req.method}"`,
-  ]
-  Object.entries(hdrs).forEach(([k, v]) => {
-    lines.push(
-      `request.setValue("${escapeString(v, '"')}", forHTTPHeaderField: "${escapeString(k, '"')}")`,
-    )
-  })
-  if (bd) {
-    lines.push(`request.httpBody = ${JSON.stringify(bd)}.data(using: .utf8)`)
-  }
-  lines.push('')
-  lines.push('let task = URLSession.shared.dataTask(with: request) { data, response, error in')
-  lines.push('    guard let data = data else { return }')
-  lines.push('    print(String(data: data, encoding: .utf8) ?? "")')
-  lines.push('}')
-  lines.push('task.resume()')
-  return lines.join('\n')
-}
-
-function genKotlin(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = ['val client = OkHttpClient()', '']
-  if (bd) {
-    lines.push(
-      `val mediaType = "${req.body?.type === 'json' ? 'application/json' : 'text/plain'}".toMediaType()`,
-    )
-    lines.push(`val body = ${JSON.stringify(bd)}.toRequestBody(mediaType)`)
-    lines.push('')
-  }
-  lines.push('val request = Request.Builder()')
-  lines.push(`    .url("${escapeString(fullUrl, '"')}")`)
-  lines.push(`    .method("${req.method}"${bd ? ', body' : ', null'})`)
-  Object.entries(hdrs).forEach(([k, v]) => {
-    lines.push(`    .addHeader("${escapeString(k, '"')}", "${escapeString(v, '"')}")`)
-  })
-  lines.push('    .build()')
-  lines.push('')
-  lines.push('val response = client.newCall(request).execute()')
-  lines.push('println(response.body?.string())')
-  return lines.join('\n')
-}
-
-function genCsharp(req: CodeGenRequest): string {
-  const fullUrl = buildFullUrl(req.url, req.params)
-  const hdrs = activeHeaders(req.headers, req.auth)
-  const bd = bodyString(req.body)
-  const lines: string[] = [
-    'using System.Net.Http;',
-    '',
-    'var client = new HttpClient();',
-    '',
-    `var request = new HttpRequestMessage(HttpMethod.${req.method.charAt(0) + req.method.slice(1).toLowerCase()}, "${escapeString(fullUrl, '"')}");`,
-  ]
-  Object.entries(hdrs).forEach(([k, v]) => {
-    lines.push(`request.Headers.Add("${escapeString(k, '"')}", "${escapeString(v, '"')}");`)
-  })
-  if (bd) {
-    lines.push(
-      `request.Content = new StringContent(${JSON.stringify(bd)}, System.Text.Encoding.UTF8, "${req.body?.type === 'json' ? 'application/json' : 'text/plain'}");`,
-    )
-  }
-  lines.push('')
-  lines.push('var response = await client.SendAsync(request);')
-  lines.push('var body = await response.Content.ReadAsStringAsync();')
-  lines.push('Console.WriteLine(body);')
-  return lines.join('\n')
-}
-
-const GENERATORS: Record<CodeLanguage, (req: CodeGenRequest) => string> = {
-  curl: genCurl,
-  'js-fetch': genJsFetch,
-  'js-axios': genJsAxios,
-  'python-requests': genPython,
-  'java-okhttp': genJava,
-  go: genGo,
-  php: genPhp,
-  ruby: genRuby,
-  swift: genSwift,
-  kotlin: genKotlin,
-  csharp: genCsharp,
-}
-
-export function generateCode(
-  language: CodeLanguage,
-  req: CodeGenRequest,
-  options?: CodeGenOptions,
-): string {
-  const gen = GENERATORS[language]
-  if (!gen) return `// Code generation for ${language} is not supported yet.`
+/** Path variables, then `{{var}}` (secrets kept), then the shared normaliser. */
+function prepare(req: CodeGenRequest, options?: CodeGenOptions) {
   const vars = options?.envVars
     ? snippetVariables(
         options.envVars,
@@ -535,13 +133,50 @@ export function generateCode(
         options.includeSecrets === true,
       )
     : undefined
-  // `:name` path segments first, then `{{var}}` — the order Send and Run use.
   const withPath = req.pathVariables?.length
-    ? { ...req, url: applyPathVariables(req.url, req.pathVariables) }
+    ? { ...req, url: applyPathVariables(req.url, req.pathVariables), pathVariables: undefined }
     : req
   const effective = vars ? resolveRequest(withPath, vars) : withPath
-  if (language === 'curl') return genCurl(effective, options?.curl)
-  return gen(effective)
+  return normalizeRequest({
+    method: effective.method,
+    url: effective.url,
+    params: effective.params,
+    headers: effective.headers,
+    body: effective.body as CodegenInputBody | undefined,
+    auth: effective.auth,
+    settings: effective.settings,
+  })
+}
+
+/** Render the active request with a variant of the issue #280 catalogue. */
+export function generateSnippet(
+  variantId: string,
+  req: CodeGenRequest,
+  options?: CodeGenOptions,
+): string {
+  if (!findVariant(variantId)) return `// Code generation for ${variantId} is not supported yet.`
+  return renderSnippet(variantId, prepare(req, options), options?.variantOptions)
+}
+
+/**
+ * The pre-#280 entry point: one of the 11 legacy ids. `curl` picks its shell
+ * from `options.curl` (issue #279).
+ */
+export function generateCode(
+  language: CodeLanguage,
+  req: CodeGenRequest,
+  options?: CodeGenOptions,
+): string {
+  if (!LEGACY_IDS.has(language)) return `// Code generation for ${language} is not supported yet.`
+  if (language === 'curl') {
+    const variantOptions: CodegenOptions = { ...options?.variantOptions }
+    if (options?.curl?.multiLine !== undefined) variantOptions.multiLine = options.curl.multiLine
+    return generateSnippet(curlVariantId(options?.curl?.dialect ?? 'bash'), req, {
+      ...options,
+      variantOptions,
+    })
+  }
+  return generateSnippet(language, req, options)
 }
 
 /** Monaco language of a cURL snippet in a shell (issue #279). */
@@ -551,6 +186,7 @@ export function curlMonacoLanguage(dialect: CurlDialect): string {
   return 'shell'
 }
 
+/** The 11 pre-#280 entries (kept for callers that still list them). */
 export const CODE_LANGUAGES: { id: CodeLanguage; label: string; monacoLang: string }[] = [
   { id: 'curl', label: 'cURL', monacoLang: 'shell' },
   { id: 'js-fetch', label: 'JavaScript (fetch)', monacoLang: 'javascript' },
@@ -564,3 +200,5 @@ export const CODE_LANGUAGES: { id: CodeLanguage; label: string; monacoLang: stri
   { id: 'kotlin', label: 'Kotlin', monacoLang: 'kotlin' },
   { id: 'csharp', label: 'C#', monacoLang: 'csharp' },
 ]
+
+const LEGACY_IDS = new Set<string>(CODE_LANGUAGES.map((l) => l.id))

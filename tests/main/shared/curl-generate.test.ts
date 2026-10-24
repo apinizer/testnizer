@@ -296,3 +296,51 @@ describe('generate → parse round trip (all dialects × single / multi-line)', 
     }
   })
 })
+
+describe('issue #280 opt-in flags: -s, -L, -m, HEAD → -I, long format', () => {
+  const req: CurlGenRequest = {
+    method: 'POST',
+    url: 'https://api.test/a?x=1',
+    headers: [{ key: 'X-A', value: "it's" }],
+    user: { username: 'u', password: 'p' },
+    body: { kind: 'raw', content: '{"a":1}' },
+    insecure: true,
+    followRedirects: true,
+    maxTimeSeconds: 3,
+    silent: true,
+  }
+
+  it('the defaults never emit them (the #279 snippet is unchanged)', () => {
+    const plain = generateCurl({ method: 'GET', url: 'https://api.test/', headers: [] })
+    expect(plain).toBe(`curl -X GET 'https://api.test/'`)
+  })
+
+  for (const dialect of CURL_DIALECTS) {
+    for (const longFormat of [false, true]) {
+      it(`${dialect}${longFormat ? ' long format' : ''}: round-trips through the parser`, () => {
+        const text = generateCurl(req, { dialect, multiLine: true, longFormat })
+        const parsed = parseCurlAs(text, dialect)
+        expect(parsed.warnings).toEqual([])
+        expect(parsed.method).toBe('POST')
+        expect(parsed.url).toBe(req.url)
+        expect(parsed.followRedirects).toBe(true)
+        expect(parsed.maxTimeSeconds).toBe(3)
+        expect(parsed.insecure).toBe(true)
+        expect(parsed.user).toEqual({ username: 'u', password: 'p' })
+        expect(parsed.body).toBe('{"a":1}')
+        expect(text.includes('--header')).toBe(longFormat)
+      })
+    }
+  }
+
+  it('HEAD is written -I (curl -X HEAD waits for a body)', () => {
+    const text = generateCurl({ method: 'HEAD', url: 'https://api.test/', headers: [] })
+    expect(text).toBe(`curl -I 'https://api.test/'`)
+    expect(parseCurl(text).method).toBe('HEAD')
+    const long = generateCurl(
+      { method: 'HEAD', url: 'https://api.test/', headers: [] },
+      { longFormat: true },
+    )
+    expect(long).toBe(`curl --head 'https://api.test/'`)
+  })
+})

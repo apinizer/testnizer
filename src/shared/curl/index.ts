@@ -20,5 +20,12 @@ export type {
   CurlBodyType,
   CurlToRequestOptions,
 } from './to-request'
-export { quoteCurlArg, renderCurl, curlArgsFor, generateCurl, curlCommandWord } from './generate'
-export type { CurlArg, RenderCurlOptions, CurlGenRequest } from './generate'
+export {
+  quoteCurlArg,
+  renderCurl,
+  curlArgsFor,
+  curlInlineCount,
+  generateCurl,
+  curlCommandWord,
+} from './generate'
+export type { CurlArg, RenderCurlOptions, CurlGenRequest, CurlArgsOptions } from './generate'

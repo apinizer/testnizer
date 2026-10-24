@@ -160,10 +160,10 @@ describe('JSON body', () => {
     expect(out).toContain('data:')
   })
 
-  it('python: uses json=payload for JSON bodies and imports json', () => {
+  it('python: uses json=payload with a real Python literal (issue #280: no unused `import json`)', () => {
     const out = generateCode('python-requests', req)
     expect(out).toContain('import requests')
-    expect(out).toContain('import json')
+    expect(out).not.toContain('import json')
     expect(out).toContain('requests.post(')
     expect(out).toContain('json=payload')
   })
@@ -188,7 +188,8 @@ describe('JSON body', () => {
 
   it('php: sets CURLOPT_POSTFIELDS and CURLOPT_CUSTOMREQUEST', () => {
     const out = generateCode('php', req)
-    expect(out).toContain('CURLOPT_CUSTOMREQUEST => "POST"')
+    // Single quotes since issue #280 — PHP double quotes interpolate `$`.
+    expect(out).toContain("CURLOPT_CUSTOMREQUEST => 'POST'")
     expect(out).toContain('CURLOPT_POSTFIELDS =>')
   })
 

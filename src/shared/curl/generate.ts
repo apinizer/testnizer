@@ -169,6 +169,30 @@ export interface CurlGenRequest {
     | { kind: 'binary'; path: string }
   /** SSL verification off → `-k`. */
   insecure?: boolean
+  /** `-L` (issue #280 option; absent = not emitted). */
+  followRedirects?: boolean
+  /** `-m <seconds>` (issue #280 option). */
+  maxTimeSeconds?: number
+  /** `-s` (issue #280 option). */
+  silent?: boolean
+}
+
+export interface CurlArgsOptions {
+  /** `--header` instead of `-H` etc. (Postman's "long format"; default false). */
+  longFormat?: boolean
+}
+
+const LONG: Record<string, string> = {
+  '-X': '--request',
+  '-H': '--header',
+  '-u': '--user',
+  '-d': '--data',
+  '-F': '--form',
+  '-k': '--insecure',
+  '-L': '--location',
+  '-m': '--max-time',
+  '-s': '--silent',
+  '-I': '--head',
 }
 
 /** Form text that curl's `-F` would reinterpret (`@file`, `<file`, `;type=`) goes through `--form-string`. */
@@ -177,39 +201,61 @@ function formTextFlag(value: string): string {
 }
 
 /**
- * Arguments of the Generate Code snippet: `-X METHOD 'url'`, `-H` per header,
- * `-u` (+ `--digest` / `--ntlm`), the body (`-d`, or `--data-raw` when it
- * starts with `@` so curl does not read a file; `-F` / `--form-string`;
- * `--data-binary '@path'`), `-k`. Render with `inline: 2` for the classic
- * `curl -X GET 'url' \` first line.
+ * Arguments of the Generate Code snippet: (`-s`, `-L`), `-X METHOD 'url'`
+ * (`-I 'url'` for HEAD — `-X HEAD` makes curl wait for a body that never
+ * comes), `-H` per header, `-u` (+ `--digest` / `--ntlm`), the body (`-d`, or
+ * `--data-raw` when it starts with `@` so curl does not read a file; `-F` /
+ * `--form-string`; `--data-binary '@path'`), `-k`, `-m`. Render with
+ * `inline: curlInlineCount(req)` for the classic `curl -X GET 'url' \` first line.
  */
-export function curlArgsFor(req: CurlGenRequest): CurlArg[] {
-  const args: CurlArg[] = [{ flag: '-X', value: req.method, literal: true }, { value: req.url }]
-  for (const h of req.headers) args.push({ flag: '-H', value: `${h.key}: ${h.value}` })
+export function curlArgsFor(req: CurlGenRequest, opts: CurlArgsOptions = {}): CurlArg[] {
+  const f = (flag: string): string => (opts.longFormat ? (LONG[flag] ?? flag) : flag)
+  const args: CurlArg[] = []
+  if (req.silent) args.push({ flag: f('-s') })
+  if (req.followRedirects) args.push({ flag: f('-L') })
+  if (req.method.toUpperCase() === 'HEAD') args.push({ flag: f('-I') }, { value: req.url })
+  else args.push({ flag: f('-X'), value: req.method, literal: true }, { value: req.url })
+  for (const h of req.headers) args.push({ flag: f('-H'), value: `${h.key}: ${h.value}` })
   if (req.user) {
-    args.push({ flag: '-u', value: `${req.user.username}:${req.user.password}` })
+    args.push({ flag: f('-u'), value: `${req.user.username}:${req.user.password}` })
     if (req.user.scheme === 'digest') args.push({ flag: '--digest' })
     if (req.user.scheme === 'ntlm') args.push({ flag: '--ntlm' })
   }
   const body = req.body
   if (body?.kind === 'raw' && body.content) {
-    args.push({ flag: body.content.startsWith('@') ? '--data-raw' : '-d', value: body.content })
+    args.push({ flag: body.content.startsWith('@') ? '--data-raw' : f('-d'), value: body.content })
   } else if (body?.kind === 'form') {
     for (const p of body.parts) {
-      if (p.filePath) args.push({ flag: '-F', value: `${p.key}=@${p.filePath}` })
-      else args.push({ flag: formTextFlag(p.value), value: `${p.key}=${p.value}` })
+      if (p.filePath) args.push({ flag: f('-F'), value: `${p.key}=@${p.filePath}` })
+      else {
+        const flag = formTextFlag(p.value)
+        args.push({ flag: flag === '-F' ? f(flag) : flag, value: `${p.key}=${p.value}` })
+      }
     }
   } else if (body?.kind === 'binary' && body.path) {
     args.push({ flag: '--data-binary', value: `@${body.path}` })
   }
-  if (req.insecure) args.push({ flag: '-k' })
+  if (req.insecure) args.push({ flag: f('-k') })
+  if (req.maxTimeSeconds && req.maxTimeSeconds > 0) {
+    args.push({ flag: f('-m'), value: String(req.maxTimeSeconds), literal: true })
+  }
   return args
+}
+
+/** How many leading arguments share the first line with `curl` (flags before the URL + the URL). */
+export function curlInlineCount(req: CurlGenRequest): number {
+  return (req.silent ? 1 : 0) + (req.followRedirects ? 1 : 0) + 2
 }
 
 /** The Generate Code snippet for a shell. */
 export function generateCurl(
   req: CurlGenRequest,
-  opts: { dialect?: CurlDialect; multiLine?: boolean } = {},
+  opts: { dialect?: CurlDialect; multiLine?: boolean; longFormat?: boolean; indent?: string } = {},
 ): string {
-  return renderCurl(curlArgsFor(req), { ...opts, inline: 2 })
+  return renderCurl(curlArgsFor(req, { longFormat: opts.longFormat }), {
+    dialect: opts.dialect,
+    multiLine: opts.multiLine,
+    indent: opts.indent,
+    inline: curlInlineCount(req),
+  })
 }
