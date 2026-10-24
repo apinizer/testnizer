@@ -201,7 +201,10 @@ class Reader {
     if (typeof ref !== 'string' || !ref.trim() || ref.includes('\0')) return null
     if (path.posix.isAbsolute(ref) || /^[a-zA-Z]:[\\/]/.test(ref)) return null
     const joined = path.posix.normalize(path.posix.join(fromDirRel || '.', ref.replace(/\\/g, '/')))
-    const rel = joined.replace(/\/+$/, '').replace(/^\.\/?/, '')
+    // Only a lone "." or a "./" prefix — never the dot of a ".resources" name
+    // (a request at the picked folder's root has `fromDirRel` "").
+    const trimmed = joined.replace(/\/+$/, '')
+    const rel = trimmed === '.' ? '' : trimmed.replace(/^\.\//, '')
     if (rel === '..' || rel.startsWith('../')) return null
     const inside =
       collectionRootRel === '' ||

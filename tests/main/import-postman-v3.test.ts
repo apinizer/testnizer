@@ -592,6 +592,53 @@ describe('issue #276 part 2 — a single collection folder and a v3 JSON file', 
     expect(ep(pid, 'Echo').schema.body).toEqual({ type: 'text', content: 'hello' })
   })
 
+  // Found by e2e 42: with the collection folder itself picked, a root request
+  // has dir "" and `examples: .resources/...` lost its leading dot
+  // ("resources/...") → "outside the collection folder or missing".
+  it('a picked collection folder: root-level `examples:` / `src:` paths starting with ".resources" resolve', async () => {
+    const root = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'pmv3-rootref-')), 'Root refs')
+    const w = (rel: string, text: string): void => {
+      const p = path.join(root, rel)
+      fs.mkdirSync(path.dirname(p), { recursive: true })
+      fs.writeFileSync(p, text)
+    }
+    w('.resources/definition.yaml', '$kind: collection\nname: Root refs\n')
+    w(
+      'Ping.request.yaml',
+      [
+        '$kind: http-request',
+        "url: 'https://x.test/get'",
+        'method: GET',
+        'examples: .resources/Ping.resources/examples',
+        'scripts:',
+        '  - type: afterResponse',
+        '    src: .resources/check.js',
+        '',
+      ].join('\n'),
+    )
+    w('.resources/check.js', "pm.test('ok', () => {});\n")
+    w(
+      '.resources/Ping.resources/examples/OK.example.yaml',
+      '$kind: http-example\nname: OK\nresponse:\n  statusCode: 200\n  statusText: OK\n  body:\n    type: text\n    content: hi\n',
+    )
+    const pid = newProject()
+    const r = await importFolder(pid, root)
+    expect(r.success).toBe(true)
+    expect((r.warnings ?? []).join('\n')).not.toMatch(/outside the collection folder or missing/)
+    const ping = ep(pid, 'Ping')
+    expect(ping.schema.postScript).toContain("pm.test('ok'")
+    const examples = getDb()
+      .prepare('SELECT name FROM saved_responses WHERE owner_id = ?')
+      .all(ping.id) as Array<{ name: string }>
+    expect(examples.map((e) => e.name)).toEqual(['OK'])
+    // "..": still refused.
+    w('Leak.request.yaml', "$kind: http-request\nurl: 'https://x.test'\nexamples: ../outside\n")
+    const again = await importFolder(newProject(), root)
+    expect((again.warnings ?? []).join('\n')).toMatch(
+      /"\.\.\/outside" is outside the collection folder/,
+    )
+  })
+
   it('a monolithic v3 JSON collection imports through import:postman (detector routes it)', async () => {
     const pid = newProject()
     const r = await importText(pid, fs.readFileSync(path.join(FIX, 'all-kinds.v3.json'), 'utf-8'))
