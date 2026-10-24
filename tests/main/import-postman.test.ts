@@ -89,6 +89,22 @@ beforeEach(async () => {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    -- Issue #277: the v2.1 export carries saved examples as response[] and the
+    -- importer writes response[] back as saved examples (issue #276).
+    CREATE TABLE saved_responses (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      protocol TEXT NOT NULL DEFAULT 'http',
+      method TEXT,
+      url TEXT,
+      status_code INTEGER,
+      response_json TEXT NOT NULL,
+      request_json TEXT,
+      created_at INTEGER NOT NULL
+    );
     CREATE TABLE environments (
       id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,

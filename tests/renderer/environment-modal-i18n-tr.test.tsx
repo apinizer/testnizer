@@ -169,7 +169,10 @@ describe('issue #248 — Environments dialog in Turkish', () => {
     expect(screen.getAllByText('Ortamlar').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByTestId('env-new').textContent).toContain('Yeni Ortam')
     expect(screen.getByText('Ortam İçe Aktar')).toBeTruthy()
-    expect(screen.getByText('Ortamı Dışa Aktar')).toBeTruthy()
+    // Issue #277: on the Globals view the export button exports the globals.
+    expect(screen.getByTestId('env-export-globals').textContent).toContain(
+      'Global Değişkenleri Dışa Aktar',
+    )
     expect(screen.getByText('Değişken')).toBeTruthy()
     expect(screen.getByText('Tür')).toBeTruthy()
     expect(screen.getByText('Başlangıç Değeri')).toBeTruthy()
