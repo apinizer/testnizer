@@ -60,9 +60,29 @@ uiTest.describe('Issue #280 — Generate Code languages, variants and options', 
     await openHttpRequestTab(window)
   })
 
+  // The selection lives in ui.store for the whole session and the `ui` project
+  // shares one Electron instance: put every default back so later specs (e.g.
+  // tier5 F16) open Generate Code on cURL, Python on Requests, JS on Fetch.
   uiTest.afterEach(async ({ window }) => {
     const close = window.getByTestId('code-generator-close')
-    if (await close.isVisible().catch(() => false)) await close.click()
+    if (await close.isVisible().catch(() => false)) {
+      const restore: Array<[string, string]> = [
+        ['python', 'python-requests'],
+        ['javascript', 'js-fetch'],
+      ]
+      for (const [lang, variant] of restore) {
+        await window.getByTestId(`codegen-language-${lang}`).click()
+        await window.getByTestId(`codegen-variant-${variant}`).click()
+        const options = window.getByTestId('codegen-options')
+        if ((await options.getAttribute('data-customised')) === 'true') {
+          await options.click()
+          await window.getByTestId('codegen-options-reset').click()
+          await window.keyboard.press('Escape')
+        }
+      }
+      await window.getByTestId('codegen-language-curl').click()
+      await close.click()
+    }
     await expect(window.getByTestId('code-generator-modal')).toHaveCount(0)
   })
 
@@ -124,11 +144,11 @@ uiTest.describe('Issue #280 — Generate Code languages, variants and options', 
     await expect(panel).toHaveCount(0)
     await expect(window.getByTestId('code-generator-modal')).toBeVisible()
 
-    // Reset so the shared Electron instance starts the next test on defaults.
+    // Reset to defaults puts the snippet back.
     await window.getByTestId('codegen-options').click()
     await window.getByTestId('codegen-options-reset').click()
     await expect.poll(() => snippet(window)).not.toContain("redirect: 'manual'")
+    await expect(window.getByTestId('codegen-options')).not.toHaveAttribute('data-customised')
     await window.keyboard.press('Escape')
-    await window.getByTestId('codegen-language-curl').click()
   })
 })
