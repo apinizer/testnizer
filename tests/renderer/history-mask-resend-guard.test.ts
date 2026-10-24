@@ -137,7 +137,12 @@ beforeEach(() => {
   ;(window as unknown as { api: unknown }).api = {
     request: { send: requestSend, cancel: vi.fn() },
     ws: { send: wsSend, connect: wsConnect, onEvent: () => () => undefined },
-    socketio: { emit: sioEmit, connect: sioConnect, onEvent: () => () => undefined },
+    socketio: {
+      emit: sioEmit,
+      emitArgs: sioEmit,
+      connect: sioConnect,
+      onEvent: () => () => undefined,
+    },
     settings: { get: vi.fn(async () => ({ success: false })) },
   }
 })
@@ -206,12 +211,16 @@ describe('Send refuses while a History mask is in a credential field (issue #195
       connectionState: 'connected',
       connectionId: 'c',
       emitEvent: 'login',
-      emitPayload: `{"auth":{"apiKey":"${M}"}}`,
+      // Issue #283: every argument is checked (it was the single emitPayload).
+      emitArgs: [
+        { id: 'a1', content: '"plain"', contentType: 'json' },
+        { id: 'a2', content: `{"auth":{"apiKey":"${M}"}}`, contentType: 'json' },
+      ],
       errorMessage: null,
     })
     await useSocketIOStore.getState().emit()
     expect(sioEmit).not.toHaveBeenCalled()
-    expect(useSocketIOStore.getState().errorMessage).toContain('emitPayload.auth.apiKey')
+    expect(useSocketIOStore.getState().errorMessage).toContain('emitArgs[1].auth.apiKey')
   })
 
   it('SOAP: masked Password in the envelope', async () => {

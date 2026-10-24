@@ -21,8 +21,28 @@ export async function startSocketIoServer(port: number): Promise<SocketIoServer>
   const io = new Server(httpServer, { cors: { origin: '*', methods: ['GET', 'POST'] } })
 
   const onConnect = (socket: import('socket.io').Socket) => {
-    socket.emit('welcome', { id: socket.id, ts: Date.now() })
+    // `xE2e` echoes the handshake header so specs can prove headers are sent (issue #283).
+    socket.emit('welcome', {
+      id: socket.id,
+      ts: Date.now(),
+      xE2e: socket.handshake.headers['x-e2e'] ?? null,
+    })
     socket.onAny((event: string, ...args: unknown[]) => {
+      // An emit with "Ack" carries the ack callback last (issue #283).
+      const ack =
+        typeof args[args.length - 1] === 'function'
+          ? (args.pop() as (...reply: unknown[]) => void)
+          : null
+      ack?.({ acked: event, args: args.length })
+      if (event === 'kick') {
+        // Server-initiated disconnect (issue #275).
+        socket.disconnect(true)
+        return
+      }
+      if (event === 'bin') {
+        socket.emit('bin-echo', ...args)
+        return
+      }
       const data = args.length === 1 ? args[0] : args
       if (event === 'ping') {
         socket.emit('pong', { ts: Date.now() })

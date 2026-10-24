@@ -59,12 +59,15 @@ export function buildScriptBindings(ctx: ScriptHostContext): ScriptBindings {
     res,
     // bare chai-style globals (Insomnia/Bruno/raw scripts use these)
     expect,
-    test: (name: string, fn: () => void | Promise<void>) => ctx.pm.test(name, fn),
+    // The same function object as pm.test (carries .skip / .index; passing it
+    // through keeps the callback's arity, which selects the done form #274).
+    test: ctx.pm.test,
     // sandbox require + library globals
     require: sandboxRequire,
     ...scriptGlobals, // CryptoJS, _, atob, btoa
     // legacy interface: postman.*, tests, xml2Json, environment, globals, data, request, responseBody, ...
     ...legacy.globals,
+    ...(ctx.timers ?? {}),
   }
 
   return { bindings, legacyTests: legacy.tests }

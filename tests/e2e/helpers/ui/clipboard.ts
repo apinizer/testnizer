@@ -52,6 +52,25 @@ function release(): void {
 }
 
 /**
+ * Put `text` on the OS clipboard and run `fn` (e.g. focus a field + Mod+V)
+ * inside the same cross-worker clipboard lock, so a parallel copy test cannot
+ * replace the text between the write and the paste.
+ */
+export async function withClipboardText(
+  app: ElectronApplication,
+  text: string,
+  fn: () => Promise<void>,
+): Promise<void> {
+  await acquire()
+  try {
+    await app.evaluate(({ clipboard }, t) => clipboard.writeText(t), text)
+    await fn()
+  } finally {
+    release()
+  }
+}
+
+/**
  * Click a copy button and assert the OS clipboard ends up containing `marker`,
  * serialised against other workers. Seeds a sentinel first so we prove the copy
  * actually ran (not that the value was already present).

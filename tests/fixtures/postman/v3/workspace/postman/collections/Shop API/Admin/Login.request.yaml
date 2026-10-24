@@ -1,0 +1,12 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/login'
+body:
+  type: urlencoded
+  content:
+    - key: user
+      value: '{{adminUser}}'
+    - key: remember
+      value: 'yes'
+      description: Keep the session
+order: 1000

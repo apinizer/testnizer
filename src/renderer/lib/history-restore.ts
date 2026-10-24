@@ -131,6 +131,8 @@ export interface HttpHistoryRestore {
   method: HttpMethod
   url: string
   params: KeyValuePair[]
+  /** `:name` path variable values of the configured request (issue #276). */
+  pathVariables: KeyValuePair[]
   headers: KeyValuePair[]
   body?: RequestBody
   auth?: AuthConfig
@@ -150,6 +152,7 @@ export function httpHistoryRestore(entry: Row): HttpHistoryRestore {
     {
       url: str(src.url) ?? entry.url ?? '',
       params: src.params,
+      pathVariables: src.pathVariables,
       headers: src.headers,
       body: src.body,
       auth: src.auth,
@@ -162,6 +165,7 @@ export function httpHistoryRestore(entry: Row): HttpHistoryRestore {
     method,
     url: str(clean.url) ?? '',
     params: toKeyValueRows(clean.params),
+    pathVariables: toKeyValueRows(clean.pathVariables),
     headers: toKeyValueRows(clean.headers),
     body: isRecord(clean.body) ? (clean.body as unknown as RequestBody) : undefined,
     auth: isRecord(clean.auth) ? (clean.auth as unknown as AuthConfig) : undefined,

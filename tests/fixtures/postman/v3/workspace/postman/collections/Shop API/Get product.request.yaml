@@ -1,0 +1,11 @@
+$kind: http-request
+name: 'Get product :id'
+method: GET
+url: '{{baseUrl}}/products/:id'
+pathVariables:
+  - key: id
+    value: '42'
+    description: Product id
+auth:
+  type: noauth
+order: 2000

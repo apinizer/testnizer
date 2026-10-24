@@ -528,6 +528,7 @@ interface ConsoleApi {
 // the format could not carry (issue #197) — see src/shared/collection-export.ts.
 import type { ExportSkippedItem } from '../shared/collection-export'
 import type { HistoryConfigured } from '../shared/history-snapshot'
+import type { SioListenConfig, SioSettings, SioWireArg, WsSettings } from '../shared/realtime'
 import type { MockServerKind } from '../shared/mock-kind'
 import type {
   AiApprovalDecision,
@@ -547,6 +548,17 @@ import type {
   GitPushOpts,
 } from '../shared/git-changes'
 type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
+
+/** A picked Postman v3 folder, as the Import modal shows it. */
+interface PostmanFolderPick {
+  handle: string
+  folderName: string
+  kind: 'workspace' | 'collection'
+  collections: string[]
+  requestCount: number
+  environmentCount: number
+  globalsCount: number
+}
 
 interface ImportExportApi {
   openFile(): Promise<IpcResult<{ filePath: string; content: string } | null>>
@@ -569,6 +581,23 @@ interface ImportExportApi {
     content: string
   }): Promise<IpcResult<ImportResult>>
   exportPostman(projectId: string): Promise<CollectionExportIpcResult>
+  /**
+   * Postman v3 folder (issue #276 part 2): main shows the folder dialog, reads
+   * and checks the folder, and returns an opaque handle + summary (null data
+   * = cancelled). The handle is single-use.
+   */
+  /** Postman v3 (issue #277): the single v3 JSON file's text + what it left out / could not carry. */
+  exportPostmanV3Json(projectId: string): Promise<CollectionExportIpcResult & { notes?: string[] }>
+  /** Postman v3 folder: main asks where, writes it and returns the created folder (null = cancelled). */
+  exportPostmanV3Folder(
+    projectId: string,
+  ): Promise<IpcResult<string | null> & { skipped?: ExportSkippedItem[]; notes?: string[] }>
+  pickPostmanFolder(): Promise<IpcResult<PostmanFolderPick | null>>
+  importPostmanFolder(payload: {
+    projectId: string
+    handle: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
   importHar(payload: {
     projectId: string
     content: string
@@ -634,9 +663,17 @@ interface CurlExportRequest {
     type: string
     basic?: { username: string; password: string }
     bearer?: { token: string; prefix?: string }
+    apiKey?: { key: string; value: string; in?: 'header' | 'query' }
   }
   sslVerification?: boolean
   cookies?: string
+  /** `:name` path variable values (issue #276). */
+  pathVariables?: Array<{ key: string; value: string; description?: string }>
+  /** The stored request — an `inherit` auth then resolves via folder / project. */
+  endpointId?: string
+  savedRequestId?: string
+  testSuiteItemId?: string
+  projectId?: string
 }
 
 // ─── SOAP ────────────────────────────────────────────────────────
@@ -677,6 +714,8 @@ interface WsConnectOptions {
   headers?: Record<string, string>
   protocols?: string[]
   rejectUnauthorized?: boolean
+  /** Settings tab (issue #282). */
+  settings?: Partial<WsSettings>
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
@@ -694,20 +733,29 @@ interface WsConnectionInfo {
 
 interface WsEventPayload {
   connectionId: string
-  type: 'open' | 'message' | 'close' | 'error'
+  type: 'open' | 'message' | 'close' | 'error' | 'reconnecting'
   data?: string
   code?: number
   reason?: string
   timestamp: number
   messageId?: string
   contentType?: 'text' | 'json' | 'binary'
+  /** `reconnecting`: the attempt number (issue #282). */
+  attempt?: number
+  /** `open` after a reconnection. */
+  reconnected?: boolean
 }
 
 interface WsApi {
   connect(options: WsConnectOptions): Promise<IpcResult<WsConnectionInfo>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
-  send(connectionId: string, message: string): Promise<IpcResult<boolean>>
+  /** `opts.binary`: `message` is base64 / hex text sent as a binary frame (issue #282). */
+  send(
+    connectionId: string,
+    message: string,
+    opts?: { binary?: 'base64' | 'hex' },
+  ): Promise<IpcResult<boolean>>
   onEvent(callback: (event: WsEventPayload) => void): () => void
 }
 
@@ -1870,6 +1918,12 @@ interface SocketIOConnectOptions {
   bearerToken?: string
   /** Socket.IO `auth.*` payload sent during the namespace handshake. */
   auth?: Record<string, unknown>
+  /** Handshake headers (issue #283). */
+  extraHeaders?: Record<string, string>
+  /** Settings tab (issue #283). */
+  settings?: Partial<SioSettings>
+  /** Listened events (issue #283); omitted = every event. */
+  listen?: SioListenConfig
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
@@ -1880,10 +1934,18 @@ interface SocketIOConnectOptions {
 
 interface SocketIOEventPayload {
   connectionId: string
-  direction: 'in' | 'out'
+  direction: 'in' | 'out' | 'ack' | 'system'
   event: string
   data: unknown
+  args?: unknown[]
+  error?: string
   timestamp: number
+}
+
+/** `socketio:closed` — the server ended the connection (issue #275). */
+interface SocketIOClosedPayload {
+  connectionId: string
+  reason: string
 }
 
 interface SocketIOApi {
@@ -1893,7 +1955,16 @@ interface SocketIOApi {
   emit(connectionId: string, eventName: string, data: unknown): Promise<IpcResult<boolean>>
   subscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
   unsubscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
+  /** Emit with any number of `{content, contentType}` arguments, optionally asking for an ack. */
+  emitArgs(
+    connectionId: string,
+    eventName: string,
+    args: SioWireArg[],
+    opts?: { ack?: boolean },
+  ): Promise<IpcResult<boolean>>
+  setListen(connectionId: string, cfg: SioListenConfig): Promise<IpcResult<boolean>>
   onEvent(callback: (event: SocketIOEventPayload) => void): () => void
+  onClosed(callback: (event: SocketIOClosedPayload) => void): () => void
 }
 
 // ─── Updater ─────────────────────────────────────────────────────
@@ -2198,8 +2269,8 @@ interface SaveApi {
   exportFolder(folderId: string): Promise<IpcResult<{ path: string }>>
   exportTestSuite(
     suiteId: string,
-    format?: 'testnizer' | 'postman' | 'insomnia',
-  ): Promise<IpcResult<{ path: string; skipped?: ExportSkippedItem[] }>>
+    format?: 'testnizer' | 'postman' | 'insomnia' | 'postman-v3' | 'postman-v3-folder',
+  ): Promise<IpcResult<{ path: string; skipped?: ExportSkippedItem[]; notes?: string[] }>>
   importProject(payload: {
     workspaceId: string
     name?: string

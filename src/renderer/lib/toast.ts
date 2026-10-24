@@ -3,6 +3,7 @@
 // stable shape — message + optional opts. If we ever need to swap toast
 // libraries we only touch this file.
 
+import type { ReactElement } from 'react'
 import { toast as sonner, type ExternalToast } from 'sonner'
 
 export type ToastOptions = ExternalToast
@@ -23,4 +24,16 @@ function warning(message: string, opts?: ToastOptions): void {
   sonner.warning(message, opts)
 }
 
-export const toast = { success, error, info, warning }
+/** A toast whose body is our own element (testids, an Undo button…). Returns its id. */
+function custom(
+  render: (id: string | number) => ReactElement,
+  opts?: ToastOptions,
+): string | number {
+  return sonner.custom(render, opts)
+}
+
+function dismiss(id?: string | number): void {
+  sonner.dismiss(id)
+}
+
+export const toast = { success, error, info, warning, custom, dismiss }

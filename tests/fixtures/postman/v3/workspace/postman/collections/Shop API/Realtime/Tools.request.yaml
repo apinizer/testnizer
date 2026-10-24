@@ -1,0 +1,16 @@
+$kind: mcp-request
+transport: sse
+url: 'https://mcp.example.test/mcp'
+headers:
+  - key: X-Mcp
+    value: '1'
+message: '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"query":"mug","limit":{{limit}}}}}'
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{mcpToken}}'
+settings:
+  version: '2026-07-28'
+  requestTimeout: 45000
+order: 5000

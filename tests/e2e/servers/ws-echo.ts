@@ -24,6 +24,11 @@ export async function startWsEchoServer(port: number): Promise<WsEchoServer> {
     ws.send(JSON.stringify({ type: 'welcome', ts: Date.now() }))
     ws.on('message', (data) => {
       const text = typeof data === 'string' ? data : data.toString('utf8')
+      if (text === 'kick') {
+        // Server-initiated close (issue #282 reconnect / close rows).
+        ws.close(4000, 'kicked by server')
+        return
+      }
       ws.send(JSON.stringify({ type: 'echo', data: text, receivedAt: new Date().toISOString() }))
     })
   })

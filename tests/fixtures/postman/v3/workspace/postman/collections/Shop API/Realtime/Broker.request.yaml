@@ -1,0 +1,4 @@
+$kind: mqtt-request
+url: mqtt://broker.example.test
+clientId: shop
+order: 8000

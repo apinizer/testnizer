@@ -18,12 +18,14 @@ import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
+import { buildVariablesExport } from '../../lib/variables-export'
 import DeleteConfirmDialog from './DeleteConfirmDialog'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
 import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
+import { classifyPostmanDocument, isPostmanVariablesKind } from '../../../shared/postman-detect'
 
 type Pane = { kind: 'globals' } | { kind: 'env'; id: string }
 
@@ -110,8 +112,12 @@ export default function EnvironmentModal() {
       // a collection export) so for Insomnia we route through the same
       // importer that handles the collection — it picks up any environment
       // resources along the way and surfaces them as suggested vars.
-      const isPostmanEnv = !isInsomniaV5Yaml && root['_postman_variable_scope'] === 'environment'
-      const isPostmanCollection = !isInsomniaV5Yaml && root['info'] && Array.isArray(root['item'])
+      // One shared Postman classifier (issue #276): environment AND globals
+      // exports import here (globals → the "Globals" environment); any
+      // collection kind (v1 / v2 / dump / v3) gets the "use APIs Import" hint.
+      const postmanKind = isInsomniaV5Yaml ? null : (classifyPostmanDocument(root)?.kind ?? null)
+      const isPostmanEnv = isPostmanVariablesKind(postmanKind)
+      const isPostmanCollection = !!postmanKind && !isPostmanEnv
       const isInsomniaV4 =
         !isInsomniaV5Yaml && root['_type'] === 'export' && Array.isArray(root['resources'])
       const isInsomniaV5 =
@@ -133,6 +139,7 @@ export default function EnvironmentModal() {
               error?: string
               environmentName?: string
               suggestedEnvVars?: Record<string, string>
+              warnings?: string[]
             }
             error?: string
           }
@@ -174,6 +181,10 @@ export default function EnvironmentModal() {
         await fetchEnvironments()
         const name = result?.data?.environmentName
         toast.success(name ? `${t('env.importSuccess')}: ${name}` : t('env.importSuccess'))
+        // Nothing silently dropped (issue #276): vault-linked secrets, the
+        // Globals note, an inactive imported environment.
+        const warnings = result?.data?.warnings ?? []
+        if (warnings.length > 0) toast.warning(warnings.join(' · '))
       } else {
         const errMsg = result?.data?.error || result?.error || t('env.unknownError')
         toast.error(`${t('env.importFailed')}: ${errMsg}`)
@@ -396,28 +407,24 @@ export default function EnvironmentModal() {
              *  so exports aren't Postman-branded (issue #7; export added #15). */}
             <button
               type="button"
+              data-testid={
+                pane.kind === 'globals' ? 'env-export-globals' : 'env-export-environment'
+              }
               onClick={() => {
-                if (!selectedEnv) return
-                const doc = {
-                  id: selectedEnv.id,
-                  name: selectedEnv.name,
-                  // Values marked secret stay on this computer (issue #177):
-                  // the file keeps the key and the `secret` type, never the value.
-                  values: selectedEnv.variables.map((v) => ({
-                    key: v.key,
-                    value: v.secret ? '' : v.value || v.initialValue || '',
-                    enabled: v.enabled,
-                    type: v.secret ? 'secret' : 'default',
-                  })),
-                  _postman_variable_scope: 'environment',
-                  _postman_exported_using: 'Testnizer',
-                }
+                // Globals pane → a Postman globals export (issue #277); an
+                // environment → the environment export. Same Postman shape,
+                // `_postman_variable_scope` tells them apart on import.
+                const exported = buildVariablesExport(
+                  pane.kind === 'globals' ? null : selectedEnv,
+                  globalVariables,
+                )
+                if (!exported) return
                 void window.api?.importExport?.saveFile(
-                  JSON.stringify(doc, null, 2),
-                  `${selectedEnv.name || 'environment'}.testnizer_environment.json`,
+                  JSON.stringify(exported.doc, null, 2),
+                  exported.fileName,
                 )
               }}
-              disabled={!selectedEnv}
+              disabled={pane.kind !== 'globals' && !selectedEnv}
               className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5 disabled:cursor-default disabled:opacity-60"
               style={{
                 background: 'var(--white)',
@@ -426,11 +433,15 @@ export default function EnvironmentModal() {
                 fontWeight: 500,
               }}
               title={
-                selectedEnv ? t('env.exportEnvironmentHint') : t('env.exportEnvironmentSelectHint')
+                pane.kind === 'globals'
+                  ? t('env.exportGlobalsHint')
+                  : selectedEnv
+                    ? t('env.exportEnvironmentHint')
+                    : t('env.exportEnvironmentSelectHint')
               }
             >
               <Upload size={12} />
-              {t('env.exportEnvironment')}
+              {pane.kind === 'globals' ? t('env.exportGlobals') : t('env.exportEnvironment')}
             </button>
           </div>
         </div>

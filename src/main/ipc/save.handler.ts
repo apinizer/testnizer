@@ -24,6 +24,12 @@ import {
   buildInsomniaSuiteExport,
 } from './import-export.handler'
 import type { ExportSkippedItem } from '../../shared/collection-export'
+import {
+  buildPostmanV3SuiteExport,
+  v3FolderBundle,
+  v3JsonText,
+  writeV3Folder,
+} from '../export/postman-v3'
 import { snapshotEndpointForSuite, ensureUniqueSuiteName } from './test-suite.handler'
 import { getEndpointById } from '../db/endpoint.repo'
 import { SAVED_RESPONSE_COLUMNS } from '../db/saved-response.repo'
@@ -2512,9 +2518,35 @@ export function registerSaveHandlers(): void {
   // they're not round-trip-lossless back into a Testnizer suite.
   ipcMain.handle(
     'save:exportTestSuite',
-    async (_event, suiteId: string, format?: 'testnizer' | 'postman' | 'insomnia') => {
+    async (
+      _event,
+      suiteId: string,
+      format?: 'testnizer' | 'postman' | 'insomnia' | 'postman-v3' | 'postman-v3-folder',
+    ) => {
       try {
         const fmt = format ?? 'testnizer'
+        // Postman v3 (issue #277): the single JSON file, or a Native Git
+        // folder created where the user picks.
+        if (fmt === 'postman-v3' || fmt === 'postman-v3-folder') {
+          const r = buildPostmanV3SuiteExport(suiteId)
+          if (fmt === 'postman-v3-folder') {
+            const picked = await dialog.showOpenDialog({
+              title: 'Choose where to create the Postman v3 folder',
+              properties: ['openDirectory', 'createDirectory'],
+            })
+            if (picked.canceled || picked.filePaths.length === 0)
+              return { success: false, error: 'Cancelled' }
+            const written = writeV3Folder(picked.filePaths[0], v3FolderBundle(r))
+            return { success: true, data: { path: written, skipped: r.skipped, notes: r.notes } }
+          }
+          const name = safeFileName(r.name || 'suite', 'suite')
+          const res = await writeJsonViaSaveDialog(
+            v3JsonText(r),
+            `suite-${name}-postman-v3-${new Date().toISOString().slice(0, 10)}.json`,
+          )
+          if (!res.success) return { success: false, error: res.error }
+          return { success: true, data: { path: res.path, skipped: r.skipped, notes: r.notes } }
+        }
         const suiteName = safeFileName(
           (exportTestSuiteData(suiteId).suite?.name as string) || 'suite',
           'suite',

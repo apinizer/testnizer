@@ -39,6 +39,11 @@ import {
   readRequestSettingsJson,
   type RequestSettings,
 } from '../../../shared/request-settings'
+import {
+  readPathVariables,
+  readPathVariablesJson,
+  type PathVariableLike,
+} from '../../../shared/path-variables'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -438,6 +443,8 @@ export default function TreeView() {
               postScript: sr.post_script ?? '',
               assertions: parsedAsserts,
               ...requestStoreSettings(settings),
+              // `:name` values ride in `metadata` (issue #276).
+              pathVariables: readPathVariablesJson(sr.metadata),
             })
             restoreRequestSettings((sr.protocol || 'http') as string, settings)
             // Re-hydrate protocol-specific state (WS/SSE/Socket.IO/gRPC/GraphQL/
@@ -494,11 +501,13 @@ export default function TreeView() {
             let schemaUrl = ep.path
             let schemaMethod = ep.method || 'GET'
             let settings: RequestSettings = {}
+            let pathVariables: PathVariableLike[] = []
 
             if (ep.request_schema) {
               try {
                 const schema = JSON.parse(ep.request_schema)
                 settings = readRequestSettings(schema)
+                pathVariables = readPathVariables(schema)
                 params = schema.params || []
                 headers = schema.headers || []
                 body = schema.body || { type: 'none' }
@@ -547,6 +556,7 @@ export default function TreeView() {
               postScript,
               assertions: endpointAssertions,
               ...requestStoreSettings(settings),
+              pathVariables,
             })
             restoreRequestSettings(effectiveProtocol, settings)
             if (effectiveProtocol === 'soap') {

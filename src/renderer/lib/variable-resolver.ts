@@ -1,62 +1,25 @@
-import { resolveDynamicValue } from './dynamic-values'
+import { resolveTemplate } from '../../shared/dynamic-variables'
 import type { AuthConfig, RequestBody } from '../types'
-
-// Bound on how many resolve passes we'll do before treating the input as
-// circular. With `{{a}}=>{{b}}=>{{c}}=>...`, each pass eats one indirection
-// level — 10 is well beyond any sensible config and short enough that an
-// adversarial chain can't burn CPU.
-const MAX_RESOLVE_DEPTH = 10
 
 /**
  * Resolves {{variable}} placeholders in a template string.
  * Supports:
  *  - {{varName}} — from environment or global variables
- *  - {{$dynamicValue}} — built-in dynamic values like $randomInt, $timestamp, etc.
+ *  - {{$dynamicValue}} — built-in dynamic values like $guid, $timestamp, etc.
  *
- * Resolution iterates up to `MAX_RESOLVE_DEPTH` times to handle variables
- * that reference other variables (e.g. `{{baseUrl}}=https://{{host}}`).
- * Circular references (`{{a}}={{b}}` and `{{b}}={{a}}`) hit the depth
- * cap and the last partial substitution is returned — no infinite loop,
- * no silent fall-through.
+ * The substitution loop and the dynamic-variable table are shared with Run and
+ * Mock (`src/shared/dynamic-variables.ts`): chained references resolve up to
+ * MAX_RESOLVE_DEPTH passes, circular ones stop at the cap, unknown variables
+ * stay `{{name}}` and unknown dynamic variables stay exactly as written.
  */
 export function resolveVariables(
   template: string,
   envVars: Record<string, string>,
   globalVars: Record<string, string> = {},
 ): string {
-  if (!template) return template
-
-  const substitute = (input: string): string =>
-    input.replace(/\{\{([^}]+)\}\}/g, (_match, expression: string) => {
-      const trimmed = expression.trim()
-
-      // Dynamic values start with $
-      if (trimmed.startsWith('$')) {
-        return resolveDynamicValue(trimmed)
-      }
-
-      // Check environment variables first, then globals
-      if (trimmed in envVars) {
-        return envVars[trimmed]
-      }
-
-      if (trimmed in globalVars) {
-        return globalVars[trimmed]
-      }
-
-      // Return original if not found
-      return `{{${trimmed}}}`
-    })
-
-  let current = template
-  for (let i = 0; i < MAX_RESOLVE_DEPTH; i++) {
-    const next = substitute(current)
-    // Stable point reached — either no more placeholders, or only ones we
-    // couldn't resolve (left as literal `{{x}}` by the substituter).
-    if (next === current) return next
-    current = next
-  }
-  return current
+  return resolveTemplate(template, (name) =>
+    name in envVars ? envVars[name] : name in globalVars ? globalVars[name] : undefined,
+  )
 }
 
 /**

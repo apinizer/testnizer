@@ -1,0 +1,21 @@
+$kind: collection
+description: Calls only an admin may make.
+order: 5000
+variables:
+  adminUser: admin
+auth:
+  - id: a-1
+    name: Admin basic
+    type: basic
+    credentials:
+      username: '{{adminUser}}'
+      password: '{{adminPassword}}'
+  - id: a-2
+    name: Partner key
+    type: apikey
+    credentials:
+      key: X-Api-Key
+      value: '{{partnerKey}}'
+scripts:
+  - type: http:beforeRequest
+    src: ./scripts/sign.js

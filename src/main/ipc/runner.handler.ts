@@ -22,10 +22,15 @@ import * as tsiRepo from '../db/test-suite-item.repo'
 import * as historyRepo from '../db/history.repo'
 import * as envRepo from '../db/environment.repo'
 import { getDb } from '../db/database'
-import type { FolderRow } from '../db/project.repo'
+import { buildFolderChain, buildSuiteFolderChain } from '../lib/folder-chain'
+import {
+  applyPathVariables,
+  readPathVariables,
+  readPathVariablesJson,
+} from '../../shared/path-variables'
 import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
-import { loadEnvVars } from '../lib/env-vars'
+import { loadEnvVarScopes } from '../lib/env-vars'
 import { evaluateJsonPath } from '../lib/json-path'
 import { loadAppDefaultTimeout, loadProjectSettings } from '../lib/project-settings'
 import {
@@ -46,9 +51,16 @@ import {
   collectCascadeScripts,
   type AuthConfigLike,
 } from '../lib/auth-inheritance'
-import { buildScriptBindings, createPmResponse, expect as chaiExpect } from '../../shared/script'
+import { buildScriptBindings } from '../../shared/script'
 import { HeaderCollection, type HeaderEntry } from '../../shared/script/headers'
-import type { NormalizedResponse, PmLike } from '../../shared/script'
+import {
+  createPm,
+  isSkipRequestSignal,
+  recordStore,
+  type PmEventName,
+} from '../../shared/script/pm'
+import type { PmRequestBodyInput } from '../../shared/script/pm-request'
+import type { NormalizedResponse, ScriptTestResult } from '../../shared/script'
 import { endpointDidPass, countsTowardRunVerdict } from '../../shared/runner-verdict'
 import { summarizeRun } from '../../shared/runner-summary'
 import type { RunPhase } from '../../shared/runner-verdict'
@@ -306,6 +318,8 @@ function savedRequestToEndpoint(saved: endpointRepo.SavedRequestRow): endpointRe
     // Timeout / redirects / SSL ride in `metadata` on this table (issue #185);
     // lifted to the top level where endpoint rows keep them.
     ...readRequestSettingsJson(saved.metadata),
+    // `:name` path variable values sit there too (issue #276).
+    pathVariables: readPathVariablesJson(saved.metadata),
   })
   return {
     id: saved.id,
@@ -384,70 +398,6 @@ function getRunnableEntity(id: string): RunnableEntity | undefined {
   const suiteItem = tsiRepo.getItemById(id)
   if (suiteItem) return { row: suiteItemToEndpoint(suiteItem), kind: 'suite' }
   return undefined
-}
-
-/**
- * Walk an endpoint's ancestor folder chain, outermost → innermost (leaf). Used
- * to resolve inherited auth and cascade scripts. Cycle-guarded so a corrupt
- * parent_id loop can't hang the run.
- */
-function buildFolderChain(folderId: string | null | undefined): FolderRow[] {
-  if (!folderId) return []
-  const db = getDb()
-  const chain: FolderRow[] = []
-  const seen = new Set<string>()
-  let id: string | null = folderId
-  while (id && !seen.has(id)) {
-    seen.add(id)
-    const folder = db.prepare('SELECT * FROM folders WHERE id = ?').get(id) as FolderRow | undefined
-    if (!folder) break
-    chain.unshift(folder)
-    id = folder.parent_id
-  }
-  return chain
-}
-
-/**
- * Suite-item variant of buildFolderChain: walks `test_suite_folders` instead of
- * the APIs `folders` table so an imported collection's folder-level auth +
- * pre/post scripts cascade at run time (project → folder(s) → request). Adapts
- * each row to the FolderRow shape so it feeds the SAME resolveEffectiveAuth /
- * collectCascadeScripts the APIs path uses. `project_id` is unused by those and
- * filled with '' (test_suite_folders has no such column).
- */
-function buildSuiteFolderChain(folderId: string | null | undefined): FolderRow[] {
-  if (!folderId) return []
-  const db = getDb()
-  const chain: FolderRow[] = []
-  const seen = new Set<string>()
-  let id: string | null = folderId
-  while (id && !seen.has(id)) {
-    seen.add(id)
-    const f = db.prepare('SELECT * FROM test_suite_folders WHERE id = ?').get(id) as
-      | {
-          id: string
-          parent_id: string | null
-          name: string
-          sort_order: number
-          auth?: string | null
-          pre_script?: string | null
-          post_script?: string | null
-        }
-      | undefined
-    if (!f) break
-    chain.unshift({
-      id: f.id,
-      project_id: '',
-      parent_id: f.parent_id,
-      name: f.name,
-      sort_order: f.sort_order,
-      auth: f.auth ?? null,
-      pre_script: f.pre_script ?? null,
-      post_script: f.post_script ?? null,
-    })
-    id = f.parent_id
-  }
-  return chain
 }
 
 function headersArrayToRecord(
@@ -680,35 +630,64 @@ function sendPhaseStarted(phase: RunPhase): void {
 
 // ─── pm/insomnia script execution (main-process sandbox) ─────────
 
+/**
+ * The run's variables split by scope (issue #281). `RunContext.envVars` stays
+ * the MERGED view every `{{var}}` resolution reads (global < environment <
+ * local); these layers back the separate `pm.globals` / `pm.environment` /
+ * `pm.variables` objects so a script sees each scope on its own, as on Send.
+ */
+interface RunVarScopes {
+  globals: Record<string, string>
+  environment: Record<string, string>
+  /**
+   * `pm.variables.set` values. They live for the rest of the RUN (Postman
+   * scopes local variables to a collection run too) but are never persisted.
+   */
+  locals: Record<string, string>
+}
+
 interface ScriptContext {
-  envVars: Record<string, string>
+  /** This step's copies of the run's variable layers — the live pm scopes. */
+  globals: Record<string, string>
+  environment: Record<string, string>
+  locals: Record<string, string>
   /** Active-environment writes (pm.environment.set / collectionVariables.set). */
   envUpdates: Record<string, string>
   /** Global writes (pm.globals.set) — persisted to project globals, not the env. */
   globalUpdates: Record<string, string>
-  /** pm.variables.set writes. Visible to later requests IN THIS RUN (merged into
-   *  the shared envVars) but deliberately NOT persisted to the DB. This diverges
-   *  from stock Postman/Insomnia (where pm.variables is request-local) — kept on
-   *  purpose so a token set via variables.set survives across a suite run.
-   *  Empty-string value = unset. */
+  /** pm.variables.set writes. Visible to later requests IN THIS RUN but
+   *  deliberately NOT persisted to the DB. Empty-string value = unset. */
   varUpdates: Record<string, string>
   iterationData: Record<string, string>
   iterationIndex: number
   iterationCount: number
+  /** `pm.info.eventName` for the next script: 'prerequest' or 'test'. It was
+   *  hard-coded to 'test' on this path, even for pre-request scripts. */
+  eventName: PmEventName
+  /** `pm.info.requestName` / `requestId` (both were '' on this path). */
+  requestName?: string
+  requestId?: string
+  /** `pm.execution.location`: folder names, outermost first, + request name. */
+  location?: string[]
   /**
    * The request this step is about to send, as the SCRIPT sees it (issue: the
    * Run path's `pm.request` was a stub, so a pre-request script could neither
    * read the URL nor add a header — both work on Send). Raw, pre-resolution,
    * matching the Send contract; the runner resolves `{{vars}}` afterwards.
    */
-  request?: { method: string; url: string; headers: HeaderCollection }
+  request?: {
+    method: string
+    url: string
+    headers: HeaderCollection
+    body?: PmRequestBodyInput | null
+  }
   /** Set by `pm.execution.skipRequest()` — runner reads after preScript. */
   skipRequest: boolean
   /** Set by `pm.execution.setNextRequest(name)` — runner uses it after the
    *  request to redirect flow. `null` means "stop here". */
   nextRequestName?: string | null
   /** Test results captured from `pm.test(name, fn)`. */
-  testResults: Array<{ name: string; passed: boolean; error?: string }>
+  testResults: ScriptTestResult[]
   /** Console output produced by the script, level-preserving and capped. */
   consoleLogs: ScriptConsoleLog[]
   /**
@@ -741,20 +720,32 @@ interface ScriptContext {
   scriptError?: string
 }
 
+/**
+ * A script's `pm.test` result as a run assertion. `pm.test.skip` results carry
+ * `skipped: true` (recorded as not-failed; there is no third verdict state in
+ * the run tallies yet — issue #281).
+ */
+function scriptTestToAssertion(t: ScriptTestResult): AssertionResult {
+  return { name: t.name, passed: t.passed, error: t.error, ...(t.skipped ? { skipped: true } : {}) }
+}
+
 function newScriptContext(
-  envVars: Record<string, string>,
+  scopes: RunVarScopes,
   iterationData: Record<string, string>,
   iterationIndex: number,
   iterationCount: number,
 ): ScriptContext {
   return {
-    envVars: { ...envVars },
+    globals: { ...scopes.globals },
+    environment: { ...scopes.environment },
+    locals: { ...scopes.locals },
     envUpdates: {},
     globalUpdates: {},
     varUpdates: {},
     iterationData,
     iterationIndex,
     iterationCount,
+    eventName: 'test',
     skipRequest: false,
     testResults: [],
     consoleLogs: [],
@@ -794,6 +785,8 @@ interface ScriptResponseShape {
   bodySize?: number
   /** Cookies the engine parsed from the response Set-Cookie headers. */
   cookies?: Array<{ name: string; value: string }>
+  /** Round-trip ms → `pm.response.responseTime` (was always 0 on Run). */
+  responseTime?: number
 }
 
 /**
@@ -880,7 +873,6 @@ async function runUserScript(
     (...args: unknown[]): void => {
       pushConsoleLog(ctx, level, args.map(String).join(' '))
     }
-  const log = mkLog('log')
 
   const normalized: NormalizedResponse | null = override
     ? override.normalized
@@ -891,243 +883,98 @@ async function runUserScript(
           headers: response.headers ?? {},
           body: response.body ?? '',
           cookies: response.cookies ?? [],
-          responseTime: 0,
+          responseTime: response.responseTime ?? 0,
           responseSize: response.bodySize ?? (response.body ? response.body.length : 0),
         }
       : null
-  const substitute = (t: string, obj: Record<string, unknown>): string =>
-    t.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_m, k: string) =>
-      obj[k] == null ? `{{${k}}}` : String(obj[k]),
-    )
-  const clearAll = (mark?: Record<string, string>): void => {
-    for (const k of Object.keys(ctx.envVars)) {
-      delete ctx.envVars[k]
-      if (mark) mark[k] = ''
-    }
-  }
-  const cookieFind = (n: string) =>
-    (normalized?.cookies ?? []).find((c) => c.name.toLowerCase() === n.toLowerCase())
 
-  function buildPm(): PmLike {
-    return {
-      info: {
-        eventName: 'test',
-        iteration: ctx.iterationIndex,
-        iterationCount: ctx.iterationCount,
-        requestName: '',
-        requestId: '',
-      },
-      iterationData: {
-        get: (k: string) => ctx.iterationData[k] ?? '',
-        has: (k: string) => k in ctx.iterationData,
-        toObject: () => ({ ...ctx.iterationData }),
-      },
+  /*
+   * The `pm` object is built by the SHARED factory (src/shared/script/pm.ts) —
+   * the same one the Send path uses. This host supplies only its backing
+   * stores and the sendRequest transport:
+   *   - globals / environment / local variables are SEPARATE scopes here too
+   *     (they used to share one map, so `pm.environment.get` saw globals and
+   *     `pm.variables.set` values); `get` of a missing key is `undefined`.
+   *   - `pm.variables.set` values still live for the rest of the RUN (Postman
+   *     scopes local variables to the collection run as well) via `varUpdates`,
+   *     never persisted.
+   *   - `pm.collectionVariables` shares the environment store (TODO issue #281).
+   */
+  const runtime = createPm({
+    eventName: ctx.eventName,
+    iteration: ctx.iterationIndex,
+    iterationCount: ctx.iterationCount,
+    requestName: ctx.requestName,
+    requestId: ctx.requestId,
+    location: ctx.location,
+    scopes: {
+      globals: { values: recordStore(ctx.globals), updates: recordStore(ctx.globalUpdates) },
       environment: {
-        get: (k: string) => ctx.envVars[k] ?? '',
-        set: (k: string, v: unknown) => {
-          ctx.envVars[k] = String(v)
-          ctx.envUpdates[k] = String(v)
-        },
-        unset: (k: string) => {
-          delete ctx.envVars[k]
-          ctx.envUpdates[k] = ''
-        },
-        has: (k: string) => k in ctx.envVars,
-        clear: () => clearAll(ctx.envUpdates),
-        toObject: () => ({ ...ctx.envVars }),
-        replaceIn: (t: string) => substitute(t, ctx.envVars),
+        values: recordStore(ctx.environment),
+        updates: recordStore(ctx.envUpdates),
       },
-      globals: {
-        get: (k: string) => ctx.envVars[k] ?? '',
-        set: (k: string, v: unknown) => {
-          ctx.envVars[k] = String(v)
-          ctx.globalUpdates[k] = String(v)
-        },
-        unset: (k: string) => {
-          delete ctx.envVars[k]
-          ctx.globalUpdates[k] = ''
-        },
-        has: (k: string) => k in ctx.envVars,
-        clear: () => clearAll(ctx.globalUpdates),
-        toObject: () => ({ ...ctx.envVars }),
-        replaceIn: (t: string) => substitute(t, ctx.envVars),
-      },
-      // pm.variables.* route through a run-local `varUpdates` channel: they
-      // propagate to later requests WITHIN this run (merged into the shared
-      // envVars by mergeScriptUpdates) but are never written to the DB, so
-      // "Keep variable values" still won't persist them. This intentionally
-      // diverges from stock Postman/Insomnia (request-local) — see ScriptContext.
-      variables: {
-        get: (k: string) => ctx.envVars[k] ?? '',
-        set: (k: string, v: unknown) => {
-          ctx.envVars[k] = String(v)
-          ctx.varUpdates[k] = String(v)
-        },
-        has: (k: string) => k in ctx.envVars,
-        unset: (k: string) => {
-          delete ctx.envVars[k]
-          ctx.varUpdates[k] = ''
-        },
-        clear: () => clearAll(ctx.varUpdates),
-        toObject: () => ({ ...ctx.envVars }),
-        replaceIn: (t: string) => substitute(t, ctx.envVars),
-      },
-      collectionVariables: {
-        get: (k: string) => ctx.envVars[k] ?? '',
-        set: (k: string, v: unknown) => {
-          ctx.envVars[k] = String(v)
-          ctx.envUpdates[k] = String(v)
-        },
-        unset: (k: string) => {
-          delete ctx.envVars[k]
-          ctx.envUpdates[k] = ''
-        },
-        has: (k: string) => k in ctx.envVars,
-        clear: () => clearAll(ctx.envUpdates),
-        toObject: () => ({ ...ctx.envVars }),
-        replaceIn: (t: string) => substitute(t, ctx.envVars),
-      },
-      request: ctx.request
-        ? { method: ctx.request.method, url: ctx.request.url, headers: ctx.request.headers }
-        : { method: '', url: '', headers: new HeaderCollection() },
-      response: normalized ? createPmResponse(normalized) : null,
-      cookies: {
-        get: (n: string) => cookieFind(n)?.value,
-        has: (n: string) => !!cookieFind(n),
-        toObject: () =>
-          Object.fromEntries((normalized?.cookies ?? []).map((c) => [c.name, c.value])),
-      },
-      test: (name: string, fn: () => void | Promise<void>) => {
-        try {
-          const result = fn()
-          if (result && typeof (result as Promise<void>).then === 'function') {
-            // An ASYNC callback settles after `test()` returns. Recording a
-            // pass here and walking away made every `pm.test(async () => …)`
-            // report GREEN on Run no matter what it asserted — while Send
-            // (test-runner.ts) already awaited it. `pm.jose.*` is async-only,
-            // so the idiomatic script for issue #73 landed exactly on that
-            // divergence. Mirror Send: optimistic slot, rewritten on rejection,
-            // awaited before the script is considered finished.
-            const idx = ctx.testResults.length
-            ctx.testResults.push({ name, passed: true })
-            ctx.pendingTests.push(
-              (result as Promise<void>).then(
-                () => {},
-                (e: unknown) => {
-                  ctx.testResults[idx] = {
-                    name,
-                    passed: false,
-                    error: e instanceof Error ? e.message : String(e),
-                  }
-                },
-              ),
-            )
-            return
-          }
-          ctx.testResults.push({ name, passed: true })
-        } catch (e) {
-          ctx.testResults.push({ name, passed: false, error: (e as Error).message })
-        }
-      },
-      expect: chaiExpect,
-      execution: {
-        skipRequest: () => {
-          ctx.skipRequest = true
-        },
-        setNextRequest: (name: string | null) => {
-          ctx.nextRequestName = name
-        },
-      },
-      // pm.sendRequest — fire an auxiliary HTTP request mid-script via the same
-      // engine the runner uses. Returns a Promise (so `await pm.sendRequest`
-      // works) and calls the optional Node-style callback. The runner awaits
-      // `ctx.pendingSends` so callback-only sends finish too. Mirrors the Send
-      // path (test-runner.ts).
-      //
-      // CERT SCOPE (R5, design §4 "Send≡Run parity: pm.sendRequest"): a
-      // script-issued request attaches NO project client certificate — on
-      // EITHER path. We pass `certificates`-free options; the renderer twin
-      // (`normalizePmSendInput` in test-runner.ts) likewise emits no
-      // `_projectId`, so `request:send` skips `loadCertificatesFor` too.
-      // That is SYMMETRIC by design — do not add the cert branch to one side
-      // only, or the parity class reopens on the scripted junction.
-      //
-      // JAR SCOPE (issue #104): engine-level `projectId` IS passed — on both
-      // paths — so a script login lands in the same per-project cookie jar as
-      // the main request. `projectId` scopes only the engine's cookie jar; it
-      // never loads certificates (that's a handler concern), so R5 holds.
-      sendRequest: (
-        req: unknown,
-        cb?: (err: Error | null, res: unknown) => void,
-      ): Promise<unknown> => {
-        const sendOptions = { ...normalizeRunnerSendInput(req), projectId: ctx.projectId }
-        const run = executeHttpRequest(sendOptions).then((apiResp) => {
-          // Send's `pm.sendRequest` goes out through `request:send`, which
-          // logs it. Skipping it here would leave a scripted call visible on
-          // one path and invisible on the other — the parity class this file
-          // works hardest to avoid.
-          if (ctx.consoleTag) {
-            logRequestResponse({
-              protocol: 'http',
-              method: apiResp.actualRequest?.method ?? sendOptions.method,
-              url: apiResp.actualRequest?.url ?? sendOptions.url,
-              status: apiResp.status,
-              statusText: apiResp.statusText,
-              durationMs: apiResp.timing?.total,
-              sizeBytes: apiResp.bodySize,
-              requestHeaders: apiResp.actualRequest?.headers,
-              requestBody: apiResp.actualRequest?.body,
-              responseHeaders: apiResp.headers,
-              responseBody: apiResp.body,
-              error: apiResp.error ? { message: apiResp.error } : undefined,
-              tabId: ctx.consoleTag.tabId,
-              meta: { ...ctx.consoleTag.meta, via: 'pm.sendRequest' },
-              secrets: [...authSecretValues(sendOptions.auth), ...liveSecretValues(ctx.envVars)],
-            })
-          }
-          return buildResponseShim({
-            status: apiResp.status,
-            statusText: apiResp.statusText,
-            headers: apiResp.headers,
-            body: apiResp.body,
-            bodySize: apiResp.bodySize,
-            cookies: apiResp.cookies,
-          })
+      locals: { values: recordStore(ctx.locals), updates: recordStore(ctx.varUpdates) },
+      data: ctx.iterationData,
+    },
+    request: ctx.request ?? { method: '', url: '', headers: new HeaderCollection() },
+    response: normalized,
+    results: ctx.testResults,
+    pendingTests: ctx.pendingTests,
+    pendingSends: ctx.pendingSends,
+    log: (level, message) => pushConsoleLog(ctx, level, message),
+    // pm.sendRequest transport — the same engine the runner uses.
+    //
+    // CERT SCOPE (R5, design §4 "Send≡Run parity: pm.sendRequest"): the shared
+    // normalizer emits no project id, so a script-issued request attaches NO
+    // project client certificate — on EITHER path. JAR SCOPE (issue #104):
+    // the engine-level `projectId` IS passed so a script login lands in the
+    // same per-project cookie jar as the main request; it never loads certs.
+    send: async (opts) => {
+      const sendOptions = { ...opts, projectId: ctx.projectId } as HttpRequestOptions
+      const apiResp = await executeHttpRequest(sendOptions)
+      // Send's `pm.sendRequest` goes out through `request:send`, which logs
+      // it. Skipping it here would leave a scripted call visible on one path
+      // and invisible on the other.
+      if (ctx.consoleTag) {
+        logRequestResponse({
+          protocol: 'http',
+          method: apiResp.actualRequest?.method ?? sendOptions.method,
+          url: apiResp.actualRequest?.url ?? sendOptions.url,
+          status: apiResp.status,
+          statusText: apiResp.statusText,
+          durationMs: apiResp.timing?.total,
+          sizeBytes: apiResp.bodySize,
+          requestHeaders: apiResp.actualRequest?.headers,
+          requestBody: apiResp.actualRequest?.body,
+          responseHeaders: apiResp.headers,
+          responseBody: apiResp.body,
+          error: apiResp.error ? { message: apiResp.error } : undefined,
+          tabId: ctx.consoleTag.tabId,
+          meta: { ...ctx.consoleTag.meta, via: 'pm.sendRequest' },
+          secrets: [
+            ...authSecretValues(sendOptions.auth),
+            ...liveSecretValues({ ...ctx.globals, ...ctx.environment, ...ctx.locals }),
+          ],
         })
-        const handled = run.then(
-          (res) => {
-            if (cb) cb(null, res)
-            return res
-          },
-          (err: unknown) => {
-            const e = err instanceof Error ? err : new Error(String(err))
-            if (cb) {
-              cb(e, null)
-              return undefined
-            }
-            throw e
-          },
-        )
-        ctx.pendingSends.push(handled.catch(() => undefined))
-        return handled
-      },
-    }
-  }
+      }
+      return apiResp
+    },
+  })
 
   // Assemble the COMPLETE script global set from the shared runtime — IDENTICAL
   // to the Send path (test-runner.ts), one source ⇒ no parity drift. Provides
   // pm/t/insomnia/bru/req/res, require() + the full library set, the legacy
   // postman.*/responseBody/tests/xml2Json interface, bare expect/test, and the
   // CryptoJS/_/atob/btoa globals.
-  const pm = buildPm()
   const { bindings, legacyTests } = buildScriptBindings({
-    pm,
+    pm: runtime.pm,
     normalizedResponse: normalized,
+    timers: runtime.recorder.timers,
     ...(override?.mcp ? { mcp: override.mcp } : {}),
   })
   const allBindings: Record<string, unknown> = {
     ...bindings,
-    console: { log, warn: mkLog('warn'), error: mkLog('error') },
+    console: { log: mkLog('log'), warn: mkLog('warn'), error: mkLog('error') },
   }
   const names = Object.keys(allBindings)
   const values = names.map((n) => allBindings[n])
@@ -1145,134 +992,28 @@ async function runUserScript(
     const fn = new AsyncFunction(...names, `{\n${script}\n}`)
     await fn(...values)
   } catch (e) {
-    pushConsoleLog(ctx, 'error', `Script error: ${(e as Error).message}`)
-    ctx.scriptError = (e as Error).message
+    // `pm.execution.skipRequest()` stops the script on purpose — Postman stops
+    // there too, and so did Send. It used to set a flag and let the rest of
+    // the script run on this path. Not a script error.
+    if (!isSkipRequestSignal(e)) {
+      pushConsoleLog(ctx, 'error', `Script error: ${(e as Error).message}`)
+      ctx.scriptError = (e as Error).message
+    }
   }
-
   // Drain the legacy `tests` object (tests['name'] = bool) into test results.
   for (const [name, passed] of Object.entries(legacyTests)) {
     ctx.testResults.push({ name, passed })
   }
 
-  // Wait for any in-flight `pm.sendRequest(...)` calls (their callbacks may
-  // register env writes / pm.test cases) before returning to the runner.
-  if (ctx.pendingSends.length > 0) {
-    await Promise.allSettled(ctx.pendingSends)
-    ctx.pendingSends.length = 0
-  }
-  // AFTER the sends: a send callback can register its own `pm.test`, and an
-  // async test can itself await a send. Draining in this order (and looping
-  // while either queue refills) is what makes "the script has finished" true.
-  while (ctx.pendingTests.length > 0 || ctx.pendingSends.length > 0) {
-    const tests = ctx.pendingTests.splice(0)
-    const sends = ctx.pendingSends.splice(0)
-    await Promise.allSettled([...tests, ...sends])
-  }
-}
+  // Sends first (a send callback can register its own `pm.test`), then tests
+  // (an async or done-style test can itself fire a send) — looping while either
+  // queue refills. Shared with Send so "the script has finished" means the same.
+  await runtime.drain()
 
-/**
- * Postman-compatible `pm.response.cookies` shim — case-insensitive read access
- * to the cookies the engine parsed from the response Set-Cookie headers. Mirror
- * of the renderer's createPmApi cookie shim (test-runner.ts).
- */
-function buildCookieShim(cookies: Array<{ name: string; value: string }> | undefined) {
-  const list = cookies ?? []
-  const find = (name: string) => list.find((c) => c.name.toLowerCase() === name.toLowerCase())
-  return {
-    get: (name: string) => find(name)?.value,
-    has: (name: string) => !!find(name),
-    toObject: () => Object.fromEntries(list.map((c) => [c.name, c.value])),
-  }
-}
-
-/**
- * Normalize a `pm.sendRequest` input (URL string or Postman request object)
- * into engine HttpRequestOptions. Mirror of the renderer's normalizePmSendInput
- * (test-runner.ts) — keep the two in lockstep.
- */
-function normalizeRunnerSendInput(req: unknown): HttpRequestOptions {
-  if (typeof req === 'string') return { method: 'GET', url: req }
-  const r = (req ?? {}) as {
-    url?: string | { raw?: string }
-    method?: string
-    header?: Array<{ key: string; value: string; disabled?: boolean }> | Record<string, string>
-    body?: string | { mode?: string; raw?: string; options?: { raw?: { language?: string } } }
-  }
-  const url = typeof r.url === 'string' ? r.url : (r.url?.raw ?? '')
-  const method = (r.method ?? 'GET').toUpperCase()
-  let headers: Array<{ key: string; value: string; enabled: boolean }> = []
-  if (Array.isArray(r.header)) {
-    headers = r.header.map((h) => ({ key: h.key, value: h.value, enabled: h.disabled !== true }))
-  } else if (r.header && typeof r.header === 'object') {
-    headers = Object.entries(r.header).map(([key, value]) => ({
-      key,
-      value: String(value),
-      enabled: true,
-    }))
-  }
-  let body: { type: string; content?: string } | undefined
-  if (typeof r.body === 'string') {
-    body = { type: 'text', content: r.body }
-  } else if (r.body && r.body.mode === 'raw') {
-    const isJson = r.body.options?.raw?.language === 'json'
-    body = { type: isJson ? 'json' : 'text', content: r.body.raw ?? '' }
-  }
-  return { method, url, headers, body } as HttpRequestOptions
-}
-
-function buildResponseShim(response: ScriptResponseShape) {
-  const headers = response.headers ?? {}
-  const code = response.status ?? 0
-  return {
-    code,
-    get status() {
-      return response.statusText ?? ''
-    },
-    // Raw body string — alias of text(). Postman/Insomnia token scripts do
-    // `String(pm.response.body).trim()` then JSON.parse it, so body must be the
-    // raw string, never a parsed object. Mirrors the Send path (test-runner.ts).
-    get body() {
-      return response.body ?? ''
-    },
-    text: () => response.body ?? '',
-    json: () => {
-      try {
-        return JSON.parse(response.body ?? '{}') as unknown
-      } catch {
-        return null
-      }
-    },
-    headers: {
-      get: (name: string) => {
-        const lower = name.toLowerCase()
-        const found = Object.entries(headers).find(([k]) => k.toLowerCase() === lower)
-        return found ? found[1] : undefined
-      },
-    },
-    cookies: buildCookieShim(response.cookies),
-    responseTime: 0,
-    responseSize: response.bodySize ?? (response.body ? response.body.length : 0),
-    to: {
-      have: {
-        status: (expected: number) => {
-          if (code !== expected) {
-            throw new Error(`expected status ${expected} but got ${code}`)
-          }
-        },
-        header: (name: string) => {
-          const lower = name.toLowerCase()
-          const found = Object.keys(headers).some((k) => k.toLowerCase() === lower)
-          if (!found) throw new Error(`expected header "${name}" to be present`)
-        },
-      },
-      be: {
-        get ok() {
-          if (code < 200 || code >= 300) throw new Error(`expected 2xx but got ${code}`)
-          return true
-        },
-      },
-    },
-  }
+  // Read flow control AFTER the drain: a pm.sendRequest callback may call
+  // setNextRequest (it used to write the context directly, at any time).
+  if (runtime.state.skipRequested) ctx.skipRequest = true
+  if (runtime.state.nextRequest) ctx.nextRequestName = runtime.state.nextRequest.name
 }
 
 function delay(ms: number): Promise<void> {
@@ -1301,14 +1042,11 @@ async function interruptibleDelay(ms: number, runState: RunState): Promise<void>
 // ─── Variable Resolution ─────────────────────────────────────────
 
 // Variable loading lives in `lib/env-vars.ts` so the mock server can share
-// the exact same scope-merge logic as the runner. Inline thin wrapper kept
-// for the existing call site below.
-function loadEnvironmentVariables(
-  environmentId: string | undefined,
-  workspaceId: string | undefined,
-  projectId: string | undefined,
-): Record<string, string> {
-  return loadEnvVars({ environmentId, workspaceId, projectId })
+// the exact same scope-merge logic as the runner.
+
+/** The merged `{{var}}` view: global < environment < run-local (issue #281). */
+function mergedRunVars(scopes: RunVarScopes): Record<string, string> {
+  return { ...scopes.globals, ...scopes.environment, ...scopes.locals }
 }
 
 // Renamed for clarity — `resolveVariables` from the shared resolver handles
@@ -1453,8 +1191,11 @@ interface RunContext {
   options: RunnerExecuteOptions
   runState: RunState
   /** Live variable map — mutated by scripts, shared across ALL phases so a
-   *  token fetched in setup resolves in the main flow AND in teardown. */
+   *  token fetched in setup resolves in the main flow AND in teardown. The
+   *  MERGED view `{{var}}` resolution reads; rebuilt from `scopes`. */
   envVars: Record<string, string>
+  /** The same variables split by scope — what the pm scope objects read. */
+  scopes: RunVarScopes
   projectSettings: StoredProjectSettings | undefined
   /** Project + app-wide timeouts below a request's own — Send's chain (issue #185). */
   inheritedTimeouts: InheritedTimeouts
@@ -1654,8 +1395,6 @@ async function runEndpointStep(
   const iterationData = ctx.iterationData
   const iterations = ctx.iterations
   const persistResponses = ctx.persistResponses
-  const runEnvUpdates = ctx.runEnvUpdates
-  const runGlobalUpdates = ctx.runGlobalUpdates
   const projectSettings = ctx.projectSettings
   const projectAuth = ctx.projectAuth
   // Only the main flow is iterated; setup/teardown run once per RUN, so their
@@ -1744,7 +1483,7 @@ async function runEndpointStep(
   // that cannot tell "the user pulled the plug" from "DNS failed" would score
   // every hard stop as a transport failure.
   let cancelledOnWire = false
-  const scriptCtx = newScriptContext(envVars, iterationData[iter] ?? {}, iter, iterations)
+  const scriptCtx = newScriptContext(ctx.scopes, iterationData[iter] ?? {}, iter, iterations)
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
   scriptCtx.projectId = ctx.options.projectId
@@ -1806,16 +1545,22 @@ async function runEndpointStep(
           (h) => h.enabled !== false,
         ),
       ),
+      // `pm.request.body` — the body as defined (raw template), like Send.
+      body: requestOptions.body ?? null,
     }
+    scriptCtx.requestName = endpoint.name
+    scriptCtx.requestId = endpointId
+    scriptCtx.location = [...folderChain.map((f) => f.name), endpoint.name]
 
     // Run pre-request scripts in order. They share one context so a
     // project/folder script's env writes are visible to inner scripts.
+    scriptCtx.eventName = 'prerequest'
     for (const s of preScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, null)
-      mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
+      mergeScriptUpdates(scriptCtx, ctx)
     }
 
     /*
@@ -1838,11 +1583,7 @@ async function runEndpointStep(
      * them: `endpointDidPass` fails any result carrying `error`.
      */
     if (scriptCtx.scriptError) {
-      const scriptAssertions = scriptCtx.testResults.map((t) => ({
-        name: t.name,
-        passed: t.passed,
-        error: t.error,
-      }))
+      const scriptAssertions = scriptCtx.testResults.map(scriptTestToAssertion)
       return recordStep(ctx, {
         endpointId,
         endpointName: endpoint.name,
@@ -1890,6 +1631,13 @@ async function runEndpointStep(
       return recordStep(ctx, skipResult)
     }
 
+    // `:name` path segments first (issue #276) — the same helper and the same
+    // stage as Send: after the pre-request scripts (which read the URL as
+    // typed), right before `{{var}}` resolution.
+    requestOptions.url = applyPathVariables(
+      requestOptions.url,
+      readPathVariables(parseJsonSafe<unknown>(endpoint.request_schema, {})),
+    )
     // Resolve environment variables in request
     const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
     // The resolved auth's secrets — masked from the Console entry, the History
@@ -1987,6 +1735,7 @@ async function runEndpointStep(
     // folder(s) → request). They share the run's script context, so a
     // folder/project test sees the same response + env the request used.
     const scriptTestResults: AssertionResult[] = []
+    scriptCtx.eventName = 'test'
     for (const s of postScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
@@ -1998,16 +1747,13 @@ async function runEndpointStep(
         body: response.body,
         bodySize: response.bodySize,
         cookies: response.cookies,
+        responseTime: response.timing?.total,
       })
-      mergeScriptUpdates(scriptCtx, envVars, runEnvUpdates, runGlobalUpdates)
+      mergeScriptUpdates(scriptCtx, ctx)
     }
     // Collect every pm.test() the scripts registered (pre + post).
     for (const t of scriptCtx.testResults) {
-      scriptTestResults.push({
-        name: t.name,
-        passed: t.passed,
-        error: t.error,
-      })
+      scriptTestResults.push(scriptTestToAssertion(t))
     }
 
     // Auto-save to history
@@ -2352,7 +2098,12 @@ async function runMcpStep(
     iteration,
     phase,
   }
-  const scriptCtx = newScriptContext(envVars, ctx.iterationData[iter] ?? {}, iter, ctx.iterations)
+  const scriptCtx = newScriptContext(
+    ctx.scopes,
+    ctx.iterationData[iter] ?? {},
+    iter,
+    ctx.iterations,
+  )
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
   scriptCtx.projectId = ctx.options.projectId
@@ -2405,20 +2156,20 @@ async function runMcpStep(
         saved.customHeaders.filter((h) => h.enabled !== false) as HeaderEntry[],
       ),
     }
+    scriptCtx.requestName = endpoint.name
+    scriptCtx.requestId = endpointId
+    scriptCtx.location = [...folderChain.map((f) => f.name), endpoint.name]
+    scriptCtx.eventName = 'prerequest'
     for (const s of preScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, null)
-      mergeScriptUpdates(scriptCtx, envVars, ctx.runEnvUpdates, ctx.runGlobalUpdates)
+      mergeScriptUpdates(scriptCtx, ctx)
     }
     // Same rule as HTTP: a throwing pre-request script stops the call.
     if (scriptCtx.scriptError) {
-      const scriptAssertions = scriptCtx.testResults.map((t) => ({
-        name: t.name,
-        passed: t.passed,
-        error: t.error,
-      }))
+      const scriptAssertions = scriptCtx.testResults.map(scriptTestToAssertion)
       return failRow(
         mcpDisplayTarget(saved.transport, saved.url),
         `Pre-request script error: ${scriptCtx.scriptError}`,
@@ -2565,12 +2316,13 @@ async function runMcpStep(
 
     // Post-response scripts see `pm.response` (HTTP-shaped) + `pm.mcp`.
     const info = mcpScriptInfo(outcome) ?? undefined
+    scriptCtx.eventName = 'test'
     for (const s of postScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, null, { normalized: response, mcp: info })
-      mergeScriptUpdates(scriptCtx, envVars, ctx.runEnvUpdates, ctx.runGlobalUpdates)
+      mergeScriptUpdates(scriptCtx, ctx)
     }
     const declarative = runAssertionsMainProcess(
       schema.assertions ?? [],
@@ -2586,7 +2338,7 @@ async function runMcpStep(
     )
     const assertionResults: AssertionResult[] = [
       ...declarative,
-      ...scriptCtx.testResults.map((t) => ({ name: t.name, passed: t.passed, error: t.error })),
+      ...scriptCtx.testResults.map(scriptTestToAssertion),
     ]
     const result: EndpointRunResult = {
       ...rowBase,
@@ -2675,7 +2427,7 @@ async function runHookScript(
 ): Promise<StepOutcome | null> {
   if (!script || !script.trim()) return null
   const startedAt = Date.now()
-  const scriptCtx = newScriptContext(ctx.envVars, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
+  const scriptCtx = newScriptContext(ctx.scopes, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
   scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
   scriptCtx.projectId = ctx.options.projectId
   // A hook that THROWS at top level (a bad await, a failed token fetch) must be
@@ -2688,13 +2440,9 @@ async function runHookScript(
   // that failed to fetch its token used to leave no row at all, and the
   // synthetic row it does leave scored as a PASS.
   const scriptError = scriptCtx.scriptError
-  mergeScriptUpdates(scriptCtx, ctx.envVars, ctx.runEnvUpdates, ctx.runGlobalUpdates)
+  mergeScriptUpdates(scriptCtx, ctx)
 
-  const assertions: AssertionResult[] = scriptCtx.testResults.map((t) => ({
-    name: t.name,
-    passed: t.passed,
-    error: t.error,
-  }))
+  const assertions: AssertionResult[] = scriptCtx.testResults.map(scriptTestToAssertion)
   const passed = assertions.filter((a) => a.passed).length
   const failed = assertions.length - passed
   // Tallying happens in recordStep (phase-aware).
@@ -2881,7 +2629,13 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
       /* no active env — fall through with globals-only resolution */
     }
   }
-  const envVars = loadEnvironmentVariables(effectiveEnvId, options.workspaceId, options.projectId)
+  const loadedScopes = loadEnvVarScopes({
+    environmentId: effectiveEnvId,
+    workspaceId: options.workspaceId,
+    projectId: options.projectId,
+  })
+  const scopes: RunVarScopes = { ...loadedScopes, locals: {} }
+  const envVars = mergedRunVars(scopes)
 
   // Project-level auth + cascade scripts (inheritance). Loaded once per run.
   // `projectSettings` feeds the script cascade (project → folder → request);
@@ -2920,6 +2674,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     options,
     runState,
     envVars,
+    scopes,
     projectSettings,
     inheritedTimeouts,
     projectAuth,
@@ -3182,27 +2937,33 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
  * `envVars` map (so later requests in this run resolve the new values) and the
  * persisted-delta accumulators. Called after both pre- and post-scripts.
  */
-function mergeScriptUpdates(
-  ctx: ScriptContext,
-  envVars: Record<string, string>,
-  runEnvUpdates: Record<string, string>,
-  runGlobalUpdates: Record<string, string>,
-): void {
+function mergeScriptUpdates(ctx: ScriptContext, run: RunContext): void {
+  const { scopes } = run
   for (const [k, v] of Object.entries(ctx.envUpdates)) {
-    envVars[k] = v
-    runEnvUpdates[k] = v
+    // '' is both "set to empty" and the unset marker; kept as '' like before.
+    scopes.environment[k] = v
+    run.runEnvUpdates[k] = v
   }
   for (const [k, v] of Object.entries(ctx.globalUpdates)) {
-    envVars[k] = v
-    runGlobalUpdates[k] = v
+    scopes.globals[k] = v
+    run.runGlobalUpdates[k] = v
   }
   // varUpdates (pm.variables.set) propagate within the run only — into the
-  // shared envVars so later requests resolve them, but NOT into runEnvUpdates,
+  // local layer so later requests resolve them, but NOT into runEnvUpdates,
   // so they never reach persistRunVariableUpdates / the DB.
   for (const [k, v] of Object.entries(ctx.varUpdates)) {
-    if (v === '') delete envVars[k]
-    else envVars[k] = v
+    if (v === '') delete scopes.locals[k]
+    else scopes.locals[k] = v
   }
+  // Rebuild the merged view IN PLACE: every step holds this same object.
+  // Precedence global < environment < local — a `pm.globals.set` no longer
+  // shadows an environment variable of the same name (it used to: the last
+  // write won, whatever its scope).
+  const merged = mergedRunVars(scopes)
+  for (const k of Object.keys(run.envVars)) {
+    if (!(k in merged)) delete run.envVars[k]
+  }
+  Object.assign(run.envVars, merged)
 }
 
 /**

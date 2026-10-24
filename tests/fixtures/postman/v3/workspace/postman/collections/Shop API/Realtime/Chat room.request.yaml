@@ -1,0 +1,20 @@
+$kind: socket.io-request
+url: 'https://io.example.test/chat'
+headers:
+  - key: X-Room
+    value: lobby
+events:
+  - name: message
+    description: A chat line
+    subscribeOnConnect: true
+  - name: typing
+    subscribeOnConnect: false
+settings:
+  version: '4'
+  path: /realtime
+  handshakeTimeout: 8000
+  retryCount: 1
+  retryDelay: 2000
+  strictSSL: true
+messages: .resources/Chat room.resources/messages
+order: 2000

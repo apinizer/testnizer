@@ -40,6 +40,7 @@ import {
   restoreRequestSettings,
 } from './save-active-request'
 import { readRequestSettings } from '../../shared/request-settings'
+import { readPathVariables } from '../../shared/path-variables'
 import type {
   AuthConfig,
   HttpMethod,
@@ -183,6 +184,8 @@ async function readBoundRowState(
         // Timeout / redirects / SSL ride at the top of `metadata` on this
         // table (#185) — lifted here so `request` reads like a request_schema.
         ...readRequestSettings(meta),
+        // Path variable values sit there too (issue #276).
+        ...(Array.isArray(meta.pathVariables) ? { pathVariables: meta.pathVariables } : {}),
         params: params.value,
         body: body.value,
         headers: headers.value,
@@ -338,6 +341,7 @@ function reloadUnloadedTab(tab: BoundTab, row: BoundRow | undefined): void {
         postScript: stringOr(r.postScript, ''),
         assertions: arrayOr<TestAssertion>(r.assertions, []),
         ...requestStoreSettings(settings),
+        pathVariables: readPathVariables(r),
       },
       // Nothing on the slice to keep — it was never loaded.
       { force: true },

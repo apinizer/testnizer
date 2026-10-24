@@ -193,6 +193,13 @@ const ENGLISH = {
     /\bWaiting for\b/,
     /\bevent name\b/,
     /\bClear\b/,
+    // Issue #283 additions.
+    /\bSaved messages\b/,
+    /\bAdd (message|argument|event)\b/,
+    /\bListen to all\b/,
+    /\bSearch messages\b/,
+    /\bArgument \d\b/,
+    /\bReceived\b/,
   ],
   epoch: [
     /\bago\b/,
@@ -496,18 +503,27 @@ describe('issue #248 follow-up — protocol editor bodies in Turkish', () => {
     expect(englishLeftovers(ENGLISH.grpc)).toEqual([])
   })
 
-  it('Socket.IO emit / subscribe / timeline (the body, not the connection bar)', () => {
+  it('Socket.IO message / events / timeline (the body, not the connection bar)', () => {
     useSocketIOStore.setState({
       connectionState: 'disconnected',
-      subscriptions: [],
+      listeners: [],
       events: [],
     } as Partial<ReturnType<typeof useSocketIOStore.getState>>)
     render(<SocketIOEditor />)
-    const body = screen.getByText('Olay Gönder').closest('[lang]') as HTMLElement
+    const body = screen.getByTestId('socketio-panel-message').closest('[lang]') as HTMLElement
     expect(body.getAttribute('lang')).toBe('tr')
-    expect(within(body).getByText('Henüz abonelik yok')).toBeTruthy()
+    expect(within(body).getByText('Kayıtlı mesajlar')).toBeTruthy()
     expect(within(body).getByText('Olayları görmek için bağlanın')).toBeTruthy()
-    expect(within(body).getAllByPlaceholderText('olay adı')).toHaveLength(2)
+    expect(within(body).getAllByPlaceholderText('olay adı')).toHaveLength(1)
+    expect(englishLeftovers(ENGLISH.socketio, body)).toEqual([])
+    // Issue #283: the Events tab (listeners) replaced the subscribe box.
+    fireEvent.click(within(body).getByRole('tab', { name: 'Olaylar' }))
+    expect(within(body).getByText('Henüz olay yok')).toBeTruthy()
+    // The Events tab's toggle and the timeline's "not listening" notice button.
+    expect(within(body).getAllByText('Tüm olayları dinle')).toHaveLength(2)
+    expect(within(body).getByTestId('socketio-listen-notice').textContent).toContain(
+      'Hiçbir olay dinlenmiyor',
+    )
     expect(englishLeftovers(ENGLISH.socketio, body)).toEqual([])
   })
 })

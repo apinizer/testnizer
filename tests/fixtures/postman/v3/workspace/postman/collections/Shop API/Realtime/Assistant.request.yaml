@@ -1,0 +1,25 @@
+$kind: llm-request
+url: 'https://llm.example.test/v1/chat/completions'
+config:
+  provider: openai
+  model: gpt-4o-mini
+settings:
+  temperature: 0.3
+  maxToken: 256
+  topP: 0.9
+systemPrompts:
+  - id: s1
+    value: You are a shop assistant.
+    active: true
+    contentType: text
+userPrompts:
+  - id: u1
+    value: Which mugs are in stock?
+    active: true
+    contentType: text
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: sk-live-should-never-be-imported
+order: 7000

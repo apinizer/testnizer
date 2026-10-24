@@ -129,6 +129,8 @@ function openTab(app: App, protocol: Tab['protocol']) {
 
 const CASES: Array<{
   protocol: Tab['protocol']
+  /** Test title when one protocol has several cases. */
+  label?: string
   /** Session 1: type the credential (and what the path needs to run). */
   setup: (app: App) => void
   /** Session 2: fill what the snapshot does not keep, then Send / Connect. */
@@ -171,6 +173,27 @@ const CASES: Array<{
     },
     send: (app) => app.useSocketIOStore.getState().connect(),
     engine: 'socketio.connect',
+  },
+  {
+    // Issue #283: handshake headers and query params are withheld rows too.
+    protocol: 'socketio',
+    label: 'socketio headers + params',
+    setup: (app) => {
+      app.useSocketIOStore.getState().setUrl(`http://sio.test?token=${SECRET}-p`)
+      app.useSocketIOStore.getState().setHeaders([kv('h1', 'Authorization', `Bearer ${SECRET}`)])
+    },
+    send: (app) => app.useSocketIOStore.getState().connect(),
+    engine: 'socketio.connect',
+  },
+  {
+    // Issue #282: query params of a WebSocket URL.
+    protocol: 'websocket',
+    label: 'websocket params',
+    setup: (app) => {
+      app.useWebSocketStore.getState().setUrl(`wss://ws.test/live?api_key=${SECRET}`)
+    },
+    send: (app) => app.useWebSocketStore.getState().connect(),
+    engine: 'ws.connect',
   },
   {
     protocol: 'graphql',
@@ -242,7 +265,7 @@ const engineCalls = (prefix: string) => api.calls.filter((c) => c.name.startsWit
 
 describe('Send / Connect right after a restart carry the saved credential (issue #244)', () => {
   for (const c of CASES) {
-    it(`${c.protocol}: the engine gets the credential, no activation reload needed`, async () => {
+    it(`${c.label ?? c.protocol}: the engine gets the credential, no activation reload needed`, async () => {
       const s2 = await saveAndRestart(c)
       await c.send(s2)
       const sent = engineCalls(c.engine)
@@ -251,6 +274,16 @@ describe('Send / Connect right after a restart carry the saved credential (issue
       expect(toastMock.warning).not.toHaveBeenCalled()
     })
   }
+
+  it('socketio headers + params: Ctrl+S right after a restart keeps them on the row', async () => {
+    const c = CASES.find((x) => x.label === 'socketio headers + params')!
+    const s2 = await saveAndRestart(c)
+    openTab(s2, 'socketio')
+    expect(await s2.saveActiveRequestInPlace()).toEqual({ success: true })
+    const saved = JSON.stringify(await api.endpoint.get('ep-1'))
+    expect(saved).toContain(`Bearer ${SECRET}`)
+    expect(saved).toContain(`token=${SECRET}-p`)
+  })
 
   it('an unreadable row does not block the send — it warns that the fields go out empty', async () => {
     const s2 = await saveAndRestart(CASES[0])

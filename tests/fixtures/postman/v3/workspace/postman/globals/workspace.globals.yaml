@@ -1,0 +1,4 @@
+name: Globals
+values:
+  - key: userName
+    value: ada

@@ -864,7 +864,7 @@ const HEADER_KEYS = new Set([
   'metadata',
 ])
 /** Keys whose value is a query-param-like container (name rule = arg rule). */
-const PARAM_KEYS = new Set(['params', 'query', 'queryParams'])
+const PARAM_KEYS = new Set(['params', 'query', 'queryParams', 'pathVariables'])
 /** Keys whose string value is a URL (credential query params masked). */
 const URL_KEYS = new Set(['url', 'address', 'serverAddress', 'endpointUrl', 'wsdlUrl', 'protoUrl'])
 /** Keys whose value is a request body. */

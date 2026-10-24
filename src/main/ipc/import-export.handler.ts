@@ -8,11 +8,30 @@ import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-fil
 import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import {
-  withAssertionScript,
-  stripExportedAssertions,
-  type AssertionScriptPrefix,
-} from '../../shared/assertions-to-script'
-import { readSharedProjectSettings, writeSharedProjectSettings } from '../lib/project-settings'
+  applyPathVariables,
+  readPathVariables,
+  type PathVariableLike,
+} from '../../shared/path-variables'
+import {
+  buildFolderChain,
+  resolveStoredRequestAuth,
+  type StoredRequestRef,
+} from '../lib/folder-chain'
+import {
+  projectAuthToAuthConfig,
+  resolveEffectiveAuth,
+  type AuthConfigLike,
+} from '../lib/auth-inheritance'
+import {
+  curlToRequest,
+  parseCurl,
+  renderCurl,
+  startsWithCurl,
+  tokenizeShell,
+  type CurlArg,
+} from '../../shared/curl'
+import { withAssertionScript, type AssertionScriptPrefix } from '../../shared/assertions-to-script'
+import { readSharedProjectSettings, type StoredProjectAuth } from '../lib/project-settings'
 import {
   soapTransportFromMeta,
   withSoapTransportHeaders,
@@ -24,14 +43,49 @@ import {
   type CollectionExportResult,
   type ExportSkippedItem,
 } from '../../shared/collection-export'
-import {
-  isSecretFlag,
-  localSecretsByKey,
-  keepLocalSecretByKey,
-  type LocalSecretsByKey,
-} from '../lib/local-secrets'
-import { storedVariableValue } from '../lib/secret-at-rest'
+import { isSecretFlag, stripProjectSharedSettings } from '../lib/local-secrets'
 import { isEncryptedSecret } from '../lib/secure-storage'
+import { importPostman, importPostmanEnvironment } from '../import/postman'
+import {
+  pickedFolderSummary,
+  rememberPickedFolder,
+  takePickedFolder,
+} from '../import/postman/v3/picked-folders'
+import { importV3FolderContent, readV3Folder, V3InputError } from '../import/postman/v3'
+import { authToPostmanParts } from '../export/postman-v3/auth'
+import { loadExamples } from '../export/postman-v3/rows'
+import {
+  buildPostmanV3ProjectExport,
+  v3FolderBundle,
+  v3JsonText,
+  writeV3Folder,
+} from '../export/postman-v3'
+import type {
+  PostmanAuth,
+  PostmanBody,
+  PostmanCollection,
+  PostmanEnvironment,
+  PostmanItem,
+  PostmanRequest,
+  PostmanResponse,
+  PostmanUrl,
+  PostmanVariable,
+} from '../import/postman/types'
+import { extractPath, genKvId } from '../import/postman/normalize'
+import {
+  assertionsToXApinizer,
+  bodyTypeToApinizerRowType,
+  protocolToApinizerTypes,
+  type TestAssertionLike,
+  type XApinizerExtension,
+} from '../import/postman/x-apinizer'
+
+// Re-exported for existing callers (save.handler suite import, tests).
+export { importPostman, importPostmanEnvironment } from '../import/postman'
+export { reconstructPostmanUrl } from '../import/postman/normalize'
+export { mapPostmanBodyToUi } from '../import/postman/body'
+export { mapPostmanAuthToUi } from '../import/postman/auth'
+export { extractPostmanEventScripts } from '../import/postman/scripts'
 
 interface ImportResult {
   success: boolean
@@ -332,7 +386,58 @@ export function registerImportExportHandlers(): void {
           payload.projectId,
           payload.content,
           payload.folderId ?? null,
-          { projectScripts: true },
+          { apisTree: true },
+        )
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  // ─── Postman v3 folder import (issue #276 part 2) ───────────
+  // The renderer never hands main a path: main shows the folder dialog, reads
+  // and checks the folder now (errors show in the modal before the user picks
+  // a destination) and returns an opaque one-time handle; `import:postmanFolder`
+  // accepts only that handle and imports what was read.
+  ipcMain.handle('import:pickPostmanFolder', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Import Postman v3 folder',
+        properties: ['openDirectory'],
+      })
+      if (result.canceled || result.filePaths.length === 0) return { success: true, data: null }
+      const folderPath = result.filePaths[0]
+      let content: ReturnType<typeof readV3Folder>
+      try {
+        content = readV3Folder(folderPath)
+      } catch (e) {
+        if (e instanceof V3InputError) return { success: false, error: e.message }
+        throw e
+      }
+      const handle = rememberPickedFolder(folderPath, content)
+      return { success: true, data: { handle, ...pickedFolderSummary(folderPath, content) } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    'import:postmanFolder',
+    async (_event, payload: { projectId: string; handle: string; folderId?: string | null }) => {
+      try {
+        const picked = takePickedFolder(payload.handle)
+        if (!picked) {
+          return {
+            success: true,
+            data: { success: false, error: 'The picked folder expired; pick it again.' },
+          }
+        }
+        const result = importV3FolderContent(
+          payload.projectId,
+          picked.content,
+          payload.folderId ?? null,
+          { apisTree: true },
         )
         return { success: true, data: result }
       } catch (e) {
@@ -346,6 +451,34 @@ export function registerImportExportHandlers(): void {
     try {
       const { content, skipped } = buildPostmanProjectExport(projectId)
       return { success: true, data: content, skipped }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // ─── Postman v3 Export (issue #277) ─────────────────────────
+  // JSON: the monolith the public v3 JSON Schema validates; the renderer saves
+  // it like the other collection formats. Folder: main asks where to create
+  // the Native Git folder and writes it (never overwrites — see folder-writer).
+  ipcMain.handle('export:postmanV3Json', async (_event, projectId: string) => {
+    try {
+      const r = buildPostmanV3ProjectExport(projectId)
+      return { success: true, data: v3JsonText(r), skipped: r.skipped, notes: r.notes }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle('export:postmanV3Folder', async (_event, projectId: string) => {
+    try {
+      const r = buildPostmanV3ProjectExport(projectId)
+      const picked = await dialog.showOpenDialog({
+        title: 'Choose where to create the Postman v3 folder',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      if (picked.canceled || picked.filePaths.length === 0) return { success: true, data: null }
+      const written = writeV3Folder(picked.filePaths[0], v3FolderBundle(r))
+      return { success: true, data: written, skipped: r.skipped, notes: r.notes }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -380,7 +513,10 @@ export function registerImportExportHandlers(): void {
     async (_event, payload: { projectId: string; content: string }) => {
       try {
         const parsed = JSON.parse(payload.content) as Record<string, unknown>
-        if (!parsed || parsed['_postman_variable_scope'] !== 'environment') {
+        // Environment AND globals exports (issue #276): globals become the
+        // "Globals" project environment.
+        const scope = parsed?.['_postman_variable_scope']
+        if (!parsed || (scope !== 'environment' && scope !== 'globals')) {
           return {
             success: false,
             error: 'Not a Postman environment export (`_postman_variable_scope` missing).',
@@ -481,7 +617,7 @@ export function registerImportExportHandlers(): void {
   // ─── cURL Export ──────────────────────────────────────────
   ipcMain.handle('export:curl', async (_event, request: CurlExportRequest) => {
     try {
-      const curl = exportAsCurl(request)
+      const curl = exportAsCurl(await withEffectiveCurlAuth(request))
       return { success: true, data: curl }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -1111,9 +1247,16 @@ function safeDecodeQueryComponent(s: string): string {
   }
 }
 
-/** `{{ name }}` → `{name}` — app variables in a path key become OpenAPI templates. */
+/**
+ * `{{ name }}` → `{name}` — app variables in a path key become OpenAPI
+ * templates; so do Postman-style `:name` path variables (issue #276).
+ */
 function toOpenApiTemplates(path: string): string {
-  return path.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_m, name: string) => `{${name}}`)
+  return path
+    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_m, name: string) => `{${name}}`)
+    .split('/')
+    .map((seg) => (seg.length > 1 && seg.startsWith(':') ? `{${seg.slice(1)}}` : seg))
+    .join('/')
 }
 
 /** The path part of a stored URL (query string already removed). */
@@ -1197,6 +1340,9 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
   // Accumulate distinct security schemes across all endpoints so we can emit a
   // single `components.securitySchemes` block at the end.
   const securitySchemes: Record<string, OpenApiSecurityScheme> = {}
+  // An `inherit` request's security is its folder's / the project's (issue
+  // #276) — only the scheme TYPE reaches the document, never a value.
+  const projectAuth = readProjectAuthConfig(projectId)
 
   for (const ep of endpoints) {
     const { path, query: urlQuery } = openApiPathAndQuery(ep.path || '/')
@@ -1243,7 +1389,11 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
       }
     }
     const openApiMeta: OpenApiRoundtripMeta | undefined = schema.openApi
-    const storedAuth: UiRequestSchema['auth'] | undefined = schema.auth
+    const storedAuth = (resolveEffectiveAuth(
+      schema.auth as AuthConfigLike | undefined,
+      buildFolderChain(ep.folder_id),
+      projectAuth,
+    ) ?? undefined) as UiRequestSchema['auth'] | undefined
     const params: Array<Record<string, unknown>> = []
     const paramMeta = openApiMeta?.parameters ?? {}
 
@@ -1462,152 +1612,9 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
   return { content: JSON.stringify(doc, null, 2), skipped }
 }
 
-// ─── Postman Types ──────────────────────────────────────────
+// ─── Postman import → src/main/import/postman/ (issue #276) ───────────
 
-interface PostmanCollection {
-  info: {
-    name: string
-    description?: string
-    schema: string
-    _postman_id?: string
-  }
-  item: PostmanItem[]
-  variable?: PostmanVariable[]
-  auth?: PostmanAuth
-  /** Collection-level pre-request / test scripts (Testnizer: project scripts). */
-  event?: PostmanEvent[]
-}
-
-interface PostmanItem {
-  name: string
-  request?: PostmanRequest
-  response?: unknown[]
-  item?: PostmanItem[] // folder (item group)
-  description?: string
-  event?: PostmanEvent[]
-  /** Folder-level auth — inherited by descendant requests that don't set
-   *  their own (Postman item-groups can carry an `auth` block). */
-  auth?: PostmanAuth
-  /** Apinizer test-interop extension. Postman v2.1 preserves unknown custom
-   *  keys, so Apinizer's extra fidelity (structured assertions, raw-body
-   *  sub-type, timeout) rides here and round-trips through Testnizer. */
-  'x-apinizer'?: XApinizerExtension
-}
-
-interface PostmanEvent {
-  listen: 'prerequest' | 'test' | string
-  script?: { exec?: string | string[]; type?: string; src?: string }
-}
-
-interface PostmanRequest {
-  method?: string
-  header?: PostmanHeader[]
-  url?: PostmanUrl | string
-  body?: PostmanBody
-  auth?: PostmanAuth
-  description?: string
-}
-
-interface PostmanHeader {
-  key: string
-  value: string
-  description?: string
-  disabled?: boolean
-}
-
-interface PostmanUrl {
-  raw?: string
-  protocol?: string
-  host?: string[] | string
-  port?: string
-  path?: Array<string | { value: string }> | string
-  query?: PostmanQuery[]
-  variable?: Array<{ key: string; value: string }>
-}
-
-interface PostmanQuery {
-  key: string
-  value: string
-  description?: string
-  disabled?: boolean
-}
-
-interface PostmanBody {
-  mode?: string
-  raw?: string
-  formdata?: PostmanFormData[]
-  urlencoded?: PostmanUrlEncoded[]
-  file?: { src?: string; content?: string }
-  graphql?: { query?: string; variables?: string }
-  options?: {
-    raw?: { language?: string }
-  }
-}
-
-interface PostmanFormData {
-  key: string
-  value?: string
-  src?: string | string[]
-  description?: string
-  disabled?: boolean
-  type?: string
-}
-
-interface PostmanUrlEncoded {
-  key: string
-  value: string
-  description?: string
-  disabled?: boolean
-}
-
-// Postman 2.1 stores auth fields as either an array of { key, value } pairs
-// (legacy) or as a flat object (modern). Both are accepted on import.
-interface PostmanAuth {
-  type: string
-  basic?:
-    | Array<{ key: string; value: string; type?: string }>
-    | { username?: string; password?: string }
-  bearer?: Array<{ key: string; value: string; type?: string }> | { token?: string }
-  apikey?:
-    | Array<{ key: string; value: string; type?: string }>
-    | { key?: string; value?: string; in?: string }
-  digest?: Array<{ key: string; value: string }> | { username?: string; password?: string }
-  oauth2?: Array<{ key: string; value: string }> | Record<string, unknown>
-  ntlm?:
-    | Array<{ key: string; value: string }>
-    | { username?: string; password?: string; domain?: string; workstation?: string }
-}
-
-interface PostmanVariable {
-  key: string
-  value: string
-  type?: string
-}
-
-/**
- * Standalone Postman environment export — a separate file type from collection
- * exports (Postman → Environments → Export). Detected by `_postman_variable_scope`.
- * The `values[]` array uses the same shape as `collection.variable[]` but adds
- * an optional `enabled` flag per entry.
- */
-interface PostmanEnvironment {
-  id?: string
-  name: string
-  values?: Array<{
-    key: string
-    value: string
-    type?: string
-    /** Postman omits this field on enabled rows; `false` means the variable is muted. */
-    enabled?: boolean
-  }>
-  _postman_variable_scope?: string
-  _postman_exported_at?: string
-  _postman_exported_using?: string
-}
-
-// ─── Postman Import ─────────────────────────────────────────
-
-// ─── Postman / Insomnia script helpers ─────────────────────
+// ─── Insomnia script helper ────────────────────────────────
 
 /**
  * Insomnia after-response / pre-request scripts are stored VERBATIM — no
@@ -1629,1025 +1636,6 @@ interface PostmanEnvironment {
  */
 export function normalizeInsomniaScript(script: string): string {
   return script ?? ''
-}
-
-/** Pull pre/post scripts from a Postman item.event[] array. */
-export function extractPostmanEventScripts(events: PostmanEvent[] | undefined): {
-  preScript?: string
-  postScript?: string
-} {
-  if (!events) return {}
-  const out: { preScript?: string; postScript?: string } = {}
-  for (const ev of events) {
-    const exec = ev.script?.exec
-    if (!exec) continue
-    const text = Array.isArray(exec) ? exec.join('\n') : exec
-    if (ev.listen === 'prerequest') out.preScript = text
-    else if (ev.listen === 'test') out.postScript = text
-  }
-  return out
-}
-
-// ─── Postman helpers ────────────────────────────────────────
-
-/** Postman 2.x auth field accessor — handles both array-of-{key,value}
- * and flat-object representations. */
-function readAuthField(src: PostmanAuth[keyof PostmanAuth] | undefined, key: string): string {
-  if (!src) return ''
-  if (Array.isArray(src)) {
-    return (src.find((p) => p.key === key)?.value as string) ?? ''
-  }
-  if (typeof src === 'object') {
-    const v = (src as Record<string, unknown>)[key]
-    return typeof v === 'string' ? v : ''
-  }
-  return ''
-}
-
-function genKvId(): string {
-  return Math.random().toString(36).slice(2, 10)
-}
-
-// ─── x-apinizer extension (Apinizer ↔ Testnizer test interop, contract v1.0) ──
-//
-// Postman v2.1 preserves unknown custom keys, so Apinizer ships its extra test
-// fidelity under an `x-apinizer` key on each item — and reads it back on the
-// return trip. We READ it on import (additive; a collection without the key
-// still imports as plain Postman) and WRITE it on export so the round-trip
-// through Testnizer is lossless for the four assertion kinds Apinizer can carry
-// (STATUS_CODE / BODY / JSONPATH / XPATH). Testnizer-only assertion types stay
-// in Testnizer's own `assertions` JSON and are simply omitted from the
-// extension (contract §4.1). See md_files/testnizer-interop/00-shared-contract.md.
-
-type XApinizerKind = 'STATUS_CODE' | 'BODY' | 'JSONPATH' | 'XPATH'
-
-interface XApinizerAssertion {
-  kind: XApinizerKind
-  expected?: string | number
-  /** JSONPath / XPath expression — only present for *PATH kinds. */
-  path?: string
-}
-
-interface XApinizerExtension {
-  schemaVersion?: string
-  source?: string
-  /** Raw-body sub-type Postman can't carry natively: JSON / XML / TEXT / HTML. */
-  bodyRowType?: string
-  timeoutSeconds?: number
-  testType?: string
-  apiType?: string
-  assertions?: XApinizerAssertion[]
-}
-
-/** Minimal Testnizer assertion shape produced/consumed here — mirrors
- *  TestAssertion in renderer types. Kept local to avoid importing renderer
- *  code into the main process (same pattern as runner.handler.ts). */
-interface TestAssertionLike {
-  id: string
-  name: string
-  type: string
-  enabled: boolean
-  expected?: string | number
-  jsonPath?: string
-  xPath?: string
-  headerName?: string
-  rangeMin?: number
-  rangeMax?: number
-}
-
-/**
- * Testnizer row kinds `x-apinizer` restores on import (`xApinizerAssertionsToUi`).
- * Their generated pm.test lines (issue #270) are dropped from the imported test
- * script when the rows come back, or they would run twice.
- */
-const X_APINIZER_RESTORED_KINDS: ReadonlySet<string> = new Set([
-  'status_equals',
-  'body_contains',
-  'body_equals_json',
-  'body_jsonpath',
-  'body_xpath',
-])
-
-/** Major version of the x-apinizer schema this build understands. A collection
- *  tagged with a newer MAJOR falls back to plain Postman (graceful). */
-const X_APINIZER_SCHEMA_MAJOR = 1
-
-/** True when we understand this item's x-apinizer payload. An omitted version is
- *  treated as current; a mismatched MAJOR means ignore-and-fall-back. */
-function xApinizerVersionOk(ext: XApinizerExtension | undefined): boolean {
-  if (!ext) return false
-  const v = ext.schemaVersion
-  if (!v) return true
-  const major = parseInt(String(v).split('.')[0] ?? '', 10)
-  return Number.isFinite(major) && major === X_APINIZER_SCHEMA_MAJOR
-}
-
-/** x-apinizer body row-type (JSON/XML/TEXT/HTML) → Testnizer raw sub-type.
- *  Postman keeps the language in `options.raw.language`, but Apinizer's RAW
- *  export often omits it, collapsing every raw body to plain text — this
- *  recovers the json/xml/html distinction. */
-function apinizerRowTypeToBodyType(rowType: string | undefined): string | undefined {
-  switch ((rowType ?? '').toUpperCase()) {
-    case 'JSON':
-      return 'json'
-    case 'XML':
-      return 'xml'
-    case 'HTML':
-      return 'html'
-    case 'TEXT':
-      return 'text'
-    default:
-      return undefined
-  }
-}
-
-/** Only refine the raw text family — never re-type form-data / urlencoded /
- *  binary / none, which have no row-type. */
-function isRawFamilyBodyType(t: string | undefined): boolean {
-  return t === 'text' || t === 'json' || t === 'xml' || t === 'html' || t === 'raw'
-}
-
-function looksLikeJson(s: string): boolean {
-  const t = s.trim()
-  if (!t || !/^[[{]/.test(t)) return false
-  try {
-    JSON.parse(t)
-    return true
-  } catch {
-    return false
-  }
-}
-
-function truncateLabel(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + '…' : s
-}
-
-/** x-apinizer.assertions[] → Testnizer TestAssertion[]. Unknown kinds are
- *  skipped with a warning (no silent drop). This is the *primary* assertion
- *  source when present — more reliable than parsing the Postman test script. */
-function xApinizerAssertionsToUi(
-  assertions: XApinizerAssertion[] | undefined,
-  warnings: string[],
-): TestAssertionLike[] {
-  if (!Array.isArray(assertions)) return []
-  const out: TestAssertionLike[] = []
-  for (const a of assertions) {
-    const expected = a.expected
-    switch (a.kind) {
-      case 'STATUS_CODE':
-        out.push({
-          id: genKvId(),
-          name: `Status code is ${expected ?? ''}`.trim(),
-          type: 'status_equals',
-          enabled: true,
-          expected,
-        })
-        break
-      case 'BODY': {
-        // Apinizer's BODY assertion is a full-body match. Prefer a JSON deep
-        // equal when the expected value parses as JSON; otherwise fall back to
-        // a substring `contains` (best-effort, per contract §4).
-        const raw = typeof expected === 'string' ? expected : JSON.stringify(expected ?? '')
-        const isJson = looksLikeJson(raw)
-        out.push({
-          id: genKvId(),
-          name: isJson ? 'Body equals JSON' : `Body contains "${truncateLabel(raw, 32)}"`,
-          type: isJson ? 'body_equals_json' : 'body_contains',
-          enabled: true,
-          expected: raw,
-        })
-        break
-      }
-      case 'JSONPATH':
-        out.push({
-          id: genKvId(),
-          name: `JSONPath ${a.path ?? '$'} equals ${expected ?? ''}`.trim(),
-          type: 'body_jsonpath',
-          enabled: true,
-          jsonPath: a.path ?? '$',
-          expected,
-        })
-        break
-      case 'XPATH':
-        out.push({
-          id: genKvId(),
-          name: `XPath ${a.path ?? ''} equals ${expected ?? ''}`.trim(),
-          type: 'body_xpath',
-          enabled: true,
-          xPath: a.path ?? '',
-          expected,
-        })
-        break
-      default:
-        warnings.push(
-          `Skipped unknown x-apinizer assertion kind "${String((a as XApinizerAssertion).kind)}"`,
-        )
-    }
-  }
-  return out
-}
-
-/** Testnizer body sub-type → x-apinizer bodyRowType. Only the raw family maps. */
-function bodyTypeToApinizerRowType(bodyType: string | undefined): string | undefined {
-  switch ((bodyType ?? '').toLowerCase()) {
-    case 'json':
-      return 'JSON'
-    case 'xml':
-      return 'XML'
-    case 'html':
-      return 'HTML'
-    case 'text':
-    case 'raw':
-      return 'TEXT'
-    default:
-      return undefined
-  }
-}
-
-/** Testnizer TestAssertion[] → x-apinizer.assertions[], keeping only the four
- *  kinds Apinizer's boolean-flag model can carry. Unmappable types
- *  (status_in_range, header_*, response_time/size_under, pm_script) are dropped
- *  from the extension — they stay in Testnizer's own `assertions` JSON for a
- *  Testnizer→Testnizer round-trip (contract §4.1). */
-function assertionsToXApinizer(assertions: TestAssertionLike[]): XApinizerAssertion[] {
-  const out: XApinizerAssertion[] = []
-  for (const a of assertions) {
-    switch (a.type) {
-      case 'status_equals':
-        out.push({ kind: 'STATUS_CODE', expected: a.expected })
-        break
-      case 'body_equals_json':
-      case 'body_contains':
-        out.push({ kind: 'BODY', expected: a.expected })
-        break
-      case 'body_jsonpath':
-        out.push({ kind: 'JSONPATH', path: a.jsonPath ?? '$', expected: a.expected })
-        break
-      case 'body_xpath':
-        out.push({ kind: 'XPATH', path: a.xPath ?? '', expected: a.expected })
-        break
-      default:
-        // Unmappable — intentionally skipped (kept in Testnizer's own channel).
-        break
-    }
-  }
-  return out
-}
-
-/**
- * Derive Apinizer's `apiType` (EnumApiType) + `testType`
- * (EnumApiTestConsoleTestType) from the Testnizer protocol.
- *
- * We DERIVE rather than preserve an original value because a test imported into
- * Testnizer loses its Apinizer proxy binding (contract §0/§5.6 — apiProxyID etc.
- * are null), so it is a standalone test regardless of where it came from — the
- * original `PROXY` testType would be wrong to carry back. Deriving gives both
- * natively-authored and round-tripped tests a correct, proxy-free value:
- *   - apiType picks the closest EnumApiType (REST/SOAP/GRPC/WEBSOCKET/AI).
- *   - testType picks a standalone test-console kind: RESOURCE for the REST
- *     family (isRest), WSDL for SOAP (isSoap), API (neutral) for the rest.
- */
-function protocolToApinizerTypes(protocol: string | undefined): {
-  apiType: string
-  testType: string
-} {
-  switch ((protocol ?? 'http').toLowerCase()) {
-    case 'soap':
-      return { apiType: 'SOAP', testType: 'WSDL' }
-    case 'grpc':
-      return { apiType: 'GRPC', testType: 'API' }
-    case 'websocket':
-    case 'socketio':
-      return { apiType: 'WEBSOCKET', testType: 'API' }
-    case 'ai':
-      return { apiType: 'AI', testType: 'API' }
-    default:
-      // http / graphql / sse / mcp — all HTTP/REST-family.
-      return { apiType: 'REST', testType: 'RESOURCE' }
-  }
-}
-
-/** Reconstruct a full URL from a Postman url object or string. Preserves
- * `{{variables}}` and template placeholders as-is — never URL-decodes them. */
-export function reconstructPostmanUrl(url: PostmanUrl | string | undefined): string {
-  if (!url) return ''
-  if (typeof url === 'string') return url
-  if (url.raw) return url.raw
-
-  const protocol = url.protocol ?? 'https'
-  const host = Array.isArray(url.host) ? url.host.join('.') : (url.host ?? '')
-  const port = url.port ? `:${url.port}` : ''
-  const pathParts = Array.isArray(url.path)
-    ? url.path.map((p) => (typeof p === 'string' ? p : (p.value ?? '')))
-    : url.path
-      ? [String(url.path)]
-      : []
-  const path = pathParts.length > 0 ? '/' + pathParts.join('/') : ''
-  return `${protocol}://${host}${port}${path}`
-}
-
-/** Best-effort path extraction for the endpoints.path column. Falls back to
- * the raw URL if the URL contains template variables that break URL parsing. */
-function extractPath(url: string): string {
-  if (!url) return '/'
-  // If the URL contains {{vars}} we can't reliably parse it — use a safe
-  // substitution then strip back the placeholder.
-  const PLACEHOLDER = '__VAR__'
-  const safe = url.replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
-  try {
-    const parsed = new URL(safe)
-    let pathname = parsed.pathname || '/'
-    pathname = pathname.replace(new RegExp(PLACEHOLDER, 'g'), '*')
-    return pathname
-  } catch {
-    // Relative URL or `{{baseUrl}}/path` form — strip protocol/host best-effort.
-    const m = url.match(/(?:https?:\/\/[^/]+)?(\/.*)$/)
-    return m?.[1] ?? url
-  }
-}
-
-/** Map Postman body modes onto the renderer's RequestBody shape. */
-export function mapPostmanBodyToUi(body: PostmanBody | undefined): {
-  type: string
-  content?: string
-  formData?: Array<{
-    id: string
-    key: string
-    value: string
-    enabled: boolean
-    type?: 'text' | 'file'
-    filePath?: string
-  }>
-  urlEncoded?: Array<{ id: string; key: string; value: string; enabled: boolean }>
-} {
-  if (!body || !body.mode) return { type: 'none' }
-
-  switch (body.mode) {
-    case 'raw': {
-      const lang = body.options?.raw?.language ?? 'text'
-      const map: Record<string, string> = {
-        json: 'json',
-        xml: 'xml',
-        html: 'html',
-        javascript: 'javascript',
-        text: 'text',
-        graphql: 'json',
-      }
-      return { type: map[lang] ?? 'text', content: body.raw ?? '' }
-    }
-    case 'graphql': {
-      const payload = body.graphql
-        ? JSON.stringify(
-            {
-              query: body.graphql.query ?? '',
-              variables: tryParseJson(body.graphql.variables) ?? {},
-            },
-            null,
-            2,
-          )
-        : ''
-      return { type: 'json', content: payload }
-    }
-    case 'formdata': {
-      const formData = (body.formdata ?? []).map((fd) => {
-        const isFile = (fd.type ?? '').toLowerCase() === 'file'
-        const filePath = Array.isArray(fd.src) ? fd.src[0] : fd.src
-        if (isFile) {
-          // For file fields the human-readable filename goes in `value`
-          // and the path the main process opens lives in `filePath`.
-          const fileName = filePath ? (filePath.split(/[\\/]/).pop() ?? filePath) : ''
-          return {
-            id: genKvId(),
-            key: fd.key ?? '',
-            value: fileName,
-            enabled: !fd.disabled,
-            type: 'file' as const,
-            filePath: filePath ?? undefined,
-          }
-        }
-        return {
-          id: genKvId(),
-          key: fd.key ?? '',
-          value: fd.value ?? (Array.isArray(fd.src) ? fd.src.join(',') : (fd.src ?? '')),
-          enabled: !fd.disabled,
-          type: 'text' as const,
-        }
-      })
-      return { type: 'form-data', formData }
-    }
-    case 'urlencoded': {
-      const urlEncoded = (body.urlencoded ?? []).map((ue) => ({
-        id: genKvId(),
-        key: ue.key ?? '',
-        value: ue.value ?? '',
-        enabled: !ue.disabled,
-      }))
-      return { type: 'urlencoded', urlEncoded }
-    }
-    case 'file':
-      // Binary upload — content path can't survive an export, so we record the
-      // hint. The user re-attaches the file in the UI.
-      return { type: 'binary', content: body.file?.src ?? '' }
-    default:
-      return { type: 'none' }
-  }
-}
-
-function tryParseJson(s: string | undefined): unknown {
-  if (!s) return null
-  try {
-    return JSON.parse(s)
-  } catch {
-    return null
-  }
-}
-
-/** Map Postman auth onto the renderer's AuthConfig shape. */
-export function mapPostmanAuthToUi(auth: PostmanAuth | undefined): Record<string, unknown> | null {
-  if (!auth || !auth.type) return null
-
-  const t = auth.type.toLowerCase()
-  switch (t) {
-    case 'noauth':
-      return { type: 'none' }
-    case 'basic':
-      return {
-        type: 'basic',
-        basic: {
-          username: readAuthField(auth.basic, 'username'),
-          password: readAuthField(auth.basic, 'password'),
-        },
-      }
-    case 'bearer':
-      return {
-        type: 'bearer',
-        bearer: { token: readAuthField(auth.bearer, 'token'), prefix: 'Bearer' },
-      }
-    case 'apikey': {
-      const inLocation = readAuthField(auth.apikey, 'in') || 'header'
-      return {
-        type: 'api-key',
-        apiKey: {
-          key: readAuthField(auth.apikey, 'key'),
-          value: readAuthField(auth.apikey, 'value'),
-          in: inLocation === 'query' ? 'query' : 'header',
-        },
-      }
-    }
-    case 'digest':
-      return {
-        type: 'digest',
-        digest: {
-          username: readAuthField(auth.digest, 'username'),
-          password: readAuthField(auth.digest, 'password'),
-        },
-      }
-    case 'ntlm':
-      return {
-        type: 'ntlm',
-        ntlm: {
-          username: readAuthField(auth.ntlm, 'username'),
-          password: readAuthField(auth.ntlm, 'password'),
-          domain: readAuthField(auth.ntlm, 'domain'),
-          workstation: readAuthField(auth.ntlm, 'workstation'),
-        },
-      }
-    case 'oauth2':
-      // Best-effort — Postman has many flows; we capture token only.
-      return {
-        type: 'oauth2',
-        oauth2: {
-          grantType: 'client_credentials',
-          tokenUrl: readAuthField(auth.oauth2, 'accessTokenUrl'),
-          authUrl: readAuthField(auth.oauth2, 'authUrl'),
-          clientId: readAuthField(auth.oauth2, 'clientId'),
-          clientSecret: readAuthField(auth.oauth2, 'clientSecret'),
-          scope: readAuthField(auth.oauth2, 'scope'),
-          token: readAuthField(auth.oauth2, 'accessToken'),
-        },
-      }
-    default:
-      return { type: 'none' }
-  }
-}
-
-// ─── Postman Import ─────────────────────────────────────────
-
-export async function importPostman(
-  projectId: string,
-  content: string,
-  rootFolderId: string | null = null,
-  /**
-   * `projectScripts`: write the collection-level `event` scripts into the
-   * project's own scripts (APIs import only, issue #270). Off for callers that
-   * use this importer as a parser — the Tests-panel suite import must not
-   * change the project's scripts as a side effect.
-   */
-  opts: { projectScripts?: boolean } = {},
-): Promise<ImportResult> {
-  const warnings: string[] = []
-  let parsed: unknown
-
-  try {
-    parsed = JSON.parse(content)
-  } catch (e) {
-    return {
-      success: false,
-      error: 'Failed to parse Postman collection JSON: ' + (e as Error).message,
-    }
-  }
-
-  const root = parsed as Record<string, unknown>
-
-  // Postman v1 legacy collections — `name` + `requests[]` instead of
-  // `info` + `item[]`. Surface a v1-specific message so the user knows
-  // to re-export as v2.1 rather than getting the generic "wrong file
-  // type" error below.
-  const hasV1Markers =
-    typeof root['name'] === 'string' &&
-    Array.isArray(root['requests']) &&
-    !Array.isArray(root['item'])
-  if (hasV1Markers) {
-    return {
-      success: false,
-      error:
-        'Postman v1 collections are not supported. Re-export the collection from Postman as v2.1 ' +
-        '(Collections → ⋯ → Export → Collection v2.1) and import the resulting file.',
-    }
-  }
-
-  // Reject anything that's not actually a Postman v2.x collection. The
-  // APIs Import flow is collection-only — env / test-suite / mock
-  // exports belong in their own importers. Keep the message generic so
-  // we don't have to enumerate every wrong-file shape (env, test suite,
-  // mock, …) — the importer's job is to verify the file it WAS asked
-  // to load matches the format it was asked to load.
-  const looksLikeCollection =
-    root &&
-    typeof root === 'object' &&
-    typeof (root['info'] as Record<string, unknown> | undefined)?.['name'] === 'string' &&
-    Array.isArray(root['item'])
-  if (!looksLikeCollection) {
-    return {
-      success: false,
-      error: "This file is not a Postman collection. You can't upload this file type from here.",
-    }
-  }
-
-  const collection = parsed as PostmanCollection
-
-  // Accept v2.0 and v2.1 schemas (both live under getpostman.com).
-  const schema = collection.info.schema ?? ''
-  if (schema && !/postman|getpostman/i.test(schema)) {
-    warnings.push(`Unknown collection schema "${schema}" — importing best-effort.`)
-  }
-
-  const db = getDb()
-  const now = Date.now()
-  let endpointCount = 0
-  let folderCount = 0
-  const endpointIds: string[] = []
-  const suggestedEnvVars: Record<string, string> = {}
-
-  if (collection.variable) {
-    for (const v of collection.variable) {
-      if (v.key) suggestedEnvVars[v.key] = v.value ?? ''
-    }
-  }
-
-  // Persist collection-level variables to a project-scoped environment so that
-  // the export round-trip is lossless. Postman's `collection.variable[]` has no
-  // first-class equivalent in our schema — the closest analogue is a per-project
-  // environment. We create (or reuse) one named after the collection, stamp it
-  // active, and write each variable as a row. On export we read from the active
-  // environment for this project.
-  if (collection.variable && collection.variable.length > 0) {
-    const projectRow = db
-      .prepare('SELECT workspace_id FROM projects WHERE id = ?')
-      .get(projectId) as { workspace_id: string } | undefined
-    if (projectRow) {
-      const envName = `${collection.info.name} (imported)`
-      // Reuse existing env with the same name if we've already imported this
-      // collection — avoids exploding env count on re-imports.
-      const envRow = db
-        .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-        .get(projectId, envName) as { id: string } | undefined
-      let envId: string
-      // Secret values this machine holds for the env being replaced (issue
-      // #177): our export writes them as '' — a re-import must not blank them.
-      let localSecrets: LocalSecretsByKey = new Map()
-      if (envRow) {
-        envId = envRow.id
-        localSecrets = readEnvSecretsByKey(db, envId)
-        db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
-      } else {
-        envId = randomUUID()
-        // If the project has no active env yet, mark this one active.
-        const hasActive = db
-          .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
-          .get(projectId) as { x: number } | undefined
-        db.prepare(
-          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).run(envId, projectRow.workspace_id, projectId, envName, hasActive ? 0 : 1, now, now)
-      }
-      const insertVar = db.prepare(
-        `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      for (const v of collection.variable) {
-        if (!v.key) continue
-        // `type: "secret"` (Postman, and our own export — issue #177) keeps
-        // the variable masked in the env modal.
-        const isSecret = v.type === 'secret' ? 1 : 0
-        const kept = keepLocalSecretByKey(
-          {
-            key: v.key,
-            secret: isSecret === 1,
-            value: v.value ?? '',
-            initial_value: v.value ?? null,
-          },
-          localSecrets,
-        )
-        // Sealed (issue #239): a kept local value is already ciphertext.
-        insertVar.run(
-          randomUUID(),
-          envId,
-          v.key,
-          storedVariableValue(kept.value, isSecret === 1),
-          null,
-          1,
-          isSecret,
-          storedVariableValue(kept.initial_value, isSecret === 1),
-        )
-      }
-    }
-  }
-
-  function processItems(
-    items: PostmanItem[],
-    parentFolderId: string | null,
-    inheritedAuth: PostmanAuth | undefined,
-  ): void {
-    for (const item of items) {
-      const isFolder = Array.isArray(item.item) && !item.request
-      if (isFolder) {
-        const folderId = randomUUID()
-        // Folder-level cascade metadata — mirror the Insomnia v5 importer so a
-        // Postman "Setup folder → token pre-request script → Bearer inherit"
-        // pattern survives import. Without persisting these, the folder's
-        // scripts/auth were dropped, the suite snapshot copied NULLs into
-        // test_suite_folders, and the run lost the token step → 401 (the exact
-        // parity gap Insomnia already closed).
-        const folderScripts = extractPostmanEventScripts(item.event)
-        const folderAuthUi = mapPostmanAuthToUi(item.auth)
-        db.prepare(
-          `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        ).run(
-          folderId,
-          projectId,
-          parentFolderId,
-          item.name || 'Folder',
-          folderCount,
-          folderAuthUi ? JSON.stringify(folderAuthUi) : null,
-          folderScripts.preScript ?? null,
-          folderScripts.postScript ?? null,
-        )
-        folderCount++
-        // A folder's own auth also overrides the inherited one for its whole
-        // subtree on the API-tree send path (which bakes auth onto each child
-        // request); absent a block, inheritance flows straight through.
-        const childAuth = item.auth ?? inheritedAuth
-        processItems(item.item ?? [], folderId, childAuth)
-        continue
-      }
-
-      if (!item.request) {
-        warnings.push(`Skipped item "${item.name ?? '(unnamed)'}" — no request body`)
-        continue
-      }
-
-      const req = item.request
-      const method = (req.method ?? 'GET').toUpperCase()
-      const url = reconstructPostmanUrl(req.url)
-      const path = extractPath(url)
-
-      // Skip Postman placeholder items that have neither a URL nor a name —
-      // those show up after some Postman collection-builder operations and
-      // surfaced as the stray "GET New Request" in v1.3.1 B16. We're
-      // conservative: require BOTH the URL to be empty AND the name to look
-      // like an unedited placeholder, so we don't accidentally drop a real
-      // user-authored request that simply lacks a URL.
-      const looksLikePlaceholder =
-        !url.trim() && (!item.name || /^new request$/i.test(item.name.trim()))
-      if (looksLikePlaceholder) {
-        warnings.push(`Skipped empty placeholder item "${item.name ?? '(unnamed)'}"`)
-        continue
-      }
-
-      // Headers — UI KeyValuePair[]
-      const headers = (req.header ?? []).map((h) => ({
-        id: genKvId(),
-        key: h.key ?? '',
-        value: h.value ?? '',
-        description: h.description,
-        enabled: !h.disabled,
-      }))
-
-      // Query params — UI KeyValuePair[]
-      const params =
-        typeof req.url === 'object' && Array.isArray(req.url?.query)
-          ? req.url!.query!.map((q) => ({
-              id: genKvId(),
-              key: q.key ?? '',
-              value: q.value ?? '',
-              description: q.description,
-              enabled: !q.disabled,
-            }))
-          : []
-
-      const body = mapPostmanBodyToUi(req.body)
-      // A request with no auth inherits the nearest ancestor's (folder →
-      // collection root); an explicit block on the request (incl. `noauth`)
-      // overrides. Previously only the collection root was inherited, so an
-      // auth set on a folder never reached its child requests.
-      const auth = mapPostmanAuthToUi(req.auth ?? inheritedAuth)
-
-      // Pull pre-request + test scripts from item.event[]
-      const { preScript, postScript } = extractPostmanEventScripts(item.event)
-
-      const requestSchema: Record<string, unknown> = {
-        url,
-        method,
-        params,
-        headers,
-        body,
-      }
-      if (auth) requestSchema.auth = auth
-      if (preScript) requestSchema.preScript = preScript
-      if (postScript) requestSchema.postScript = postScript
-
-      // ── Apinizer interop: fold x-apinizer fidelity back in (additive) ──
-      // Structured assertions from the extension are the primary source (more
-      // reliable than re-parsing the Postman test script); the raw-body
-      // sub-type and timeout that Postman can't carry are recovered too. Absent
-      // or unknown-version extensions leave the plain-Postman import untouched.
-      const xa = item['x-apinizer']
-      if (xa && xApinizerVersionOk(xa)) {
-        const xaAssertions = xApinizerAssertionsToUi(xa.assertions, warnings)
-        if (xaAssertions.length > 0) {
-          requestSchema.assertions = xaAssertions
-          // Our own export (issue #270) also wrote these rows as generated
-          // pm.test code — keep only the tests x-apinizer does not restore.
-          if (typeof requestSchema.postScript === 'string') {
-            const kept = stripExportedAssertions(
-              requestSchema.postScript,
-              X_APINIZER_RESTORED_KINDS,
-            )
-            if (kept) requestSchema.postScript = kept
-            else delete requestSchema.postScript
-          }
-        }
-        const refinedBodyType = apinizerRowTypeToBodyType(xa.bodyRowType)
-        if (refinedBodyType && isRawFamilyBodyType(body.type)) {
-          // `body` is the same object stored under requestSchema.body, so
-          // mutating it here updates the persisted schema.
-          body.type = refinedBodyType
-        }
-        // Apinizer carries seconds; Testnizer's one timeout key is the
-        // top-level `timeout` in ms that Send, Ctrl+S and Run all use (issue
-        // #185). `timeoutSeconds` used to be written here and read by nothing.
-        // Apinizer's 0 means "use the default" — left unset (inherit), never
-        // mapped to Testnizer's `timeout: 0` (= no limit).
-        if (
-          typeof xa.timeoutSeconds === 'number' &&
-          Number.isFinite(xa.timeoutSeconds) &&
-          xa.timeoutSeconds > 0
-        ) {
-          requestSchema.timeout = Math.round(xa.timeoutSeconds * 1000)
-        }
-      } else if (xa) {
-        warnings.push(
-          `Ignored x-apinizer extension with unsupported schemaVersion "${
-            xa.schemaVersion ?? '(none)'
-          }" on "${item.name ?? '(unnamed)'}" — imported as plain Postman.`,
-        )
-      }
-
-      const endpointId = randomUUID()
-      db.prepare(
-        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        endpointId,
-        projectId,
-        parentFolderId,
-        item.name || `${method} ${path}`,
-        req.description ?? null,
-        'http',
-        method,
-        path || '/',
-        'developing',
-        JSON.stringify(requestSchema),
-        null,
-        endpointCount,
-        now,
-        now,
-      )
-      endpointIds.push(endpointId)
-      endpointCount++
-    }
-  }
-
-  processItems(collection.item, rootFolderId, collection.auth)
-  try {
-    if (opts.projectScripts) importCollectionScripts(projectId, collection, rootFolderId, warnings)
-    else {
-      const { preScript, postScript } = extractPostmanEventScripts(collection.event)
-      if (preScript?.trim() || postScript?.trim())
-        warnings.push('Collection-level scripts were not imported.')
-    }
-  } catch (e) {
-    // Partial import over a hard fail: the requests are already in.
-    warnings.push(`Collection-level scripts were not imported: ${(e as Error).message}`)
-  }
-
-  if (endpointCount === 0 && folderCount === 0) {
-    warnings.push('No requests or folders found in the Postman collection')
-  }
-
-  return {
-    success: true,
-    collectionId: projectId,
-    endpointCount,
-    folderCount,
-    endpointIds,
-    suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
-    warnings: warnings.length > 0 ? warnings : undefined,
-  }
-}
-
-/**
- * Collection-level `event` scripts → the project's own pre-request / test
- * script (issue #270; the export writes project scripts there). Never
- * overwrites: a project that already has that script keeps it, and an import
- * into a folder leaves the project alone — the script would otherwise start
- * running for every other request of the project. Both cases are reported.
- */
-function importCollectionScripts(
-  projectId: string,
-  collection: PostmanCollection,
-  rootFolderId: string | null,
-  warnings: string[],
-): void {
-  const { preScript, postScript } = extractPostmanEventScripts(collection.event)
-  const incoming: Array<{ key: 'preScript' | 'testScript'; label: string; text?: string }> = [
-    { key: 'preScript', label: 'pre-request', text: preScript },
-    { key: 'testScript', label: 'test', text: postScript },
-  ]
-  const present = incoming.filter((s) => s.text && s.text.trim())
-  if (present.length === 0) return
-  if (rootFolderId) {
-    for (const s of present)
-      warnings.push(
-        `The collection-level ${s.label} script was not imported: the collection went into a folder. ` +
-          'Add it in that folder’s settings if its requests need it.',
-      )
-    return
-  }
-  const current = readSharedProjectSettings(projectId) ?? {}
-  const next: Record<string, unknown> = {}
-  for (const s of present) {
-    const existing = current[s.key]
-    if (typeof existing === 'string' && existing.trim()) {
-      warnings.push(
-        `The collection-level ${s.label} script was not imported: this project already has one.`,
-      )
-    } else {
-      next[s.key] = s.text
-    }
-  }
-  if (Object.keys(next).length > 0) writeSharedProjectSettings(projectId, next)
-}
-
-// ─── Postman Environment Import ─────────────────────────────
-
-/** The secret rows an environment holds right now, by key (read before a re-import's DELETE). */
-function readEnvSecretsByKey(db: ReturnType<typeof getDb>, envId: string): LocalSecretsByKey {
-  return localSecretsByKey(
-    db
-      .prepare(
-        'SELECT key, value, initial_value, secret FROM environment_variables WHERE environment_id = ? AND secret = 1',
-      )
-      .all(envId) as Record<string, unknown>[],
-  )
-}
-
-/**
- * Import a standalone Postman environment export file. Creates (or replaces)
- * a project-scoped environment whose name matches the export's `name` field.
- * Re-importing the same environment is idempotent — existing variables are
- * dropped and re-inserted so renames in Postman don't accumulate dead rows.
- *
- * Returns an ImportResult with `endpointCount: 0` (no endpoints) — callers
- * detect environment imports by the `environmentId` field, which only the
- * env importer populates.
- */
-export async function importPostmanEnvironment(
-  projectId: string,
-  env: PostmanEnvironment,
-): Promise<ImportResult & { environmentId?: string; environmentName?: string }> {
-  const warnings: string[] = []
-
-  if (!env.name || typeof env.name !== 'string') {
-    return {
-      success: false,
-      error: 'Postman environment file is missing `name`',
-    }
-  }
-
-  const values = Array.isArray(env.values) ? env.values : []
-  const db = getDb()
-  const now = Date.now()
-
-  const projectRow = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
-    | { workspace_id: string }
-    | undefined
-  if (!projectRow) {
-    return { success: false, error: 'Project not found: ' + projectId }
-  }
-
-  // Reuse the env when a row with the same name already exists in this project —
-  // Postman's UI never shows duplicate env names so users expect a re-import to
-  // overwrite. Variables are wiped before reinsert (no merge).
-  const existing = db
-    .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-    .get(projectId, env.name) as { id: string } | undefined
-  let envId: string
-  // Secret values this machine holds for the env being replaced (issue #177):
-  // the environment export writes them as '' — a re-import must not blank them.
-  let localSecrets: LocalSecretsByKey = new Map()
-  if (existing) {
-    envId = existing.id
-    localSecrets = readEnvSecretsByKey(db, envId)
-    db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
-  } else {
-    envId = randomUUID()
-    // First env on the project becomes active automatically — matches the
-    // collection variable importer's behaviour and avoids a "select env"
-    // chore right after import.
-    const hasActive = db
-      .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
-      .get(projectId) as { x: number } | undefined
-    db.prepare(
-      `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    ).run(envId, projectRow.workspace_id, projectId, env.name, hasActive ? 0 : 1, now, now)
-  }
-
-  const insertVar = db.prepare(
-    `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  )
-  let varCount = 0
-  for (const v of values) {
-    if (!v || typeof v.key !== 'string' || !v.key) continue
-    // Postman flags secret variables with type "secret"; mirror that so the
-    // env modal masks them. Default enabled=true matches Postman's omitted-flag
-    // convention.
-    const isSecret = v.type === 'secret' ? 1 : 0
-    const isEnabled = v.enabled === false ? 0 : 1
-    const kept = keepLocalSecretByKey(
-      { key: v.key, secret: isSecret === 1, value: v.value ?? '', initial_value: v.value ?? null },
-      localSecrets,
-    )
-    // Sealed (issue #239): a kept local value is already ciphertext.
-    insertVar.run(
-      randomUUID(),
-      envId,
-      v.key,
-      storedVariableValue(kept.value, isSecret === 1),
-      null,
-      isEnabled,
-      isSecret,
-      storedVariableValue(kept.initial_value, isSecret === 1),
-    )
-    varCount++
-  }
-
-  if (varCount === 0) {
-    warnings.push('Postman environment had no variables — created an empty environment.')
-  }
-
-  return {
-    success: true,
-    environmentId: envId,
-    environmentName: env.name,
-    endpointCount: 0,
-    folderCount: 0,
-    warnings: warnings.length > 0 ? warnings : undefined,
-  }
 }
 
 // ─── Postman Export ─────────────────────────────────────────
@@ -2698,7 +1686,11 @@ interface UiRequestSchema {
   openApi?: OpenApiRoundtripMeta
 }
 
-function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): PostmanUrl {
+function buildPostmanUrl(
+  rawUrl: string,
+  params: UiKeyValuePair[] = [],
+  pathVariables: readonly PathVariableLike[] = [],
+): PostmanUrl {
   const PLACEHOLDER = '__VAR__'
   const safe = (rawUrl || '').replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
   let parsed: URL | null = null
@@ -2726,6 +1718,15 @@ function buildPostmanUrl(rawUrl: string, params: UiKeyValuePair[] = []): Postman
       value: p.value,
       description: p.description,
       disabled: p.enabled === false ? true : undefined,
+    }))
+  }
+
+  // `:name` path variable values (issue #276) — Postman's `url.variable[]`.
+  if (pathVariables.length > 0) {
+    result.variable = pathVariables.map((v) => ({
+      key: v.key,
+      value: v.value,
+      ...(v.description ? { description: v.description } : {}),
     }))
   }
 
@@ -2872,8 +1873,16 @@ function authToPostman(auth: UiRequestSchema['auth']): PostmanAuth | undefined {
         ],
       }
     }
-    default:
-      return undefined
+    default: {
+      // AWS Signature, Hawk (issue #277): the shared attribute writer, the
+      // inverse of the importer's mapping.
+      const parts = authToPostmanParts(auth)
+      if (!parts || parts.type === 'noauth' || parts.type === 'inherit') return undefined
+      return {
+        type: parts.type,
+        [parts.type]: parts.attrs.map((a) => ({ key: a.key, value: a.value, type: 'string' })),
+      }
+    }
   }
 }
 
@@ -2909,6 +1918,8 @@ interface ExportEndpointRow {
   protocol?: string | null
   /** OpenAPI export only — the endpoint's stored response schemas. */
   response_schemas?: string | null
+  /** Which table the row comes from — the owner type of its saved examples. */
+  owner_type?: 'endpoint' | 'saved_request' | 'test_suite_item'
 }
 
 /** A `saved_requests` row (Ctrl+S) as the collection exports read it. */
@@ -3044,6 +2055,7 @@ function savedRequestToExportRow(row: SavedRequestExportRow): ExportEndpointRow 
     request_schema: JSON.stringify(schema),
     protocol: row.protocol,
     sort_order: row.sort_order,
+    owner_type: 'saved_request',
   }
 }
 
@@ -3065,9 +2077,10 @@ function loadProjectExportRows(
   const saved = db
     .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
     .all(projectId) as SavedRequestExportRow[]
-  return [...endpoints, ...saved.map(savedRequestToExportRow)].sort(
-    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0),
-  )
+  return [
+    ...endpoints.map((e) => ({ ...e, owner_type: 'endpoint' as const })),
+    ...saved.map(savedRequestToExportRow),
+  ].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
 }
 
 /**
@@ -3201,6 +2214,88 @@ function collectPostmanVariables(
   )
 }
 
+/** Request settings (issue #185) → `protocolProfileBehavior` (issue #277); undefined when none is set. */
+function ppbFromSettings(schema: UiRequestSchema): Record<string, unknown> | undefined {
+  const s = readRequestSettings(schema)
+  const out: Record<string, unknown> = {}
+  if (s.followRedirects !== undefined) out.followRedirects = s.followRedirects
+  if (s.maxRedirects !== undefined) out.maxRedirects = s.maxRedirects
+  if (s.sslVerification !== undefined) out.strictSSL = s.sslVerification
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/** `_postman_previewlanguage` of an example from its Content-Type. */
+function previewLanguage(headers: Record<string, string>): string {
+  const ct = (
+    Object.entries(headers).find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? ''
+  ).toLowerCase()
+  if (ct.includes('json')) return 'json'
+  if (ct.includes('xml')) return 'xml'
+  if (ct.includes('html')) return 'html'
+  if (ct.includes('javascript')) return 'javascript'
+  return 'text'
+}
+
+/**
+ * Saved examples of one row (`saved_responses`) → v2.1 `response[]` with the
+ * example's own request as `originalRequest` (issue #277). The importer maps
+ * `response[]` back to saved examples (issue #276).
+ */
+function postmanResponsesOf(
+  db: ReturnType<typeof getDb>,
+  ep: ExportEndpointRow,
+  itemRequest: PostmanRequest,
+): PostmanResponse[] {
+  if (!ep.owner_type) return []
+  const out: PostmanResponse[] = []
+  for (const e of loadExamples(db, ep.owner_type, ep.id)) {
+    const r = e.response as {
+      status?: number
+      statusText?: string
+      headers?: Record<string, unknown>
+      body?: unknown
+      timing?: { total?: number }
+    }
+    const headers: Record<string, string> = {}
+    if (r.headers && typeof r.headers === 'object') {
+      for (const [k, v] of Object.entries(r.headers)) headers[k] = v == null ? '' : String(v)
+    }
+    const c = (e.configured ?? {}) as {
+      method?: string
+      url?: string
+      params?: UiKeyValuePair[]
+      headers?: UiKeyValuePair[]
+      body?: UiRequestSchema['body']
+    }
+    const originalRequest: PostmanRequest = e.configured
+      ? {
+          method: (c.method || e.method || itemRequest.method || 'GET').toUpperCase(),
+          header: (c.headers ?? []).map((h) => ({
+            key: h.key,
+            value: h.value,
+            disabled: h.enabled === false ? true : undefined,
+          })),
+          url: buildPostmanUrl(c.url || e.url || '', c.params ?? []),
+          ...(bodyToPostman(c.body) ? { body: bodyToPostman(c.body) } : {}),
+        }
+      : itemRequest
+    const code = e.statusCode ?? (typeof r.status === 'number' ? r.status : undefined)
+    out.push({
+      name: e.name,
+      originalRequest,
+      status: r.statusText ?? '',
+      code,
+      header: Object.entries(headers).map(([key, value]) => ({ key, value })),
+      body: typeof r.body === 'string' ? r.body : r.body == null ? '' : JSON.stringify(r.body),
+      _postman_previewlanguage: previewLanguage(headers),
+      ...(typeof r.timing?.total === 'number' && r.timing.total > 0
+        ? { responseTime: r.timing.total }
+        : {}),
+    })
+  }
+  return out
+}
+
 /** Build a Postman v2.1 collection from folder + endpoint rows (shared by project & suite export). */
 function buildPostmanCollection(
   name: string,
@@ -3210,6 +2305,14 @@ function buildPostmanCollection(
   variables?: PostmanVariable[],
   /** Project-level pre/test scripts → collection-level `event` (issue #270). */
   collectionScripts?: ProjectScripts,
+  /**
+   * Issue #277: `info._postman_id` (stable — the project / suite id) and
+   * the saved examples of each row as `response[]`.
+   */
+  extra: {
+    postmanId?: string
+    responsesOf?: (ep: ExportEndpointRow, request: PostmanRequest) => PostmanResponse[]
+  } = {},
 ): PostmanCollection {
   type PostmanFolderNode = PostmanItem & {
     auth?: ReturnType<typeof authToPostman>
@@ -3256,25 +2359,27 @@ function buildPostmanCollection(
     }
     const url = schema.url ?? ep.path
 
-    const item: PostmanItem = {
-      name: ep.name,
-      request: {
-        method,
-        header: (schema.headers ?? []).map((h) => ({
-          key: h.key,
-          value: h.value,
-          description: h.description,
-          disabled: h.enabled === false ? true : undefined,
-        })),
-        url: buildPostmanUrl(url, schema.params),
-        description: ep.description ?? undefined,
-      },
+    const request: PostmanRequest = {
+      method,
+      header: (schema.headers ?? []).map((h) => ({
+        key: h.key,
+        value: h.value,
+        description: h.description,
+        disabled: h.enabled === false ? true : undefined,
+      })),
+      url: buildPostmanUrl(url, schema.params, readPathVariables(schema)),
+      description: ep.description ?? undefined,
     }
+    const item: PostmanItem = { name: ep.name, request }
 
     const body = bodyToPostman(schema.body)
-    if (body) item.request!.body = body
+    if (body) request.body = body
     const auth = authToPostman(schema.auth)
-    if (auth) item.request!.auth = auth
+    if (auth) request.auth = auth
+    // An explicit "No auth" must survive the trip: without a block the
+    // request would inherit the folder / collection auth on re-import
+    // (issue #276 — imports now keep inheritance instead of baking).
+    else if (schema.auth?.type === 'none') request.auth = { type: 'noauth' }
 
     const itemAssertions = exportRowAssertions(ep, schema)
 
@@ -3288,6 +2393,13 @@ function buildPostmanCollection(
     if (events.length > 0) {
       ;(item as PostmanItem & { event?: PostmanScriptEvent[] }).event = events
     }
+
+    // Request settings → protocolProfileBehavior; saved examples → response[]
+    // (issue #277) — both read back by the importer (issue #276).
+    const ppb = ppbFromSettings(schema)
+    if (ppb) item.protocolProfileBehavior = ppb
+    const responses = extra.responsesOf?.(ep, request) ?? []
+    if (responses.length > 0) item.response = responses
 
     // ── Apinizer interop: attach x-apinizer when there's carryable fidelity ──
     // We only attach the extension when there's something Apinizer can
@@ -3326,6 +2438,7 @@ function buildPostmanCollection(
 
   const collection: PostmanCollection = {
     info: {
+      ...(extra.postmanId ? { _postman_id: extra.postmanId } : {}),
       name,
       description: description ?? undefined,
       schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
@@ -3370,8 +2483,44 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
     endpoints,
     collectPostmanVariables(db, projectId),
     readProjectScripts(projectId),
+    {
+      postmanId: projectId,
+      responsesOf: (ep, request) => postmanResponsesOf(db, ep, request),
+    },
   )
+  const projectAuth = readProjectAuthForExport(projectId)
+  if (projectAuth) collection.auth = projectAuth
   return { content: JSON.stringify(collection, null, 2), skipped }
+}
+
+/**
+ * Project auth → collection-level `auth` (issue #276: a Postman import keeps
+ * the collection auth on the project when it can, so the export must give it
+ * back or the inheriting requests lose their auth). Literal credentials are
+ * blanked — project-auth credentials never leave the machine (issue #177
+ * rule 5, same filter as the project file); `{{variable}}` references travel.
+ */
+/**
+ * The project auth as an AuthConfig, literal credentials blanked (#177 rule
+ * 5) — what a file export may carry. `null` when the project sets none.
+ */
+function readProjectAuthConfig(projectId: string): AuthConfigLike | null {
+  let raw: unknown
+  try {
+    raw = readSharedProjectSettings(projectId)
+  } catch {
+    return null
+  }
+  if (!raw) return null
+  const stripped = stripProjectSharedSettings(JSON.stringify(raw))
+  const settings =
+    typeof stripped === 'string' ? (JSON.parse(stripped) as Record<string, unknown>) : null
+  return projectAuthToAuthConfig(settings?.auth as StoredProjectAuth | undefined)
+}
+
+function readProjectAuthForExport(projectId: string): PostmanAuth | undefined {
+  const config = readProjectAuthConfig(projectId)
+  return config ? authToPostman(config as UiRequestSchema['auth']) : undefined
 }
 
 /** The Postman v2.1 collection text of a project (see `buildPostmanProjectExport`). */
@@ -3434,6 +2583,7 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     // x-apinizer export can emit them.
     assertions: it.assertions,
     protocol: it.protocol,
+    owner_type: 'test_suite_item' as const,
   }))
   const { rows, skipped } = partitionExportable(endpoints)
 
@@ -3445,6 +2595,10 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     collectPostmanVariables(db, suite.project_id),
     // A suite Run cascades its project's scripts too.
     readProjectScripts(suite.project_id),
+    {
+      postmanId: suiteId,
+      responsesOf: (ep, request) => postmanResponsesOf(db, ep, request),
+    },
   )
   // Postman runs a collection in array order. The builder lists a level's
   // folders before its requests; a suite runs a level's own requests first,
@@ -3485,104 +2639,94 @@ interface CurlExportRequest {
     type: string
     basic?: { username: string; password: string }
     bearer?: { token: string; prefix?: string }
+    apiKey?: { key: string; value: string; in?: 'header' | 'query' }
   }
   sslVerification?: boolean
   cookies?: string
+  /** `:name` path variable values (issue #276) — substituted into the URL. */
+  pathVariables?: PathVariableLike[]
+  /**
+   * The stored request this is (optional). With it, an `inherit` (or absent)
+   * auth resolves through the folder chain / project like Send and Run.
+   */
+  endpointId?: string
+  savedRequestId?: string
+  testSuiteItemId?: string
+  projectId?: string
+}
+
+/** `export:curl` input with `inherit` auth replaced by the effective one. */
+export async function withEffectiveCurlAuth(
+  request: CurlExportRequest,
+): Promise<CurlExportRequest> {
+  const ref: StoredRequestRef | null = request.endpointId
+    ? { endpointId: request.endpointId }
+    : request.savedRequestId
+      ? { savedRequestId: request.savedRequestId }
+      : request.testSuiteItemId
+        ? { testSuiteItemId: request.testSuiteItemId }
+        : null
+  const inherits = !request.auth || request.auth.type === 'inherit'
+  if (!ref || !inherits) return request
+  const auth = await resolveStoredRequestAuth(
+    ref,
+    request.auth as AuthConfigLike | undefined,
+    request.projectId,
+  )
+  return { ...request, auth: (auth ?? undefined) as CurlExportRequest['auth'] }
 }
 
 // ─── cURL Import ────────────────────────────────────────────
+//
+// The parser lives in `src/shared/curl/` (issue #279) — ONE parser for this
+// importer and the renderer's URL-bar paste (issue #278), in all three shell
+// dialects (bash / Windows CMD / PowerShell). This file only persists what
+// `curlToRequest` returns, in the same row shape the HAR importer writes:
+// `request_schema = { method, url, params?, headers?, body?, auth?, …settings }`
+// (the old importer kept only the pathname in `path` and no `url`, so an
+// imported request opened as `/users/42` and could not be sent).
 
 function importCurl(
   projectId: string,
   curlCommand: string,
   parentFolderId: string | null = null,
 ): ImportResult {
-  const warnings: string[] = []
   const db = getDb()
   const now = Date.now()
 
   // Reject input that obviously isn't a cURL command before parsing —
   // protects against the same wrong-file-type confusion as the Postman /
-  // Insomnia importers (v1.4.6). A real cURL starts with `curl `
-  // (optionally preceded by whitespace, line continuations, or a `$ `
-  // shell prompt). Anything else gets a single generic message.
-  const cleaned = (curlCommand || '').replace(/^\s*\$\s*/, '').trim()
-  if (!/^curl(\s|$)/i.test(cleaned)) {
+  // Insomnia importers (v1.4.6). A real cURL starts with `curl` / `curl.exe`
+  // (optionally after a `$ ` / `PS> ` prompt or PowerShell's `&`). Anything
+  // else gets a single generic message.
+  if (!startsWithCurl(curlCommand || '')) {
     return {
       success: false,
       error: "This is not a cURL command. You can't upload this file type from here.",
     }
   }
 
-  // Parse cURL command
-  const parsed = parseCurlCommand(curlCommand)
-
+  const parsed = parseCurl(curlCommand)
   if (!parsed.url) {
     return { success: false, error: 'No URL found in cURL command' }
   }
+  const req = curlToRequest(parsed, { makeId: randomUUID })
 
   const endpointId = randomUUID()
   let path = ''
   try {
-    path = new URL(parsed.url).pathname
+    path = new URL(req.url).pathname
   } catch {
-    path = parsed.url
+    path = req.url
   }
+  const name = `${req.method} ${path}`
 
-  const name = `${parsed.method} ${path}`
-
-  const requestSchema: Record<string, unknown> = {}
-
-  if (parsed.headers && Object.keys(parsed.headers).length > 0) {
-    // Persist as KeyValuePair[] so the renderer's request store can load it
-    // directly without an ad-hoc map → array conversion at every read site.
-    requestSchema.headers = Object.entries(parsed.headers).map(([key, value]) => ({
-      id: randomUUID(),
-      key,
-      value,
-      enabled: true,
-    }))
-  }
-  if (parsed.formData && parsed.formData.length > 0) {
-    requestSchema.body = {
-      type: 'form-data',
-      formData: parsed.formData.map((row) => ({
-        id: randomUUID(),
-        key: row.key,
-        value: row.value,
-        enabled: true,
-        type: row.type,
-        filePath: row.filePath,
-      })),
-    }
-  } else if (parsed.body) {
-    // Best-effort: classify the raw body string by header content-type so the
-    // user lands on the right body tab in the UI.
-    const ct = parsed.headers['Content-Type'] ?? parsed.headers['content-type'] ?? ''
-    if (/application\/x-www-form-urlencoded/i.test(ct)) {
-      const urlEncoded = parsed.body.split('&').map((pair) => {
-        const eq = pair.indexOf('=')
-        const key = eq === -1 ? pair : pair.slice(0, eq)
-        const value = eq === -1 ? '' : pair.slice(eq + 1)
-        return {
-          id: randomUUID(),
-          key: decodeURIComponent(key),
-          value: decodeURIComponent(value),
-          enabled: true,
-        }
-      })
-      requestSchema.body = { type: 'urlencoded', urlEncoded }
-    } else if (/json/i.test(ct)) {
-      requestSchema.body = { type: 'json', content: parsed.body }
-    } else if (/xml/i.test(ct)) {
-      requestSchema.body = { type: 'xml', content: parsed.body }
-    } else {
-      requestSchema.body = { type: 'raw', content: parsed.body }
-    }
-  }
-  if (parsed.auth) {
-    requestSchema.auth = parsed.auth
-  }
+  const requestSchema: Record<string, unknown> = { method: req.method, url: req.url }
+  if (req.params.length > 0) requestSchema.params = req.params
+  if (req.headers.length > 0) requestSchema.headers = req.headers
+  if (req.body.type !== 'none') requestSchema.body = req.body
+  if (req.auth) requestSchema.auth = req.auth
+  Object.assign(requestSchema, req.settings)
 
   db.prepare(
     `
@@ -3596,16 +2740,17 @@ function importCurl(
     name,
     null,
     'http',
-    parsed.method,
+    req.method,
     path,
     'developing',
-    Object.keys(requestSchema).length > 0 ? JSON.stringify(requestSchema) : null,
+    JSON.stringify(requestSchema),
     null,
     0,
     now,
     now,
   )
 
+  const warnings = req.warnings.map((w) => w.message)
   return {
     success: true,
     collectionId: projectId,
@@ -3615,465 +2760,140 @@ function importCurl(
   }
 }
 
-interface ParsedCurl {
+/**
+ * The pre-#279 parse shape, kept for callers / tests that read it. Built
+ * from the shared parser: `headers` as a map (last value wins), the implicit
+ * urlencoded Content-Type curl sends for `-d`, `-b` as a string.
+ */
+interface ParsedCurlLegacy {
   method: string
   url: string
   headers: Record<string, string>
   body?: string
-  /**
-   * Multipart `-F` rows parsed structurally so the importer can persist a
-   * proper UI body shape (`{ type: 'form-data', formData: KeyValuePair[] }`)
-   * instead of joining everything into a body string. `type: 'file'` rows
-   * carry the source path in `filePath` for the main-process upload stream.
-   */
   formData?: Array<{
     key: string
     value: string
     type?: 'text' | 'file'
     filePath?: string
   }>
-  auth?: { type: string; basic?: { username: string; password: string } }
+  auth?: {
+    type: string
+    basic?: { username: string; password: string }
+    digest?: { username: string; password: string }
+    ntlm?: { username: string; password: string }
+  }
   insecure: boolean
   cookies?: string
 }
 
-export function parseCurlCommand(command: string): ParsedCurl {
-  // Normalize the command
-  const normalized = command
-    .replace(/\\\n/g, ' ') // Line continuations
-    .replace(/\\\r\n/g, ' ')
-    .trim()
-
-  const result: ParsedCurl = {
-    method: 'GET',
-    url: '',
-    headers: {},
-    insecure: false,
-  }
-
-  // Track whether the body was set via -d/--data/--data-raw/--data-binary so we
-  // can auto-add Content-Type: application/x-www-form-urlencoded at the end of
-  // parsing if the user did not provide one. This matches cURL's actual
-  // behaviour for these flags.
-  let bodyFromDataFlag = false
-
-  const tokens = tokenizeCurl(normalized)
-
-  let i = 0
-  while (i < tokens.length) {
-    const token = tokens[i]
-
-    switch (token) {
-      case 'curl':
-        // skip the command itself
-        break
-
-      case '-X':
-      case '--request': {
-        i++
-        if (i < tokens.length) {
-          result.method = tokens[i].toUpperCase()
-        }
-        break
-      }
-
-      case '-H':
-      case '--header': {
-        i++
-        if (i < tokens.length) {
-          const headerStr = tokens[i]
-          const colonIdx = headerStr.indexOf(':')
-          if (colonIdx > 0) {
-            const key = headerStr.substring(0, colonIdx).trim()
-            const value = headerStr.substring(colonIdx + 1).trim()
-            result.headers[key] = value
-          }
-        }
-        break
-      }
-
-      case '-d':
-      case '--data':
-      case '--data-raw':
-      case '--data-binary':
-      case '--data-ascii': {
-        i++
-        if (i < tokens.length) {
-          result.body = tokens[i]
-          bodyFromDataFlag = true
-          // If method is still GET, change to POST
-          if (result.method === 'GET') {
-            result.method = 'POST'
-          }
-        }
-        break
-      }
-
-      case '--data-urlencode': {
-        i++
-        if (i < tokens.length) {
-          const existing = result.body || ''
-          const sep = existing ? '&' : ''
-          result.body = existing + sep + tokens[i]
-          if (result.method === 'GET') {
-            result.method = 'POST'
-          }
-          if (!result.headers['Content-Type']) {
-            result.headers['Content-Type'] = 'application/x-www-form-urlencoded'
-          }
-        }
-        break
-      }
-
-      case '-u':
-      case '--user': {
-        i++
-        if (i < tokens.length) {
-          const userPass = tokens[i]
-          const colonIdx = userPass.indexOf(':')
-          if (colonIdx > 0) {
-            result.auth = {
-              type: 'basic',
-              basic: {
-                username: userPass.substring(0, colonIdx),
-                password: userPass.substring(colonIdx + 1),
-              },
-            }
-          }
-        }
-        break
-      }
-
-      case '-k':
-      case '--insecure': {
-        result.insecure = true
-        break
-      }
-
-      case '-b':
-      case '--cookie': {
-        i++
-        if (i < tokens.length) {
-          result.cookies = tokens[i]
-        }
-        break
-      }
-
-      case '-A':
-      case '--user-agent': {
-        i++
-        if (i < tokens.length) {
-          result.headers['User-Agent'] = tokens[i]
-        }
-        break
-      }
-
-      case '-e':
-      case '--referer': {
-        i++
-        if (i < tokens.length) {
-          result.headers['Referer'] = tokens[i]
-        }
-        break
-      }
-
-      case '-x':
-      case '--proxy': {
-        // Consume the proxy value but do not let it leak into result.url.
-        // Proxy is not yet surfaced on the imported endpoint schema.
-        i++
-        break
-      }
-
-      case '-L':
-      case '--location':
-      case '--compressed': {
-        // Boolean flags with no value; safely ignored at parse time.
-        break
-      }
-
-      case '-F':
-      case '--form': {
-        i++
-        if (i < tokens.length) {
-          // Multipart form data — content-type boundary is set by the HTTP
-          // client when it builds the multipart body, so we don't pre-fill
-          // `Content-Type` from the importer.
-          const formPart = tokens[i]
-          const eqIdx = formPart.indexOf('=')
-          if (eqIdx > 0) {
-            const fieldName = formPart.slice(0, eqIdx)
-            const rawValue = formPart.slice(eqIdx + 1)
-            const row = parseCurlFormPart(fieldName, rawValue)
-            if (!result.formData) result.formData = []
-            result.formData.push(row)
-          }
-          if (result.method === 'GET') {
-            result.method = 'POST'
-          }
-        }
-        break
-      }
-
-      default: {
-        // If it looks like a URL (not a flag), capture it
-        if (!token.startsWith('-') && !result.url) {
-          result.url = token
-        }
-        break
-      }
+/** @deprecated Use `parseCurl` + `curlToRequest` from `src/shared/curl`. */
+export function parseCurlCommand(command: string): ParsedCurlLegacy {
+  const p = parseCurl(command)
+  const headers: Record<string, string> = {}
+  for (const h of p.headers) headers[h.key] = h.value
+  const result: ParsedCurlLegacy = { method: p.method, url: p.url, headers, insecure: p.insecure }
+  if (p.body !== undefined) {
+    result.body = p.body
+    if (!Object.keys(headers).some((k) => k.toLowerCase() === 'content-type')) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded'
     }
-    i++
   }
-
-  // cURL behaviour: -d / --data / --data-raw / --data-binary all imply
-  // Content-Type: application/x-www-form-urlencoded when the user did not
-  // supply one explicitly via -H. We only add the default after all tokens
-  // have been processed so a later -H overrides nothing.
-  if (bodyFromDataFlag && !hasContentTypeHeader(result.headers)) {
-    result.headers['Content-Type'] = 'application/x-www-form-urlencoded'
+  if (p.form.length > 0) {
+    result.formData = p.form.map((f) =>
+      f.kind === 'file'
+        ? { key: f.name, value: f.value, type: 'file' as const, filePath: f.path }
+        : { key: f.name, value: f.value, type: 'text' as const },
+    )
   }
-
+  if (p.user) {
+    const creds = { username: p.user.username, password: p.user.password }
+    if (p.authScheme === 'digest') result.auth = { type: 'digest', digest: creds }
+    else if (p.authScheme === 'ntlm') result.auth = { type: 'ntlm', ntlm: creds }
+    else result.auth = { type: 'basic', basic: creds }
+  }
+  if (p.cookies.length > 0) result.cookies = p.cookies.join('; ')
   return result
 }
 
-function hasContentTypeHeader(headers: Record<string, string>): boolean {
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === 'content-type') return true
-  }
-  return false
-}
-
-/**
- * Parse a single cURL `-F` value (everything after `field=`).
- * - `@/path/to/file`     → `{ type: 'file', filePath: '/path/to/file', value: <basename> }`
- * - `@/path;type=...`    → file row, the `;type=`/`;filename=` modifiers are noted in `value` only as basename
- * - `<value>`            → text row with the literal value
- * `<` (read-from-file then send as text) is rare; we fall back to text.
- */
-function parseCurlFormPart(
-  fieldName: string,
-  rawValue: string,
-): { key: string; value: string; type?: 'text' | 'file'; filePath?: string } {
-  if (rawValue.startsWith('@')) {
-    // Strip `;type=...;filename=...` modifiers that aren't part of the path
-    const semiIdx = rawValue.indexOf(';')
-    const path = semiIdx === -1 ? rawValue.slice(1) : rawValue.slice(1, semiIdx)
-    const baseName = path.split(/[/\\]/).pop() ?? path
-    return { key: fieldName, value: baseName, type: 'file', filePath: path }
-  }
-  return { key: fieldName, value: rawValue, type: 'text' }
-}
-
+/** @deprecated POSIX-shell tokens of a command (`tokenizeShell(text, 'bash')`). */
 export function tokenizeCurl(command: string): string[] {
-  const tokens: string[] = []
-  let current = ''
-  let inSingle = false
-  let inDouble = false
-  let inAnsiC = false // bash $'...' — backslash escapes interpreted
-  let escaped = false
-
-  for (let i = 0; i < command.length; i++) {
-    const ch = command[i]
-
-    if (escaped) {
-      // Inside $'...': decode common bash ANSI-C escapes; elsewhere preserve verbatim.
-      if (inAnsiC) {
-        current += decodeAnsiCEscape(ch)
-      } else {
-        current += ch
-      }
-      escaped = false
-      continue
-    }
-
-    // ANSI-C quoting opener: $'...'
-    if (ch === '$' && !inSingle && !inDouble && !inAnsiC && command[i + 1] === "'") {
-      inAnsiC = true
-      i++ // skip the opening single quote
-      continue
-    }
-
-    // Inside $'...': only \ and the closing ' are special; spaces are literal.
-    if (inAnsiC) {
-      if (ch === '\\') {
-        escaped = true
-        continue
-      }
-      if (ch === "'") {
-        inAnsiC = false
-        continue
-      }
-      current += ch
-      continue
-    }
-
-    if (ch === '\\' && !inSingle) {
-      escaped = true
-      continue
-    }
-
-    if (ch === "'" && !inDouble) {
-      inSingle = !inSingle
-      continue
-    }
-
-    if (ch === '"' && !inSingle) {
-      inDouble = !inDouble
-      continue
-    }
-
-    if ((ch === ' ' || ch === '\t') && !inSingle && !inDouble) {
-      if (current.length > 0) {
-        tokens.push(current)
-        current = ''
-      }
-      continue
-    }
-
-    current += ch
-  }
-
-  if (current.length > 0) {
-    tokens.push(current)
-  }
-
-  return tokens
-}
-
-/** Decode a single character that follows `\` inside a bash `$'...'` literal. */
-function decodeAnsiCEscape(ch: string | undefined): string {
-  switch (ch) {
-    case 'n':
-      return '\n'
-    case 't':
-      return '\t'
-    case 'r':
-      return '\r'
-    case 'a':
-      return '\x07'
-    case 'b':
-      return '\b'
-    case 'f':
-      return '\f'
-    case 'v':
-      return '\v'
-    case '0':
-      return '\0'
-    case '\\':
-      return '\\'
-    case "'":
-      return "'"
-    case '"':
-      return '"'
-    case '?':
-      return '?'
-    case 'e':
-    case 'E':
-      return '\x1b'
-    default:
-      return ch ?? ''
-  }
+  return tokenizeShell(command, 'bash').tokens
 }
 
 // ─── cURL Export ────────────────────────────────────────────
 
 /**
- * POSIX-shell-quote a value for use inside a cURL command line. Returns the
- * value wrapped in single quotes, with any internal `'` rewritten as `'\''`
- * (close-quote, escaped quote, reopen-quote). This is the canonical way to
- * embed arbitrary text in a single-quoted bash word and is what cURL itself
- * expects when round-tripping. Always pass user-controlled strings (URL,
- * header values, cookies, passwords, body content, form values) through this
- * helper before interpolating them into the output.
+ * `export:curl` — a bash command, one option per line. Quoting is the shared
+ * `renderCurl` (`src/shared/curl/generate.ts`): every user-controlled string
+ * (URL, header values, cookies, passwords, body content, form values) is a
+ * single-quoted bash word with `'` → `'\''`.
  */
-function shellEscape(s: string): string {
-  return `'${s.replace(/'/g, "'\\''")}'`
-}
-
 export function exportAsCurl(request: CurlExportRequest): string {
-  const parts: string[] = ['curl']
+  const args: CurlArg[] = []
 
-  // Method
   if (request.method && request.method !== 'GET') {
-    parts.push(`-X ${request.method.toUpperCase()}`)
+    args.push({ flag: '-X', value: request.method.toUpperCase(), literal: true })
+  }
+  // `:name` path segments (issue #276) — the helper Send and Run use.
+  let url = applyPathVariables(request.url, request.pathVariables)
+  const apiKey = request.auth?.type === 'api-key' ? request.auth.apiKey : undefined
+  if (apiKey?.key && apiKey.in === 'query') {
+    const pair = `${encodeURIComponent(apiKey.key)}=${encodeURIComponent(apiKey.value ?? '')}`
+    url = url.includes('?') ? `${url}&${pair}` : `${url}?${pair}`
+  }
+  args.push({ value: url })
+
+  for (const h of request.headers ?? []) {
+    if (h.enabled && h.key) args.push({ flag: '-H', value: `${h.key}: ${h.value}` })
+  }
+  if (apiKey?.key && apiKey.in !== 'query') {
+    args.push({ flag: '-H', value: `${apiKey.key}: ${apiKey.value ?? ''}` })
   }
 
-  // URL
-  parts.push(shellEscape(request.url))
-
-  // Headers
-  if (request.headers) {
-    for (const h of request.headers) {
-      if (h.enabled && h.key) {
-        parts.push(`-H ${shellEscape(`${h.key}: ${h.value}`)}`)
-      }
-    }
+  if (request.auth?.type === 'basic' && request.auth.basic) {
+    args.push({
+      flag: '-u',
+      value: `${request.auth.basic.username}:${request.auth.basic.password}`,
+    })
+  } else if (request.auth?.type === 'bearer' && request.auth.bearer) {
+    const prefix = request.auth.bearer.prefix || 'Bearer'
+    args.push({ flag: '-H', value: `Authorization: ${prefix} ${request.auth.bearer.token}` })
   }
 
-  // Auth
-  if (request.auth) {
-    if (request.auth.type === 'basic' && request.auth.basic) {
-      parts.push(
-        `-u ${shellEscape(`${request.auth.basic.username}:${request.auth.basic.password}`)}`,
-      )
-    } else if (request.auth.type === 'bearer' && request.auth.bearer) {
-      const prefix = request.auth.bearer.prefix || 'Bearer'
-      parts.push(`-H ${shellEscape(`Authorization: ${prefix} ${request.auth.bearer.token}`)}`)
-    }
-  }
-
-  // Body
-  if (request.body && request.body.type !== 'none') {
-    switch (request.body.type) {
+  const body = request.body
+  if (body && body.type !== 'none') {
+    switch (body.type) {
       case 'json':
       case 'xml':
       case 'text':
       case 'html':
-      case 'javascript': {
-        if (request.body.content) {
-          parts.push(`-d ${shellEscape(request.body.content)}`)
+      case 'javascript':
+        if (body.content) args.push({ flag: '-d', value: body.content })
+        break
+      case 'urlencoded':
+        for (const item of body.urlEncoded ?? []) {
+          if (item.enabled)
+            args.push({ flag: '--data-urlencode', value: `${item.key}=${item.value}` })
         }
         break
-      }
-      case 'urlencoded': {
-        if (request.body.urlEncoded) {
-          for (const item of request.body.urlEncoded) {
-            if (item.enabled) {
-              parts.push(`--data-urlencode ${shellEscape(`${item.key}=${item.value}`)}`)
-            }
+      case 'form-data':
+        for (const item of body.formData ?? []) {
+          if (!item.enabled) continue
+          // cURL convention for file uploads: -F 'field=@/path/to/file'
+          if (item.type === 'file' && item.filePath) {
+            args.push({ flag: '-F', value: `${item.key}=@${item.filePath}` })
+          } else {
+            args.push({ flag: '-F', value: `${item.key}=${item.value}` })
           }
         }
         break
-      }
-      case 'form-data': {
-        if (request.body.formData) {
-          for (const item of request.body.formData) {
-            if (!item.enabled) continue
-            if (item.type === 'file' && item.filePath) {
-              // cURL convention for file uploads: -F 'field=@/path/to/file'
-              parts.push(`-F ${shellEscape(`${item.key}=@${item.filePath}`)}`)
-            } else {
-              parts.push(`-F ${shellEscape(`${item.key}=${item.value}`)}`)
-            }
-          }
-        }
-        break
-      }
     }
   }
 
-  // Cookies
-  if (request.cookies) {
-    parts.push(`-b ${shellEscape(request.cookies)}`)
-  }
+  if (request.cookies) args.push({ flag: '-b', value: request.cookies })
+  if (request.sslVerification === false) args.push({ flag: '-k' })
 
-  // SSL
-  if (request.sslVerification === false) {
-    parts.push('-k')
-  }
-
-  return parts.join(' \\\n  ')
+  return renderCurl(args, { dialect: 'bash', inline: 0 })
 }
 
 // ─── HAR Types ──────────────────────────────────────────────
@@ -5160,6 +3980,53 @@ function authToInsomnia(auth: UiRequestSchema['auth']): InsomniaAuth | undefined
   }
 }
 
+/**
+ * A request's Insomnia `authentication` (issue #276). Insomnia reads a
+ * missing block as "inherit from the folder", so:
+ *  - own concrete auth → that auth;
+ *  - own `none` → an explicit `{type:'none'}` when an ancestor would
+ *    otherwise give it one (left out it would silently inherit);
+ *  - `inherit` → left out when a folder carries auth (Insomnia inherits it),
+ *    otherwise the project auth, which Insomnia has no place for.
+ */
+function insomniaRequestAuth(
+  auth: UiRequestSchema['auth'],
+  folderId: string | null | undefined,
+  folders: readonly ExportFolderRow[],
+  projectAuth: AuthConfigLike | null | undefined,
+): InsomniaAuth | undefined {
+  const own = authToInsomnia(auth)
+  if (own) return own
+  // A type Insomnia cannot carry (awsv4, hawk, …) is not "inherit".
+  const ownType = auth?.type
+  if (ownType && ownType !== 'none' && ownType !== 'inherit') return undefined
+  const byId = new Map(folders.map((f) => [f.id, f]))
+  let folderGivesAuth = false
+  const seen = new Set<string>()
+  for (let id = folderId ?? null; id && !seen.has(id); ) {
+    seen.add(id)
+    const f = byId.get(id)
+    if (!f) break
+    if (f.auth) {
+      try {
+        const a = JSON.parse(f.auth) as { type?: string }
+        if (a && a.type && a.type !== 'inherit') {
+          folderGivesAuth = true
+          break
+        }
+      } catch {
+        /* unparseable folder auth — ignored like the folder export does */
+      }
+    }
+    id = f.parent_id
+  }
+  if (auth?.type === 'none') {
+    return folderGivesAuth || projectAuth ? { type: 'none' } : undefined
+  }
+  if (folderGivesAuth || !projectAuth) return undefined
+  return authToInsomnia(projectAuth as UiRequestSchema['auth'])
+}
+
 /** Insomnia's scripts use its own `insomnia` object (it does not bind `pm`). */
 const INSOMNIA_SCRIPT_PREFIX: AssertionScriptPrefix = 'insomnia'
 
@@ -5176,7 +4043,14 @@ function buildInsomniaResources(
    * siblings by that key and not by array position, runs them in that order:
    * a level's own requests first, then its subfolders.
    */
-  opts: { executionOrder?: boolean } = {},
+  opts: {
+    executionOrder?: boolean
+    /**
+     * The project auth (issue #276). Insomnia has no workspace-level auth, so
+     * an `inherit` request no folder gives an auth to carries it itself.
+     */
+    projectAuth?: AuthConfigLike | null
+  } = {},
 ): InsomniaResource[] {
   const resources: InsomniaResource[] = []
   const sortKeys = new Map<string, number>()
@@ -5267,7 +4141,7 @@ function buildInsomniaResources(
     }))
 
     const body = bodyToInsomnia(schema.body)
-    const authentication = authToInsomnia(schema.auth)
+    const authentication = insomniaRequestAuth(schema.auth, ep.folder_id, folders, opts.projectAuth)
 
     const resource: InsomniaResource = {
       _id: `req_${ep.id}`,
@@ -5338,6 +4212,7 @@ export function buildInsomniaProjectExport(projectId: string): CollectionExportR
     project.description ?? null,
     folders,
     endpoints,
+    { projectAuth: readProjectAuthConfig(projectId) },
   )
   return { content: JSON.stringify(wrapInsomniaExport(resources), null, 2), skipped }
 }

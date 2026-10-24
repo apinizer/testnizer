@@ -1,0 +1,2 @@
+$kind: http-request
+url: '{{baseUrl}}/ping'

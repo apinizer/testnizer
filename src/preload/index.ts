@@ -275,6 +275,13 @@ const api = {
       ipcRenderer.invoke('import:postmanEnvironment', payload),
     exportPostman: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('export:postman', projectId),
+    exportPostmanV3Json: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('export:postmanV3Json', projectId),
+    exportPostmanV3Folder: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('export:postmanV3Folder', projectId),
+    pickPostmanFolder: (): Promise<unknown> => ipcRenderer.invoke('import:pickPostmanFolder'),
+    importPostmanFolder: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('import:postmanFolder', payload),
     importHar: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:har', payload),
     importInsomnia: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:insomnia', payload),
@@ -339,8 +346,11 @@ const api = {
       ipcRenderer.invoke('ws:cancelConnect', pendingId),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('ws:disconnect', connectionId),
-    send: (connectionId: string, message: string): Promise<unknown> =>
-      ipcRenderer.invoke('ws:send', connectionId, message),
+    send: (
+      connectionId: string,
+      message: string,
+      opts?: { binary?: 'base64' | 'hex' },
+    ): Promise<unknown> => ipcRenderer.invoke('ws:send', connectionId, message, opts),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -804,7 +814,7 @@ const api = {
       ipcRenderer.invoke('save:exportFolder', folderId),
     exportTestSuite: (
       suiteId: string,
-      format?: 'testnizer' | 'postman' | 'insomnia',
+      format?: 'testnizer' | 'postman' | 'insomnia' | 'postman-v3' | 'postman-v3-folder',
     ): Promise<unknown> => ipcRenderer.invoke('save:exportTestSuite', suiteId, format),
     importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importProject', payload),
@@ -1155,6 +1165,15 @@ const api = {
       ipcRenderer.invoke('socketio:subscribe', connectionId, eventName),
     unsubscribe: (connectionId: string, eventName: string): Promise<unknown> =>
       ipcRenderer.invoke('socketio:unsubscribe', connectionId, eventName),
+    emitArgs: (
+      connectionId: string,
+      eventName: string,
+      args: unknown,
+      opts?: { ack?: boolean },
+    ): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:emitArgs', connectionId, eventName, args, opts),
+    setListen: (connectionId: string, cfg: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:setListen', connectionId, cfg),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -1162,6 +1181,16 @@ const api = {
       ipcRenderer.on('socketio:event', handler)
       return () => {
         ipcRenderer.removeListener('socketio:event', handler)
+      }
+    },
+    /** The server closed the connection (issue #275): `{ connectionId, reason }`. */
+    onClosed: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('socketio:closed', handler)
+      return () => {
+        ipcRenderer.removeListener('socketio:closed', handler)
       }
     },
   },

@@ -142,6 +142,7 @@ interface MenuItemDef {
   separator?: boolean
   action?: () => void
   submenu?: MenuItemDef[]
+  testId?: string
 }
 
 const ChevronRightMini = (
@@ -243,6 +244,7 @@ function ContextMenu({
               )}
               <button
                 type="button"
+                data-testid={item.testId}
                 ref={(el) => {
                   itemRefs.current[i] = el
                 }}
@@ -646,6 +648,7 @@ export default function TreeNodeComponent({
           icon: ExportIcon,
           submenu: PROJECT_EXPORT_FORMATS.map((f) => ({
             label: t(f.labelKey),
+            testId: `tree-export-format-${f.id}`,
             action: () => onExport(node, f.id),
           })),
         })

@@ -1,0 +1,13 @@
+$kind: http-request
+method: POST
+url: '{{baseUrl}}/logo'
+body:
+  type: formdata
+  content:
+    - key: caption
+      type: text
+      value: Front
+    - key: image
+      type: file
+      src: ./logo.png
+order: 2000

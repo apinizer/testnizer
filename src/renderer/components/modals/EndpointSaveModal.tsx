@@ -16,6 +16,7 @@ import { ensureWithheldCredentialsLoaded, isTabUnloaded } from '../../lib/withhe
 import { orphanTab } from '../../lib/orphan-tab'
 import {
   requestSettingsFor,
+  pathVariablesFor,
   savedRequestMetadata,
   snapshotProtocol,
 } from '../../lib/save-active-request'
@@ -201,6 +202,8 @@ export default function EndpointSaveModal() {
       // Timeout / redirects / SSL (issue #185): the first save creates the row
       // and marks the tab clean, so it must carry them like Ctrl+S does.
       const settings = activeTab ? requestSettingsFor(activeTab) : {}
+      // Path variable values (issue #276) — next to the settings in `metadata`.
+      const pathVars = activeTab ? pathVariablesFor(activeTab) : {}
 
       const payload = {
         name: endpointName.trim() || 'Untitled',
@@ -215,7 +218,7 @@ export default function EndpointSaveModal() {
         post_script: req.postScript,
         assertions: JSON.stringify(req.assertions),
         folder_id: selectedFolder || null,
-        metadata: savedRequestMetadata(protocolMeta, settings),
+        metadata: savedRequestMetadata(protocolMeta, { ...settings, ...pathVars }),
       }
 
       let savedId: string | undefined

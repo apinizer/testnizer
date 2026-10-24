@@ -1,0 +1,12 @@
+name: Staging
+values:
+  - key: baseUrl
+    value: https://staging.shop.example.test/api
+    enabled: true
+  - key: accessToken
+    value: staging-token-literal
+    type: secret
+    enabled: true
+  - key: disabledVar
+    value: x
+    enabled: false

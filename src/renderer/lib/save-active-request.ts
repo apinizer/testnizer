@@ -31,9 +31,12 @@ import {
   NOT_LOADED_ERROR,
 } from './withheld-credentials'
 import { orphanTab } from './orphan-tab'
+import { readSioMeta, readWsMeta, sioMetaOf, wsMetaOf } from './realtime-meta'
+import { mergeParamsFromUrl } from './url-query-sync'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
+import { pathVariablesField, type PathVariableLike } from '../../shared/path-variables'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
@@ -129,15 +132,9 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       effectiveUrl: ws.url || url,
       effectiveMethod: 'GET',
       effectiveBody: { type: 'none' },
-      protocolMeta: {
-        websocket: {
-          url: ws.url,
-          customHeaders: ws.customHeaders,
-          composerContent: ws.composerContent,
-          composerMode: ws.composerMode,
-          autoScroll: ws.autoScroll,
-        },
-      },
+      // One writer (`lib/realtime-meta.ts`), shared with the History row's
+      // `configured`: + params, settings, saved messages (issue #282).
+      protocolMeta: { websocket: wsMetaOf(ws) },
     }
   }
   if (protocol === 'sse') {
@@ -169,16 +166,9 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       effectiveUrl: sio.url || url,
       effectiveMethod: 'GET',
       effectiveBody: { type: 'none' },
-      protocolMeta: {
-        socketio: {
-          url: sio.url,
-          namespace: sio.namespace,
-          bearerToken: sio.bearerToken,
-          subscriptions: sio.subscriptions,
-          emitEvent: sio.emitEvent,
-          emitPayload: sio.emitPayload,
-        },
-      },
+      // One writer for the block (`lib/realtime-meta.ts`), shared with the
+      // History row's `configured` (issue #283).
+      protocolMeta: { socketio: sioMetaOf(sio) },
     }
   }
   if (protocol === 'grpc') {
@@ -304,13 +294,26 @@ export function requestSettingsFor(tab: Tab): RequestSettings {
 }
 
 /**
+ * The Path Variables rows Ctrl+S / Save As persist with the row (issue #276):
+ * `{pathVariables}` next to the settings — top level of `request_schema`, or
+ * of `metadata` on saved_requests. HTTP only (the request store's URL). A URL
+ * without `:name` writes no key; a `:name` row left empty is stored empty and
+ * still sends `:name` literally (`applyPathVariables`), exactly as before.
+ */
+export function pathVariablesFor(tab: Tab): { pathVariables?: PathVariableLike[] } {
+  const protocol = (tab.protocol ?? 'http') as string
+  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return {}
+  return pathVariablesField(useRequestStore.getState().pathVariables)
+}
+
+/**
  * saved_requests has no `request_schema`: the settings sit at the top of its
  * `metadata` JSON next to the protocol blocks. `undefined` when there is
  * nothing to store (the update then keeps the column as it was).
  */
 export function savedRequestMetadata(
   protocolMeta: Record<string, unknown>,
-  settings: RequestSettings,
+  settings: RequestSettings & { pathVariables?: PathVariableLike[] },
 ): string | undefined {
   const merged = { ...protocolMeta, ...settings }
   return Object.keys(merged).length > 0 ? JSON.stringify(merged) : undefined
@@ -497,32 +500,32 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
   }
 
   if (protocol === 'socketio' && meta.socketio && typeof meta.socketio === 'object') {
-    const s = meta.socketio as Record<string, unknown>
-    const sio = useSocketIOStore.getState()
-    if (typeof s.url === 'string') sio.setUrl(s.url)
-    if (typeof s.namespace === 'string') sio.setNamespace(s.namespace)
-    if (typeof s.bearerToken === 'string') sio.setBearerToken(s.bearerToken)
-    if (typeof s.emitEvent === 'string') sio.setEmitEvent(s.emitEvent)
-    if (typeof s.emitPayload === 'string') sio.setEmitPayload(s.emitPayload)
-    // Snapshotted but never restored (found with issue #182).
-    if (Array.isArray(s.subscriptions)) {
-      useSocketIOStore.setState({
-        subscriptions: s.subscriptions.filter((x): x is string => typeof x === 'string'),
-      })
-    }
+    // One reader (`lib/realtime-meta.ts`): an old row's `subscriptions` /
+    // `emitPayload` migrate, and its missing `listenAll` reads as true — the
+    // behaviour it had (issue #283).
+    const read = readSioMeta(meta.socketio)
+    useSocketIOStore.setState({
+      ...read,
+      ...(read.url !== undefined && read.params === undefined
+        ? { params: mergeParamsFromUrl(read.url, []) }
+        : {}),
+      ...(read.bearerToken !== undefined ? { bearerTokenWithheld: false } : {}),
+      activeSavedMessageId: null,
+    })
     return
   }
 
   if (protocol === 'websocket' && meta.websocket && typeof meta.websocket === 'object') {
-    const w = meta.websocket as Record<string, unknown>
-    const ws = useWebSocketStore.getState()
-    if (typeof w.url === 'string') ws.setUrl(w.url)
-    if (Array.isArray(w.customHeaders)) {
-      ws.setHeaders(w.customHeaders as KeyValuePair[])
-    }
-    if (typeof w.composerContent === 'string') ws.setComposerContent(w.composerContent)
-    if (w.composerMode === 'json' || w.composerMode === 'text') ws.setComposerMode(w.composerMode)
-    if (typeof w.autoScroll === 'boolean') ws.setAutoScroll(w.autoScroll)
+    // One reader (`lib/realtime-meta.ts`); keys an old row lacks keep the
+    // tab's defaults, missing settings read as the pre-#282 behaviour.
+    const read = readWsMeta(meta.websocket)
+    useWebSocketStore.setState({
+      ...read,
+      ...(read.url !== undefined && read.params === undefined
+        ? { params: mergeParamsFromUrl(read.url, []) }
+        : {}),
+      activeSavedMessageId: null,
+    })
     return
   }
 
@@ -652,6 +655,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   // Timeout / redirects / SSL (issue #185) — top-level keys, read back by the
   // tab-open paths and the Runner through `readRequestSettings`.
   const settings = requestSettingsFor(activeTab)
+  // `:name` path variable values (issue #276) ride next to the settings.
+  const pathVars = pathVariablesFor(activeTab)
   // Issue #201: an HTTP request still carrying a placeholder name ('New
   // Endpoint' from the tree's Add Request, 'Yeni Uç Nokta', …) is saved under
   // a name derived from its URL. A name the user typed is never replaced.
@@ -668,6 +673,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       preScript: req.preScript,
       postScript: req.postScript,
       ...settings,
+      ...pathVars,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {
@@ -717,7 +723,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       post_script: req.postScript,
       assertions: JSON.stringify(req.assertions ?? []),
       // No request_schema on this table: settings ride in `metadata`.
-      metadata: savedRequestMetadata(protocolMeta, settings),
+      metadata: savedRequestMetadata(protocolMeta, { ...settings, ...pathVars }),
     }
     try {
       const result = (await window.api?.savedRequest?.update(
@@ -758,6 +764,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       postScript: req.postScript,
       assertions: req.assertions ?? [],
       ...settings,
+      ...pathVars,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {

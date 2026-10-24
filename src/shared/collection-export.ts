@@ -17,7 +17,8 @@
  * Pure TS: no node / electron / DOM imports — compiled into both bundles.
  */
 
-export type CollectionExportFormat = 'postman' | 'insomnia' | 'openapi'
+/** `postman-v3` = the single v3 JSON file (issue #277); the v3 folder reports with the same label. */
+export type CollectionExportFormat = 'postman' | 'insomnia' | 'openapi' | 'postman-v3'
 
 /**
  * Why an item is not in the exported file:
@@ -60,6 +61,8 @@ export function collectionExportFormatLabel(format: CollectionExportFormat): str
   switch (format) {
     case 'postman':
       return 'Postman v2.1'
+    case 'postman-v3':
+      return 'Postman v3'
     case 'insomnia':
       return 'Insomnia'
     case 'openapi':

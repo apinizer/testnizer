@@ -1,0 +1,17 @@
+$kind: graphql-request
+url: 'https://shop.example.test/graphql'
+query: 'query Catalog { products { id name } }'
+variables: '{"first":10}'
+operationName: Catalog
+headers:
+  - key: X-Gql
+    value: '1'
+auth:
+  type: inherit
+  credentials: []
+scripts:
+  - type: beforeQuery
+    code: pm.variables.set('q', 1);
+  - type: afterResponse
+    code: pm.test('ok', () => pm.response.to.have.status(200));
+order: 4000

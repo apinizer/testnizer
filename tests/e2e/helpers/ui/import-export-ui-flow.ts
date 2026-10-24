@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { expect, type Page } from '@playwright/test'
-import { openImportDropdown } from './import-flow'
+import { finishImportWizard, openImportDropdown } from './import-flow'
 
 const FIXTURES = path.resolve(__dirname, '../../../fixtures/import-export')
 
@@ -39,5 +39,5 @@ export async function importFixtureViaUiWizard(
   if (await mismatch.isVisible().catch(() => false)) return
   await modal.getByPlaceholder('Folder name').fill(folderName)
   await modal.getByRole('button', { name: /^Import$/i }).click()
-  await expect(modal).toBeHidden({ timeout: 60_000 })
+  await finishImportWizard(page)
 }

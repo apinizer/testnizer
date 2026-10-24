@@ -1,0 +1,15 @@
+$kind: http-example
+name: 200 OK
+request:
+  url: '{{baseUrl}}/products?page=1'
+  method: GET
+response:
+  statusCode: 200
+  statusText: OK
+  headers:
+    - key: Content-Type
+      value: application/json
+  body:
+    type: json
+    content: '[{"id":1,"name":"Mug"}]'
+order: 1000
