@@ -125,6 +125,20 @@ describe('APIs tree root Export picks a format (issue #208)', () => {
       'Insomnia',
     ])
 
+    // Every entry has a per-format test id (issue #277).
+    expect(
+      within(submenu)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('data-testid')),
+    ).toEqual([
+      'tree-export-format-testnizer',
+      'tree-export-format-postman',
+      'tree-export-format-postman-v3-folder',
+      'tree-export-format-postman-v3',
+      'tree-export-format-openapi',
+      'tree-export-format-insomnia',
+    ])
+
     fireEvent.click(within(submenu).getByRole('button', { name: 'Postman v2.1' }))
     await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(1))
     expect(exportPostman).toHaveBeenCalledWith('proj-1')

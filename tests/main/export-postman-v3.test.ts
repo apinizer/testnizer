@@ -58,6 +58,8 @@ import { writeSharedProjectSettings } from '../../src/main/lib/project-settings'
 import { storedVariableValue } from '../../src/main/lib/secret-at-rest'
 import { buildPostmanV3SuiteExport, v3JsonText } from '../../src/main/export/postman-v3'
 import { sanitizeFileStem } from '../../src/main/export/postman-v3/folder-writer'
+import { sioMetaOf, wsMetaOf } from '../../src/shared/realtime-meta'
+import { DEFAULT_SIO_SETTINGS, DEFAULT_WS_SETTINGS } from '../../src/shared/realtime'
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'postman')
 const SCHEMA = JSON.parse(fs.readFileSync(path.join(FIX, 'v3-schema', 'collection.json'), 'utf-8'))
@@ -518,6 +520,209 @@ describe('issue #277 — Testnizer-native HTTP rows (Ctrl+S shapes) round-trip',
     const back = newProject('Native rows')
     await importFolder(back, root)
     expect(snapshot(back)).toEqual(snapshot(pid))
+  })
+})
+
+/**
+ * Rows the importer never wrote: the shapes older builds saved (legacy
+ * realtime keys, the proto importer's `request_schema.grpc`) and the current
+ * editor's Ctrl+S blocks (`wsMetaOf` / `sioMetaOf`, the MCP branch of
+ * `snapshotProtocol`). The kind round trip above only proves export inverts
+ * the importer's own writers.
+ */
+describe('issue #277 — rows saved by the editor and by older builds', () => {
+  type V3Item = Record<string, unknown> & { name: string }
+  let items: V3Item[] = []
+  beforeAll(async () => {
+    const pid = newProject('Editor rows')
+    const db = getDb()
+    const now = Date.now()
+    let order = 0
+    const ep = (name: string, protocol: string, schema: Record<string, unknown>): void => {
+      db.prepare(
+        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, ?, NULL, ?, 'GET', '', 'developing', ?, NULL, ?, ?, ?)`,
+      ).run(randomUUID(), pid, name, protocol, JSON.stringify(schema), order++, now, now)
+    }
+    // Pre-#282 WebSocket block (671bdee writer): no params / settings / saved messages.
+    ep('WS legacy', 'websocket', {
+      url: 'wss://old.test/ws',
+      metadata: {
+        websocket: {
+          url: 'wss://old.test/ws',
+          customHeaders: [{ id: 'h', key: 'X-Old', value: '1', enabled: true }],
+          composerContent: '{"hi":1}',
+          composerMode: 'json',
+          autoScroll: true,
+        },
+      },
+    })
+    // Pre-#283 Socket.IO block: `subscriptions` + `emitPayload` only.
+    ep('SIO legacy', 'socketio', {
+      url: 'https://sio-old.test',
+      metadata: {
+        socketio: {
+          url: 'https://sio-old.test',
+          namespace: '/chat',
+          bearerToken: '',
+          emitEvent: 'say',
+          emitPayload: '{"a":1}',
+          subscriptions: ['news', 'alerts'],
+        },
+      },
+    })
+    // Proto importer row: the call under `request_schema.grpc`, an absolute proto path.
+    ep('gRPC legacy', 'grpc', {
+      url: '',
+      body: { type: 'json', content: '{"name":"ada"}' },
+      grpc: {
+        serverAddress: 'grpc.old.test:443',
+        serviceName: 'pkg.Greeter',
+        methodName: 'SayHello',
+        protoPath: '/Users/someone/protos/greeter.proto',
+      },
+    })
+    // Current Ctrl+S blocks.
+    ep('WS now', 'websocket', {
+      url: 'wss://now.test/ws',
+      metadata: {
+        websocket: wsMetaOf({
+          url: 'wss://now.test/ws',
+          customHeaders: [{ id: 'h', key: 'X-Now', value: '{{v}}', enabled: true }],
+          params: [{ id: 'q', key: 'room', value: 'a', enabled: true }],
+          settings: { ...DEFAULT_WS_SETTINGS, maxPayload: 2 },
+          composerContent: '',
+          composerMode: 'xml',
+          autoScroll: true,
+          savedMessages: [{ id: 'm', name: 'Ping', content: '<ping/>', contentType: 'xml' }],
+        }),
+      },
+    })
+    ep('SIO now', 'socketio', {
+      url: 'https://sio-now.test',
+      metadata: {
+        socketio: sioMetaOf({
+          url: 'https://sio-now.test',
+          namespace: '/live',
+          bearerToken: '',
+          customHeaders: [],
+          params: [],
+          settings: DEFAULT_SIO_SETTINGS,
+          listeners: [
+            { id: 'l1', name: 'tick', description: 'clock', listen: true },
+            { id: 'l2', name: 'muted', description: '', listen: false },
+          ],
+          listenAll: false,
+          emitEvent: 'join',
+          emitArgs: [{ id: 'a', content: '"room-1"', contentType: 'json' }],
+          emitAck: false,
+          savedMessages: [
+            {
+              id: 's',
+              name: 'Join',
+              eventName: 'join',
+              acknowledgement: true,
+              args: [{ id: 'a2', content: '"room-2"', contentType: 'json' }],
+            },
+          ],
+        }),
+      },
+    })
+    ep('MCP now', 'mcp', {
+      url: 'https://mcp.now.test/mcp',
+      metadata: {
+        mcp: {
+          transport: 'http',
+          url: 'https://mcp.now.test/mcp',
+          customHeaders: [{ id: 'h', key: 'X-Tenant', value: 't1', enabled: true }],
+          envVars: [],
+          auth: { type: 'bearer', bearerToken: '{{mcpToken}}' },
+          protocol: 'auto',
+          call: {
+            capabilityTab: 'tools',
+            selectedTool: 'search',
+            toolArgs: '{"q":"{{term}}"}',
+            selectedResourceUri: '',
+            resourceUriDraft: '',
+            selectedPrompt: '',
+            promptArgs: {},
+          },
+        },
+      },
+    })
+    const res = await call('export:postmanV3Json', pid)
+    expect(res.success, res.error).toBe(true)
+    const doc = JSON.parse(res.data as string)
+    expect(validate(doc), JSON.stringify(validate.errors?.slice(0, 5), null, 2)).toBe(true)
+    items = doc.items
+  })
+  const item = (name: string): V3Item => items.find((i) => i.name === name)!
+
+  it('legacy WebSocket: url and headers come out', () => {
+    expect(item('WS legacy')).toMatchObject({
+      $kind: 'websocket-request',
+      url: 'wss://old.test/ws',
+      headers: [{ key: 'X-Old', value: '1' }],
+    })
+  })
+
+  it('legacy Socket.IO: namespace folded into the URL, subscriptions → listened events', () => {
+    expect(item('SIO legacy')).toMatchObject({
+      $kind: 'socket.io-request',
+      url: 'https://sio-old.test/chat',
+      events: [
+        { name: 'news', subscribeOnConnect: true },
+        { name: 'alerts', subscribeOnConnect: true },
+      ],
+    })
+  })
+
+  it('legacy gRPC (request_schema.grpc): address, service/method, message, proto file name only', () => {
+    const g = item('gRPC legacy')
+    expect(g).toMatchObject({
+      $kind: 'grpc-request',
+      url: 'grpc.old.test:443',
+      methodPath: 'pkg.Greeter/SayHello',
+      message: { content: '{"name":"ada"}' },
+      schema: { source: 'file', location: 'greeter.proto' },
+    })
+    expect(JSON.stringify(g)).not.toContain('/Users/someone')
+  })
+
+  it('current WebSocket block: params, settings (MB → bytes) and saved messages', () => {
+    expect(item('WS now')).toMatchObject({
+      url: 'wss://now.test/ws',
+      headers: [{ key: 'X-Now', value: '{{v}}' }],
+      queryParams: [{ key: 'room', value: 'a' }],
+      settings: { maxPayload: 2 * 1024 * 1024 },
+      messages: [{ $kind: 'websocket-message', name: 'Ping', content: '<ping/>' }],
+    })
+  })
+
+  it('current Socket.IO block: listeners with their listen flag', () => {
+    expect(item('SIO now')).toMatchObject({
+      url: 'https://sio-now.test/live',
+      events: [
+        { name: 'tick', description: 'clock', subscribeOnConnect: true },
+        { name: 'muted', subscribeOnConnect: false },
+      ],
+    })
+  })
+
+  it('current MCP block: url, headers and the tool call as a message', () => {
+    const m = item('MCP now')
+    expect(m).toMatchObject({
+      $kind: 'mcp-request',
+      url: 'https://mcp.now.test/mcp',
+      headers: [{ key: 'X-Tenant', value: 't1' }],
+    })
+    // A JSON-RPC tools/call; the `{{var}}` inside the arguments is kept.
+    expect(JSON.parse(String(m.message))).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name: 'search', arguments: { q: '{{term}}' } },
+    })
   })
 })
 

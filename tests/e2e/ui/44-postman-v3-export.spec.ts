@@ -31,7 +31,6 @@ import { saveInPlace } from '../helpers/ui/save-flow'
 import { createFolder, getActiveProjectId } from '../helpers/ui/assert-ipc'
 import { refreshWorkspaceTree } from '../helpers/ui/import-flow'
 import { treeAddHttpRequest, treeClearSearch, treeSearch } from '../helpers/ui/tree'
-import { clickContextSubmenuItem } from '../helpers/ui/context-menu'
 import { openEnvModal, closeEnvModal } from '../helpers/ui/env'
 import { localHttpBin } from '../helpers/test-servers'
 
@@ -40,6 +39,14 @@ const createdFolderIds: string[] = []
 const activeTab = (page: Page) => page.locator('[data-testid="endpoint-tab"][data-active="true"]')
 const treeRow = (page: Page, label: string) =>
   page.getByTestId('tree-node').filter({ has: page.getByText(label, { exact: true }) })
+
+/** Project root (first tree row) → Export → the format's submenu entry, by test id. */
+async function exportFormat(page: Page, format: string): Promise<void> {
+  await page.getByTestId('tree-node').first().click({ button: 'right' })
+  const menu = page.locator('[data-context-menu]')
+  await menu.getByRole('button', { name: /^Export$/ }).hover()
+  await menu.getByTestId(`tree-export-format-${format}`).click()
+}
 
 const written = (dir: string): string[] =>
   fs.readdirSync(dir).filter((n) => !n.startsWith('.testnizer-export-'))
@@ -142,8 +149,7 @@ uiTest.describe('Postman v3 export (issue #277)', () => {
       try {
         let restore = await stubDialog(app, 'open', parent)
         try {
-          await window.getByTestId('tree-node').first().click({ button: 'right' })
-          await clickContextSubmenuItem(window, /^Export$/, 'Postman v3 (folder)')
+          await exportFormat(window, 'postman-v3-folder')
           // The writer stages in a hidden `.testnizer-export-*` dir, then renames.
           await expect.poll(() => written(parent).length, { timeout: 15_000 }).toBe(1)
         } finally {
@@ -167,8 +173,7 @@ uiTest.describe('Postman v3 export (issue #277)', () => {
         const outFile = path.join(parent, 'project.postman_collection.v3.json')
         restore = await stubDialog(app, 'save', outFile)
         try {
-          await window.getByTestId('tree-node').first().click({ button: 'right' })
-          await clickContextSubmenuItem(window, /^Export$/, 'Postman v3 (JSON)')
+          await exportFormat(window, 'postman-v3')
           await expect.poll(() => fs.existsSync(outFile), { timeout: 15_000 }).toBe(true)
         } finally {
           await restore()
