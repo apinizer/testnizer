@@ -41,7 +41,9 @@ export function useCodegenSelection(): CodegenSelectionView {
     const isCurl = language.id === 'curl'
     const wanted = isCurl ? curlVariantId(curl.dialect) : codegen.variantByLanguage[language.id]
     const variant = language.variants.find((v) => v.id === wanted) ?? language.variants[0]
-    const stored = { ...codegen.optionsByVariant[variant.id] }
+    // cURL options belong to the language: switching the shell keeps them.
+    const optionsKey = isCurl ? language.id : variant.id
+    const stored = { ...codegen.optionsByVariant[optionsKey] }
     if (isCurl) stored.multiLine = curl.multiLine
     const options = resolveOptions(variant.options, stored)
     const customised = variant.options.some((d) => options[d.id] !== d.default)
@@ -59,10 +61,10 @@ export function useCodegenSelection(): CodegenSelectionView {
       setOption: (id, value) => {
         if (isCurl && id === 'multiLine' && typeof value === 'boolean') {
           ui.setCurlSnippet({ multiLine: value })
-        } else ui.setCodegenOption(variant.id, id, value)
+        } else ui.setCodegenOption(optionsKey, id, value)
       },
       resetOptions: () => {
-        ui.resetCodegenOptions(variant.id)
+        ui.resetCodegenOptions(optionsKey)
         if (isCurl) ui.setCurlSnippet({ multiLine: true })
       },
     }

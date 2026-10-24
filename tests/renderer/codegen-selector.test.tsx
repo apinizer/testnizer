@@ -123,6 +123,9 @@ describe('Generate Code modal — Language → Variant (issue #280)', () => {
     fireEvent.click(within(panel).getByTestId('codegen-option-longFormat'))
     expect(code()).toContain("curl --request POST 'https://api.test/users'")
     expect(code()).toContain("--header 'X-Trace: abc'")
+    // The options belong to cURL, not to one shell: switching to PowerShell keeps them.
+    fireEvent.click(screen.getByTestId('codegen-curl-dialect-powershell'))
+    expect(code()).toContain("curl.exe --request POST 'https://api.test/users'")
   })
 
   it('Turkish labels', () => {
@@ -177,6 +180,18 @@ describe('protocols', () => {
     expect(empty.textContent).toMatch(/not available/)
     expect(screen.queryByTestId('monaco')).toBeNull()
     expect(screen.getByTestId('code-generator-copy')).toBeDisabled()
+  })
+
+  it('a WebSocket tab is named; a tool tab is "this tab" (never a raw id)', () => {
+    activeTab('websocket')
+    const { unmount } = render(<CodeGeneratorModal />)
+    expect(screen.getByTestId('codegen-unavailable').textContent).toContain('WebSocket')
+    unmount()
+    activeTab('tools.jwt')
+    render(<CodeGeneratorModal />)
+    const text = screen.getByTestId('codegen-unavailable').textContent ?? ''
+    expect(text).toContain('not available for this tab')
+    expect(text).not.toContain('tools.jwt')
   })
 })
 

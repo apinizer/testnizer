@@ -10,13 +10,18 @@ import EmptyState from './EmptyState'
  */
 export default function CodegenUnavailable({ protocol }: { protocol: string }) {
   const { t } = useTranslation()
-  const name = protocolChip(protocol)?.name ?? protocol
+  // A request protocol is named; a tool / runner / mock tab is just "this tab".
+  const name = protocolChip(protocol)?.name
   return (
     <div data-testid="codegen-unavailable" data-protocol={protocol} className="flex flex-1">
       <EmptyState
         icon={CodeXml}
         size="sm"
-        title={t('codeGen.unavailableTitle').replace('{protocol}', name)}
+        title={
+          name
+            ? t('codeGen.unavailableTitle').replace('{protocol}', name)
+            : t('codeGen.unavailableTab')
+        }
         description={t('codeGen.unavailableHint')}
       />
     </div>
