@@ -266,6 +266,42 @@ function soapTransportFromHeaders(
   return out
 }
 
+/**
+ * Where Send posts a SOAP request, with which version and action — ONE
+ * helper for `sendSoap` and Generate Code (issue #280), so the snippet cannot
+ * drift from the request. In Manual mode the form's Endpoint URL is
+ * authoritative (a WSDL loaded earlier must not hijack it — issue #124); the
+ * version / action come from the selected WSDL operation, otherwise from the
+ * manual form (issue #17). Transport: SOAP 1.1 → quoted `SOAPAction` header,
+ * SOAP 1.2 → `action="…"` in the Content-Type (`soapTransportHeaders`).
+ */
+export function soapSendTarget(
+  s: Pick<
+    SoapStore,
+    | 'mode'
+    | 'endpointUrl'
+    | 'parsedWsdl'
+    | 'manualSoapAction'
+    | 'manualSoapVersion'
+    | 'getSelectedOperation'
+    | 'getSelectedPort'
+  >,
+): {
+  op: WsdlOperation | undefined
+  endpointUrl: string
+  version: 'soap11' | 'soap12'
+  action: string
+} {
+  const manualMode = s.mode === 'manual'
+  const op = manualMode ? undefined : s.getSelectedOperation()
+  const port = manualMode ? undefined : s.getSelectedPort()
+  const endpointUrl = manualMode
+    ? s.endpointUrl || port?.endpointUrl || s.parsedWsdl?.endpointUrl || ''
+    : port?.endpointUrl || s.parsedWsdl?.endpointUrl || s.endpointUrl || ''
+  const version = op ? (s.parsedWsdl?.soapVersion ?? 'soap11') : s.manualSoapVersion
+  return { op, endpointUrl, version, action: op?.soapAction || s.manualSoapAction || '' }
+}
+
 export const useSoapStore = create<SoapStore>((set, get) => ({
   ...persisted.current,
   // Backfill manual-mode fields for states persisted before they existed.
@@ -451,7 +487,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   sendSoap: async () => {
     // Issue #247: a password still withheld after a restart is reloaded first.
     if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
-    const { rawXml, wsSecurity, parsedWsdl, manualSoapAction, manualSoapVersion } = get()
+    const { rawXml, wsSecurity } = get()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
@@ -470,29 +506,13 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     responseStore.clearResponse(activeTabId)
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
-    // In Manual mode the form's Endpoint URL is authoritative; a WSDL loaded
-    // earlier in the same tab must not hijack the target (issue #124).
-    const manualMode = get().mode === 'manual'
-    const op = manualMode ? undefined : get().getSelectedOperation()
-    const port = manualMode ? undefined : get().getSelectedPort()
-    const endpointUrl = manualMode
-      ? get().endpointUrl || port?.endpointUrl || parsedWsdl?.endpointUrl || ''
-      : port?.endpointUrl || parsedWsdl?.endpointUrl || get().endpointUrl || ''
+    // Endpoint, version and action — the same helper Generate Code uses.
+    const { op, endpointUrl, version: effectiveVersion, action } = soapSendTarget(get())
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(endpointUrl, activeVars)
     const resolvedXml = resolveVariables(rawXml, activeVars)
-    // The SOAP Action and version come from the selected WSDL operation when
-    // one is loaded, otherwise from the manual form (issue #17 — manual mode
-    // had no WSDL op, so the action was always empty). Transport rules differ
-    // by version:
-    //   SOAP 1.1 → quoted `SOAPAction:` HTTP header
-    //   SOAP 1.2 → `action="…"` parameter inside the Content-Type, no SOAPAction
-    const effectiveVersion = op ? (parsedWsdl?.soapVersion ?? 'soap11') : manualSoapVersion
-    const resolvedSoapAction = resolveVariables(
-      op?.soapAction || manualSoapAction || '',
-      activeVars,
-    )
+    const resolvedSoapAction = resolveVariables(action, activeVars)
     // Transport headers come from the SHARED helper so Send and the Runner
     // agree (src/shared/soap-transport.ts).
     const headerPairs = soapTransportHeaders(effectiveVersion, resolvedSoapAction)

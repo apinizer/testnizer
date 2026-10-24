@@ -25,6 +25,8 @@ beforeEach(() => {
   useUIStore.setState({
     showCodeGenerator: true,
     curlSnippet: { dialect: 'bash', multiLine: true },
+    // The language choice lives in ui.store since issue #280 (it was modal state).
+    codegen: { language: 'curl', variantByLanguage: {}, optionsByVariant: {} },
     rightPanelTab: 'code',
   })
   useRequestStore.setState({

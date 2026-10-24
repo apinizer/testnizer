@@ -1,6 +1,14 @@
 import { create } from 'zustand'
 import type { Theme, Language } from '../types'
 import type { CurlDialect } from '../../shared/curl/types'
+import type { CodegenOptionValue, CodegenOptions } from '../../shared/codegen/types'
+
+/** Generate Code selection (issue #280). */
+export interface CodegenSelection {
+  language: string
+  variantByLanguage: Record<string, string>
+  optionsByVariant: Record<string, CodegenOptions>
+}
 import { setLocale as setI18nLocale } from '../lib/i18n'
 
 type Locale = Language
@@ -69,6 +77,13 @@ interface UIStore {
    * session-only (not persisted).
    */
   curlSnippet: { dialect: CurlDialect; multiLine: boolean }
+  /**
+   * Generate Code selection (issue #280): the language, the variant chosen per
+   * language and the options changed per variant. The cURL language's variant
+   * and its Multi-line option stay in `curlSnippet`. Shared by the modal and
+   * the right panel; session-only (not persisted), like `curlSnippet`.
+   */
+  codegen: CodegenSelection
   showUpdateModal: boolean
   showSaveModal: boolean
   showNewProjectModal: boolean
@@ -133,6 +148,10 @@ interface UIStore {
   openSettingsAt: (focus: SettingsFocus) => void
   setShowCodeGenerator: (show: boolean) => void
   setCurlSnippet: (patch: Partial<{ dialect: CurlDialect; multiLine: boolean }>) => void
+  setCodegenLanguage: (language: string) => void
+  setCodegenVariant: (language: string, variantId: string) => void
+  setCodegenOption: (variantId: string, optionId: string, value: CodegenOptionValue) => void
+  resetCodegenOptions: (variantId: string) => void
   setShowUpdateModal: (show: boolean) => void
   setShowSaveModal: (show: boolean) => void
   setShowNewProjectModal: (show: boolean) => void
@@ -222,6 +241,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
   settingsFocus: null,
   showCodeGenerator: false,
   curlSnippet: { dialect: 'bash', multiLine: true },
+  codegen: { language: 'curl', variantByLanguage: {}, optionsByVariant: {} },
   showUpdateModal: false,
   showSaveModal: false,
   showNewProjectModal: false,
@@ -416,6 +436,30 @@ export const useUIStore = create<UIStore>((set, get) => ({
   openSettingsAt: (focus) => set({ showSettingsModal: true, settingsFocus: focus }),
   setShowCodeGenerator: (show) => set({ showCodeGenerator: show }),
   setCurlSnippet: (patch) => set((s) => ({ curlSnippet: { ...s.curlSnippet, ...patch } })),
+  setCodegenLanguage: (language) => set((s) => ({ codegen: { ...s.codegen, language } })),
+  setCodegenVariant: (language, variantId) =>
+    set((s) => ({
+      codegen: {
+        ...s.codegen,
+        variantByLanguage: { ...s.codegen.variantByLanguage, [language]: variantId },
+      },
+    })),
+  setCodegenOption: (variantId, optionId, value) =>
+    set((s) => ({
+      codegen: {
+        ...s.codegen,
+        optionsByVariant: {
+          ...s.codegen.optionsByVariant,
+          [variantId]: { ...s.codegen.optionsByVariant[variantId], [optionId]: value },
+        },
+      },
+    })),
+  resetCodegenOptions: (variantId) =>
+    set((s) => {
+      const rest = { ...s.codegen.optionsByVariant }
+      delete rest[variantId]
+      return { codegen: { ...s.codegen, optionsByVariant: rest } }
+    }),
   setShowUpdateModal: (show) => set({ showUpdateModal: show }),
   setShowSaveModal: (show) => set({ showSaveModal: show }),
   setShowNewProjectModal: (show) => set({ showNewProjectModal: show }),
