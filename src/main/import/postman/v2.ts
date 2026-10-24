@@ -70,6 +70,28 @@ export interface PostmanImportOptions {
    * endpoints it materialises (their examples would be orphaned).
    */
   apisTree?: boolean
+  /**
+   * Postman v3 (issue #276 part 2): items of a request kind Testnizer keeps
+   * as its own protocol (GraphQL, gRPC, WebSocket, Socket.IO, MCP, AI Chat)
+   * carry no v2 `request`. The hook writes such an item and returns its
+   * endpoint id, or null for an ordinary item.
+   */
+  nativeItem?: (item: PostmanItem, ctx: NativeItemContext) => string | null
+}
+
+/** What the walker hands `nativeItem` for one item. */
+export interface NativeItemContext {
+  db: Database
+  projectId: string
+  parentFolderId: string | null
+  label: string
+  /** What a request without its own auth gets: `inherit` (an ancestor carries it), a baked auth, or null. */
+  inheritedAuth: AuthConfigLike | null
+  /** An ancestor folder / the collection defines auth. */
+  ancestorAuth: boolean
+  sortOrder: number
+  now: number
+  warnings: string[]
 }
 
 export interface PostmanImportResult {
@@ -501,6 +523,25 @@ export function importCollectionTx(
           ppb: mergePpb(ctx.ppb, item.protocolProfileBehavior),
         })
         continue
+      }
+
+      if (opts.nativeItem) {
+        const nativeId = opts.nativeItem(item, {
+          db,
+          projectId,
+          parentFolderId,
+          label,
+          inheritedAuth: opts.apisTree && ctx.inheritCarrier ? { type: 'inherit' } : ctx.bakedAuth,
+          ancestorAuth: ctx.inheritCarrier || !!ctx.bakedAuth,
+          sortOrder: counters.endpointCount,
+          now,
+          warnings,
+        })
+        if (nativeId) {
+          counters.endpointIds.push(nativeId)
+          counters.endpointCount++
+          continue
+        }
       }
 
       const req = normalizeRequest(item.request)

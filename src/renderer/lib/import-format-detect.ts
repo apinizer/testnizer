@@ -63,7 +63,8 @@ export function detectImportFormat(content: string, filePath?: string | null): s
   if (/^(openapi|swagger)\s*:/m.test(head)) return 'openapi'
 
   // Postman v3 YAML (`$kind: collection` / `$kind: http-request` …) — routed
-  // to the Postman importer, which explains that v3 arrives later (#276).
+  // to the Postman importer: a single file of a v3 folder is answered with a
+  // pointer to "Import folder…" (issue #276 part 2).
   if (!head.startsWith('{') && !head.startsWith('[') && classifyPostmanText(trimmed)) {
     return 'postman'
   }

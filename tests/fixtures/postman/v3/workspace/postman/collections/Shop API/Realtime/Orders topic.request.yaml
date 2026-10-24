@@ -1,0 +1,5 @@
+$kind: kafka-request
+mode: producer
+url:
+  - kafka.example.test:9092
+order: 9000

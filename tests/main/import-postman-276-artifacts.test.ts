@@ -2,7 +2,9 @@
  * Issue #276 (part 1) — every single-file Postman artifact routes through the
  * one `import:postman` entry point without a "which version?" question:
  * collection v1 (converted), v2.0, v2.1, environment, globals, legacy data
- * dump; v3 is recognised and refused with a clear message.
+ * dump. A v3 JSON collection is imported (issue #276 part 2,
+ * tests/main/import-postman-v3.test.ts); a single file out of a v3 folder is
+ * refused with a pointer to "Import folder…".
  *
  * Oracle for the v1 converter: Postman's own transformer fixture (Apache-2.0,
  * tests/fixtures/postman/transformer/README.md) ships the SAME collection as
@@ -302,17 +304,17 @@ describe('issue #276 — v1 / v2.0 / v2.1 collections', () => {
     expect(snapshot(p21)).toEqual(snapshot(p2))
   })
 
-  it('a v3 file is refused with a clear message, nothing written', async () => {
+  it('a single file out of a v3 folder is refused with a pointer to "Import folder…", nothing written', async () => {
     const pid = newProject()
-    const res = await importText(pid, JSON.stringify({ $kind: 'collection', name: 'c', items: [] }))
-    expect(res.success).toBe(false)
-    expect(res.error).toMatch(/Postman v3 file/)
-    expect(res.error).toMatch(/Collection v2\.1/)
+    const def = await importText(pid, JSON.stringify({ $kind: 'collection', name: 'c' }))
+    expect(def.success).toBe(false)
+    expect(def.error).toMatch(/one file of a Postman v3 collection folder/)
+    expect(def.error).toMatch(/Import folder/)
     const yaml = await importText(
       pid,
       '$kind: http-request\nname: Get\nmethod: GET\nurl: https://x\n',
     )
-    expect(yaml.error).toMatch(/Postman v3 file/)
+    expect(yaml.error).toMatch(/Import folder/)
     expect(
       (
         getDb().prepare('SELECT COUNT(*) AS n FROM endpoints WHERE project_id = ?').get(pid) as {

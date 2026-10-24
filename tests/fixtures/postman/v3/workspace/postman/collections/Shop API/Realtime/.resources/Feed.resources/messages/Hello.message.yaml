@@ -1,0 +1,4 @@
+$kind: websocket-message
+content: '{"type":"hello","user":"{{userName}}"}'
+contentType: json
+order: 1000

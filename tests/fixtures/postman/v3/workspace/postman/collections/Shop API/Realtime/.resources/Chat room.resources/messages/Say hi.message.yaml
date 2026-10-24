@@ -1,0 +1,11 @@
+$kind: socket.io-message
+name: Say hi
+description: The first line
+eventName: message
+acknowledgement: true
+args:
+  - content: '{"text":"hi"}'
+    contentType: json
+  - content: second
+    contentType: text
+order: 1000

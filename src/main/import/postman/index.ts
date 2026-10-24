@@ -2,8 +2,10 @@
  * Postman import entry point (issue #276): ONE call takes any single Postman
  * file — collection v1 / v2.0 / v2.1, environment, globals, legacy data dump —
  * detects what it is (`detect.ts` → `src/shared/postman-detect.ts`) and
- * routes it. The user never answers "which version?". Postman v3 files are
- * recognised and refused with a clear message until the v3 importer lands.
+ * routes it. The user never answers "which version?". A monolithic Postman v3
+ * JSON collection is imported here too (`v3/`); a single file out of a v3
+ * collection folder (a request, a folder definition) is refused with a
+ * pointer to "Import folder…" — it needs its folder.
  *
  *   src/main/import/postman/
  *     detect.ts       JSON / YAML parse + the shared classifier
@@ -12,21 +14,23 @@
  *     dump.ts         legacy `postman_dump.json`
  *     environment.ts  environment / globals / collection variables → envs
  *     auth.ts body.ts scripts.ts settings.ts examples.ts normalize.ts
+ *     v3/             Postman v3: monolith JSON + collection folder (issue #276 part 2)
  */
-import { isPostmanV3Kind } from '../../../shared/postman-detect'
 import type { PostmanCollection, PostmanEnvironment } from './types'
 import { detectPostman } from './detect'
 import { convertV1Collection } from './v1'
 import { importPostmanCollection, type PostmanImportOptions, type PostmanImportResult } from './v2'
 import { importLegacyDump } from './dump'
 import { importPostmanEnvironment } from './environment'
+import { importV3CollectionDocument } from './v3'
 
 export type { PostmanImportOptions, PostmanImportResult } from './v2'
 export { importPostmanEnvironment } from './environment'
 
-export const POSTMAN_V3_MESSAGE =
-  'This is a Postman v3 file (Postman 12 YAML / Native Git format). Testnizer imports Postman v3 in a later version — ' +
-  'for now, export the collection from Postman as "Collection v2.1" JSON and import that file.'
+/** A single file out of a v3 collection folder: it only makes sense with its folder. */
+export const POSTMAN_V3_PART_MESSAGE =
+  'This is one file of a Postman v3 collection folder (Postman 12 YAML format). ' +
+  'Use "Import folder…" and pick the collection folder (the one holding ".resources") or the workspace folder.'
 
 export const NOT_POSTMAN_MESSAGE =
   "This file is not a Postman collection. You can't upload this file type from here."
@@ -57,9 +61,19 @@ export async function importPostman(
   }
   const { doc, detection } = parsed
   if (!detection) return { success: false, error: NOT_POSTMAN_MESSAGE }
-  if (isPostmanV3Kind(detection.kind)) return { success: false, error: POSTMAN_V3_MESSAGE }
 
   switch (detection.kind) {
+    case 'v3-collection':
+      return importV3CollectionDocument(projectId, doc, rootFolderId, opts)
+    case 'v3-definition':
+    case 'v3-request':
+    case 'v3-resource':
+      return { success: false, error: POSTMAN_V3_PART_MESSAGE }
+    case 'v3-unknown':
+      return {
+        success: false,
+        error: `This Postman v3 file has an unknown $kind "${detection.v3Kind ?? ''}".`,
+      }
     case 'v2-collection': {
       const collection = doc as PostmanCollection
       if (typeof collection.info?.name !== 'string') {

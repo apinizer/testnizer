@@ -1,0 +1,218 @@
+{
+  "$kind": "collection",
+  "name": "All kinds",
+  "description": "Constructed for Testnizer tests: one item per v3 request kind.",
+  "variables": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.example.test"
+    },
+    {
+      "key": "apiKey",
+      "secret": true,
+      "source": {
+        "provider": "postman",
+        "postman": {
+          "type": "local",
+          "secretId": "s-9"
+        }
+      }
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "credentials": [
+      {
+        "key": "token",
+        "value": "{{token}}"
+      }
+    ]
+  },
+  "scripts": [
+    {
+      "type": "http:beforeRequest",
+      "language": "text/javascript",
+      "code": "pm.variables.set('t', 1)"
+    }
+  ],
+  "items": [
+    {
+      "$kind": "collection",
+      "name": "REST",
+      "auth": {
+        "type": "noauth"
+      },
+      "items": [
+        {
+          "$kind": "http-request",
+          "name": "Create user",
+          "method": "POST",
+          "url": "{{baseUrl}}/users/:id?verbose=1",
+          "queryParams": [
+            {
+              "key": "verbose",
+              "value": "1"
+            }
+          ],
+          "pathVariables": [
+            {
+              "key": "id",
+              "value": "7"
+            }
+          ],
+          "headers": [
+            {
+              "key": "X-Trace",
+              "value": "1",
+              "disabled": true
+            }
+          ],
+          "body": {
+            "type": "json",
+            "content": "{\"a\":1}"
+          },
+          "auth": {
+            "type": "inherit",
+            "credentials": []
+          },
+          "settings": {
+            "followRedirects": false,
+            "maxRedirects": 2,
+            "strictSSL": false
+          },
+          "scripts": [
+            {
+              "type": "afterResponse",
+              "language": "text/javascript",
+              "code": "pm.test('ok', () => {})"
+            }
+          ],
+          "examples": [
+            {
+              "$kind": "http-example",
+              "name": "201 Created",
+              "request": {
+                "url": "{{baseUrl}}/users",
+                "method": "POST"
+              },
+              "response": {
+                "statusCode": 201,
+                "statusText": "Created",
+                "headers": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "type": "json",
+                  "content": "{\"id\":7}"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "$kind": "graphql-request",
+      "name": "GQL",
+      "url": "{{baseUrl}}/graphql",
+      "query": "{ me { id } }",
+      "variables": "{}",
+      "headers": [
+        {
+          "key": "X-A",
+          "value": "1"
+        }
+      ],
+      "auth": {
+        "type": "inherit",
+        "credentials": []
+      }
+    },
+    {
+      "$kind": "grpc-request",
+      "name": "Hello",
+      "url": "grpc.example.test:50051",
+      "methodPath": "demo.Greeter/SayHello",
+      "message": {
+        "content": "{\"name\":\"x\"}"
+      },
+      "metadata": [
+        {
+          "key": "k",
+          "value": "v"
+        }
+      ],
+      "settings": {
+        "secureConnection": false
+      }
+    },
+    {
+      "$kind": "websocket-request",
+      "name": "WS",
+      "url": "wss://ws.example.test",
+      "messages": [
+        {
+          "$kind": "websocket-message",
+          "name": "hi",
+          "content": "hi",
+          "contentType": "text"
+        }
+      ]
+    },
+    {
+      "$kind": "socket.io-request",
+      "name": "SIO",
+      "url": "https://io.example.test",
+      "events": [
+        {
+          "name": "news",
+          "subscribeOnConnect": true
+        }
+      ],
+      "messages": [
+        {
+          "$kind": "socket.io-message",
+          "name": "m",
+          "eventName": "news",
+          "args": [
+            {
+              "content": "1",
+              "contentType": "json"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "$kind": "mcp-request",
+      "name": "MCP",
+      "transport": "sse",
+      "url": "https://mcp.example.test/sse",
+      "message": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"prompts/get\",\"params\":{\"name\":\"greet\",\"arguments\":{\"who\":\"ada\"}}}"
+    },
+    {
+      "$kind": "llm-request",
+      "name": "LLM",
+      "url": "https://api.anthropic.com/v1/messages",
+      "config": {
+        "model": "claude-x",
+        "provider": "anthropic"
+      }
+    },
+    {
+      "$kind": "mqtt-request",
+      "name": "MQ",
+      "url": "mqtt://broker.example.test"
+    },
+    {
+      "$kind": "data-request",
+      "name": "PG",
+      "type": "postgres",
+      "url": "postgres://h/db",
+      "query": "select 1"
+    }
+  ]
+}

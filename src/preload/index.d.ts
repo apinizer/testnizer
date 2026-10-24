@@ -549,6 +549,17 @@ import type {
 } from '../shared/git-changes'
 type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
 
+/** A picked Postman v3 folder, as the Import modal shows it. */
+interface PostmanFolderPick {
+  handle: string
+  folderName: string
+  kind: 'workspace' | 'collection'
+  collections: string[]
+  requestCount: number
+  environmentCount: number
+  globalsCount: number
+}
+
 interface ImportExportApi {
   openFile(): Promise<IpcResult<{ filePath: string; content: string } | null>>
   importOpenApi(payload: {
@@ -570,6 +581,17 @@ interface ImportExportApi {
     content: string
   }): Promise<IpcResult<ImportResult>>
   exportPostman(projectId: string): Promise<CollectionExportIpcResult>
+  /**
+   * Postman v3 folder (issue #276 part 2): main shows the folder dialog, reads
+   * and checks the folder, and returns an opaque handle + summary (null data
+   * = cancelled). The handle is single-use.
+   */
+  pickPostmanFolder(): Promise<IpcResult<PostmanFolderPick | null>>
+  importPostmanFolder(payload: {
+    projectId: string
+    handle: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
   importHar(payload: {
     projectId: string
     content: string

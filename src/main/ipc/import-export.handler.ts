@@ -46,6 +46,12 @@ import {
 import { isSecretFlag, stripProjectSharedSettings } from '../lib/local-secrets'
 import { isEncryptedSecret } from '../lib/secure-storage'
 import { importPostman, importPostmanEnvironment } from '../import/postman'
+import {
+  pickedFolderSummary,
+  rememberPickedFolder,
+  takePickedFolder,
+} from '../import/postman/v3/picked-folders'
+import { importV3FolderContent, readV3Folder, V3InputError } from '../import/postman/v3'
 import type {
   PostmanAuth,
   PostmanBody,
@@ -370,6 +376,57 @@ export function registerImportExportHandlers(): void {
         const result = await importPostman(
           payload.projectId,
           payload.content,
+          payload.folderId ?? null,
+          { apisTree: true },
+        )
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
+  // ─── Postman v3 folder import (issue #276 part 2) ───────────
+  // The renderer never hands main a path: main shows the folder dialog, reads
+  // and checks the folder now (errors show in the modal before the user picks
+  // a destination) and returns an opaque one-time handle; `import:postmanFolder`
+  // accepts only that handle and imports what was read.
+  ipcMain.handle('import:pickPostmanFolder', async () => {
+    try {
+      const result = await dialog.showOpenDialog({
+        title: 'Import Postman v3 folder',
+        properties: ['openDirectory'],
+      })
+      if (result.canceled || result.filePaths.length === 0) return { success: true, data: null }
+      const folderPath = result.filePaths[0]
+      let content: ReturnType<typeof readV3Folder>
+      try {
+        content = readV3Folder(folderPath)
+      } catch (e) {
+        if (e instanceof V3InputError) return { success: false, error: e.message }
+        throw e
+      }
+      const handle = rememberPickedFolder(folderPath, content)
+      return { success: true, data: { handle, ...pickedFolderSummary(folderPath, content) } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  ipcMain.handle(
+    'import:postmanFolder',
+    async (_event, payload: { projectId: string; handle: string; folderId?: string | null }) => {
+      try {
+        const picked = takePickedFolder(payload.handle)
+        if (!picked) {
+          return {
+            success: true,
+            data: { success: false, error: 'The picked folder expired; pick it again.' },
+          }
+        }
+        const result = importV3FolderContent(
+          payload.projectId,
+          picked.content,
           payload.folderId ?? null,
           { apisTree: true },
         )

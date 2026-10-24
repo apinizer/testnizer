@@ -1,0 +1,18 @@
+$kind: grpc-request
+name: Say hello
+url: 'grpcs://grpc.example.test:443'
+methodPath: /demo.Greeter/SayHello
+message:
+  content: '{ "name": "{{userName}}" }'
+metadata:
+  - key: x-tenant
+    value: acme
+schema:
+  source: file
+  location: ../protos/greeter.proto
+settings:
+  includeDefaultFields: true
+scripts:
+  - type: beforeInvoke
+    code: console.log('invoke');
+order: 3000

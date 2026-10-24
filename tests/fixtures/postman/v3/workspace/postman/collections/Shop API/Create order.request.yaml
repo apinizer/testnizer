@@ -1,0 +1,24 @@
+$kind: http-request
+description: Creates an order and keeps its id.
+method: POST
+url: '{{baseUrl}}/orders'
+headers:
+  - key: Content-Type
+    value: application/json
+body:
+  type: json
+  content: |-
+    {
+      "productId": 42,
+      "quantity": 2
+    }
+scripts:
+  - type: beforeRequest
+    code: pm.variables.set('ts', Date.now());
+    language: text/javascript
+  - type: afterResponse
+    code: |-
+      pm.test('created', () => pm.response.to.have.status(201));
+      pm.environment.set('orderId', pm.response.json().id);
+    language: text/javascript
+order: 3000

@@ -1,0 +1,8 @@
+$kind: http-example
+response:
+  statusCode: 500
+  statusText: Internal Server Error
+  body:
+    type: text
+    content: boom
+order: 2000

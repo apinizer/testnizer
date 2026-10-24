@@ -19,6 +19,11 @@ import { toast } from '../../lib/toast'
 import { detectImportFormat, checkTypeMismatch } from '../../lib/import-format-detect'
 import { startsWithCurl } from '../../../shared/curl'
 import Modal from '../shared/Modal'
+import {
+  PostmanFolderSource,
+  PostmanFolderSummary,
+  type PostmanFolderPickInfo,
+} from './PostmanFolderSource'
 import ImportResultPanel, { type ImportReport } from './ImportResultPanel'
 import {
   classifyPostmanText,
@@ -201,6 +206,9 @@ export default function ImportModal() {
   const [pendingFileName, setPendingFileName] = useState('')
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null)
   const [pendingSourceUrl, setPendingSourceUrl] = useState('')
+  // A picked Postman v3 folder (issue #276 part 2) — main holds the folder,
+  // the modal only the one-time handle.
+  const [pendingFolder, setPendingFolder] = useState<PostmanFolderPickInfo | null>(null)
 
   // cURL paste buffer — separate from pendingFileContent so the textarea
   // remains controlled while the user edits it. Committed into
@@ -230,7 +238,9 @@ export default function ImportModal() {
     if (!pendingFileContent) return null
     return classifyPostmanText(pendingFileContent)?.kind ?? null
   }, [selectedFormatId, pendingFileContent])
-  const envOnlyImport = isPostmanVariablesKind(postmanKind)
+  const envOnlyImport =
+    isPostmanVariablesKind(postmanKind) ||
+    (pendingFolder !== null && pendingFolder.collections.length === 0)
 
   if (!showImportModal) return null
 
@@ -249,6 +259,7 @@ export default function ImportModal() {
     setPendingFileContent(null)
     setPendingFileName('')
     setPendingFilePath(null)
+    setPendingFolder(null)
     setProtoServerAddress('')
     setFolderMode('new')
     setNewFolderName('')
@@ -464,11 +475,36 @@ export default function ImportModal() {
     }
   }
 
+  /** Pick a Postman v3 collection / workspace folder (main shows the dialog and checks it). */
+  async function handlePickPostmanFolder() {
+    setImportLoading(true)
+    setImportError('')
+    try {
+      const res = await window.api?.importExport?.pickPostmanFolder?.()
+      if (!res?.success) {
+        setImportError(res?.error || t('toast.importFailed'))
+        return
+      }
+      if (!res.data) return // dialog dismissed
+      setPendingFolder(res.data)
+      setPendingFileContent(null)
+      setPendingFileName('')
+      setPendingFilePath(null)
+      goToFolderStep(
+        res.data.collections.length === 1 ? res.data.collections[0] : res.data.folderName,
+      )
+    } catch (err) {
+      setImportError((err as Error).message || t('toast.importFailed'))
+    } finally {
+      setImportLoading(false)
+    }
+  }
+
   /** Final import with folder selection (step 3) */
   async function handleFinalImport() {
     if (!activeProjectId) return
-    // For WSDL we use wsdlParsed, for others we use pendingFileContent
-    if (!wsdlParsed && !pendingFileContent) return
+    // For WSDL we use wsdlParsed, for a Postman folder its handle, for others pendingFileContent
+    if (!wsdlParsed && !pendingFileContent && !pendingFolder) return
     setImporting(true)
     setImportError('')
 
@@ -507,6 +543,7 @@ export default function ImportModal() {
       folderId = targetFolderId
     }
 
+    let usedFolderHandle = false
     try {
       const fmtId = selectedFormat.id
       // The IPC wrapper returns `{ success: true, data: importerResult }` on
@@ -544,6 +581,17 @@ export default function ImportModal() {
           format: 'openapi',
           folderId,
           sourceUrl: pendingSourceUrl || undefined,
+        })) as typeof importResult
+      } else if ((fmtId === 'postman' || fmtId === 'apinizer') && pendingFolder) {
+        // A Postman v3 folder: the handle is single-use — a failed import
+        // needs the folder picked again.
+        const handle = pendingFolder.handle
+        usedFolderHandle = true
+        setPendingFolder(null)
+        importResult = (await window.api?.importExport?.importPostmanFolder?.({
+          projectId: pid,
+          handle,
+          folderId,
         })) as typeof importResult
       } else if (fmtId === 'postman' || fmtId === 'apinizer') {
         // Apinizer collections are Postman v2.1 with an `x-apinizer` extension;
@@ -694,8 +742,11 @@ export default function ImportModal() {
         const errMsg = importResult?.data?.error || importResult?.error || t('toast.importFailed')
         toast.error(errMsg)
         setImportError(errMsg)
+        // The folder handle is spent: back to the source step to pick again.
+        if (usedFolderHandle) setStep(2)
       }
     } catch (err) {
+      if (usedFolderHandle) setStep(2)
       toast.error((err as Error).message || t('toast.importFailed'))
       setImportError((err as Error).message || 'Import failed')
     } finally {
@@ -941,6 +992,17 @@ export default function ImportModal() {
                 </div>
               )}
 
+              {selectedFormat.id === 'postman' && (
+                <>
+                  <PostmanFolderSource loading={importLoading} onPick={handlePickPostmanFolder} />
+                  <div className="flex items-center gap-3">
+                    <div className="h-px flex-1 bg-[var(--border)]" />
+                    <span className="text-[var(--hint)]">or</span>
+                    <div className="h-px flex-1 bg-[var(--border)]" />
+                  </div>
+                </>
+              )}
+
               {canFileImport && (
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
@@ -1036,6 +1098,8 @@ export default function ImportModal() {
                   </span>
                 </div>
               )}
+
+              {pendingFolder && <PostmanFolderSummary pick={pendingFolder} />}
 
               {/* Postman environment / globals: no destination folder */}
               {envOnlyImport && (

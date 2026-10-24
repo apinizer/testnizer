@@ -1,0 +1,3 @@
+$kind: http-request
+method: GET
+url: https://status.example.test/health

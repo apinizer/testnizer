@@ -1011,6 +1011,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.envNote.body': 'It is imported as a project environment — no folder is created.',
     'import.envNote.environment': 'environment',
     'import.envNote.globals': 'globals',
+    'import.postmanFolder.label': 'Import a Postman v3 folder',
+    'import.postmanFolder.button': 'Import folder…',
+    'import.postmanFolder.hint':
+      'A Postman 12 collection folder (it holds ".resources" and *.request.yaml files) or a workspace folder (it holds "postman/collections").',
+    'import.postmanFolder.ready': 'Ready to import folder:',
+    'import.postmanFolder.summary':
+      '{collections} collection(s) · {requests} request(s) · {environments} environment(s)',
+    'import.postmanFolder.globals': 'globals',
+    'import.postmanFolder.eachInFolder': 'Each collection is imported into its own folder.',
 
     // Settings Modal
     'settings.title': 'Settings',
@@ -5143,6 +5152,15 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.envNote.body': 'Proje ortamı olarak içe aktarılır — klasör oluşturulmaz.',
     'import.envNote.environment': 'ortam',
     'import.envNote.globals': 'global değişken',
+    'import.postmanFolder.label': 'Postman v3 klasörü içe aktar',
+    'import.postmanFolder.button': 'Klasör içe aktar…',
+    'import.postmanFolder.hint':
+      'Postman 12 koleksiyon klasörü (".resources" ve *.request.yaml dosyalarını içerir) ya da çalışma alanı klasörü ("postman/collections" içerir).',
+    'import.postmanFolder.ready': 'İçe aktarılmaya hazır klasör:',
+    'import.postmanFolder.summary':
+      '{collections} koleksiyon · {requests} istek · {environments} ortam',
+    'import.postmanFolder.globals': 'global değişkenler',
+    'import.postmanFolder.eachInFolder': 'Her koleksiyon kendi klasörüne aktarılır.',
 
     // Settings Modal
     'settings.title': 'Ayarlar',

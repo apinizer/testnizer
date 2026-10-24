@@ -1,0 +1,22 @@
+$kind: http-request
+url: '{{baseUrl}}/products?page=1'
+method: GET
+queryParams:
+  - key: page
+    value: '1'
+  - key: limit
+    value: '{{pageSize}}'
+    description: Page size
+  - key: draft
+    value: 'true'
+    disabled: true
+headers:
+  Accept: application/json
+  X-Trace: '{{$guid}}'
+settings:
+  followRedirects: false
+  maxRedirects: 3
+  strictSSL: false
+  disableCookies: true
+examples: ./.resources/List products.resources/examples
+order: 1000

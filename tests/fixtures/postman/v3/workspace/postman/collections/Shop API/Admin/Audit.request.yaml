@@ -1,0 +1,7 @@
+$kind: http-request
+method: GET
+url: '{{baseUrl}}/audit'
+scripts:
+  - type: afterResponse
+    src: ../../../../../outside.js
+order: 3000

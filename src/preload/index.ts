@@ -275,6 +275,9 @@ const api = {
       ipcRenderer.invoke('import:postmanEnvironment', payload),
     exportPostman: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('export:postman', projectId),
+    pickPostmanFolder: (): Promise<unknown> => ipcRenderer.invoke('import:pickPostmanFolder'),
+    importPostmanFolder: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('import:postmanFolder', payload),
     importHar: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:har', payload),
     importInsomnia: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:insomnia', payload),

@@ -1,0 +1,35 @@
+$kind: collection
+name: Shop API
+description: Orders, products and the realtime feed of a demo shop.
+variables:
+  - key: baseUrl
+    value: https://shop.example.test/api
+  - key: pageSize
+    value: '25'
+    description: Items per page
+  - key: legacy
+    value: 'on'
+    disabled: true
+  - key: vaultToken
+    secret: true
+    source:
+      provider: postman
+      postman:
+        type: local
+        secretId: secret-1
+auth:
+  type: bearer
+  credentials:
+    - key: token
+      value: '{{accessToken}}'
+scripts:
+  - type: http:beforeRequest
+    code: |-
+      pm.request.headers.add({ key: 'X-Client', value: 'testnizer' });
+    language: text/javascript
+  - type: http:afterResponse
+    code: pm.test('not 5xx', () => pm.expect(pm.response.code).to.be.below(500));
+    language: text/javascript
+  - type: grpc:beforeInvoke
+    code: console.log('grpc only');
+    language: text/javascript

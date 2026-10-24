@@ -1,7 +1,8 @@
 /**
- * Main-side Postman detection: parse JSON or YAML (js-yaml's default schema in
- * v4 is the safe one — no custom tags / JS types) and classify with the one
- * shared classifier (`src/shared/postman-detect.ts`).
+ * Main-side Postman detection: parse JSON or YAML and classify with the one
+ * shared classifier (`src/shared/postman-detect.ts`). YAML uses js-yaml's
+ * CORE schema — plain JSON types only: no custom tags, unquoted dates stay
+ * strings, no `<<` merge keys (issue #276 part 2).
  */
 import { classifyPostmanDocument, type PostmanDetection } from '../../../shared/postman-detect'
 
@@ -14,8 +15,11 @@ export function parsePostmanText(text: string): unknown {
   const trimmed = text.replace(/^\uFEFF/, '').trimStart()
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) return JSON.parse(trimmed)
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const yaml = require('js-yaml') as { load: (s: string) => unknown }
-  return yaml.load(trimmed)
+  const yaml = require('js-yaml') as {
+    load: (s: string, o?: { schema?: unknown }) => unknown
+    CORE_SCHEMA: unknown
+  }
+  return yaml.load(trimmed, { schema: yaml.CORE_SCHEMA })
 }
 
 /** Parse + classify. Throws on unparseable text (the caller reports it). */
