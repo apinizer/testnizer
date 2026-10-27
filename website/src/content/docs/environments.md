@@ -8,7 +8,8 @@ section: Guides
 Environments hold the values that change between runs — base URLs, auth tokens,
 test user IDs. Testnizer scopes environments to the **project**, which makes
 them simpler to reason about than Postman's three-tier (global / collection /
-environment) model.
+environment) model: a project has its **environments** and one list of
+**Globals** that every environment shares.
 
 ## Project-scoped environments
 
@@ -41,22 +42,43 @@ for your personal override (`baseUrl: http://localhost:3000`).
 Resolution order:
 
 1. Environment variables (active environment)
-2. Global variables (configured in **Settings → Globals**)
+2. Globals (the project's own list, see [Globals](#globals))
 3. Dynamic variables (built-in, see below)
 4. Literal — `{{...}}` left in place if no match
 
+## Globals
+
+Open **Environments** (the environment selector's **Manage Environments**) and
+pick **Globals** to edit the project's variables that apply whichever
+environment is active. An environment variable of the same name wins. Globals
+are saved with the project, so they travel with Git and export, and they can be
+marked **secret** like any other variable.
+
+Globals are where Postman *collection variables* and *globals* land when you
+import a Postman collection, and what `pm.collectionVariables` and
+`pm.globals` read and write in a script. They belong to one project: another
+project in the same workspace has its own list. **Export Globals** saves the
+list as a Postman globals file (secret values are left empty).
+
+To turn an existing environment into Globals, select it and choose **Move to
+Globals**: the variables are copied, a name Globals already has keeps its
+value, and you are asked whether to delete the environment afterwards.
+
 ## Dynamic variables
 
-Built-in helpers, prefixed with `$`:
+Built-in helpers, prefixed with `$`. Testnizer supports all 118 of Postman's
+dynamic variables with the same output, for example:
 
-- `{{$randomInt}}` — random 32-bit integer
-- `{{$randomUuid}}` — RFC 4122 v4 UUID
+- `{{$guid}}` / `{{$randomUUID}}` — a v4 UUID
+- `{{$randomInt}}` — random integer, 0–1000
 - `{{$timestamp}}` — Unix epoch seconds
 - `{{$isoTimestamp}}` — ISO 8601 UTC
 - `{{$randomEmail}}`, `{{$randomFirstName}}`, `{{$randomLastName}}` — fake data
-- `{{$base64:hello}}` — Base64-encode a literal
-- `{{$jwt.decode:<token>:claim}}` — extract a claim from a JWT (handy for
-  asserting against a value the auth server returns)
+
+plus Testnizer's own `{{$randomInt(1,100)}}`, `{{$randomString(12)}}` and
+`{{$datetime(YYYY-MM-DD)}}`. A `{{$name}}` Testnizer does not know is left as
+written. The full list with example output is in the
+[Variables reference](/docs/variables#dynamic-values).
 
 Dynamic variables resolve fresh on every request — useful for cache-busting
 query parameters or unique idempotency keys.
@@ -68,7 +90,7 @@ In a pre-request or post-response script:
 ```js
 pm.environment.set('userId', 12345)
 pm.environment.get('baseUrl')
-pm.variables.set('correlationId', pm.variables.get('$randomUuid'))
+pm.variables.set('correlationId', require('uuid').v4())
 ```
 
 Setters write to the **current value** of the active environment. Writes from a

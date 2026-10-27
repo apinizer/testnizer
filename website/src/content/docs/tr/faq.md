@@ -7,16 +7,22 @@ section: Referans
 
 ## Postman'den nasıl geçiş yaparım?
 
-**İçe Aktar** iletişim kutusunu açın (`Dosya → İçe Aktar` veya sol kenar çubuğuna
-dosya sürükleyin) ve Postman dışa aktarma dosyanızı seçin. Testnizer, Postman
-Koleksiyonu v2 ve v2.1 biçimini destekler. Postman'den JSON olarak dışa aktarılan
-ortamlar da içe aktarılabilir — aynı İçe Aktar iletişim kutusunu kullanın ve ortam
-dosyasını seçin.
+**İçe Aktar** iletişim kutusunu açın (`Dosya → İçe Aktar` veya sol kenar
+çubuğuna dosya sürükleyin), **Postman** kartını seçin ve Postman dosyanızı
+seçin. Testnizer, Postman Koleksiyonu **v1, v2.0, v2.1 ve v3** biçimlerini
+(tek bir JSON dosyası ya da **Klasör içe aktar…** ile bir Postman 12 *Native Git*
+klasörü), Postman ortam ve globals dosyalarını, bir Postman veri dışa aktarımını
+ve bunların `.zip` arşivlerini okur. Sürümü dosyadan kendisi algılar; sizin
+seçmeniz gerekmez.
 
-Klasör hiyerarşisi, istek açıklamaları, ön istek scriptleri, test scriptleri ve
-yetkilendirme ayarları korunur. Az sayıda Postman'e özgü koleksiyon çalıştırıcı
-seçeneği (örn. `postman.setNextRequest`) işlemsiz olarak kabul edilir ve içe
-aktarma sırasında konsola kaydedilir.
+Klasör hiyerarşisi, istek açıklamaları, ön istek scriptleri, test scriptleri,
+kayıtlı örnekler ve yetkilendirme ayarları korunur. Koleksiyon değişkenleri
+projenin **Globaller**'i olur; koleksiyon düzeyindeki kimlik doğrulama ve
+scriptler her isteğe kopyalanmak yerine içe aktarma klasörüne taşınır. Bir şey
+aktarılamazsa (Testnizer'da olmayan bir kimlik doğrulama türü, bir Kafka isteği,
+bir `pm.require` çağrısı) **İçe aktarma tamamlandı** paneli bunu listeler.
+Ayrıntılar için [İçe ve dışa aktarma](/tr/docs/import-formats#postman), Globaller
+için [Ortamlar ve değişkenler](/tr/docs/environments#globaller) sayfalarına bakın.
 
 ---
 
@@ -61,13 +67,15 @@ yerini alır; bu nedenle yalnızca ilk kurulum veya geçiş senaryoları için k
 
 Scriptlerin büyük çoğunluğu değişiklik gerektirmeden çalışır. Testnizer, `pm.request`,
 `pm.response`, `pm.environment`, `pm.globals`, `pm.collectionVariables`,
-`pm.variables`, `pm.test`, `pm.expect` ve `pm.sendRequest` dahil olmak üzere `pm`
-script API'sini uygular.
+`pm.variables`, `pm.vault`, `pm.test` (`done` callback biçimi dahil), `pm.expect`
+ve `pm.sendRequest` dahil olmak üzere `pm` script API'sini uygular.
 
 Aşağıdaki Postman'e özgü özellikler desteklenmez:
 
 - `postman.setNextRequest()` — koleksiyon çalıştırıcı yalnızca sıralı çalıştırmayı kullanır
 - Görselleştirici (`pm.visualizer.set()`) — eşdeğeri yok; çıktı yok sayılır
+- `pm.require()` (Postman paket kütüphaneleri) — açık bir "desteklenmiyor" hatası
+  fırlatır; yerleşik `require()` kütüphaneleri yaygın ihtiyaçları karşılar
 - `pm.info.iteration` ve `pm.info.iterationCount` — yalnızca koleksiyon çalıştırıcı
   bağlamında kullanılabilir, tek istek çalıştırmalarında değil
 - Yerleşik Postman bulut veya izleme API'lerine yapılan başvurular

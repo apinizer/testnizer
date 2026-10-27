@@ -8,7 +8,8 @@ section: Kılavuzlar
 Ortamlar, çalışmalar arasında değişen değerleri barındırır — temel URL'ler, auth
 token'ları, test kullanıcı kimlikleri. Testnizer, ortamları **projeye** kapsamlar;
 bu sayede Postman'in üç katmanlı (global / koleksiyon / ortam) modelinden daha
-anlaşılır bir yapı sunar.
+anlaşılır bir yapı sunar: bir projenin **ortamları** ve her ortamın paylaştığı tek
+bir **Globaller** listesi vardır.
 
 ## Proje kapsamlı ortamlar
 
@@ -41,22 +42,44 @@ kişisel geçersiz kılmanızı kullanın (`baseUrl: http://localhost:3000`).
 Çözümleme sırası:
 
 1. Ortam değişkenleri (aktif ortam)
-2. Global değişkenler (**Ayarlar → Globals**'ta yapılandırılır)
+2. Globaller (projenin kendi listesi, bkz. [Globaller](#globaller))
 3. Dinamik değişkenler (yerleşik, aşağıya bakın)
 4. Olduğu gibi — eşleşme yoksa `{{...}}` yerinde bırakılır
 
+## Globaller
+
+**Ortamlar**'ı açın (ortam seçicideki **Ortamları Yönet**) ve hangi ortam aktif
+olursa olsun geçerli olan proje değişkenlerini düzenlemek için **Globaller**'i
+seçin. Aynı adlı bir ortam değişkeni önceliklidir. Globaller proje ile birlikte
+kaydedilir; yani Git ve dışa aktarma ile taşınır ve diğer değişkenler gibi
+**sır** olarak işaretlenebilir.
+
+Bir Postman koleksiyonunu içe aktardığınızda Postman *collection variables* ve
+*globals* değişkenleri Globaller'e iner; betikte `pm.collectionVariables` ve
+`pm.globals` bunları okur ve yazar. Bir projeye aittirler: aynı çalışma
+alanındaki başka bir projenin kendi listesi vardır. **Global Değişkenleri Dışa
+Aktar**, listeyi bir Postman globals dosyası olarak kaydeder (sır değerler boş
+bırakılır).
+
+Mevcut bir ortamı Globaller'e dönüştürmek için ortamı seçip **Globallere taşı**'yı
+kullanın: değişkenler kopyalanır, Globaller'de zaten olan bir ad kendi değerini
+korur ve ardından ortamın silinip silinmeyeceği sorulur.
+
 ## Dinamik değişkenler
 
-`$` önekiyle yerleşik yardımcılar:
+`$` önekiyle yerleşik yardımcılar. Testnizer, Postman'in 118 dinamik değişkeninin
+tamamını aynı çıktıyla destekler; örneğin:
 
-- `{{$randomInt}}` — rastgele 32-bit tamsayı
-- `{{$randomUuid}}` — RFC 4122 v4 UUID
+- `{{$guid}}` / `{{$randomUUID}}` — v4 UUID
+- `{{$randomInt}}` — 0–1000 arasında rastgele tamsayı
 - `{{$timestamp}}` — Unix epoch saniyesi
 - `{{$isoTimestamp}}` — ISO 8601 UTC
 - `{{$randomEmail}}`, `{{$randomFirstName}}`, `{{$randomLastName}}` — sahte veriler
-- `{{$base64:hello}}` — bir değişmezi Base64 olarak kodlar
-- `{{$jwt.decode:<token>:claim}}` — JWT'den bir talep çıkarır (auth sunucusunun
-  döndürdüğü bir değere karşı onaylama için kullanışlıdır)
+
+ayrıca Testnizer'a özgü `{{$randomInt(1,100)}}`, `{{$randomString(12)}}` ve
+`{{$datetime(YYYY-MM-DD)}}`. Testnizer'ın tanımadığı bir `{{$ad}}` yazıldığı gibi
+bırakılır. Örnek çıktılarla tam liste
+[Değişkenler referansı](/tr/docs/variables#dinamik-değerler) sayfasındadır.
 
 Dinamik değişkenler her istekte yeniden çözümlenir — önbellek bozmak için sorgu
 parametrelerinde veya benzersiz idempotency anahtarlarında kullanışlıdır.
@@ -68,7 +91,7 @@ parametrelerinde veya benzersiz idempotency anahtarlarında kullanışlıdır.
 ```js
 pm.environment.set('userId', 12345)
 pm.environment.get('baseUrl')
-pm.variables.set('correlationId', pm.variables.get('$randomUuid'))
+pm.variables.set('correlationId', require('uuid').v4())
 ```
 
 Setter'lar, aktif ortamın **geçerli değerine** yazar. Aynı Testnizer oturumu
