@@ -220,6 +220,23 @@ describe('connect / publish', () => {
     expect(subscribe).toHaveBeenCalledWith('c1', [expect.objectContaining({ topic: 'late/#' })])
   })
 
+  it('after a failed Connect a new topic starts subscribed, so the next Connect takes it', async () => {
+    mq().setUrl('mqtt://b.test')
+    connect.mockResolvedValueOnce({
+      success: false,
+      error: 'Connection refused: Not authorized',
+    } as never)
+    await mq().connect()
+    expect(mq().connectionState).toBe('error')
+    mq().addTopic()
+    mq().updateTopic(mq().topics[0].id, { name: 'retry/#' })
+    expect(mq().topics[0].subscribe).toBe(true)
+    await mq().connect()
+    expect(connect.mock.calls.at(-1)![0].subscriptions).toEqual([
+      expect.objectContaining({ topic: 'retry/#' }),
+    ])
+  })
+
   it('events land on the tab that connected, even after a tab switch (issue #76)', async () => {
     openTab('t-a')
     mq().switchToTab('t-a')

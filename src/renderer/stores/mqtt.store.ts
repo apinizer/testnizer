@@ -361,9 +361,11 @@ export const useMqttStore = create<MqttStore>((set, get) => {
         },
       }),
 
-    // While connected a new row starts with Subscribe off: a subscribed row is
-    // locked (its name can't change under a live subscription), and an empty
-    // name can't be subscribed anyway — the user types it, then flips Subscribe.
+    // While connected (or connecting — Connect already took its subscription
+    // list) a new row starts with Subscribe off: a subscribed row is locked (its
+    // name can't change under a live subscription), and an empty name can't be
+    // subscribed anyway — the user types it, then flips Subscribe. Disconnected
+    // or after a failed Connect it starts on, so the next Connect subscribes it.
     addTopic: () =>
       edit({
         topics: [
@@ -372,7 +374,8 @@ export const useMqttStore = create<MqttStore>((set, get) => {
             id: makeId(),
             name: '',
             qos: 0,
-            subscribe: get().connectionState === 'disconnected',
+            subscribe:
+              get().connectionState !== 'connected' && get().connectionState !== 'connecting',
             description: '',
             noLocal: false,
             retainAsPublished: false,
