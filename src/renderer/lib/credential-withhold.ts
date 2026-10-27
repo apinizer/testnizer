@@ -423,6 +423,21 @@ export function restoreWithheld<T extends WithheldState>(
   return patch as Partial<T>
 }
 
+/**
+ * Whether a marker sits at `prefix` or anywhere under it — a field
+ * (`composer.content`), a row (`composer.properties.userProperties#r1`) or a
+ * list item (`emitArgs[a1].content`, `savedMessages[m1].args[a2].content`).
+ */
+export function isWithheldUnder(marks: readonly string[] | undefined, prefix: string): boolean {
+  return (marks ?? []).some(
+    (p) =>
+      p === prefix ||
+      p.startsWith(`${prefix}.`) ||
+      p.startsWith(`${prefix}${ROW_SEP}`) ||
+      p.startsWith(`${prefix}[`),
+  )
+}
+
 /** Row paths re-pointed onto re-stamped row ids (Duplicate Tab). */
 export function remapWithheldRows(
   marks: readonly string[],

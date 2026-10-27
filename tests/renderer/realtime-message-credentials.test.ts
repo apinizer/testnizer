@@ -329,3 +329,75 @@ describe('list item paths in a CredentialSpec (issue #284 audit)', () => {
     expect(JSON.stringify(patch.items)).toContain('"id":"m1"')
   })
 })
+
+// ─── Copies inside the tab before the reload (#259 data-loss class) ──────
+
+/** The protocol block of the saved row. */
+async function savedMeta(protocol: Tab['protocol']): Promise<Record<string, unknown>> {
+  const res = (await api.endpoint.get('ep-1')) as { data: { request_schema: string } }
+  const schema = JSON.parse(res.data.request_schema) as { metadata: Record<string, unknown> }
+  return schema.metadata[protocol as string] as Record<string, unknown>
+}
+
+type MsgStore = {
+  getState: () => {
+    savedMessages: Array<{ id: string }>
+    loadSavedMessage: (id: string) => void | Promise<void>
+    saveCurrentMessage: (name?: string) => void | Promise<void>
+  }
+}
+const msgStore = (app: App, protocol: Tab['protocol']): MsgStore =>
+  (protocol === 'mqtt'
+    ? app.useMqttStore
+    : protocol === 'websocket'
+      ? app.useWebSocketStore
+      : app.useSocketIOStore) as unknown as MsgStore
+
+/** Where each protocol keeps the composer in its saved block. */
+const composerOf = (protocol: Tab['protocol'], meta: Record<string, unknown>): string =>
+  JSON.stringify(
+    protocol === 'mqtt'
+      ? (meta.composer as { content: string }).content
+      : protocol === 'websocket'
+        ? meta.composerContent
+        : meta.emitArgs,
+  )
+
+describe('a message copied before the restart reload never saves a blank (issue #284 audit)', () => {
+  for (const c of CASES) {
+    it(`${c.protocol}: Load saved message right after a restart, then Ctrl+S → the row keeps the value`, async () => {
+      const s1 = await launch()
+      openTab(s1, c.protocol)
+      c.setup(s1)
+      expect(await s1.saveActiveRequestInPlace()).toEqual({ success: true })
+
+      const s2 = await launch()
+      openTab(s2, c.protocol)
+      const store = msgStore(s2, c.protocol)
+      const savedId = store.getState().savedMessages[0].id
+      // No activation reload yet: the saved message body is still blank here.
+      await store.getState().loadSavedMessage(savedId)
+      expect(await s2.saveActiveRequestInPlace()).toEqual({ success: true })
+      const meta = await savedMeta(c.protocol)
+      expect(composerOf(c.protocol, meta)).toContain(`${CANARY}-saved`)
+      expect(JSON.stringify(meta.savedMessages)).toContain(`${CANARY}-saved`)
+    })
+
+    it(`${c.protocol}: Save the composer as a message right after a restart, then Ctrl+S → no blank copy`, async () => {
+      const s1 = await launch()
+      openTab(s1, c.protocol)
+      c.setup(s1)
+      expect(await s1.saveActiveRequestInPlace()).toEqual({ success: true })
+
+      const s2 = await launch()
+      openTab(s2, c.protocol)
+      const store = msgStore(s2, c.protocol)
+      await store.getState().saveCurrentMessage('Copy')
+      expect(await s2.saveActiveRequestInPlace()).toEqual({ success: true })
+      const meta = await savedMeta(c.protocol)
+      expect(composerOf(c.protocol, meta)).toContain(`${CANARY}-composer`)
+      // The composer went into a saved message: with its value, not a blank.
+      expect(JSON.stringify(meta.savedMessages)).toContain(`${CANARY}-composer`)
+    })
+  }
+})

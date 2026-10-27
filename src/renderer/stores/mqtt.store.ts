@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
@@ -100,9 +100,9 @@ interface MqttStore extends TabMqttState {
   setComposer: (patch: Partial<Omit<MqttPublishDraft, 'properties'>>) => void
   setComposerProperties: (patch: Partial<MqttMessageProperties>) => void
   /** `name`: the new message's name (the editor passes a translated default). */
-  saveCurrentMessage: (name?: string) => void
+  saveCurrentMessage: (name?: string) => void | Promise<void>
   addSavedMessage: (name?: string) => void
-  loadSavedMessage: (id: string) => void
+  loadSavedMessage: (id: string) => void | Promise<void>
   renameSavedMessage: (id: string, name: string) => void
   deleteSavedMessage: (id: string) => void
   saveLoggedMessage: (rowId: string, name?: string) => void
@@ -427,23 +427,28 @@ export const useMqttStore = create<MqttStore>((set, get) => {
         },
       }),
 
-    saveCurrentMessage: (name) => {
-      const s = get()
-      const body = structuredClone(s.composer)
-      const existing = s.savedMessages.find((m) => m.id === s.activeSavedMessageId)
-      if (existing) {
-        edit({
-          savedMessages: s.savedMessages.map((m) => (m.id === existing.id ? { ...m, ...body } : m)),
-        })
-        return
-      }
-      const msg: MqttSavedMessage = {
-        id: makeId(),
-        name: name ?? `Message ${s.savedMessages.length + 1}`,
-        ...body,
-      }
-      edit({ savedMessages: [...s.savedMessages, msg], activeSavedMessageId: msg.id })
-    },
+    saveCurrentMessage: (name) =>
+      // Issue #284: a body still withheld after a restart is reloaded before
+      // it is copied — the copy would carry no marker and Ctrl+S would save the blank.
+      afterWithheldReloaded(get, 'composer', () => {
+        const s = get()
+        const body = structuredClone(s.composer)
+        const existing = s.savedMessages.find((m) => m.id === s.activeSavedMessageId)
+        if (existing) {
+          edit({
+            savedMessages: s.savedMessages.map((m) =>
+              m.id === existing.id ? { ...m, ...body } : m,
+            ),
+          })
+          return
+        }
+        const msg: MqttSavedMessage = {
+          id: makeId(),
+          name: name ?? `Message ${s.savedMessages.length + 1}`,
+          ...body,
+        }
+        edit({ savedMessages: [...s.savedMessages, msg], activeSavedMessageId: msg.id })
+      }),
     addSavedMessage: (name) => {
       const draft = { ...emptyPublishDraft(), topic: get().composer.topic }
       const msg: MqttSavedMessage = {
@@ -457,15 +462,18 @@ export const useMqttStore = create<MqttStore>((set, get) => {
         composer: draft,
       })
     },
-    loadSavedMessage: (id) => {
-      const msg = get().savedMessages.find((m) => m.id === id)
-      if (!msg) return
-      const { id: _id, name: _name, description: _d, ...draft } = msg
-      void _id
-      void _name
-      void _d
-      edit({ activeSavedMessageId: id, composer: structuredClone(draft) })
-    },
+    loadSavedMessage: (id) =>
+      // Issue #284: a body still withheld after a restart is reloaded before
+      // it is copied — the copy would carry no marker and Ctrl+S would save the blank.
+      afterWithheldReloaded(get, `savedMessages[${id}]`, () => {
+        const msg = get().savedMessages.find((m) => m.id === id)
+        if (!msg) return
+        const { id: _id, name: _name, description: _d, ...draft } = msg
+        void _id
+        void _name
+        void _d
+        edit({ activeSavedMessageId: id, composer: structuredClone(draft) })
+      }),
     renameSavedMessage: (id, name) =>
       edit({ savedMessages: get().savedMessages.map((m) => (m.id === id ? { ...m, name } : m)) }),
     deleteSavedMessage: (id) =>

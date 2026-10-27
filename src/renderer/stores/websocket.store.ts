@@ -4,7 +4,7 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
@@ -87,9 +87,9 @@ interface WebSocketStore extends TabWsState {
   removeParam: (id: string) => void
   setSettings: (patch: Partial<WsSettings>) => void
   /** `name`: the new message's name (the editor passes a translated default). */
-  saveCurrentMessage: (name?: string) => void
+  saveCurrentMessage: (name?: string) => void | Promise<void>
   addSavedMessage: (name?: string) => void
-  loadSavedMessage: (id: string) => void
+  loadSavedMessage: (id: string) => void | Promise<void>
   renameSavedMessage: (id: string, name: string) => void
   deleteSavedMessage: (id: string) => void
   saveLoggedMessage: (messageId: string, name?: string) => void
@@ -562,23 +562,28 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
     setSettings: (patch) => edit({ settings: { ...get().settings, ...patch } }),
 
-    saveCurrentMessage: (name) => {
-      const s = get()
-      const body = { content: s.composerContent, contentType: s.composerMode }
-      const existing = s.savedMessages.find((m) => m.id === s.activeSavedMessageId)
-      if (existing) {
-        edit({
-          savedMessages: s.savedMessages.map((m) => (m.id === existing.id ? { ...m, ...body } : m)),
-        })
-        return
-      }
-      const msg: WsSavedMessage = {
-        id: makeId(),
-        name: name ?? `Message ${s.savedMessages.length + 1}`,
-        ...body,
-      }
-      edit({ savedMessages: [...s.savedMessages, msg], activeSavedMessageId: msg.id })
-    },
+    saveCurrentMessage: (name) =>
+      // Issue #284: a body still withheld after a restart is reloaded before
+      // it is copied — the copy would carry no marker and Ctrl+S would save the blank.
+      afterWithheldReloaded(get, 'composerContent', () => {
+        const s = get()
+        const body = { content: s.composerContent, contentType: s.composerMode }
+        const existing = s.savedMessages.find((m) => m.id === s.activeSavedMessageId)
+        if (existing) {
+          edit({
+            savedMessages: s.savedMessages.map((m) =>
+              m.id === existing.id ? { ...m, ...body } : m,
+            ),
+          })
+          return
+        }
+        const msg: WsSavedMessage = {
+          id: makeId(),
+          name: name ?? `Message ${s.savedMessages.length + 1}`,
+          ...body,
+        }
+        edit({ savedMessages: [...s.savedMessages, msg], activeSavedMessageId: msg.id })
+      }),
     addSavedMessage: (name) => {
       const msg: WsSavedMessage = {
         id: makeId(),
@@ -593,15 +598,18 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
         composerMode: 'text',
       })
     },
-    loadSavedMessage: (id) => {
-      const msg = get().savedMessages.find((m) => m.id === id)
-      if (!msg) return
-      edit({
-        activeSavedMessageId: id,
-        composerContent: msg.content,
-        composerMode: msg.contentType,
-      })
-    },
+    loadSavedMessage: (id) =>
+      // Issue #284: a body still withheld after a restart is reloaded before
+      // it is copied — the copy would carry no marker and Ctrl+S would save the blank.
+      afterWithheldReloaded(get, `savedMessages[${id}]`, () => {
+        const msg = get().savedMessages.find((m) => m.id === id)
+        if (!msg) return
+        edit({
+          activeSavedMessageId: id,
+          composerContent: msg.content,
+          composerMode: msg.contentType,
+        })
+      }),
     renameSavedMessage: (id, name) =>
       edit({ savedMessages: get().savedMessages.map((m) => (m.id === id ? { ...m, name } : m)) }),
     deleteSavedMessage: (id) =>
