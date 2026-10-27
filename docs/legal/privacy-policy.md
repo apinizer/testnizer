@@ -24,8 +24,11 @@ in any way.
   variables, certificates, and credentials stay on **your local disk**.
 - Outbound traffic from the Software is limited to:
   1. The API requests **you** explicitly send (HTTP, SOAP, WebSocket,
-     GraphQL, gRPC, SSE) — these go directly from your device to the target
-     you specify and never pass through us.
+     GraphQL, gRPC, SSE, Socket.IO, MQTT, MCP) — these go directly from your
+     device to the target you specify and never pass through us. A Socket.IO
+     version 2 connection has no handshake authentication, so its token is
+     sent as a `token` query parameter, which the server's and any proxy's
+     logs may record.
   2. A periodic version check against the GitHub Releases feed for
      auto-update.
   3. **AI Chat:** if you use the AI Chat feature, prompts and responses
@@ -82,8 +85,8 @@ ability to retrieve it.
 | Database backups taken before an update | `<userData>/backups/`. The first time a new version of Testnizer starts, it copies the database there before updating it; the 3 newest copies are kept and older ones are deleted. Before a copy is kept, its secret values are encrypted the same way as in the database (see below), also when the database was written by a version that did not yet encrypt them; if `safeStorage` is unavailable, they stay unencrypted, as in the database. Copies stay on your computer and are never written to project files, git, exports or diagnostics. |
 | Encrypted secrets: git access tokens, certificate passphrases and keystore passwords, keystores saved to the Keystore library, one-time-password (OTP) secrets, and credential-named settings such as a proxy password | In the database or `<userData>/settings.json`, encrypted via Electron `safeStorage` (macOS Keychain, Windows DPAPI, libsecret on Linux). If `safeStorage` is unavailable on your system (for example Linux without libsecret), these values are stored without encryption on your computer. Two exceptions are never written unencrypted: AI Chat API keys (below) and remembered keystore passwords. |
 | Secret-type variables (current and initial value), HTTP mock server tokens, passwords and API keys, and Mock MCP bearer tokens | In `<userData>/testnizer.db`, encrypted via Electron `safeStorage` (the same OS keychain as above). Only the secret values are encrypted; variable names, user names and the rest of a mock's auth settings stay readable. If `safeStorage` is unavailable on your system (for example Linux without libsecret), these values are stored without encryption on your computer, and they are encrypted on a later launch once the keychain is available. A value encrypted on one computer cannot be decrypted on another one, or after the OS keychain is reset; Testnizer then treats it as empty until you enter it again. They leave your computer only if you send a request that uses them. The **secret** flag on an environment or global variable, and mock server tokens, passwords and API keys, are written as empty values to every project file, git commit or push, and export, so those never carry them. |
-| Credentials typed into an Auth tab | In `<userData>/testnizer.db` as **plain text** — they are **not** encrypted at rest. Anyone who can read your user profile or disk can read them, so use full-disk encryption and your operating system's account protection. Auth you type into a request or folder is part of that request or folder and does travel with exports and git; use `{{variable}}` references (for example to a secret-type variable) to keep the real value out of them. |
-| Received stream data: SSE events, WebSocket and Socket.IO messages, MCP notifications and the raw message log | The live message lists in the tab are held in memory only while the app is running; they are never written to the database or to disk and are gone when you quit the app. History keeps a record per connection, not per message: for SSE, WebSocket and Socket.IO it stores the connection attempt (URL, headers and options with credentials masked, status, duration, connection id) and never the messages or events. For MCP it stores each tool call, resource read, prompt fetch and input response with its result (a result over 500,000 characters is not stored), with credentials masked. |
+| Credentials typed into an Auth tab | In `<userData>/testnizer.db` as **plain text** — they are **not** encrypted at rest. Anyone who can read your user profile or disk can read them, so use full-disk encryption and your operating system's account protection. Auth you type into a request or folder is part of that request or folder and does travel with exports and git; use `{{variable}}` references (for example to a secret-type variable) to keep the real value out of them. The same holds for the MQTT password and the Socket.IO token: they are saved with the request (project file, git, export) unless you use a `{{secretVar}}` reference. |
+| Received stream data: SSE events, WebSocket, Socket.IO and MQTT messages, MCP notifications and the raw message log | The live message lists in the tab are held in memory only while the app is running; they are never written to the database or to disk and are gone when you quit the app. History keeps a record per connection, not per message: for SSE, WebSocket and Socket.IO it stores the connection attempt (URL, headers and options with credentials masked, status, duration, connection id) and never the messages or events. For MQTT it stores only the connection (broker URL, client id, MQTT version, user name, whether a password was set, settings and subscriptions), never the password and never the messages. For MCP it stores each tool call, resource read, prompt fetch and input response with its result (a result over 500,000 characters is not stored), with credentials masked. |
 | Logs (if any) | `<userData>/logs/` |
 | AI Chat provider API keys | `<userData>/settings.json`, one key per provider, encrypted via `safeStorage`. If `safeStorage` encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk. |
 | AI Chat tab state and saved AI Chat requests | Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key, and never "Run tools without asking". |
@@ -381,8 +384,8 @@ The Software employs the following defensive practices:
   exports (Section 3). Credentials typed into an Auth tab are **not**
   encrypted at rest: they sit in the local database as plain text.
 - **No stream messages on disk.** The messages and events received over SSE,
-  WebSocket and Socket.IO, and MCP notifications, are kept in memory only
-  and are not written to disk; History records the connection, not the
+  WebSocket, Socket.IO and MQTT, and MCP notifications, are kept in memory
+  only and are not written to disk; History records the connection, not the
   messages (Section 3). MCP tool, resource and prompt results are recorded in
   History, masked.
 - **Renderer hardening.** The Renderer process runs with
