@@ -143,9 +143,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # Every job pins the Node MAJOR that Electron bundles (Electron 44 ships
+      # Node 24.22), so a dependency that only works on a newer Node, or a Node
+      # built-in Electron lacks, fails here the way it would in the app. Move
+      # all five pins together with the Electron major (issue #291).
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       # Keystore Studio's interop test (tests/main/keystore-interop.test.ts)
@@ -242,7 +246,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       # Pin a node-gyp-friendly Python (<=3.11) so the postinstall electron
@@ -336,7 +340,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       # GitHub's macOS runner image bumped its default Python to 3.14, which
@@ -421,6 +425,22 @@ jobs:
           fi
         shell: bash
 
+      # Electron 44 needs macOS 13 (issue #291). Stamp the Darwin floor into
+      # latest-mac.yml so installed builds on macOS 11/12 (electron-updater
+      # 6.8.3+, every release since v1.4.10) skip this update instead of
+      # installing an app that will not launch. electron-builder cannot write
+      # the field itself, so the manifest it just published is patched and
+      # re-uploaded. Runs on every build so a broken manifest fails CI before a
+      # tag ever depends on it; uploads only on tags.
+      - name: Stamp macOS minimum into latest-mac.yml
+        shell: bash
+        run: |
+          node scripts/patch-latest-mac-yml.mjs dist/latest-mac.yml
+          grep -n '^minimumSystemVersion:' dist/latest-mac.yml
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            gh release upload "${GITHUB_REF_NAME}" dist/latest-mac.yml --clobber --repo "${GITHUB_REPOSITORY}"
+          fi
+
       - name: Verify native binaries (both arches)
         run: |
           node scripts/verify-natives.js --platform=darwin --arch=arm64
@@ -472,7 +492,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - name: Install system build deps
@@ -576,7 +596,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       # Same node-gyp vs Python 3.12+ break as macOS: the Windows runner image
