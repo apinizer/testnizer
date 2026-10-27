@@ -85,8 +85,11 @@ Nested substitution works. A URL such as:
 https://{{baseUrl}}/{{version}}/users
 ```
 
-resolves both `baseUrl` and `version` independently. Variables cannot reference
-each other (circular or chained resolution is not supported).
+resolves both `baseUrl` and `version` independently. A variable's value may
+itself contain `{{otherVariable}}`: resolution repeats (up to 10 passes) until
+nothing changes, so chained references such as `fullUrl = {{baseUrl}}/{{version}}`
+work. A circular reference stops at the 10-pass limit and leaves the last
+unresolved placeholder in the text.
 
 ### Managing variables in scripts
 

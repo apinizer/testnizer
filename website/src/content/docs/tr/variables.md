@@ -86,8 +86,11 @@ renkle vurgulanır, böylece Gönder'e tıklamadan önce bunları fark edebilirs
 https://{{baseUrl}}/{{version}}/users
 ```
 
-`baseUrl` ve `version`'ı bağımsız olarak çözümler. Değişkenler birbirine referans
-veremez (döngüsel veya zincirli çözümleme desteklenmez).
+`baseUrl` ve `version`'ı bağımsız olarak çözümler. Bir değişkenin değeri de
+`{{başkaDeğişken}}` içerebilir: çözümleme hiçbir şey değişmeyene kadar (en fazla
+10 geçiş) tekrarlanır; bu yüzden `fullUrl = {{baseUrl}}/{{version}}` gibi
+zincirli başvurular çalışır. Döngüsel bir başvuru 10 geçiş sınırında durur ve
+çözülmemiş son yer tutucu metinde kalır.
 
 ### Betiklerde değişken yönetimi
 

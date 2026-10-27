@@ -71,7 +71,6 @@ including `pm.request`, `pm.response`, `pm.environment`, `pm.globals`,
 
 The following Postman-specific features are not supported:
 
-- `postman.setNextRequest()` — collection runner uses sequential execution only
 - Visualizer (`pm.visualizer.set()`) — no equivalent; output is ignored
 - `pm.require()` (Postman package libraries) — throws a clear "not supported"
   error; the built-in `require()` libraries cover the common cases

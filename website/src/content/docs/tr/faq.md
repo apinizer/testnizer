@@ -72,7 +72,6 @@ ve `pm.sendRequest` dahil olmak üzere `pm` script API'sini uygular.
 
 Aşağıdaki Postman'e özgü özellikler desteklenmez:
 
-- `postman.setNextRequest()` — koleksiyon çalıştırıcı yalnızca sıralı çalıştırmayı kullanır
 - Görselleştirici (`pm.visualizer.set()`) — eşdeğeri yok; çıktı yok sayılır
 - `pm.require()` (Postman paket kütüphaneleri) — açık bir "desteklenmiyor" hatası
   fırlatır; yerleşik `require()` kütüphaneleri yaygın ihtiyaçları karşılar
