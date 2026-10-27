@@ -277,6 +277,7 @@
       "icon": "build/icon.icns",
       "artifactName": "Testnizer-${version}-${arch}.${ext}",
       "category": "public.app-category.developer-tools",
+      "minimumSystemVersion": "13.0",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
