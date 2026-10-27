@@ -231,3 +231,74 @@ describe('Runner canary (issue #195)', () => {
     }
   })
 })
+
+/**
+ * Issue #281 — `pm.vault.set` of a NEW key in a pre-request script. The value
+ * is a secret project variable, but it reaches the database only when the run
+ * ends, so the DB secret inventory cannot know it during the run: the run's
+ * own vault keys must feed the mask, or the token lands in the run results,
+ * History and the Console in clear text.
+ */
+describe('Runner canary — pm.vault values set during the run (issue #281)', () => {
+  const VAULT_SECRET = 'vault-canary-T0KEN-9911'
+
+  function seedVaultEndpoint(): string {
+    const id = crypto.randomUUID()
+    const now = Date.now()
+    const schema = JSON.stringify({
+      method: 'POST',
+      url: `http://127.0.0.1:${port}/vault?t={{vtok}}`,
+      params: [],
+      headers: [{ id: 'h1', key: 'X-Vault', value: '{{vtok}}', enabled: true }],
+      body: { type: 'json', content: '{"t":"{{vtok}}"}' },
+      auth: { type: 'none' },
+      assertions: [],
+      preScript: `await pm.vault.set('vtok', '${VAULT_SECRET}')`,
+      postScript: "console.log('vault says ' + pm.globals.get('vtok'))",
+    })
+    testDb
+      .prepare(
+        `INSERT INTO endpoints
+          (id, project_id, folder_id, name, protocol, method, path, status,
+           request_schema, sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'Vault', 'http', 'POST', '/vault', 'developing', ?, 0, ?, ?)`,
+      )
+      .run(id, projectId, schema, now, now)
+    return id
+  }
+
+  it('the token goes out, is masked everywhere, and is kept as a secret project variable', async () => {
+    const id = seedVaultEndpoint()
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      workspaceId,
+      endpointIds: [id],
+    })) as RunResult
+    expect(res.success).toBe(true)
+    // It resolved: the server received it.
+    expect(lastReceived.url).toContain(`t=${VAULT_SECRET}`)
+    expect(lastReceived.body).toContain(VAULT_SECRET)
+
+    // Not in the results, nor anywhere in the report the renderer keeps in
+    // sessionStorage (its globalUpdates name the key only).
+    expect(JSON.stringify(res.data)).not.toContain(VAULT_SECRET)
+    expect(
+      (res.data as unknown as { globalUpdates?: Record<string, string> }).globalUpdates,
+    ).toHaveProperty('vtok')
+    const row = testDb.prepare('SELECT results_json FROM runner_history').get() as {
+      results_json: string
+    }
+    expect(row.results_json).not.toContain(VAULT_SECRET)
+    const history = JSON.stringify(testDb.prepare('SELECT * FROM history').all())
+    expect(history).not.toContain(VAULT_SECRET)
+    const live = sent.filter((s) => s.channel === 'runner:progress' || s.channel === 'console:log')
+    expect(live.length).toBeGreaterThan(0)
+    expect(JSON.stringify(live)).not.toContain(VAULT_SECRET)
+
+    // Persisted after the run as a SECRET project variable.
+    const stored = testDb
+      .prepare("SELECT secret FROM global_variables WHERE project_id = ? AND key = 'vtok'")
+      .get(projectId) as { secret: number } | undefined
+    expect(stored?.secret).toBe(1)
+  })
+})

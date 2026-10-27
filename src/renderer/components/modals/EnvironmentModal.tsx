@@ -54,6 +54,7 @@ export default function EnvironmentModal() {
   const updateEnvironment = useEnvironmentStore((s) => s.updateEnvironment)
   const deleteEnvironment = useEnvironmentStore((s) => s.deleteEnvironment)
   const createEnvironment = useEnvironmentStore((s) => s.createEnvironment)
+  const moveToGlobals = useEnvironmentStore((s) => s.moveEnvironmentToProjectVariables)
 
   const globalVariables = useEnvironmentStore((s) => s.globalVariables)
   const addGlobalVariable = useEnvironmentStore((s) => s.addGlobalVariable)
@@ -61,6 +62,7 @@ export default function EnvironmentModal() {
   const deleteGlobalVariable = useEnvironmentStore((s) => s.deleteGlobalVariable)
 
   const fetchEnvironments = useEnvironmentStore((s) => s.fetchEnvironments)
+  const fetchGlobalVariables = useEnvironmentStore((s) => s.fetchGlobalVariables)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const { t, locale } = useTranslation()
 
@@ -68,6 +70,8 @@ export default function EnvironmentModal() {
   const [creatingEnv, setCreatingEnv] = useState(false)
   const [newEnvName, setNewEnvName] = useState('')
   const [deleteEnvTarget, setDeleteEnvTarget] = useState<Environment | null>(null)
+  // Issue #281: after "Move to Globals", the environment is deleted only on confirm.
+  const [movedEnv, setMovedEnv] = useState<{ env: Environment; conflicts: string[] } | null>(null)
   const [importing, setImporting] = useState(false)
 
   const selectedEnv: Environment | null = useMemo(() => {
@@ -115,7 +119,7 @@ export default function EnvironmentModal() {
       // importer that handles the collection — it picks up any environment
       // resources along the way and surfaces them as suggested vars.
       // One shared Postman classifier (issue #276): environment AND globals
-      // exports import here (globals → the "Globals" environment); any
+      // exports import here (globals → the project Globals, issue #281); any
       // collection kind (v1 / v2 / dump / v3) gets the "use APIs Import" hint.
       const postmanKind = isInsomniaV5Yaml ? null : (classifyPostmanDocument(root)?.kind ?? null)
       const isPostmanEnv = isPostmanVariablesKind(postmanKind)
@@ -180,9 +184,16 @@ export default function EnvironmentModal() {
       const ipcOk = result?.success === true
       const importerOk = result?.data?.success !== false
       if (ipcOk && importerOk) {
-        await fetchEnvironments()
+        // A Postman globals file lands in Globals (issue #281), not in an environment.
+        await Promise.all([fetchEnvironments(), fetchGlobalVariables()])
         const name = result?.data?.environmentName
-        toast.success(name ? `${t('env.importSuccess')}: ${name}` : t('env.importSuccess'))
+        toast.success(
+          name
+            ? `${t('env.importSuccess')}: ${name}`
+            : isPostmanEnv && postmanKind === 'globals'
+              ? t('env.importedToGlobals')
+              : t('env.importSuccess'),
+        )
         // Nothing silently dropped (issue #276): vault-linked secrets, the
         // Globals note, an inactive imported environment.
         const warnings = result?.data?.warnings ?? []
@@ -196,6 +207,20 @@ export default function EnvironmentModal() {
       toast.error(`${t('env.importFailed')}: ${message}`)
     } finally {
       setImporting(false)
+    }
+  }
+
+  async function handleMoveToGlobals(env: Environment): Promise<void> {
+    try {
+      const { moved, conflicts } = await moveToGlobals(env.id)
+      toast.success(t('env.moveDone').replace('{count}', String(moved.length)))
+      if (conflicts.length > 0) {
+        toast.warning(t('env.moveConflicts').replace('{keys}', conflicts.join(', ')))
+      }
+      setMovedEnv({ env, conflicts })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error(`${t('env.moveFailed')}: ${message}`)
     }
   }
 
@@ -463,6 +488,7 @@ export default function EnvironmentModal() {
               isActive={selectedEnv.id === activeEnvId}
               onSetActive={() => setActiveEnv(selectedEnv.id)}
               onDelete={() => setDeleteEnvTarget(selectedEnv)}
+              onMoveToGlobals={() => void handleMoveToGlobals(selectedEnv)}
               onVarChange={handleVarChange}
               onAddVar={handleAddVar}
               onRemoveVar={handleRemoveVar}
@@ -490,6 +516,27 @@ export default function EnvironmentModal() {
           setDeleteEnvTarget(null)
         }}
         onCancel={() => setDeleteEnvTarget(null)}
+      />
+
+      {/* After "Move to Globals": the environment goes only on confirm, and
+          the dialog names the variables whose value it still holds alone. */}
+      <DeleteConfirmDialog
+        open={!!movedEnv}
+        itemName={movedEnv?.env.name || ''}
+        itemType={t('env.itemType')}
+        description={
+          movedEnv && movedEnv.conflicts.length > 0
+            ? t('env.moveDeleteConflicts').replace('{keys}', movedEnv.conflicts.join(', '))
+            : t('env.moveDeleteDesc')
+        }
+        onConfirm={() => {
+          if (movedEnv) {
+            void deleteEnvironment(movedEnv.env.id)
+            setPane({ kind: 'globals' })
+          }
+          setMovedEnv(null)
+        }}
+        onCancel={() => setMovedEnv(null)}
       />
     </Modal>
   )
@@ -544,6 +591,7 @@ function EnvPane({
   isActive,
   onSetActive,
   onDelete,
+  onMoveToGlobals,
   onVarChange,
   onAddVar,
   onRemoveVar,
@@ -552,6 +600,7 @@ function EnvPane({
   isActive: boolean
   onSetActive: () => void
   onDelete: () => void
+  onMoveToGlobals: () => void
   onVarChange: (
     id: string,
     field: 'key' | 'initialValue' | 'value' | 'enabled' | 'secret',
@@ -609,6 +658,23 @@ function EnvPane({
               {t('env.setActive')}
             </button>
           )}
+          <button
+            type="button"
+            data-testid="env-move-to-project-vars"
+            onClick={onMoveToGlobals}
+            disabled={count === 0}
+            className="flex cursor-pointer items-center gap-1 rounded px-2.5 py-1 disabled:cursor-default disabled:opacity-60"
+            style={{
+              background: 'var(--white)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              fontWeight: 500,
+            }}
+            title={t('env.moveToGlobalsHint')}
+          >
+            <Globe size={12} aria-hidden="true" />
+            {t('env.moveToGlobals')}
+          </button>
           <button
             type="button"
             data-testid="env-delete"

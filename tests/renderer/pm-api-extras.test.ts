@@ -31,7 +31,8 @@ describe('pm.*.toObject()', () => {
     const pm = createPmApi(resp(), env, globals, { eventName: 'test' })
     expect(pm.environment.toObject()).toEqual({ a: '1', b: '2' })
     expect(pm.globals.toObject()).toEqual({ g: '9' })
-    expect(pm.collectionVariables.toObject()).toEqual({ a: '1', b: '2' })
+    // Issue #281: collection variables are the project variables (globals).
+    expect(pm.collectionVariables.toObject()).toEqual({ g: '9' })
     // variables = merged view (env over global here)
     expect(pm.variables.toObject()).toEqual({ a: '1', b: '2', g: '9' })
     expect(pm.environment.has('a')).toBe(true)

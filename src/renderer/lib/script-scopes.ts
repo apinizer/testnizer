@@ -15,11 +15,13 @@ import type { ScriptRunResult } from './test-runner'
 export interface SendScriptWrites {
   env: Record<string, string>
   globals: Record<string, string>
+  /** `pm.vault` writes (value = secret, null = deleted) — they also sit in `globals`. */
+  vault: Record<string, string | null>
   locals: Record<string, string>
 }
 
 export function emptyScriptWrites(): SendScriptWrites {
-  return { env: {}, globals: {}, locals: {} }
+  return { env: {}, globals: {}, vault: {}, locals: {} }
 }
 
 /** Current Value, falling back to Initial Value (environment.store `v()`). */
@@ -27,11 +29,15 @@ function effective(ev: { value?: string; initialValue?: string }): string {
   return ev.value && ev.value.length > 0 ? ev.value : ev.initialValue || ''
 }
 
-/** The environment-only, globals-only and request-local stores for the next script. */
+/**
+ * The environment-only, project-variable (globals) and request-local stores for
+ * the next script, plus the keys of the secret project variables (`pm.vault`).
+ */
 export function sendScriptScopes(writes: SendScriptWrites): {
   envMap: Map<string, string>
   globalMap: Map<string, string>
   localVars: Record<string, string>
+  vaultKeys: Set<string>
 } {
   const state = useEnvironmentStore.getState()
   const envMap = new Map<string, string>()
@@ -41,17 +47,55 @@ export function sendScriptScopes(writes: SendScriptWrites): {
   }
   for (const [k, v] of Object.entries(writes.env)) envMap.set(k, v)
   const globalMap = new Map<string, string>()
+  const vaultKeys = new Set<string>()
   for (const gv of state.globalVariables || []) {
-    if (gv.enabled) globalMap.set(gv.key, effective(gv))
+    if (!gv.enabled) continue
+    globalMap.set(gv.key, effective(gv))
+    if (gv.secret) vaultKeys.add(gv.key)
   }
   for (const [k, v] of Object.entries(writes.globals)) globalMap.set(k, v)
-  return { envMap, globalMap, localVars: { ...writes.locals } }
+  for (const [k, v] of Object.entries(writes.vault)) {
+    if (v === null) vaultKeys.delete(k)
+    else vaultKeys.add(k)
+  }
+  return { envMap, globalMap, localVars: { ...writes.locals }, vaultKeys }
+}
+
+/**
+ * Persist one Send-path script's environment / project-variable / vault writes
+ * (`environment.store.applyScriptUpdates`) — the one place the Send hosts
+ * (HTTP and MCP) hand them over.
+ *
+ * Resolves at once, persisting in the background as before, EXCEPT when the
+ * script wrote `pm.vault` (issue #281): then it resolves once the value is a
+ * secret project variable in the DB, because History and the Console mask
+ * from the DB's secrets — a vault token set by a pre-request script would
+ * otherwise reach History in clear text before it was stored as a secret.
+ */
+export async function persistScriptWrites(r: ScriptRunResult): Promise<void> {
+  const hasVault = Object.keys(r.vaultUpdates).length > 0
+  if (
+    !hasVault &&
+    Object.keys(r.envUpdates).length === 0 &&
+    Object.keys(r.globalUpdates).length === 0
+  )
+    return
+  const done = useEnvironmentStore
+    .getState()
+    .applyScriptUpdates(r.envUpdates, r.globalUpdates, r.vaultUpdates)
+  if (hasVault) await done
+  else void done
 }
 
 /** Fold one script's writes into the cascade's per-scope record. */
 export function absorbScriptWrites(writes: SendScriptWrites, r: ScriptRunResult): void {
   Object.assign(writes.env, r.envUpdates)
   Object.assign(writes.globals, r.globalUpdates)
+  // A plain project-variable write after a vault one is the last word.
+  for (const k of Object.keys(r.globalUpdates)) {
+    if (!(k in r.vaultUpdates)) delete writes.vault[k]
+  }
+  Object.assign(writes.vault, r.vaultUpdates)
   // varUpdates is the script's whole local map (seeded from `writes.locals`).
   writes.locals = { ...r.varUpdates }
 }

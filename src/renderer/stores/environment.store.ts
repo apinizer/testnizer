@@ -49,20 +49,33 @@ interface EnvironmentStore {
   createEnvironment: (name: string) => Promise<void>
   updateEnvironment: (id: string, updates: Partial<Environment>) => Promise<void>
   deleteEnvironment: (id: string) => Promise<void>
+  /**
+   * Issue #281: copy an environment's variables into the project variables
+   * (Globals). A key Globals already has keeps its value and is returned in
+   * `conflicts`. The environment is NOT deleted (the UI asks first). Throws
+   * with main's message when the move failed.
+   */
+  moveEnvironmentToProjectVariables: (
+    id: string,
+  ) => Promise<{ moved: string[]; conflicts: string[] }>
   addGlobalVariable: (v: Partial<GlobalVariable>) => Promise<void>
   updateGlobalVariable: (id: string, updates: Partial<GlobalVariable>) => Promise<void>
   deleteGlobalVariable: (id: string) => Promise<void>
   setGlobalVariables: (vars: GlobalVariable[]) => void
   /**
-   * Persist `pm.environment.set(...)` / `pm.globals.set(...)` calls made by a
-   * post-response script. Upserts each entry into the active environment (or
-   * globals) so subsequent requests in the same workspace pick up the values.
+   * Persist `pm.environment.set(...)` / `pm.globals.set(...)` /
+   * `pm.collectionVariables.set(...)` / `pm.vault.*` calls made by a script.
+   * Upserts each entry into the active environment or the project variables
+   * (globals) so subsequent requests pick up the values. `vaultUpdates`
+   * (issue #281) win over `globalUpdates` for the same key: a value makes the
+   * project variable secret (sealed at rest by main), null deletes it.
    * Performs a single round-trip per variable through the existing IPC layer
    * — adequate for the 1–N writes a script typically does.
    */
   applyScriptUpdates: (
     envUpdates: Record<string, string>,
     globalUpdates: Record<string, string>,
+    vaultUpdates?: Record<string, string | null>,
   ) => Promise<void>
   /**
    * Resolve active variables (globals first, then active env — env wins).
@@ -385,6 +398,15 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     }))
   },
 
+  moveEnvironmentToProjectVariables: async (id) => {
+    const res = (await window.api?.environment?.moveToProjectVariables(id)) as
+      | { success: boolean; data?: { moved: string[]; conflicts: string[] }; error?: string }
+      | undefined
+    if (!res?.success || !res.data) throw new Error(res?.error || 'The variables were not moved')
+    await get().fetchGlobalVariables()
+    return res.data
+  },
+
   addGlobalVariable: async (variable) => {
     const projectId = get().currentProjectId
     // Use the real active workspace id — 'default' fails FK
@@ -454,10 +476,12 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
 
   setGlobalVariables: (vars) => set({ globalVariables: vars }),
 
-  applyScriptUpdates: async (envUpdates, globalUpdates) => {
+  applyScriptUpdates: async (envUpdates, globalUpdates, vaultUpdates = {}) => {
     const envEntries = Object.entries(envUpdates)
-    const globalEntries = Object.entries(globalUpdates)
-    if (envEntries.length === 0 && globalEntries.length === 0) return
+    const vaultEntries = Object.entries(vaultUpdates)
+    // A vault write of the same key is applied below (it decides `secret`).
+    const globalEntries = Object.entries(globalUpdates).filter(([k]) => !(k in vaultUpdates))
+    if (envEntries.length === 0 && globalEntries.length === 0 && vaultEntries.length === 0) return
 
     // ── Active environment writes ──────────────────────────
     if (envEntries.length > 0) {
@@ -518,6 +542,22 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
         }
       } catch (e) {
         console.error('[environment.store] applyScriptUpdates global write failed:', e)
+      }
+    }
+
+    // ── pm.vault writes → secret project variables ────────
+    for (const [key, value] of vaultEntries) {
+      const existing = get().globalVariables.find((gv) => gv.key === key)
+      try {
+        if (value === null) {
+          if (existing?.secret) await get().deleteGlobalVariable(existing.id)
+        } else if (existing) {
+          await get().updateGlobalVariable(existing.id, { value, secret: true })
+        } else {
+          await get().addGlobalVariable({ key, value, enabled: true, secret: true })
+        }
+      } catch (e) {
+        console.error('[environment.store] applyScriptUpdates vault write failed:', e)
       }
     }
   },

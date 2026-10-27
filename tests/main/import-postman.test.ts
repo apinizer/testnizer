@@ -124,6 +124,17 @@ beforeEach(async () => {
       secret INTEGER NOT NULL DEFAULT 0,
       initial_value TEXT
     );
+    CREATE TABLE global_variables (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      secret INTEGER NOT NULL DEFAULT 0,
+      initial_value TEXT
+    );
   `)
   // seed a project to import into
   memDb
@@ -580,7 +591,9 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
     expect(allEvents.some((e) => e.listen === 'test')).toBe(true)
   })
 
-  it('emits collection-level variable[] sourced from active project env', async () => {
+  // Issue #281: collection variables ARE the project variables (Globals) —
+  // imported there, exported from there.
+  it('emits collection-level variable[] sourced from the project variables', async () => {
     await importPostman('proj-1', JSON.stringify(buildRealisticCollection()))
     const exported = JSON.parse(exportAsPostman('proj-1'))
     expect(Array.isArray(exported.variable)).toBe(true)
@@ -609,20 +622,21 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
     })
   })
 
-  it('reuses a single imported environment when the same collection is re-imported', async () => {
+  it('re-importing the same collection does not duplicate project variables nor create an environment', async () => {
     const collection = JSON.stringify(buildRealisticCollection())
     await importPostman('proj-1', collection)
-    await importPostman('proj-1', collection)
+    const again = await importPostman('proj-1', collection)
 
     const envs = memDb
       .prepare('SELECT id FROM environments WHERE project_id = ?')
       .all('proj-1') as Array<{ id: string }>
-    expect(envs).toHaveLength(1)
+    expect(envs).toHaveLength(0)
     const vars = memDb
-      .prepare('SELECT key FROM environment_variables WHERE environment_id = ?')
-      .all(envs[0].id) as Array<{ key: string }>
-    // No duplicates — imported variables were replaced, not appended.
+      .prepare('SELECT key FROM global_variables WHERE project_id = ?')
+      .all('proj-1') as Array<{ key: string }>
+    // No duplicates — an existing key keeps its value (same value: no conflict note).
     expect(vars.map((v) => v.key).sort()).toEqual(['apiVersion', 'baseUrl'])
+    expect((again.warnings ?? []).join('\n')).not.toMatch(/already has the variable/)
   })
 
   it('preserves form-data file rows on round-trip (type:file + src)', async () => {

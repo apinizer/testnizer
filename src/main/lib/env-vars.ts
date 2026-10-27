@@ -31,6 +31,10 @@ interface DualValueRow {
   initial_value: string | null
 }
 
+interface GlobalRow extends DualValueRow {
+  secret: number | null
+}
+
 /**
  * Resolve a variable to the string a request should actually see, mirroring
  * the renderer's dual-value model (environment.store `v()`): prefer the
@@ -70,17 +74,21 @@ function undecryptable(key: string): string {
 }
 
 /**
- * The same variables, kept apart by scope: `globals` (the project's globals)
- * and `environment` (the active / requested environment). The Collection Runner backs the separate `pm.globals` and
+ * The same variables, kept apart by scope: `globals` (the project's globals —
+ * Postman's globals AND collection variables, issue #281) and `environment`
+ * (the active / requested environment). `vaultKeys` names the project globals
+ * marked secret: what `pm.vault` reads. The Collection Runner backs the separate `pm.globals` and
  * `pm.environment` script objects with these (issue #281); `loadEnvVars` is
  * their merge.
  */
 export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
   globals: Record<string, string>
   environment: Record<string, string>
+  vaultKeys: string[]
 } {
   const globals: Record<string, string> = {}
   const environment: Record<string, string> = {}
+  const vaultKeys: string[] = []
   const db = getDb()
 
   // Project rows ONLY. This used to start from every row of the WORKSPACE
@@ -91,10 +99,13 @@ export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
   if (opts.projectId) {
     const rows = db
       .prepare(
-        'SELECT key, value, initial_value FROM global_variables WHERE project_id = ? AND enabled = 1',
+        'SELECT key, value, initial_value, secret FROM global_variables WHERE project_id = ? AND enabled = 1',
       )
-      .all(opts.projectId) as DualValueRow[]
-    for (const r of rows) globals[r.key] = effectiveValue(r)
+      .all(opts.projectId) as GlobalRow[]
+    for (const r of rows) {
+      globals[r.key] = effectiveValue(r)
+      if (r.secret === 1) vaultKeys.push(r.key)
+    }
   }
 
   let effectiveEnvId = opts.environmentId
@@ -117,7 +128,7 @@ export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
     for (const r of rows) environment[r.key] = effectiveValue(r)
   }
 
-  return { globals, environment }
+  return { globals, environment, vaultKeys }
 }
 
 export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {

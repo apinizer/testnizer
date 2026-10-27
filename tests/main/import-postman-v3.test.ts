@@ -581,30 +581,37 @@ describe('issue #276 part 2 — Postman v3 workspace folder', () => {
     expect(w).not.toMatch(/sign\.js/)
   })
 
-  it('variables: collection + folder variables → "(imported)" env; vault secret → empty secret + re-enter note', () => {
+  // Issue #281: collection + folder variables → the project variables (Globals),
+  // not a "<collection> (imported)" environment.
+  it('variables: collection + folder variables → project variables; vault secret → empty secret + re-enter note', () => {
     const db = getDb()
-    const env = db
-      .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-      .get(pid, 'Shop API (imported)') as { id: string }
-    expect(env).toBeTruthy()
+    expect(
+      db
+        .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
+        .get(pid, 'Shop API (imported)'),
+    ).toBeUndefined()
     const vars = db
       .prepare(
-        'SELECT key, value, secret, enabled FROM environment_variables WHERE environment_id = ? ORDER BY rowid',
+        'SELECT key, value, secret, enabled FROM global_variables WHERE project_id = ? ORDER BY rowid',
       )
-      .all(env.id) as Array<{ key: string; value: string; secret: number; enabled: number }>
+      .all(pid) as Array<{ key: string; value: string; secret: number; enabled: number }>
     expect(vars.map((v) => v.key)).toEqual([
       'baseUrl',
       'pageSize',
       'legacy',
       'vaultToken',
       'adminUser',
+      // The workspace globals file — the same project variables.
+      'userName',
     ])
     expect(vars.find((v) => v.key === 'legacy')!.enabled).toBe(0)
     const vault = vars.find((v) => v.key === 'vaultToken')!
     expect(vault.secret).toBe(1)
+    expect(vault.value).toBe('')
     expect(res.warnings!.join('\n')).toMatch(
-      /"vaultToken" is linked to a postman vault secret; imported as an empty secret — enter its value/,
+      /"vaultToken" is linked to a postman vault secret; imported as an empty secret variable — re-enter its value/,
     )
+    expect(res.warnings!.join('\n')).toMatch(/added to the project's Globals/)
   })
 
   it('environment and globals YAML → project environments; secrets sealed at rest', () => {
@@ -624,12 +631,10 @@ describe('issue #276 part 2 — Postman v3 workspace folder', () => {
     expect(token.value.startsWith('enc:v1:')).toBe(true)
     expect(token.value).not.toContain('staging-token-literal')
     expect(rows.find((r) => r.key === 'disabledVar')!.enabled).toBe(0)
-    const globals = db
-      .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-      .get(pid, 'Globals') as {
-      id: string
-    }
-    expect(globals).toBeTruthy()
+    // Issue #281: the globals YAML is project variables, not an environment.
+    expect(
+      db.prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?').get(pid, 'Globals'),
+    ).toBeUndefined()
   })
 })
 

@@ -191,6 +191,8 @@ const api = {
     setActiveForProject: (projectId: string, environmentId: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:setActiveForProject', projectId, environmentId),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('environment:delete', id),
+    moveToProjectVariables: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('environment:moveToProjectVariables', id),
   },
 
   // ─── Environment Variables ───────────────────────────────

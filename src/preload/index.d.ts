@@ -290,6 +290,8 @@ interface EnvironmentApi {
   setActive(workspaceId: string, environmentId: string): Promise<IpcResult<boolean>>
   setActiveForProject(projectId: string, environmentId: string): Promise<IpcResult<boolean>>
   delete(id: string): Promise<IpcResult<boolean>>
+  /** Issue #281: copy the variables into the project variables; conflicts keep the local value. */
+  moveToProjectVariables(id: string): Promise<IpcResult<{ moved: string[]; conflicts: string[] }>>
 }
 
 interface EnvVariableApi {

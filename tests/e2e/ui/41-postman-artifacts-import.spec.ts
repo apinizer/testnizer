@@ -1,7 +1,7 @@
 /**
  * Issue #276 — any single Postman file through the existing Import UI, with
  * no "which version?" question: a collection v1 (converted), a collection
- * v2.0 and a globals export (→ the "Globals" environment, no folder). Imports
+ * v2.0 and a globals export (→ the project's Globals, issue #281; no folder). Imports
  * that skipped or degraded something show the result step with the list.
  *
  * Fixtures: Postman's own transformer sample (Apache-2.0,
@@ -32,8 +32,7 @@ import {
 import {
   getActiveProjectId,
   listEndpointsByProject,
-  listEnvironmentsByProject,
-  listEnvVariables,
+  listGlobalVariablesByProject,
 } from '../helpers/ui/assert-ipc'
 import { treeClearSearch, treeSearch } from '../helpers/ui/tree'
 import { fillUrl, clickRequestTab } from '../helpers/ui/request-flow'
@@ -148,7 +147,7 @@ uiTest.describe('Issue #276 — Postman v1 / v2.0 / globals through the Import U
     }
   })
 
-  uiTest('a globals export becomes the "Globals" environment, no folder', async ({ app, window }) => {
+  uiTest('a globals export becomes project variables (Globals), no folder', async ({ app, window }) => {
     const projectId = await getActiveProjectId(window)
     const key = `g_${uid().replace(/\W/g, '_')}`
     const file = path.join(os.tmpdir(), `testnizer-276-${uid()}.postman_globals.json`)
@@ -167,17 +166,13 @@ uiTest.describe('Issue #276 — Postman v1 / v2.0 / globals through the Import U
       const modal = window.getByTestId('import-modal')
       await modal.getByRole('button', { name: /Click to select a/i }).click()
       await expect(modal.getByTestId('import-env-note')).toBeVisible({ timeout: 15_000 })
+      await expect(modal.getByTestId('import-env-note')).toContainText(/project's Globals/)
       await expect(modal.getByPlaceholder('Folder name')).toBeHidden()
       await modal.getByRole('button', { name: /^Import$/i }).click()
       await finishImportWizard(window)
 
-      const envs = (await listEnvironmentsByProject(window, projectId)) as Array<{
-        id: string
-        name: string
-      }>
-      const g = envs.find((e) => e.name === 'Globals')
-      expect(g, 'Globals environment created').toBeTruthy()
-      const vars = await listEnvVariables(window, g!.id)
+      // Issue #281: the project variables, not an environment named "Globals".
+      const vars = await listGlobalVariablesByProject(window, projectId)
       expect(vars.find((v) => v.key === key)?.value).toBe('from-globals')
     } finally {
       await restore()

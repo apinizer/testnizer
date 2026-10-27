@@ -1,22 +1,30 @@
 /**
- * Postman variables → project environments (issue #276).
+ * Postman variables → project environments and project variables (issues
+ * #276 / #281).
  *
  * One writer for every variable source an import can bring:
- *  - an environment export (`_postman_variable_scope: "environment"`);
- *  - a globals export (`"globals"`) → an environment named "Globals" (until a
- *    separate scope is decided; project `global_variables` would be the
- *    always-visible target, see the import report);
- *  - a collection's `variable[]` (+ folder / request `variable[]`) → the
- *    "<collection> (imported)" environment, as before;
+ *  - an environment export (`_postman_variable_scope: "environment"`) → a
+ *    project environment;
+ *  - a globals export (`"globals"`) → the project variables (the "Globals"
+ *    list, `global_variables` with the project's id);
+ *  - a collection's `variable[]` (+ folder / request `variable[]`, which have
+ *    no scope of their own in Testnizer) → the project variables. A
+ *    Testnizer project IS the Postman collection: these are what
+ *    `pm.collectionVariables` reads, always active below the environment.
+ *    They used to become a "<collection> (imported)" environment, which did
+ *    not resolve while another environment was active;
  *  - the environments / globals of a legacy data dump.
  *
  * Re-importing an environment with the same name replaces its variables
- * (Postman never shows duplicate names). Secret values this machine already
- * holds survive the replace (issue #177 keep-local) and every secret value is
- * sealed at rest (issue #239). A value is a secret when `type: "secret"`
- * (environment exports, our own export) OR `secret: true` (Postman SDK 5.3 /
- * v3 form) — the latter used to import as a plain variable, leaving a token
- * in clear text in the database.
+ * (Postman never shows duplicate names). A project variable that already
+ * exists keeps its local value and the import report names it (decided
+ * conflict policy: the user's own value is never overwritten by a file).
+ * Secret values this machine already holds survive (issue #177 keep-local)
+ * and every secret value is sealed at rest (issue #239) — project variables
+ * through the repository's create path, like the editor. A value is a secret
+ * when `type: "secret"` (environment exports, our own export) OR
+ * `secret: true` (Postman SDK 5.3 / v3 form) OR it is linked to a vault
+ * (`source`).
  */
 import type { Database } from 'better-sqlite3'
 import { randomUUID } from 'crypto'
@@ -28,6 +36,7 @@ import {
 } from '../../lib/local-secrets'
 import { storedVariableValue } from '../../lib/secret-at-rest'
 import { invalidateSecretInventory } from '../../lib/secret-inventory-cache'
+import { createGlobalVariable, getGlobalVariablesByProject } from '../../db/environment.repo'
 import type { PostmanEnvironment } from './types'
 import { descriptionText, toText } from './normalize'
 
@@ -50,15 +59,16 @@ export function toVariableRow(
   const o = v as Record<string, unknown>
   const key = typeof o.key === 'string' ? o.key : ''
   if (!key) return null
-  const secret = o.type === 'secret' || o.secret === true
+  let secret = o.type === 'secret' || o.secret === true
   let description = descriptionText(o.description)
   let value = toText(o.value)
   if (o.source && typeof o.source === 'object') {
     const provider = toText((o.source as Record<string, unknown>).provider) || 'external'
     warnings.push(
-      `${where}: variable "${key}" is linked to a ${provider} vault secret; imported as an empty secret — enter its value in the environment.`,
+      `${where}: variable "${key}" is linked to a ${provider} vault secret; imported as an empty secret variable — re-enter its value in Testnizer.`,
     )
     value = ''
+    secret = true
     description = description ?? `Linked to a ${provider} vault secret in Postman`
   }
   const enabled = enabledField === 'enabled' ? o.enabled !== false : o.disabled !== true
@@ -161,13 +171,93 @@ export interface EnvironmentImportResult {
   error?: string
   environmentId?: string
   environmentName?: string
+  /** Project variables the import added (a globals file) — issue #281. */
+  projectVariableCount?: number
   endpointCount?: number
   folderCount?: number
   warnings?: string[]
 }
 
-/** Name the Globals export becomes (see the module comment). */
-export const GLOBALS_ENVIRONMENT_NAME = 'Globals'
+/** One variable an import brings, with the place it came from (for the report). */
+export interface SourcedVariable {
+  row: VariableRow
+  where: string
+}
+
+const MAX_LISTED = 25
+
+function listKeys(keys: string[]): string {
+  const shown = keys
+    .slice(0, MAX_LISTED)
+    .map((k) => `"${k}"`)
+    .join(', ')
+  return keys.length > MAX_LISTED ? `${shown} (+${keys.length - MAX_LISTED} more)` : shown
+}
+
+/**
+ * Add `vars` to the project variables (issue #281) through the repository's
+ * create path — the editor's: secret values are sealed at rest and the
+ * secret-mask inventory is invalidated. Runs inside the caller's transaction
+ * (the repository uses the same connection).
+ *
+ * Conflict policy (decided): a key the project already has keeps its LOCAL
+ * value and is listed in the report — unless the import brings the same value
+ * or a blank secret (an export strips secret values; issue #177). Within one
+ * import the first definition wins (collection before folder / request).
+ */
+export function writeProjectVariables(
+  projectId: string,
+  workspaceId: string,
+  vars: SourcedVariable[],
+  label: string,
+  warnings: string[],
+): { added: number; conflicts: string[] } {
+  if (vars.length === 0) return { added: 0, conflicts: [] }
+  const existing = new Map(getGlobalVariablesByProject(projectId).map((r) => [r.key, r]))
+  const imported = new Map<string, VariableRow>()
+  const conflicts: string[] = []
+  const duplicates: string[] = []
+  let added = 0
+  for (const { row } of vars) {
+    const first = imported.get(row.key)
+    if (first) {
+      if (first.value !== row.value && !duplicates.includes(row.key)) duplicates.push(row.key)
+      continue
+    }
+    const local = existing.get(row.key)
+    if (local) {
+      const localValue = local.value || local.initial_value || ''
+      const blankSecret = row.secret && row.value === ''
+      if (!blankSecret && (local.decryptFailed || localValue !== row.value)) {
+        if (!conflicts.includes(row.key)) conflicts.push(row.key)
+      }
+      continue
+    }
+    createGlobalVariable({
+      workspace_id: workspaceId,
+      project_id: projectId,
+      key: row.key,
+      value: row.value,
+      initial_value: row.value,
+      description: row.description ?? undefined,
+      enabled: row.enabled,
+      secret: row.secret,
+    })
+    imported.set(row.key, row)
+    added++
+  }
+  if (conflicts.length > 0) {
+    warnings.push(
+      `${label}: this project already has the variable(s) ${listKeys(conflicts)} in Globals with a different value; the project's value was kept.`,
+    )
+  }
+  if (duplicates.length > 0) {
+    warnings.push(
+      `${label}: the variable(s) ${listKeys(duplicates)} are defined more than once with different values; the first definition was kept.`,
+    )
+  }
+  return { added, conflicts }
+}
 
 /** Write one environment / globals document. Runs inside the caller's transaction. */
 export function writeEnvironmentDocument(
@@ -179,30 +269,31 @@ export function writeEnvironmentDocument(
   warnings: string[],
   now: number,
 ): EnvironmentImportResult {
-  const name =
-    scope === 'globals'
-      ? GLOBALS_ENVIRONMENT_NAME
-      : typeof env.name === 'string' && env.name.trim()
-        ? env.name
-        : ''
+  if (scope === 'globals') {
+    // Postman globals → the project variables (issue #281): always active,
+    // below the environment — no environment to switch to.
+    const where = 'Postman globals'
+    const vars: SourcedVariable[] = []
+    for (const v of Array.isArray(env.values) ? env.values : []) {
+      const row = toVariableRow(v, where, warnings, 'enabled')
+      if (row) vars.push({ row, where })
+    }
+    if (vars.length === 0) warnings.push(`${where} had no variables.`)
+    const res = writeProjectVariables(projectId, workspaceId, vars, where, warnings)
+    return { success: true, projectVariableCount: res.added, endpointCount: 0, folderCount: 0 }
+  }
+  const name = typeof env.name === 'string' && env.name.trim() ? env.name : ''
   if (!name) return { success: false, error: 'Postman environment file is missing `name`' }
-  const where = scope === 'globals' ? 'Globals' : `Environment "${name}"`
+  const where = `Environment "${name}"`
   const rows: VariableRow[] = []
   for (const v of Array.isArray(env.values) ? env.values : []) {
     const row = toVariableRow(v, where, warnings, 'enabled')
     if (row) rows.push(row)
   }
   const res = upsertProjectEnvironment(db, projectId, workspaceId, name, rows, now)
-  if (scope === 'globals') {
-    warnings.push(
-      'Postman globals were imported as a project environment named "Globals"' +
-        (res.replacedExisting ? ' (its previous variables were replaced)' : '') +
-        '. Testnizer shows one environment at a time, so activate "Globals" (or copy the variables into your environment) to use them.',
-    )
-  }
   if (rows.length === 0) {
     warnings.push(`${where} had no variables — created an empty environment.`)
-  } else if (!res.active && res.activeOtherName && scope === 'environment') {
+  } else if (!res.active && res.activeOtherName) {
     warnings.push(
       `Environment "${name}" was imported but "${res.activeOtherName}" is the active environment; select "${name}" to use its variables.`,
     )

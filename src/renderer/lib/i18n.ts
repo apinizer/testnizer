@@ -154,7 +154,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // Environment import
     'env.importEnvironment': 'Import Environment',
     'env.importEnvironmentHint':
-      'Import a Postman environment (.json) or an Insomnia export — environment variables are picked up automatically.',
+      'Import a Postman environment or globals file (.json) or an Insomnia export — variables are picked up automatically; a globals file goes into Globals.',
     'env.exportEnvironment': 'Export Environment',
     'env.exportEnvironmentHint':
       'Export the selected environment as a Postman-compatible .json file.',
@@ -197,7 +197,19 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.title': 'Environments',
     'env.sectionEnvironments': 'Environments',
     'env.globals': 'Globals',
-    'env.globalsDescription': 'A global variable can be accessed anywhere inside this project.',
+    'env.globalsDescription':
+      'Project variables: every request of this project uses them, whichever environment is active (an environment variable of the same name wins). Postman collection variables and globals are imported here; scripts use pm.collectionVariables / pm.globals.',
+    'env.moveToGlobals': 'Move to Globals',
+    'env.moveToGlobalsHint':
+      "Copy this environment's variables into the project's Globals. A variable Globals already has keeps its value. You can delete the environment afterwards.",
+    'env.moveDone': 'Moved {count} variable(s) to Globals',
+    'env.moveConflicts': 'Globals already had these, their values were kept: {keys}',
+    'env.moveFailed': 'Could not move the variables',
+    'env.moveDeleteDesc':
+      'The variables are now in Globals. Delete this environment? This cannot be undone.',
+    'env.moveDeleteConflicts':
+      'The variables are now in Globals, except {keys}: Globals kept its own value, so the value in this environment is lost if you delete it. This cannot be undone.',
+    'env.importedToGlobals': 'Variables added to Globals',
     'env.empty': 'No environments yet.',
     'env.namePlaceholder': 'Environment name',
     'env.newEnvironment': 'New Environment',
@@ -1014,6 +1026,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.result.done': 'Done',
     'import.envNote.title': 'Postman {kind} file',
     'import.envNote.body': 'It is imported as a project environment — no folder is created.',
+    'import.envNote.bodyGlobals':
+      "Its variables are added to this project's Globals — no folder is created.",
     'import.envNote.environment': 'environment',
     'import.envNote.globals': 'globals',
     'import.postmanFolder.label': 'Import a Postman v3 folder',
@@ -4386,7 +4400,7 @@ const translations: Record<Locale, Record<string, string>> = {
     // Environment import
     'env.importEnvironment': 'Ortam İçe Aktar',
     'env.importEnvironmentHint':
-      'Postman ortamı (.json) veya Insomnia dışa aktarımı — değişkenler otomatik alınır.',
+      'Postman ortam ya da global değişken dosyası (.json) veya Insomnia dışa aktarımı — değişkenler otomatik alınır; global değişken dosyası Globallere eklenir.',
     'env.exportEnvironment': 'Ortamı Dışa Aktar',
     'env.exportEnvironmentHint':
       'Seçili ortamı Postman uyumlu bir .json dosyası olarak dışa aktarır.',
@@ -4430,7 +4444,19 @@ const translations: Record<Locale, Record<string, string>> = {
     'env.title': 'Ortamlar',
     'env.sectionEnvironments': 'Ortamlar',
     'env.globals': 'Globaller',
-    'env.globalsDescription': 'Global değişkenlere bu projenin her yerinden erişilebilir.',
+    'env.globalsDescription':
+      'Proje değişkenleri: hangi ortam aktif olursa olsun bu projedeki her istek bunları kullanır (aynı adlı ortam değişkeni önceliklidir). Postman koleksiyon değişkenleri ve globalleri buraya aktarılır; betikler pm.collectionVariables / pm.globals ile erişir.',
+    'env.moveToGlobals': 'Globallere taşı',
+    'env.moveToGlobalsHint':
+      'Bu ortamın değişkenlerini projenin Globallerine kopyalar. Globallerde zaten olan bir değişken kendi değerini korur. Ardından ortamı silebilirsiniz.',
+    'env.moveDone': '{count} değişken Globallere taşındı',
+    'env.moveConflicts': 'Bunlar Globallerde zaten vardı, mevcut değerleri korundu: {keys}',
+    'env.moveFailed': 'Değişkenler taşınamadı',
+    'env.moveDeleteDesc':
+      'Değişkenler artık Globallerde. Bu ortam silinsin mi? Bu işlem geri alınamaz.',
+    'env.moveDeleteConflicts':
+      'Değişkenler artık Globallerde; yalnız {keys} hariç: Globaller kendi değerini korudu, bu ortamı silerseniz buradaki değer kaybolur. Bu işlem geri alınamaz.',
+    'env.importedToGlobals': 'Değişkenler Globallere eklendi',
     'env.empty': 'Henüz ortam yok.',
     'env.namePlaceholder': 'Ortam adı',
     'env.newEnvironment': 'Yeni Ortam',
@@ -5248,6 +5274,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.result.done': 'Tamam',
     'import.envNote.title': 'Postman {kind} dosyası',
     'import.envNote.body': 'Proje ortamı olarak içe aktarılır — klasör oluşturulmaz.',
+    'import.envNote.bodyGlobals':
+      'Değişkenleri bu projenin Globallerine eklenir — klasör oluşturulmaz.',
     'import.envNote.environment': 'ortam',
     'import.envNote.globals': 'global değişken',
     'import.postmanFolder.label': 'Postman v3 klasörü içe aktar',

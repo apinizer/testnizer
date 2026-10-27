@@ -12,7 +12,7 @@
  *     v1.ts           v1 → v2 converter (port of Postman's transformer)
  *     v2.ts           the collection importer (one transaction)
  *     dump.ts         legacy `postman_dump.json`
- *     environment.ts  environment / globals / collection variables → envs
+ *     environment.ts  environments → envs; globals / collection variables → project variables
  *     auth.ts body.ts scripts.ts settings.ts examples.ts normalize.ts
  *     v3/             Postman v3: monolith JSON + collection folder (issue #276 part 2)
  */
@@ -97,7 +97,9 @@ export async function importPostman(
       const warnings = [...(r.warnings ?? [])]
       if (rootFolderId) {
         warnings.push(
-          'Environment files are imported as project environments; the chosen folder was not used.',
+          detection.kind === 'globals'
+            ? "Postman globals are imported into the project's Globals; the chosen folder was not used."
+            : 'Environment files are imported as project environments; the chosen folder was not used.',
         )
       }
       return {

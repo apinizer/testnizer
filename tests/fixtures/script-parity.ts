@@ -42,6 +42,16 @@ export interface ParityCase {
   /** Active-environment / project-global variables both paths start with. */
   seedEnv?: Record<string, string>
   seedGlobals?: Record<string, string>
+  /** Project variables marked SECRET (what `pm.vault` reads) — issue #281. */
+  seedSecretGlobals?: Record<string, string>
+  /** Project-variable writes (pm.globals / pm.collectionVariables), subset match. */
+  expectGlobals?: Record<string, string>
+  /**
+   * `pm.vault` outcome: a value = the project variable exists as a secret with
+   * that value afterwards, null = it was deleted (Send: `vaultUpdates`; Run:
+   * the persisted row).
+   */
+  expectVault?: Record<string, string | null>
   /** `pm.info.requestName` (Send meta / Run endpoint name). Default: `name`. */
   requestName?: string
   /** The request as defined (Run: the endpoint; Send: createPmApi meta). */
@@ -782,5 +792,77 @@ export const parityCases: ParityCase[] = [
       fileErr: 'pm.sendRequest: file part "up" in a formdata body is not supported in scripts',
     },
     expectTests: [],
+  },
+
+  // ── issue #281: collection variables = project variables; pm.vault ─────────
+  // A Testnizer project is the Postman collection: pm.collectionVariables reads
+  // and writes the project variables (the "Globals" list), the SAME scope as
+  // pm.globals. It used to alias pm.environment on both paths.
+  {
+    name: 'pm.collectionVariables is the project-variable scope (issue #281)',
+    seedEnv: { both: 'E' },
+    seedGlobals: { cvSeed: 'C', both: 'G' },
+    script: `
+      pm.collectionVariables.set('cvNew', 'N');
+      pm.environment.set('cv281', [
+        pm.collectionVariables.get('cvSeed'),
+        pm.globals.get('cvNew'),
+        typeof pm.environment.get('cvNew'),
+        typeof pm.environment.get('cvSeed'),
+        pm.variables.get('both'),
+        insomnia.baseEnvironment.get('cvSeed'),
+        bru.getCollectionVar('cvNew'),
+      ].join(','));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { cv281: 'C,N,undefined,undefined,E,C,N' },
+    expectGlobals: { cvNew: 'N' },
+    expectNoEnv: ['cvNew'],
+    expectTests: [],
+  },
+
+  // pm.vault → the project's SECRET variables: get reads only secret ones, set
+  // creates/updates one as secret (and it resolves at once like any project
+  // variable), unset deletes it.
+  {
+    name: 'pm.vault reads and writes secret project variables (issue #281)',
+    seedGlobals: { plain: 'P' },
+    seedSecretGlobals: { vaultTok: 'S1', keepMe: 'K' },
+    script: `
+      const a = await pm.vault.get('vaultTok');
+      const b = await pm.vault.get('plain');
+      await pm.vault.set('newSecret', 'NS');
+      const c = pm.globals.get('newSecret');
+      await pm.vault.unset('vaultTok');
+      await pm.vault.unset('plain');
+      pm.environment.set('vault281', [
+        a,
+        typeof b,
+        c,
+        await pm.vault.get('newSecret'),
+        typeof pm.globals.get('vaultTok'),
+        pm.globals.get('plain'),
+      ].join(','));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: { vault281: 'S1,undefined,NS,NS,undefined,P' },
+    expectVault: { newSecret: 'NS', vaultTok: null },
+    expectTests: [],
+  },
+
+  // pm.require (Postman package library) is not supported: a clear error names
+  // the package instead of "pm.require is not a function".
+  {
+    name: 'pm.require throws a clear error naming the package (issue #281)',
+    script: `
+      pm.test('pm.require explains itself', () => {
+        pm.expect(() => pm.require('npm:lodash@4.17.21')).to.throw(
+          'pm.require is not supported in Testnizer: npm:lodash@4.17.21',
+        );
+      });
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {},
+    expectTests: [{ name: 'pm.require explains itself', passed: true }],
   },
 ]

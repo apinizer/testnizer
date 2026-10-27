@@ -326,7 +326,9 @@ describe('issue #276 — v1 / v2.0 / v2.1 collections', () => {
 })
 
 describe('issue #276 — environment, globals, legacy dump', () => {
-  it('a globals export becomes the "Globals" environment through the APIs import (was: rejected)', async () => {
+  // Issue #281: Postman globals → the project variables ("Globals" list), not
+  // an environment named "Globals" that only resolved while active.
+  it('a globals export becomes project variables through the APIs import (was: rejected)', async () => {
     const pid = newProject()
     const res = await importText(
       pid,
@@ -340,18 +342,18 @@ describe('issue #276 — environment, globals, legacy dump', () => {
         ],
       }),
     )
-    expect(res).toMatchObject({ success: true, environmentName: 'Globals', endpointCount: 0 })
+    expect(res).toMatchObject({ success: true, endpointCount: 0 })
+    expect(res.environmentName).toBeUndefined()
     expect(
-      res.warnings?.some((w) => /imported as a project environment named "Globals"/.test(w)),
-    ).toBe(true)
-    const env = getDb()
-      .prepare(`SELECT id FROM environments WHERE project_id = ? AND name = 'Globals'`)
-      .get(pid) as { id: string }
+      (getDb().prepare('SELECT COUNT(*) AS n FROM environments WHERE project_id = ?').get(pid) as {
+        n: number
+      }).n,
+    ).toBe(0)
     const rows = getDb()
       .prepare(
-        'SELECT key, value, enabled, secret FROM environment_variables WHERE environment_id = ? ORDER BY rowid',
+        'SELECT key, value, enabled, secret FROM global_variables WHERE project_id = ? ORDER BY rowid',
       )
-      .all(env.id) as Array<{ key: string; value: string; enabled: number; secret: number }>
+      .all(pid) as Array<{ key: string; value: string; enabled: number; secret: number }>
     expect(rows.map((r) => [r.key, r.enabled, r.secret])).toEqual([
       ['g1', 1, 0],
       ['gs', 1, 1],
@@ -381,7 +383,39 @@ describe('issue #276 — environment, globals, legacy dump', () => {
         }),
       },
     )) as { success: boolean; data?: ImportData }
-    expect(res.data).toMatchObject({ success: true, environmentName: 'Globals' })
+    expect(res.data).toMatchObject({ success: true, projectVariableCount: 1 })
+    expect(
+      getDb().prepare('SELECT value FROM global_variables WHERE project_id = ? AND key = ?').get(pid, 'a'),
+    ).toEqual({ value: 'b' })
+  })
+
+  it('a project variable that already exists keeps its local value; the report names it', async () => {
+    const pid = newProject()
+    const put = (content: unknown) =>
+      ipcHandlers.get('import:postmanEnvironment')!(
+        {},
+        { projectId: pid, content: JSON.stringify(content) },
+      ) as Promise<{ success: boolean; data?: ImportData }>
+    await put({ name: 'G', _postman_variable_scope: 'globals', values: [{ key: 'a', value: 'mine' }] })
+    const res = await put({
+      name: 'G',
+      _postman_variable_scope: 'globals',
+      values: [
+        { key: 'a', value: 'theirs' },
+        { key: 'b', value: 'new' },
+      ],
+    })
+    expect(res.data).toMatchObject({ success: true, projectVariableCount: 1 })
+    const rows = getDb()
+      .prepare('SELECT key, value FROM global_variables WHERE project_id = ? ORDER BY key')
+      .all(pid)
+    expect(rows).toEqual([
+      { key: 'a', value: 'mine' },
+      { key: 'b', value: 'new' },
+    ])
+    expect(res.data?.warnings?.join('\n')).toMatch(
+      /already has the variable\(s\) "a" in Globals with a different value; the project's value was kept/,
+    )
   })
 
   const dump = {
@@ -452,7 +486,11 @@ describe('issue #276 — environment, globals, legacy dump', () => {
     const envs = getDb()
       .prepare('SELECT name FROM environments WHERE project_id = ? ORDER BY name')
       .all(pid) as Array<{ name: string }>
-    expect(envs.map((e) => e.name)).toEqual(['Globals', 'Legacy Env'])
+    // Issue #281: the dump's globals are project variables, not an environment.
+    expect(envs.map((e) => e.name)).toEqual(['Legacy Env'])
+    expect(
+      getDb().prepare('SELECT key, value FROM global_variables WHERE project_id = ?').all(pid),
+    ).toEqual([{ key: 'gg', value: '1' }])
     expect(res.warnings?.some((w) => /header preset/.test(w))).toBe(true)
   })
 

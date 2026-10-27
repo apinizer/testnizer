@@ -14,7 +14,9 @@
  *       <Folder>/.resources/definition.yaml
  *       <Folder>/<Request>.request.yaml
  *     postman/environments/<Environment>.environment.yaml
- *     postman/globals/workspace.globals.yaml
+ *
+ * The project variables are the collection's `variables` (in its
+ * definition.yaml, issue #281); no workspace globals file is written.
  *
  * Arrays everywhere (schema form), `order` spaced by 1000 in document order,
  * `name:` written only when the file name had to differ from it. File names
@@ -41,7 +43,6 @@ export interface V3FolderBundle {
   rootName: string
   collection: Json
   environments: V3EnvironmentOut[]
-  globals: V3EnvironmentOut | null
 }
 
 interface JsYaml {
@@ -161,9 +162,6 @@ export function bundleFiles(bundle: V3FolderBundle): PendingFile[] {
   for (const env of bundle.environments) {
     const stem = uniqueStem(env.name, envStems)
     out.push({ rel: `postman/environments/${stem}.environment.yaml`, text: yaml(envDoc(env)) })
-  }
-  if (bundle.globals && bundle.globals.values.length > 0) {
-    out.push({ rel: 'postman/globals/workspace.globals.yaml', text: yaml(envDoc(bundle.globals)) })
   }
   return out
 }

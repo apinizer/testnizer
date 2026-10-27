@@ -45,9 +45,26 @@ export interface PmLike {
     requestId: string
   }
   environment: PmScope & { name?: string }
+  /**
+   * Testnizer project variables (the "Globals" list). `collectionVariables`
+   * is the SAME scope: a Testnizer project is the Postman collection, so a
+   * Postman collection variable imports there too (issue #281).
+   */
   globals: PmScope
   collectionVariables: PmScope
   variables: PmScope
+  /**
+   * Postman Vault → the project's SECRET variables (issue #281): `get` reads
+   * only variables marked secret, `set` creates or updates one as secret,
+   * `unset` deletes it. Async like Postman's.
+   */
+  vault?: {
+    get(key: string): Promise<string | undefined>
+    set(key: string, value: unknown): Promise<void>
+    unset(key: string): Promise<void>
+  }
+  /** Postman package library loader — not supported; throws a clear error. */
+  require?: (name: string) => never
   iterationData: {
     get(k: string): unknown
     has(k: string): boolean

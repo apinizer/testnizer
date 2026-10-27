@@ -21,6 +21,11 @@
  *   - `pm.variables.get` precedence: local > data > environment > collection > global;
  *   - `pm.variables.set` writes a LOCAL variable;
  *   - `pm.execution.skipRequest()` is pre-request only and stops the script.
+ *
+ * Testnizer mapping (issue #281): a Testnizer project is the Postman
+ * collection, so `pm.collectionVariables` and `pm.globals` are ONE scope — the
+ * project variables ("Globals" list) — and `pm.vault` is the secret subset of
+ * it. `pm.collectionVariables` used to alias `pm.environment`.
  */
 import { expect as chaiExpect } from './expect'
 import { createPmResponse } from './response'
@@ -54,6 +59,23 @@ export interface PmScopeBacking {
   values: PmVarStore
   /** Write-through channel the host persists or propagates ('' = unset). */
   updates?: PmVarStore
+}
+
+/**
+ * `pm.vault` backing: which project variables are SECRET. Their values live in
+ * the globals (project-variable) scope like every other project variable, so
+ * `{{name}}` and `pm.globals.get` see a vault write at once.
+ */
+export interface PmVaultBacking {
+  /** Keys of the secret project variables. `Set<string>` satisfies it. */
+  secretKeys: { has(key: string): boolean; add(key: string): unknown; delete(key: string): unknown }
+  /**
+   * Persistence channel the host applies AFTER its globals writes: a value =
+   * create / update the project variable as secret; null = delete it. A key
+   * written by a later `pm.globals` / `pm.collectionVariables` call leaves
+   * this channel (that plain write is the last word). `Map` satisfies it.
+   */
+  updates: { set(key: string, value: string | null): unknown; delete(key: string): unknown }
 }
 
 /** Adapt a plain record (the runner's run state) to a PmVarStore. */
@@ -95,16 +117,14 @@ export interface CreatePmOptions {
   /** Folder names, outermost first, then the request name — `pm.execution.location`. */
   location?: string[]
   scopes: {
+    /**
+     * The project variables — `pm.globals` AND `pm.collectionVariables`
+     * (issue #281: a Testnizer project is the Postman collection).
+     */
     globals: PmScopeBacking
     environment: PmScopeBacking & { name?: string }
-    /**
-     * Collection variables. Omitted → they share the environment store.
-     * TODO(issue #281): Testnizer imports Postman collection variables into a
-     * per-project environment, so `pm.collectionVariables` is an alias of
-     * `pm.environment` on both paths. A separate collection scope is an open
-     * product decision (storage model, git export) — not changed here.
-     */
-    collection?: PmScopeBacking
+    /** Secret project variables (`pm.vault`). Omitted → `pm.vault` rejects. */
+    vault?: PmVaultBacking
     locals: PmScopeBacking
     /** The iteration data row (Run); empty on Send. */
     data?: Record<string, string>
@@ -189,18 +209,20 @@ function entriesOf(store: PmVarStore): Record<string, string> {
   return out
 }
 
-function makeScope(back: PmScopeBacking): PmScope {
+function makeScope(back: PmScopeBacking, onWrite?: (key: string) => void): PmScope {
   const scope: PmScope = {
     get: (k) => back.values.get(k),
     set: (k, v) => {
       const s = toVarString(v)
       back.values.set(k, s)
       back.updates?.set(k, s)
+      onWrite?.(k)
     },
     has: (k) => back.values.has(k),
     unset: (k) => {
       back.values.delete(k)
       back.updates?.set(k, '')
+      onWrite?.(k)
     },
     clear: () => {
       for (const k of Array.from(back.values.keys())) scope.unset(k)
@@ -230,21 +252,24 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
 
   // ── variable scopes ──
   const { scopes } = opts
-  const globals = makeScope(scopes.globals)
+  const vaultBack = scopes.vault
+  // A plain project-variable write after a vault write is the last word.
+  const globals = makeScope(scopes.globals, (k) => vaultBack?.updates.delete(k))
   const environment = Object.assign(makeScope(scopes.environment), {
     name: scopes.environment.name,
   })
-  const collectionVariables = scopes.collection ? makeScope(scopes.collection) : environment
+  // ONE scope (issue #281): Postman collection variables are Testnizer project
+  // variables. This used to fall back to the environment store.
+  const collectionVariables = globals
   const locals = makeScope(scopes.locals)
   const data: Record<string, string> = { ...(scopes.data ?? {}) }
   const hasData = (k: string): boolean => Object.prototype.hasOwnProperty.call(data, k)
 
-  /** Narrowest scope wins: local > data > environment > collection > global. */
+  /** Narrowest scope wins: local > data > environment > collection / global. */
   const lookup = (k: string): string | undefined => {
     if (scopes.locals.values.has(k)) return scopes.locals.values.get(k)
     if (hasData(k)) return data[k]
     if (scopes.environment.values.has(k)) return scopes.environment.values.get(k)
-    if (scopes.collection?.values.has(k)) return scopes.collection.values.get(k)
     if (scopes.globals.values.has(k)) return scopes.globals.values.get(k)
     return undefined
   }
@@ -256,7 +281,6 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
     clear: locals.clear,
     toObject: () => ({
       ...globals.toObject(),
-      ...(scopes.collection ? collectionVariables.toObject() : {}),
       ...environment.toObject(),
       ...data,
       ...locals.toObject(),
@@ -303,6 +327,40 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
       state.nextRequest = { name }
     },
     location,
+  }
+
+  // ── vault (secret project variables) ──
+  const noVault = (): Promise<never> =>
+    Promise.reject(new Error('pm.vault is not available in this context'))
+  const vault = {
+    get: async (key: string): Promise<string | undefined> => {
+      if (!vaultBack) return noVault()
+      return vaultBack.secretKeys.has(key) ? scopes.globals.values.get(key) : undefined
+    },
+    set: async (key: string, value: unknown): Promise<void> => {
+      if (!vaultBack) return noVault()
+      const s = toVarString(value)
+      // Live in the project-variable scope like any project variable…
+      scopes.globals.values.set(key, s)
+      scopes.globals.updates?.set(key, s)
+      // …and recorded as secret: the host persists this AFTER the globals.
+      vaultBack.secretKeys.add(key)
+      vaultBack.updates.set(key, s)
+    },
+    unset: async (key: string): Promise<void> => {
+      if (!vaultBack) return noVault()
+      // Only a secret variable is the vault's to delete.
+      if (!vaultBack.secretKeys.has(key)) return
+      scopes.globals.values.delete(key)
+      scopes.globals.updates?.set(key, '')
+      vaultBack.secretKeys.delete(key)
+      vaultBack.updates.set(key, null)
+    },
+  }
+
+  // ── pm.require: Postman package libraries do not exist here ──
+  const pmRequire = (name: string): never => {
+    throw new Error(`pm.require is not supported in Testnizer: ${String(name)}`)
   }
 
   // ── visualizer (no pane in Testnizer) ──
@@ -381,6 +439,8 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
     sendRequest,
     execution,
     visualizer,
+    vault,
+    require: pmRequire,
   }
 
   // Pre-request: there is no response yet, and `pm.response` does not exist —

@@ -490,38 +490,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
       "status": "developing",
     },
   ],
-  "environments": [
-    {
-      "is_active": 1,
-      "name": "Baseline Parity Collection (imported)",
-      "variables": [
-        {
-          "description": null,
-          "enabled": 1,
-          "initial_value": "https://api.example.com",
-          "key": "baseUrl",
-          "secret": 0,
-          "value": "https://api.example.com",
-        },
-        {
-          "description": null,
-          "enabled": 1,
-          "initial_value": "v2",
-          "key": "apiVersion",
-          "secret": 0,
-          "value": "v2",
-        },
-        {
-          "description": null,
-          "enabled": 1,
-          "initial_value": "super-secret-value",
-          "key": "clientSecret",
-          "secret": 1,
-          "value": "super-secret-value",
-        },
-      ],
-    },
-  ],
+  "environments": [],
   "folders": [
     {
       "auth": {
@@ -577,6 +546,32 @@ exports[`baseline Postman v2.1 — import -> DB -> export > DB rows after import
   pm.expect(1).to.equal(1);
 });",
   },
+  "project_variables": [
+    {
+      "description": null,
+      "enabled": 1,
+      "initial_value": "https://api.example.com",
+      "key": "baseUrl",
+      "secret": 0,
+      "value": "https://api.example.com",
+    },
+    {
+      "description": null,
+      "enabled": 1,
+      "initial_value": "v2",
+      "key": "apiVersion",
+      "secret": 0,
+      "value": "v2",
+    },
+    {
+      "description": null,
+      "enabled": 1,
+      "initial_value": "super-secret-value",
+      "key": "clientSecret",
+      "secret": 1,
+      "value": "super-secret-value",
+    },
+  ],
 }
 `;
 
@@ -1532,38 +1527,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
       "status": "developing",
     },
   ],
-  "environments": [
-    {
-      "is_active": 1,
-      "name": "Baseline Project (imported)",
-      "variables": [
-        {
-          "description": null,
-          "enabled": 1,
-          "initial_value": "https://api.example.com",
-          "key": "baseUrl",
-          "secret": 0,
-          "value": "https://api.example.com",
-        },
-        {
-          "description": null,
-          "enabled": 1,
-          "initial_value": "v2",
-          "key": "apiVersion",
-          "secret": 0,
-          "value": "v2",
-        },
-        {
-          "description": null,
-          "enabled": 1,
-          "initial_value": "",
-          "key": "clientSecret",
-          "secret": 1,
-          "value": "",
-        },
-      ],
-    },
-  ],
+  "environments": [],
   "folders": [
     {
       "auth": {
@@ -1619,6 +1583,32 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
   pm.expect(1).to.equal(1);
 });",
   },
+  "project_variables": [
+    {
+      "description": null,
+      "enabled": 1,
+      "initial_value": "https://api.example.com",
+      "key": "baseUrl",
+      "secret": 0,
+      "value": "https://api.example.com",
+    },
+    {
+      "description": null,
+      "enabled": 1,
+      "initial_value": "v2",
+      "key": "apiVersion",
+      "secret": 0,
+      "value": "v2",
+    },
+    {
+      "description": null,
+      "enabled": 1,
+      "initial_value": "",
+      "key": "clientSecret",
+      "secret": 1,
+      "value": "",
+    },
+  ],
 }
 `;
 

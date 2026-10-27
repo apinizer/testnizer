@@ -95,6 +95,18 @@ export function registerEnvironmentHandlers(): void {
     },
   )
 
+  // Issue #281: copy an environment's variables into its project's variables
+  // ("Globals"); conflicts keep the local value. Deleting the environment is a
+  // separate, confirmed call.
+  ipcMain.handle('environment:moveToProjectVariables', async (_event, id: string) => {
+    try {
+      const data = envRepo.moveEnvironmentToProjectVariables(id)
+      return { success: true, data }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
   ipcMain.handle('environment:delete', async (_event, id: string) => {
     try {
       const data = envRepo.deleteEnvironment(id)

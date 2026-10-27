@@ -37,6 +37,7 @@ import { mcpDisplayTarget } from '../../shared/mcp-call'
 import {
   absorbScriptWrites,
   emptyScriptWrites,
+  persistScriptWrites,
   sendScriptScopes,
   type SendScriptWrites,
 } from './script-scopes'
@@ -133,17 +134,15 @@ export function mcpSendVars(ctx: McpScriptContext): Record<string, string> {
   return { ...useEnvironmentStore.getState().getActiveVariables(), ...ctx.overrides }
 }
 
-/** Fold a script's writes into the send and persist env / global ones (HTTP's rule). */
-function absorb(ctx: McpScriptContext, r: ScriptRunResult): void {
+/** Fold a script's writes into the send and persist env / global / vault ones (HTTP's rule). */
+async function absorb(ctx: McpScriptContext, r: ScriptRunResult): Promise<void> {
   for (const log of r.consoleLogs) {
     const level = log.level === 'error' ? 'error' : log.level === 'warn' ? 'warn' : 'log'
     ctx.logs.push({ level, message: log.message, timestamp: log.timestamp })
   }
   Object.assign(ctx.overrides, r.globalUpdates, r.envUpdates, r.varUpdates)
   absorbScriptWrites((ctx.writes ??= emptyScriptWrites()), r)
-  if (Object.keys(r.envUpdates).length > 0 || Object.keys(r.globalUpdates).length > 0) {
-    void useEnvironmentStore.getState().applyScriptUpdates(r.envUpdates, r.globalUpdates)
-  }
+  await persistScriptWrites(r)
 }
 
 const EMPTY_RESPONSE = (): ApiResponse => ({
@@ -159,18 +158,21 @@ const EMPTY_RESPONSE = (): ApiResponse => ({
 export async function runMcpPreScripts(ctx: McpScriptContext): Promise<McpPreOutcome> {
   let skipped = false
   for (const script of ctx.preScripts) {
-    const { envMap, globalMap, localVars } = sendScriptScopes((ctx.writes ??= emptyScriptWrites()))
+    const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(
+      (ctx.writes ??= emptyScriptWrites()),
+    )
     const pmApi = createPmApi(EMPTY_RESPONSE(), envMap, globalMap, {
       eventName: 'prerequest',
       requestName: ctx.requestName,
       requestId: ctx.requestId,
       location: [...(ctx.folderNames ?? []), ctx.requestName],
       localVars,
+      vaultKeys,
       request: { method: 'MCP', url: ctx.url, headers: ctx.headers },
       projectId: ctx.projectId,
     })
     const r = await runScript(script, pmApi)
-    absorb(ctx, r)
+    await absorb(ctx, r)
     if (r.scriptError) return { ok: false, skipped: false, message: r.scriptError }
     if (r.skipRequest) skipped = true
   }
@@ -230,18 +232,21 @@ export async function runMcpPostChecks(
   const mcp = mcpScriptInfo(outcome) ?? undefined
   let scriptError: string | undefined
   for (const script of ctx.postScripts) {
-    const { envMap, globalMap, localVars } = sendScriptScopes((ctx.writes ??= emptyScriptWrites()))
+    const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(
+      (ctx.writes ??= emptyScriptWrites()),
+    )
     const pmApi = createPmApi(response, envMap, globalMap, {
       eventName: 'test',
       requestName: ctx.requestName,
       requestId: ctx.requestId,
       location: [...(ctx.folderNames ?? []), ctx.requestName],
       localVars,
+      vaultKeys,
       projectId: ctx.projectId,
     })
     const r = await runScript(script, pmApi, { mcp })
     results.push(...r.results)
-    absorb(ctx, r)
+    await absorb(ctx, r)
     if (r.scriptError && !scriptError) scriptError = r.scriptError
   }
   // A post-script that only chains variables ran no test: no empty "0/0" view.

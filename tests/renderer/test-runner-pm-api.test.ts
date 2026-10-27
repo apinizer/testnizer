@@ -167,17 +167,21 @@ describe('pm.globals', () => {
 // ─── pm.collectionVariables ──────────────────────────────────────
 
 describe('pm.collectionVariables', () => {
-  it('shares the env backing store: set surfaces in envUpdates and env.get reads it', async () => {
+  // Issue #281: a Testnizer project is the Postman collection — collection
+  // variables ARE the project variables (pm.globals), not the environment.
+  it('is the project-variable scope: set surfaces in globalUpdates, never in the environment', async () => {
     const pm = makePm(makeResponse())
     const script = `
       pm.collectionVariables.set('cv', 'val')
       pm.test('cv', () => {
         pm.expect(pm.collectionVariables.get('cv')).to.equal('val')
-        pm.expect(pm.environment.get('cv')).to.equal('val')
+        pm.expect(pm.globals.get('cv')).to.equal('val')
+        pm.expect(pm.environment.get('cv')).to.equal(undefined)
       })`
     const out = await runScript(script, pm)
     expect(out.results[0].passed).toBe(true)
-    expect(out.envUpdates).toEqual({ cv: 'val' })
+    expect(out.globalUpdates).toEqual({ cv: 'val' })
+    expect(out.envUpdates).toEqual({})
   })
 })
 

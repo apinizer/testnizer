@@ -743,11 +743,13 @@ export default function ImportModal() {
       const importerOk = importResult?.data?.success !== false
       if (ipcOk && importerOk) {
         await refreshTree()
-        // Postman/Apinizer/Insomnia imports may create a project-scoped
-        // environment for collection variables. Refresh the env store so the
-        // new env shows up in the selector without requiring an app reload.
+        // Postman/Apinizer/Insomnia imports may create project environments
+        // and — Postman collection variables and globals, issue #281 — project
+        // variables (Globals). Refresh both so the selector shows the new env
+        // and the next Send resolves the new variables without an app reload.
         if (fmtId === 'postman' || fmtId === 'apinizer' || fmtId === 'insomnia') {
-          await useEnvironmentStore.getState().fetchEnvironments()
+          const envStore = useEnvironmentStore.getState()
+          await Promise.all([envStore.fetchEnvironments(), envStore.fetchGlobalVariables()])
         }
         toast.success(t('toast.imported'))
         // Anything skipped or degraded is listed before the modal closes
@@ -1158,7 +1160,13 @@ export default function ImportModal() {
                       ),
                     )}
                   </div>
-                  <div className="text-[var(--sub)]">{t('import.envNote.body')}</div>
+                  <div className="text-[var(--sub)]">
+                    {t(
+                      postmanKind === 'globals'
+                        ? 'import.envNote.bodyGlobals'
+                        : 'import.envNote.body',
+                    )}
+                  </div>
                 </div>
               )}
 

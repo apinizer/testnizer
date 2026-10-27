@@ -63,16 +63,17 @@ export function extractEventScripts(
     const packages = ev.script?.packages
     if (packages && typeof packages === 'object' && Object.keys(packages).length > 0) {
       warnings.push(
-        `"${label}": the ${kind} script uses Postman package(s) ${Object.keys(packages).join(', ')} via pm.require — Testnizer cannot load them; the script will fail where it calls pm.require.`,
+        `"${label}": the ${kind} script uses Postman package(s) ${Object.keys(packages).join(', ')} via pm.require — Testnizer cannot load them; the script stops with "pm.require is not supported in Testnizer" where it calls pm.require.`,
       )
     } else if (/\bpm\.require\s*\(/.test(text)) {
       warnings.push(
-        `"${label}": the ${kind} script calls pm.require — Postman package libraries are not available in Testnizer.`,
+        `"${label}": the ${kind} script calls pm.require — Postman package libraries are not available in Testnizer; the script stops with "pm.require is not supported in Testnizer" there.`,
       )
     }
     if (/\bpm\.vault\b/.test(text)) {
+      // Issue #281: pm.vault works — on this project's secret variables.
       warnings.push(
-        `"${label}": the ${kind} script uses pm.vault — Postman Vault is not available in Testnizer; use a secret environment variable instead.`,
+        `"${label}": the ${kind} script uses pm.vault — in Testnizer it reads and writes this project's secret variables (Globals); vault values are not in the file, enter them there as secret variables.`,
       )
     }
     ;(kind === 'pre-request' ? pre : post).push(text)

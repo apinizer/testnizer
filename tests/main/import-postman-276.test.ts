@@ -235,10 +235,15 @@ describe('issue #276 — malformed-but-real v2.x shapes import instead of aborti
     expect(count('endpoints', pid)).toBe(0)
     expect(count('folders', pid)).toBe(0)
     expect(count('environments', pid)).toBe(0)
+    // The collection variable written before the throw is rolled back too.
+    expect(count('global_variables', pid)).toBe(0)
     expect(readSharedProjectSettings(pid)).toBeNull()
   })
 
-  it('collection variables in an inactive environment are reported (model unchanged)', async () => {
+  // Issue #281: collection variables are project variables — always active,
+  // below the environment. They used to land in an inactive "<collection>
+  // (imported)" environment that neither Send nor Run read.
+  it('collection variables resolve while another environment is active', async () => {
     const pid = newProject()
     const now = Date.now()
     getDb()
@@ -252,14 +257,9 @@ describe('issue #276 — malformed-but-real v2.x shapes import instead of aborti
       variable: [{ key: 'baseUrl', value: 'http://coll' }],
       item: [{ name: 'x', request: { method: 'GET', url: '{{baseUrl}}/x' } }],
     })
-    // Unchanged storage: the "(imported)" env exists but is not active, so
-    // Run (loadEnvVars) and Send do not see `baseUrl` — now said out loud.
-    expect(loadEnvVars({ projectId: pid, workspaceId })).not.toHaveProperty('baseUrl')
-    expect(
-      data.warnings?.some(
-        (w) => /"Dev" is the active environment/.test(w) && /Vars \(imported\)/.test(w),
-      ),
-    ).toBe(true)
+    expect(loadEnvVars({ projectId: pid })).toMatchObject({ baseUrl: 'http://coll' })
+    expect(count('environments', pid)).toBe(1)
+    expect((data.warnings ?? []).join('\n')).not.toMatch(/active environment/)
   })
 })
 
@@ -292,19 +292,17 @@ describe('issue #276 — collection / folder / request variables', () => {
         },
       ],
     })
-    const env = getDb()
-      .prepare(
-        `SELECT id, is_active FROM environments WHERE project_id = ? AND name = 'V (imported)'`,
-      )
-      .get(pid) as { id: string; is_active: number }
-    expect(env.is_active).toBe(1)
+    // Issue #281: the project variables, no environment.
+    expect(count('environments', pid)).toBe(0)
     const rows = getDb()
       .prepare(
-        'SELECT key, value, initial_value, description, enabled, secret FROM environment_variables WHERE environment_id = ?',
+        'SELECT key, value, initial_value, description, enabled, secret FROM global_variables WHERE project_id = ?',
       )
-      .all(env.id) as Array<Record<string, string | number | null>>
+      .all(pid) as Array<Record<string, string | number | null>>
     const row = (k: string) => rows.find((r) => r.key === k)!
-    expect(row('plain')).toMatchObject({ value: 'request-wins', enabled: 1, secret: 0 })
+    // The first definition (collection) wins; the request-level one is reported.
+    expect(row('plain')).toMatchObject({ value: 'p', enabled: 1, secret: 0 })
+    expect(row('plain').description).toBe('a plain one')
     expect(row('off')).toMatchObject({ enabled: 0 })
     expect(row('num')).toMatchObject({ value: '5' })
     expect(row('userId')).toMatchObject({ value: '42' })
@@ -316,7 +314,7 @@ describe('issue #276 — collection / folder / request variables', () => {
     expect(row('vault')).toMatchObject({ secret: 1, value: '' })
     expect(String(row('vault').description)).toMatch(/vault/i)
     // Plaintext never at rest, anywhere in the variable table.
-    const raw = JSON.stringify(getDb().prepare('SELECT * FROM environment_variables').all())
+    const raw = JSON.stringify(getDb().prepare('SELECT * FROM global_variables').all())
     expect(raw).not.toContain('TOP-SECRET-1')
     expect(raw).not.toContain('TOP-SECRET-2')
     // …but Run resolves them.
@@ -327,7 +325,13 @@ describe('issue #276 — collection / folder / request variables', () => {
     })
     const w = data.warnings ?? []
     expect(w.some((x) => /"Users": folder\/request variables \(userId\)/.test(x))).toBe(true)
-    expect(w.some((x) => /Variable "plain" is defined by both/.test(x))).toBe(true)
+    expect(
+      w.some((x) =>
+        /the variable\(s\) "plain" are defined more than once with different values; the first definition was kept/.test(
+          x,
+        ),
+      ),
+    ).toBe(true)
     expect(w.some((x) => /"vault" is linked to a postman vault secret/.test(x))).toBe(true)
   })
 

@@ -1,6 +1,6 @@
 /**
  * Postman collection v2.0 / v2.1 → Testnizer folders, endpoints, examples and
- * environment rows (issue #276). The v1 converter and the legacy data dump
+ * project variables (issues #276 / #281). The v1 converter and the legacy data dump
  * feed the same function.
  *
  * ALL-OR-NOTHING: the whole import runs in one SQLite transaction. Bad items
@@ -52,7 +52,7 @@ import { mapPostmanBody, type UiBody } from './body'
 import { extractEventScripts, vaultReferences, type ExtractedScripts } from './scripts'
 import { mergePpb, ppbToRequestSettings, reportUnsupportedPpb } from './settings'
 import { insertExamples, type ExampleRequestSide } from './examples'
-import { toVariableRow, upsertProjectEnvironment, type VariableRow } from './environment'
+import { toVariableRow, writeProjectVariables, type SourcedVariable } from './environment'
 import {
   X_APINIZER_RESTORED_KINDS,
   apinizerRowTypeToBodyType,
@@ -289,7 +289,7 @@ function placeCollectionScripts(
 function collectTreeVariables(
   items: PostmanItem[],
   path: string[],
-  out: Array<{ row: VariableRow; where: string }>,
+  out: SourcedVariable[],
   warnings: string[],
 ): void {
   for (const item of items) {
@@ -378,7 +378,14 @@ export function importCollectionTx(
   counters: ImportCounters,
   warnings: string[],
   now: number,
-): { suggestedEnvVars: Record<string, string>; environmentId?: string; environmentName?: string } {
+): {
+  suggestedEnvVars: Record<string, string>
+  /** Variables added to the project variables (issue #281). */
+  projectVariableCount: number
+  /** Never set any more (collection variables are project variables, issue #281). */
+  environmentId?: string
+  environmentName?: string
+} {
   const projectRow = db
     .prepare('SELECT workspace_id, description FROM projects WHERE id = ?')
     .get(projectId) as { workspace_id: string; description: string | null } | undefined
@@ -397,55 +404,35 @@ export function importCollectionTx(
   // dump's wrapper) can take the collection's auth and scripts.
   const rootFolderEmpty = rootFolderId ? folderIsEmpty(db, rootFolderId) : false
 
-  // ── Variables ─────────────────────────────────────────────────────────
+  // ── Variables → project variables (issue #281) ───────────────────────
+  // A Testnizer project is the Postman collection: its variables become the
+  // project variables ("Globals" — `pm.collectionVariables`), always active
+  // below the environment, so they resolve whichever environment is active.
   const suggestedEnvVars: Record<string, string> = {}
-  const rows = new Map<string, { row: VariableRow; where: string }>()
+  const vars: SourcedVariable[] = []
   for (const v of Array.isArray(collection.variable) ? collection.variable : []) {
     const row = toVariableRow(v, collLabel, warnings, 'disabled')
     if (!row) continue
     suggestedEnvVars[row.key] = row.value
-    rows.set(row.key, { row, where: collLabel })
+    vars.push({ row, where: collLabel })
   }
-  const treeVars: Array<{ row: VariableRow; where: string }> = []
+  const treeVars: SourcedVariable[] = []
   collectTreeVariables(items, [], treeVars, warnings)
-  let environmentId: string | undefined
-  let environmentName: string | undefined
-  if (rows.size > 0 || treeVars.length > 0) {
-    environmentName = `${collName} (imported)`
-    const scoped = new Map<string, string[]>()
-    for (const tv of treeVars) {
-      const prev = rows.get(tv.row.key)
-      if (prev && prev.row.value !== tv.row.value) {
-        warnings.push(
-          `Variable "${tv.row.key}" is defined by both ${prev.where} and ${tv.where} with different values; ` +
-            `the ${tv.where} value was kept in environment "${environmentName}".`,
-        )
-      }
-      rows.set(tv.row.key, tv)
-      scoped.set(tv.where, [...(scoped.get(tv.where) ?? []), tv.row.key])
-    }
-    for (const [where, keys] of scoped) {
-      warnings.push(
-        `${where}: folder/request variables (${keys.join(', ')}) have no folder scope in Testnizer; ` +
-          `they were added to environment "${environmentName}" and apply to every request while it is active.`,
-      )
-    }
-    const res = upsertProjectEnvironment(
-      db,
-      projectId,
-      projectRow.workspace_id,
-      environmentName,
-      [...rows.values()].map((r) => r.row),
-      now,
+  const scoped = new Map<string, string[]>()
+  for (const tv of treeVars) scoped.set(tv.where, [...(scoped.get(tv.where) ?? []), tv.row.key])
+  for (const [where, keys] of scoped) {
+    warnings.push(
+      `${where}: folder/request variables (${keys.join(', ')}) have no folder scope in Testnizer; ` +
+        `they were added to the project's Globals and apply to every request.`,
     )
-    environmentId = res.environmentId
-    if (!res.active && res.activeOtherName) {
-      warnings.push(
-        `Collection variables were saved in environment "${environmentName}", but "${res.activeOtherName}" is the active environment. ` +
-          `Requests that use them resolve only after you select "${environmentName}" (Testnizer has no separate collection-variable scope yet).`,
-      )
-    }
   }
+  const { added: projectVariableCount } = writeProjectVariables(
+    projectId,
+    projectRow.workspace_id,
+    [...vars, ...treeVars],
+    collLabel,
+    warnings,
+  )
 
   // ── Collection description, auth, scripts, behaviour ──────────────────
   const collDescription = descriptionText(collection.info?.description)
@@ -575,7 +562,7 @@ export function importCollectionTx(
       const vault = vaultReferences(JSON.stringify(req))
       if (vault.length > 0) {
         warnings.push(
-          `"${label}": uses Postman Vault reference(s) ${vault.map((v) => `{{vault:${v}}}`).join(', ')} — Vault is not available in Testnizer; replace them with secret environment variables.`,
+          `"${label}": uses Postman Vault reference(s) ${vault.map((v) => `{{vault:${v}}}`).join(', ')} — Testnizer keeps vault values as this project's secret variables (Globals, which pm.vault reads): replace each with {{name}} and enter its value there as a secret variable.`,
         )
       }
       if (req.proxy || req.certificate) {
@@ -696,7 +683,7 @@ export function importCollectionTx(
       `Folder descriptions were not imported (Testnizer folders have no description field): ${undocumentedFolders.join('; ')}.`,
     )
   }
-  return { suggestedEnvVars, environmentId, environmentName }
+  return { suggestedEnvVars, projectVariableCount }
 }
 
 /**

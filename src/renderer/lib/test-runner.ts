@@ -367,6 +367,8 @@ export type PmApi = PmLike & {
   _testResults: ScriptTestResult[]
   _envUpdates: Map<string, string>
   _globalUpdates: Map<string, string>
+  /** `pm.vault` writes: a value = secret project variable, null = delete (issue #281). */
+  _vaultUpdates: Map<string, string | null>
   /** `pm.variables.set` writes — request-local, never persisted (see ScriptRunResult.varUpdates). */
   _varUpdates: Map<string, string>
   /** Promises of async / done-style `pm.test()` callbacks (drained by runScript). */
@@ -436,6 +438,8 @@ export function createPmApi(
     /** `pm.variables.set` values from an earlier script of this send's
      *  cascade (project → folder → request) — a separate scope, not env. */
     localVars?: Record<string, string>
+    /** Keys of the project variables marked secret — what `pm.vault` sees. */
+    vaultKeys?: Iterable<string>
     /** Scopes pm.sendRequest to the active project's cookie jar so a script
      * login shares its session cookie with the main request (issue #104).
      * Engine-level `projectId` only — never `_projectId`, which would also
@@ -445,6 +449,7 @@ export function createPmApi(
 ): PmApi {
   const envUpdates = new Map<string, string>()
   const globalUpdates = new Map<string, string>()
+  const vaultUpdates = new Map<string, string | null>()
   const localVars = new Map<string, string>(Object.entries(meta?.localVars ?? {}))
   const logs: ConsoleLog[] = []
   const eventName = meta?.eventName ?? 'test'
@@ -477,6 +482,7 @@ export function createPmApi(
     scopes: {
       globals: { values: globalVars, updates: globalUpdates },
       environment: { values: envVars, updates: envUpdates },
+      vault: { secretKeys: new Set(meta?.vaultKeys ?? []), updates: vaultUpdates },
       // Request-local, like Postman: folded into THIS send's resolution by the
       // caller, never persisted.
       locals: { values: localVars },
@@ -496,6 +502,7 @@ export function createPmApi(
     _testResults: runtime.results,
     _envUpdates: envUpdates,
     _globalUpdates: globalUpdates,
+    _vaultUpdates: vaultUpdates,
     _varUpdates: localVars,
     _pendingTests: runtime.pendingTests,
     _pendingSends: runtime.pendingSends,
@@ -519,6 +526,12 @@ export interface ScriptRunResult {
   consoleLogs: ConsoleLog[]
   envUpdates: Record<string, string>
   globalUpdates: Record<string, string>
+  /**
+   * `pm.vault` writes (issue #281), applied by the host AFTER `globalUpdates`:
+   * a value creates / updates the project variable as secret, null deletes it.
+   * The value is also in `globalUpdates`, so `{{name}}` resolves it at once.
+   */
+  vaultUpdates: Record<string, string | null>
   /**
    * `pm.variables.set` writes. Request-local like Postman: the Send path folds
    * them into THIS send's `{{var}}` resolution (URL, params, headers, body) but
@@ -639,6 +652,7 @@ export async function runScript(
     consoleLogs,
     envUpdates: Object.fromEntries(pmApi._envUpdates),
     globalUpdates: Object.fromEntries(pmApi._globalUpdates),
+    vaultUpdates: Object.fromEntries(pmApi._vaultUpdates),
     varUpdates: Object.fromEntries(pmApi._varUpdates),
     skipRequest: pmApi._skipRequest,
     requestHeaders: pmApi._requestHeaders.toArray(),

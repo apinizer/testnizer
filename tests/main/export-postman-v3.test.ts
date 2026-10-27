@@ -905,7 +905,11 @@ describe('issue #277 — secrets never reach a file', () => {
     const root = await exportFolder(pid)
     const files = allFiles(root)
     expect(files.some((f) => f.endsWith('Prod.environment.yaml'))).toBe(true)
-    expect(files.some((f) => f.endsWith('workspace.globals.yaml'))).toBe(true)
+    // Issue #281: project variables are the collection's variables — one
+    // owner, no workspace globals file.
+    expect(files.some((f) => f.endsWith('workspace.globals.yaml'))).toBe(false)
+    const def = files.find((f) => /collections\/Canary\/\.resources\/definition\.yaml$/.test(f))
+    expect(def && fs.readFileSync(def, 'utf-8')).toMatch(/key: gsecret\n\s+secret: true/)
     for (const f of files) assertClean(fs.readFileSync(f, 'utf-8'), f)
     const env = fs.readFileSync(files.find((f) => f.endsWith('Prod.environment.yaml'))!, 'utf-8')
     expect(env).toMatch(/key: token\n\s+value: ''\n\s+enabled: true\n\s+type: secret/)
@@ -915,9 +919,13 @@ describe('issue #277 — secrets never reach a file', () => {
   it('v3 JSON and v2.1 JSON', async () => {
     const v3 = await call('export:postmanV3Json', pid)
     assertClean(String(v3.data), 'v3 JSON')
-    expect(JSON.parse(String(v3.data)).variables).toContainEqual({ key: 'token', secret: true })
+    // Issue #281: the collection variables are the project variables (was: the active env).
+    expect(JSON.parse(String(v3.data)).variables).toEqual([{ key: 'gsecret', secret: true }])
     const v21 = await call('export:postman', pid)
     assertClean(String(v21.data), 'v2.1 JSON')
+    expect(JSON.parse(String(v21.data)).variable).toEqual([
+      { key: 'gsecret', value: '', type: 'secret' },
+    ])
   })
 })
 

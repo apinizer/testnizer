@@ -87,9 +87,12 @@ describe('script parity — Send path', () => {
           ? { requestId: 'parity', protocol: 'http', timing: { total: 0 } }
           : toApiResponse(c.response),
         new Map<string, string>(Object.entries(c.seedEnv ?? {})),
-        new Map<string, string>(Object.entries(c.seedGlobals ?? {})),
+        new Map<string, string>(
+          Object.entries({ ...(c.seedGlobals ?? {}), ...(c.seedSecretGlobals ?? {}) }),
+        ),
         {
           eventName: isPre ? 'prerequest' : 'test',
+          vaultKeys: Object.keys(c.seedSecretGlobals ?? {}),
           requestName: c.requestName ?? c.name,
           ...(c.request
             ? {
@@ -113,6 +116,12 @@ describe('script parity — Send path', () => {
         expect(out.envUpdates[key], `env ${key} must not be written`).toBeUndefined()
       }
       if (c.expectSkip !== undefined) expect(out.skipRequest).toBe(c.expectSkip)
+      for (const [key, value] of Object.entries(c.expectGlobals ?? {})) {
+        expect(out.globalUpdates[key], `global ${key}`).toBe(value)
+      }
+      for (const [key, value] of Object.entries(c.expectVault ?? {})) {
+        expect(out.vaultUpdates[key], `vault ${key}`).toBe(value)
+      }
 
       // pm.test / legacy tests[] outcomes — match by name.
       for (const t of c.expectTests) {

@@ -186,6 +186,12 @@ function dumpProject(pid: string): Record<string, unknown> {
           .all(env.id) as Array<Record<string, unknown>>
       ).map((v) => ({ ...v })),
     })),
+    // Collection variables land here (issue #281).
+    project_variables: db
+      .prepare(
+        'SELECT key, value, initial_value, description, enabled, secret FROM global_variables WHERE project_id = ? ORDER BY rowid',
+      )
+      .all(pid),
     project_shared_settings: readSharedProjectSettings(pid) ?? null,
   }
 }

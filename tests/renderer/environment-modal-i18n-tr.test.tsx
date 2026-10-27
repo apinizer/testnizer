@@ -179,7 +179,7 @@ describe('issue #248 — Environments dialog in Turkish', () => {
     expect(screen.getByText('Geçerli Değer')).toBeTruthy()
     expect(screen.getByTestId('env-var-add').textContent).toContain('Değişken Ekle')
     expect(
-      screen.getByText('Global değişkenlere bu projenin her yerinden erişilebilir.'),
+      screen.getByText(/^Proje değişkenleri: hangi ortam aktif olursa olsun/),
     ).toBeTruthy()
   })
 
@@ -213,6 +213,8 @@ describe('issue #248 — Environments dialog in Turkish', () => {
 
     expect(englishLeftovers()).toEqual([])
     expect(screen.getByTestId('env-set-active').textContent).toBe('Aktif Yap')
+    // Issue #281.
+    expect(screen.getByTestId('env-move-to-project-vars').textContent).toBe('Globallere taşı')
     expect(screen.getByText('1 değişken')).toBeTruthy()
   })
 

@@ -637,8 +637,11 @@ function sendPhaseStarted(phase: RunPhase): void {
  * `pm.variables` objects so a script sees each scope on its own, as on Send.
  */
 interface RunVarScopes {
+  /** Project variables: `pm.globals` AND `pm.collectionVariables` (issue #281). */
   globals: Record<string, string>
   environment: Record<string, string>
+  /** Keys of the project variables marked secret — `pm.vault` (issue #281). */
+  vaultKeys: Set<string>
   /**
    * `pm.variables.set` values. They live for the rest of the RUN (Postman
    * scopes local variables to a collection run too) but are never persisted.
@@ -651,10 +654,13 @@ interface ScriptContext {
   globals: Record<string, string>
   environment: Record<string, string>
   locals: Record<string, string>
-  /** Active-environment writes (pm.environment.set / collectionVariables.set). */
+  vaultKeys: Set<string>
+  /** Active-environment writes (pm.environment.set). */
   envUpdates: Record<string, string>
-  /** Global writes (pm.globals.set) — persisted to project globals, not the env. */
+  /** Project-variable writes (pm.globals.set / pm.collectionVariables.set). */
   globalUpdates: Record<string, string>
+  /** pm.vault writes: a value = secret project variable, null = delete. Also in globalUpdates. */
+  vaultUpdates: Record<string, string | null>
   /** pm.variables.set writes. Visible to later requests IN THIS RUN but
    *  deliberately NOT persisted to the DB. Empty-string value = unset. */
   varUpdates: Record<string, string>
@@ -739,8 +745,10 @@ function newScriptContext(
     globals: { ...scopes.globals },
     environment: { ...scopes.environment },
     locals: { ...scopes.locals },
+    vaultKeys: new Set(scopes.vaultKeys),
     envUpdates: {},
     globalUpdates: {},
+    vaultUpdates: {},
     varUpdates: {},
     iterationData,
     iterationIndex,
@@ -839,6 +847,9 @@ function pushConsoleLog(
       message: text,
       tabId: ctx.consoleTag.tabId,
       meta: ctx.consoleTag.meta,
+      // The Console masks the DB's secrets itself; a `pm.vault.set` value of
+      // this run is not in the DB yet (issue #281).
+      secrets: [...ctx.vaultKeys].map((k) => ctx.globals[k]).filter(Boolean),
     })
   }
 }
@@ -898,7 +909,8 @@ async function runUserScript(
    *   - `pm.variables.set` values still live for the rest of the RUN (Postman
    *     scopes local variables to the collection run as well) via `varUpdates`,
    *     never persisted.
-   *   - `pm.collectionVariables` shares the environment store (TODO issue #281).
+   *   - `pm.collectionVariables` IS `pm.globals` (the project variables) and
+   *     `pm.vault` their secret subset (issue #281).
    */
   const runtime = createPm({
     eventName: ctx.eventName,
@@ -912,6 +924,17 @@ async function runUserScript(
       environment: {
         values: recordStore(ctx.environment),
         updates: recordStore(ctx.envUpdates),
+      },
+      vault: {
+        secretKeys: ctx.vaultKeys,
+        updates: {
+          set: (k: string, v: string | null) => {
+            ctx.vaultUpdates[k] = v
+          },
+          delete: (k: string) => {
+            delete ctx.vaultUpdates[k]
+          },
+        },
       },
       locals: { values: recordStore(ctx.locals), updates: recordStore(ctx.varUpdates) },
       data: ctx.iterationData,
@@ -953,7 +976,10 @@ async function runUserScript(
           meta: { ...ctx.consoleTag.meta, via: 'pm.sendRequest' },
           secrets: [
             ...authSecretValues(sendOptions.auth),
-            ...liveSecretValues({ ...ctx.globals, ...ctx.environment, ...ctx.locals }),
+            ...liveSecretValues(
+              { ...ctx.globals, ...ctx.environment, ...ctx.locals },
+              ctx.vaultKeys,
+            ),
           ],
         })
       }
@@ -1205,6 +1231,8 @@ interface RunContext {
   persistResponses: boolean
   runEnvUpdates: Record<string, string>
   runGlobalUpdates: Record<string, string>
+  /** pm.vault ops of the run, applied after runGlobalUpdates (issue #281). */
+  runVaultUpdates: Record<string, string | null>
   results: EndpointRunResult[]
   totals: RunTotals
   /** Expected progress ticks (setup + main×iterations + teardown + hooks). */
@@ -1247,11 +1275,15 @@ function secretDb(): SecretDb | null {
 /**
  * Current values of the variables marked secret, as the run holds them now.
  * A setup step's `pm.environment.set('token', …)` is only written back to the
- * DB when the run ends, so the DB alone would miss it (issue #195).
+ * DB when the run ends, so the DB alone would miss it (issue #195). The same
+ * holds for a `pm.vault.set` of a NEW key (issue #281): `vaultKeys` names the
+ * run's secret project variables, written to the DB only after the run.
  */
-function liveSecretValues(envVars: Record<string, string>): string[] {
+function liveSecretValues(envVars: Record<string, string>, vaultKeys?: Iterable<string>): string[] {
   const out: string[] = []
-  for (const k of loadSecretInventory(secretDb()).keys) {
+  const keys = new Set(loadSecretInventory(secretDb()).keys)
+  for (const k of vaultKeys ?? []) keys.add(k)
+  for (const k of keys) {
     const v = envVars[k]
     if (typeof v === 'string' && v) out.push(v)
   }
@@ -1270,7 +1302,12 @@ function recordStep(
   rawResult: EndpointRunResult,
   secrets: unknown[] = [],
 ): StepOutcome {
-  const result = maskRunResult(rawResult, scrubberFor(secretDb(), secrets, ctx.envVars))
+  // Vault values of THIS run (issue #281) are masked before they reach the DB.
+  const vaultValues = [...ctx.scopes.vaultKeys].map((k) => ctx.envVars[k])
+  const result = maskRunResult(
+    rawResult,
+    scrubberFor(secretDb(), [...secrets, ...vaultValues], ctx.envVars),
+  )
   ctx.results.push(result)
   const didPass = endpointDidPass(result)
   const skipped = (result.skipped ?? 0) > 0
@@ -1558,6 +1595,7 @@ async function runEndpointStep(
     for (const s of preScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
+      scriptCtx.vaultUpdates = {}
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, null)
       mergeScriptUpdates(scriptCtx, ctx)
@@ -1728,7 +1766,7 @@ async function runEndpointStep(
       error: response.error ? { message: response.error } : undefined,
       tabId: consoleTag.tabId,
       meta: consoleTag.meta,
-      secrets: [...authSecrets, ...liveSecretValues(envVars)],
+      secrets: [...authSecrets, ...liveSecretValues(envVars, ctx.scopes.vaultKeys)],
     })
 
     // Run post-response (test) scripts in cascade order (project →
@@ -1739,6 +1777,7 @@ async function runEndpointStep(
     for (const s of postScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
+      scriptCtx.vaultUpdates = {}
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, {
         status: response.status,
@@ -1802,7 +1841,7 @@ async function runEndpointStep(
             auth: requestOptions.auth,
           },
         }),
-        extra_secrets: [...authSecrets, ...liveSecretValues(envVars)],
+        extra_secrets: [...authSecrets, ...liveSecretValues(envVars, ctx.scopes.vaultKeys)],
         response_snapshot: JSON.stringify({
           status: response.status,
           statusText: response.statusText,
@@ -2163,6 +2202,7 @@ async function runMcpStep(
     for (const s of preScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
+      scriptCtx.vaultUpdates = {}
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, null)
       mergeScriptUpdates(scriptCtx, ctx)
@@ -2320,6 +2360,7 @@ async function runMcpStep(
     for (const s of postScripts) {
       scriptCtx.envUpdates = {}
       scriptCtx.globalUpdates = {}
+      scriptCtx.vaultUpdates = {}
       scriptCtx.varUpdates = {}
       await runUserScript(s, scriptCtx, null, { normalized: response, mcp: info })
       mergeScriptUpdates(scriptCtx, ctx)
@@ -2633,7 +2674,12 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     environmentId: effectiveEnvId,
     projectId: options.projectId,
   })
-  const scopes: RunVarScopes = { ...loadedScopes, locals: {} }
+  const scopes: RunVarScopes = {
+    globals: loadedScopes.globals,
+    environment: loadedScopes.environment,
+    vaultKeys: new Set(loadedScopes.vaultKeys),
+    locals: {},
+  }
   const envVars = mergedRunVars(scopes)
 
   // Project-level auth + cascade scripts (inheritance). Loaded once per run.
@@ -2656,6 +2702,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
   // renderer to refresh its in-memory env store (issue #12).
   const runEnvUpdates: Record<string, string> = {}
   const runGlobalUpdates: Record<string, string> = {}
+  const runVaultUpdates: Record<string, string | null> = {}
 
   const totals: RunTotals = {
     totalAssertions: 0,
@@ -2682,6 +2729,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     persistResponses,
     runEnvUpdates,
     runGlobalUpdates,
+    runVaultUpdates,
     results,
     totals,
     total,
@@ -2853,7 +2901,13 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
   // `environment.store.applyScriptUpdates` so a token fetched once survives
   // across separate folder runs and shows up in the env editor (issue #12).
   if (options.keepVariableValues !== false) {
-    persistRunVariableUpdates(effectiveEnvId, options.projectId, runEnvUpdates, runGlobalUpdates)
+    persistRunVariableUpdates(
+      effectiveEnvId,
+      options.projectId,
+      runEnvUpdates,
+      runGlobalUpdates,
+      runVaultUpdates,
+    )
   }
 
   const { totalAssertions, passedAssertions, failedAssertions, passedEndpoints, failedEndpoints } =
@@ -2922,7 +2976,11 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     failedAssertions,
     results,
     envUpdates: runEnvUpdates,
-    globalUpdates: runGlobalUpdates,
+    // The renderer only needs the KEYS (to refetch) and keeps this report in
+    // sessionStorage: a pm.vault value never rides along (issue #281).
+    globalUpdates: Object.fromEntries(
+      Object.entries(runGlobalUpdates).map(([k, v]) => [k, k in runVaultUpdates ? '' : v]),
+    ),
     teardownPassedEndpoints: totals.teardownPassedEndpoints,
     teardownFailedEndpoints: totals.teardownFailedEndpoints,
     teardownPassedAssertions: totals.teardownPassedAssertions,
@@ -2946,6 +3004,13 @@ function mergeScriptUpdates(ctx: ScriptContext, run: RunContext): void {
   for (const [k, v] of Object.entries(ctx.globalUpdates)) {
     scopes.globals[k] = v
     run.runGlobalUpdates[k] = v
+    // A plain project-variable write after a vault one is the last word.
+    if (!(k in ctx.vaultUpdates)) delete run.runVaultUpdates[k]
+  }
+  for (const [k, v] of Object.entries(ctx.vaultUpdates)) {
+    run.runVaultUpdates[k] = v
+    if (v === null) scopes.vaultKeys.delete(k)
+    else scopes.vaultKeys.add(k)
   }
   // varUpdates (pm.variables.set) propagate within the run only — into the
   // local layer so later requests resolve them, but NOT into runEnvUpdates,
@@ -2969,14 +3034,18 @@ function mergeScriptUpdates(ctx: ScriptContext, run: RunContext): void {
  * Write the net variable deltas of a run back to the database: environment
  * writes go to the project's active environment, global writes to the project's
  * globals (creating rows that don't exist yet, updating the current `value`
- * column of those that do). Best-effort — a persistence failure must never fail
- * the run or lose the report, so everything is wrapped in try/catch.
+ * column of those that do). `vaultUpdates` (issue #281) are applied last and
+ * win for their keys: a value makes the project variable secret (sealed at
+ * rest by the repo), null deletes it — the Send path's `applyScriptUpdates`
+ * rule. Best-effort — a persistence failure must never fail the run or lose
+ * the report, so everything is wrapped in try/catch.
  */
 function persistRunVariableUpdates(
   environmentId: string | undefined,
   projectId: string,
   envUpdates: Record<string, string>,
   globalUpdates: Record<string, string>,
+  vaultUpdates: Record<string, string | null> = {},
 ): void {
   // ── Active-environment variables ───────────────────────────────
   const envKeys = Object.keys(envUpdates)
@@ -2997,15 +3066,24 @@ function persistRunVariableUpdates(
   }
 
   // ── Project globals ────────────────────────────────────────────
-  const globalKeys = Object.keys(globalUpdates)
-  if (projectId && globalKeys.length > 0) {
+  const globalKeys = Object.keys(globalUpdates).filter((k) => !(k in vaultUpdates))
+  const vaultKeys = Object.keys(vaultUpdates)
+  if (projectId && globalKeys.length + vaultKeys.length > 0) {
     try {
       const byKey = new Map(envRepo.getGlobalVariablesByProject(projectId).map((r) => [r.key, r]))
       let workspaceId: string | undefined
-      for (const key of globalKeys) {
+      for (const key of [...globalKeys, ...vaultKeys]) {
         const row = byKey.get(key)
+        const vaultValue = key in vaultUpdates ? vaultUpdates[key] : undefined
+        if (vaultValue === null) {
+          // pm.vault.unset — only a secret variable is the vault's to delete.
+          if (row && row.secret === 1) envRepo.deleteGlobalVariable(row.id)
+          continue
+        }
+        const value = vaultValue ?? globalUpdates[key]
+        const secret = vaultValue !== undefined ? { secret: true } : {}
         if (row) {
-          envRepo.updateGlobalVariable(row.id, { value: globalUpdates[key] })
+          envRepo.updateGlobalVariable(row.id, { value, ...secret })
         } else {
           // Creating a row needs the FK workspace_id — derive it once from the
           // project (the renderer scopes globals per-project, so we match that).
@@ -3020,7 +3098,8 @@ function persistRunVariableUpdates(
               workspace_id: workspaceId,
               project_id: projectId,
               key,
-              value: globalUpdates[key],
+              value,
+              ...secret,
             })
           }
         }

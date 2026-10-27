@@ -43,8 +43,7 @@ import {
   type CollectionExportResult,
   type ExportSkippedItem,
 } from '../../shared/collection-export'
-import { isSecretFlag, stripProjectSharedSettings } from '../lib/local-secrets'
-import { isEncryptedSecret } from '../lib/secure-storage'
+import { stripProjectSharedSettings } from '../lib/local-secrets'
 import { importPostman, importPostmanEnvironment } from '../import/postman'
 import {
   pickedFolderSummary,
@@ -56,6 +55,7 @@ import { importPickedPostman, readPostmanArchive } from '../import/postman/archi
 import { checkArchiveSize } from '../import/postman/zip'
 import { isZipMagic } from '../../shared/postman-detect'
 import { authToPostmanParts } from '../export/postman-v3/auth'
+import { exportedProjectVariables } from '../export/project-variables'
 import { loadExamples } from '../export/postman-v3/rows'
 import {
   buildPostmanV3ProjectExport,
@@ -2223,46 +2223,23 @@ function scriptsToPostmanEvents(pre?: string | null, post?: string | null): Post
 }
 
 /**
- * Pick a project's variable source — its active environment, falling back to
- * the first one created — and project it as Postman collection variables.
- * Globals are intentionally excluded: they belong to a different scope and
- * round-tripping them as collection-level vars would leak across collections.
+ * The project variables ("Globals") as Postman collection variables (issue
+ * #281) — a Testnizer project is the Postman collection, and a Postman import
+ * writes collection variables back to the project variables. This used to
+ * export the ACTIVE ENVIRONMENT here; environments travel as environment
+ * files. Secrets: `exportedProjectVariables` strips them (`stripLocalSecrets`)
+ * — the key and Postman's `secret` type stay, never the value.
  */
-function collectPostmanVariables(
-  db: ReturnType<typeof getDb>,
-  projectId: string,
-): PostmanVariable[] | undefined {
-  const envRow =
-    (db
-      .prepare(
-        `SELECT id FROM environments WHERE project_id = ? AND is_active = 1
-         ORDER BY created_at ASC LIMIT 1`,
-      )
-      .get(projectId) as { id: string } | undefined) ??
-    (db
-      .prepare(
-        `SELECT id FROM environments WHERE project_id = ?
-         ORDER BY created_at ASC LIMIT 1`,
-      )
-      .get(projectId) as { id: string } | undefined)
-  if (!envRow) return undefined
-  const rows = db
-    .prepare(
-      `SELECT key, value, secret FROM environment_variables WHERE environment_id = ?
-       ORDER BY rowid ASC`,
-    )
-    .all(envRow.id) as Array<{ key: string; value: string | null; secret: number | null }>
-  if (rows.length === 0) return undefined
-  // Values marked secret stay on this machine (issue #177): the collection
-  // keeps the key and Postman's `secret` type, never the value — the same
-  // rule as the project file (`stripLocalSecrets`) and the env-file export.
-  return rows.map((r) =>
-    isSecretFlag(r.secret)
-      ? { key: r.key, value: '', type: 'secret' }
-      : // Ciphertext never leaves the machine (issue #239) — an undecryptable
-        // value kept on a row whose secret flag was cleared exports as ''.
-        { key: r.key, value: isEncryptedSecret(r.value) ? '' : (r.value ?? ''), type: 'string' },
-  )
+function collectPostmanVariables(projectId: string): PostmanVariable[] | undefined {
+  const vars = exportedProjectVariables(projectId)
+  if (vars.length === 0) return undefined
+  return vars.map((v) => ({
+    key: v.key,
+    value: v.value,
+    type: v.secret ? 'secret' : 'string',
+    ...(v.enabled ? {} : { disabled: true }),
+    ...(v.description ? { description: v.description } : {}),
+  }))
 }
 
 /** Request settings (issue #185) → `protocolProfileBehavior` (issue #277); undefined when none is set. */
@@ -2532,7 +2509,7 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
     project.description ?? null,
     folders,
     endpoints,
-    collectPostmanVariables(db, projectId),
+    collectPostmanVariables(projectId),
     readProjectScripts(projectId),
     {
       postmanId: projectId,
@@ -2643,7 +2620,7 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     suite.description ?? null,
     folders,
     rows,
-    collectPostmanVariables(db, suite.project_id),
+    collectPostmanVariables(suite.project_id),
     // A suite Run cascades its project's scripts too.
     readProjectScripts(suite.project_id),
     {

@@ -39,7 +39,12 @@ import {
   resolveRequestBody,
 } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi, resolveAssertionVars } from '../lib/test-runner'
-import { absorbScriptWrites, emptyScriptWrites, sendScriptScopes } from '../lib/script-scopes'
+import {
+  absorbScriptWrites,
+  emptyScriptWrites,
+  persistScriptWrites,
+  sendScriptScopes,
+} from '../lib/script-scopes'
 import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
 import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
@@ -686,7 +691,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     for (const script of preScripts) {
       if (!script || !script.trim()) continue
       // Rebuild the scope maps each iteration so later scripts see earlier writes.
-      const { envMap, globalMap, localVars } = sendScriptScopes(scriptWrites)
+      const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(scriptWrites)
       // Pre-request scripts don't read response — supply an empty shell so the
       // pm API contract is satisfied.
       const emptyResp: ApiResponse = { requestId: makeId(), protocol: 'http', timing: { total: 0 } }
@@ -698,6 +703,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         requestId: scriptRequestId,
         location: scriptLocation,
         localVars,
+        vaultKeys,
         body,
         request: {
           method,
@@ -731,12 +737,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       // transient scriptOverrides map for this one send. That made a derived
       // variable set in one request's pre-script invisible to a later request
       // sent separately (issue #29). Symmetric with the post-response branch.
-      if (
-        Object.keys(scriptResult.envUpdates).length > 0 ||
-        Object.keys(scriptResult.globalUpdates).length > 0
-      ) {
-        void envStore.applyScriptUpdates(scriptResult.envUpdates, scriptResult.globalUpdates)
-      }
+      // A pm.vault write is stored as a secret BEFORE the request goes out
+      // (History masks from the DB's secrets — issue #281).
+      await persistScriptWrites(scriptResult)
       // Later scripts' header mutations take precedence; keep the last non-null.
       if (scriptResult.requestHeaders) preScriptHeaders = scriptResult.requestHeaders
       if (scriptResult.skipRequest) preScriptSkippedRequest = true
@@ -1023,13 +1026,14 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         // folder(s) → request). pm.test results from every level are merged.
         for (const script of postScripts) {
           if (!script || !script.trim()) continue
-          const { envMap, globalMap, localVars } = sendScriptScopes(scriptWrites)
+          const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(scriptWrites)
           const pmApi = createPmApi(apiResp, envMap, globalMap, {
             eventName: 'test',
             requestName: scriptRequestName,
             requestId: scriptRequestId,
             location: scriptLocation,
             localVars,
+            vaultKeys,
             // `pm.request.body` is the body as defined — the same source Run uses.
             body,
             projectId: wsStore.activeProjectId || undefined,
@@ -1049,12 +1053,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           // Persist `pm.environment.set(...)` / `pm.globals.set(...)` writes
           // back to the env store. Without this, scripts that capture a token
           // from the response would silently lose it on the next request.
-          if (
-            Object.keys(scriptResult.envUpdates).length > 0 ||
-            Object.keys(scriptResult.globalUpdates).length > 0
-          ) {
-            void envStore.applyScriptUpdates(scriptResult.envUpdates, scriptResult.globalUpdates)
-          }
+          await persistScriptWrites(scriptResult)
         }
 
         // Merge test results and console logs into response

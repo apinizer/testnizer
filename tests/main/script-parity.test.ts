@@ -23,6 +23,7 @@ import {
 import crypto from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { ECHO_URL, parityCases } from '../fixtures/script-parity'
+import { openSecret } from '../../src/main/lib/secret-at-rest'
 
 const harness = setupHandlerHarness()
 vi.mock('electron', () => ({
@@ -125,6 +126,7 @@ function seedVars(
   env: string,
   envVars: Record<string, string>,
   globals: Record<string, string>,
+  secretGlobals: Record<string, string> = {},
 ): void {
   const ws = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(project) as {
     workspace_id: string
@@ -139,10 +141,16 @@ function seedVars(
       `INSERT INTO global_variables (id, workspace_id, project_id, key, value, enabled) VALUES (?, ?, ?, ?, ?, 1)`,
     ).run(crypto.randomUUID(), ws.workspace_id, project, key, value)
   }
+  for (const [key, value] of Object.entries(secretGlobals)) {
+    db.prepare(
+      `INSERT INTO global_variables (id, workspace_id, project_id, key, value, enabled, secret) VALUES (?, ?, ?, ?, ?, 1, 1)`,
+    ).run(crypto.randomUUID(), ws.workspace_id, project, key, value)
+  }
 }
 
 interface RunData {
   envUpdates: Record<string, string>
+  globalUpdates: Record<string, string>
   results: Array<{
     endpointId: string
     statusText: string
@@ -166,7 +174,14 @@ describe('script parity — Run path (Collection Runner)', () => {
     // identical failure is itself the parity proof for this case.
     const test = c.knownRuntimeBug ? it.fails : it
     test(c.name, async () => {
-      seedVars(testDb, projectId, envId, c.seedEnv ?? {}, c.seedGlobals ?? {})
+      seedVars(
+        testDb,
+        projectId,
+        envId,
+        c.seedEnv ?? {},
+        c.seedGlobals ?? {},
+        c.seedSecretGlobals ?? {},
+      )
       const isPre = c.phase === 'prerequest'
       const ep = seedEndpoint(
         testDb,
@@ -213,6 +228,21 @@ describe('script parity — Run path (Collection Runner)', () => {
 
       for (const key of c.expectNoEnv ?? []) {
         expect(data.envUpdates[key], `env ${key} must not be written`).toBeUndefined()
+      }
+      for (const [key, value] of Object.entries(c.expectGlobals ?? {})) {
+        expect(data.globalUpdates[key], `global ${key}`).toBe(value)
+      }
+      // pm.vault: the persisted project variable (secret, sealed) or its absence.
+      for (const [key, value] of Object.entries(c.expectVault ?? {})) {
+        const row = testDb
+          .prepare('SELECT value, secret FROM global_variables WHERE project_id = ? AND key = ?')
+          .get(projectId, key) as { value: string; secret: number } | undefined
+        if (value === null) {
+          expect(row, `vault ${key} deleted`).toBeUndefined()
+        } else {
+          expect(row?.secret, `vault ${key} is secret`).toBe(1)
+          expect(openSecret(row?.value).value, `vault ${key}`).toBe(value)
+        }
       }
 
       // pm.test / legacy tests[] outcomes — pulled from this endpoint's result.
