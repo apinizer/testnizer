@@ -1,0 +1,25 @@
+{
+  "theme": "light",
+  "language": "en",
+  "fontSize": 13,
+  "defaultTimeout": 30000,
+  "sslVerification": true,
+  "followRedirects": true,
+  "historyLimit": 500,
+  "autoUpdate": true,
+  "telemetryEnabled": false,
+  "ui": {
+    "theme": "dark",
+    "locale": "tr",
+    "fontSize": 15
+  },
+  "project": {
+    "5b5ec514-8fc8-4893-8738-7c706b2ead7e": {
+      "settings": {
+        "requestTimeout": 20000,
+        "followRedirects": false,
+        "preScript": "pm.variables.set('fromProject', 'yes')"
+      }
+    }
+  }
+}
