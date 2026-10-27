@@ -1,6 +1,5 @@
 import {
   SIO_CLIENT_VERSIONS,
-  SIO_SUPPORTED_VERSIONS,
   SIO_TRANSPORTS,
   type SioClientVersion,
   type SioTransport,
@@ -19,8 +18,10 @@ const TRANSPORT_KEYS: Record<SioTransport, string> = {
 
 /**
  * Socket.IO Settings tab (issue #283): the shared realtime settings plus
- * client version (only v4 ships — v2 / v3 need their own client packages, so
- * they are listed disabled), handshake path and transport.
+ * client version, handshake path and transport. v2 connects with the 2.x
+ * client; v3 and v4 share the 4.x client (main `protocols/socketio-client.ts`),
+ * which the hint says. v2 has no handshake auth, so with v2 the hint also says
+ * where the token goes.
  */
 export default function SioSettingsTab() {
   const { t } = useTranslation()
@@ -42,22 +43,21 @@ export default function SioSettingsTab() {
           data-testid="socketio-settings-version"
           className={SELECT_CLS}
         >
-          {[...SIO_CLIENT_VERSIONS].reverse().map((v) => {
-            const available = SIO_SUPPORTED_VERSIONS.includes(v)
-            return (
-              <option
-                key={v}
-                value={v}
-                disabled={!available}
-                title={available ? undefined : t('socketio.settings.versionSoon')}
-              >
-                {available ? `v${v}` : t('socketio.settings.versionSoonLabel').replace('{v}', v)}
-              </option>
-            )
-          })}
+          {[...SIO_CLIENT_VERSIONS].reverse().map((v) => (
+            <option key={v} value={v}>
+              {`v${v}`}
+            </option>
+          ))}
         </select>
-        <span className="text-[11px] text-[var(--muted)]">
-          {t('socketio.settings.versionSoon')}
+        <span
+          data-testid="socketio-settings-version-hint"
+          className="text-[11px] text-[var(--muted)]"
+        >
+          {t(
+            settings.version === '2'
+              ? 'socketio.settings.versionHintV2'
+              : 'socketio.settings.versionHint',
+          )}
         </span>
       </Field>
       <Field label={t('socketio.settings.path')}>

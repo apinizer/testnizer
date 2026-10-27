@@ -93,17 +93,26 @@ describe('Socket.IO editor', () => {
     expect(screen.getByTestId('socketio-saved-empty')).toBeTruthy()
   })
 
-  it('settings: v2 / v3 listed disabled with "coming soon"; form locks while connected', () => {
-    useSocketIOStore.setState({ connectionState: 'connected', connectionId: 'c' })
+  it('settings: v4 / v3 / v2 all selectable, the hint follows; form locks while connected', () => {
     render(<SocketIOEditor />)
     fireEvent.click(screen.getByTestId('socketio-tab-settings'))
     const version = screen.getByTestId('socketio-settings-version') as HTMLSelectElement
     const opts = Array.from(version.options).map((o) => [o.value, o.disabled, o.textContent])
     expect(opts).toEqual([
       ['4', false, 'v4'],
-      ['3', true, 'v3 (coming soon)'],
-      ['2', true, 'v2 (coming soon)'],
+      ['3', false, 'v3'],
+      ['2', false, 'v2'],
     ])
+    expect(screen.getByTestId('socketio-settings-version-hint').textContent).toMatch(
+      /v3 and v4 use the same client/,
+    )
+    fireEvent.change(version, { target: { value: '2' } })
+    expect(useSocketIOStore.getState().settings.version).toBe('2')
+    expect(screen.getByTestId('socketio-settings-version-hint').textContent).toMatch(
+      /"token" query parameter/,
+    )
+
+    act(() => useSocketIOStore.setState({ connectionState: 'connected', connectionId: 'c' }))
     expect((screen.getByTestId('socketio-settings-form') as HTMLFieldSetElement).disabled).toBe(
       true,
     )

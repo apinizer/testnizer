@@ -3944,8 +3944,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'socketio.listenerName': 'Event name',
     'socketio.removeListener': 'Remove event {name}',
     'socketio.settings.version': 'Client version',
-    'socketio.settings.versionSoon': 'Client versions 2 and 3 are coming soon.',
-    'socketio.settings.versionSoonLabel': 'v{v} (coming soon)',
+    'socketio.settings.versionHint':
+      'v3 and v4 use the same client: Socket.IO 3 and 4 servers speak one protocol. Pick v2 for a Socket.IO 2 server.',
+    'socketio.settings.versionHintV2':
+      'For Socket.IO 2 servers. v2 has no handshake auth, so the token is sent as the "token" query parameter (socket.handshake.query.token), which server and proxy logs may record.',
     'socketio.settings.path': 'Handshake path',
     'socketio.settings.transport': 'Transport',
     'socketio.transport.auto': 'WebSocket, then polling',
@@ -8218,8 +8220,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'socketio.listenerName': 'Olay adı',
     'socketio.removeListener': '{name} olayını kaldır',
     'socketio.settings.version': 'İstemci sürümü',
-    'socketio.settings.versionSoon': 'İstemci sürüm 2 ve 3 yakında geliyor.',
-    'socketio.settings.versionSoonLabel': 'v{v} (yakında)',
+    'socketio.settings.versionHint':
+      'v3 ve v4 aynı istemciyi kullanır: Socket.IO 3 ve 4 sunucuları aynı protokolü konuşur. Socket.IO 2 sunucusu için v2’yi seçin.',
+    'socketio.settings.versionHintV2':
+      'Socket.IO 2 sunucuları için. v2’de el sıkışma kimlik doğrulaması olmadığından token, "token" sorgu parametresi (socket.handshake.query.token) olarak gönderilir; sunucu ve proxy günlükleri bunu kaydedebilir.',
     'socketio.settings.path': 'El sıkışma yolu',
     'socketio.settings.transport': 'Taşıma',
     'socketio.transport.auto': 'Önce WebSocket, sonra polling',
