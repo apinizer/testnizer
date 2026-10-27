@@ -862,6 +862,10 @@ const HEADER_KEYS = new Set([
   'responseHeaders',
   'responseMetadata',
   'metadata',
+  // MQTT 5 user properties (CONNECT, will, PUBLISH): name/value pairs like
+  // headers — the renderer withholds credential-named ones by the same
+  // header rule (`MQTT_CREDENTIALS`, issue #284).
+  'userProperties',
 ])
 /** Keys whose value is a query-param-like container (name rule = arg rule). */
 const PARAM_KEYS = new Set(['params', 'query', 'queryParams', 'pathVariables'])

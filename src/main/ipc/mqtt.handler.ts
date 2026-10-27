@@ -49,6 +49,7 @@ import {
   type MqttWireWill,
 } from '../../shared/mqtt'
 import { bytesFromBase64, utf8Length } from '../../shared/realtime'
+import { isCredentialHeaderName } from '../../shared/credential-headers'
 
 interface MqttConnectPayload {
   url: string
@@ -101,6 +102,25 @@ function readWill(raw: unknown): MqttWireWill | undefined {
     retain: raw.retain === true,
     properties: readWillProperties(raw.properties),
   }
+}
+
+/**
+ * The secret values a connection carries, scrubbed from its History row
+ * (`extra_secrets`) and every Console entry (`secrets`): the password and the
+ * values of credential-named CONNECT / will user properties (`x-api-key`,
+ * `authorization` — the header rule the renderer withholds them by,
+ * `MQTT_CREDENTIALS`). By value, so a message that echoes one is scrubbed too.
+ */
+function connectionSecrets(
+  password: string,
+  properties: MqttConnectProperties,
+  will: MqttWireWill | undefined,
+): string[] {
+  const rows = [...properties.userProperties, ...(will?.properties?.userProperties ?? [])]
+  const named = rows
+    .filter((r) => r.enabled && r.value && isCredentialHeaderName(r.key))
+    .map((r) => r.value)
+  return [...(password ? [password] : []), ...named]
 }
 
 function readSubscriptions(raw: unknown): MqttWireSubscription[] {
@@ -223,7 +243,9 @@ export function registerMqttHandlers(): void {
     const started = Date.now()
     const url = normalizeMqttUrl(str(payload?.url))
     const password = str(payload?.password)
-    const secrets = password ? [password] : []
+    const properties = readConnectProperties(payload?.properties)
+    const will = readWill(payload?.will)
+    const secrets = connectionSecrets(password, properties, will)
     const settings = readMqttSettings(payload?.settings)
     const subscriptions = readSubscriptions(payload?.subscriptions)
     const version: MqttVersion = payload?.version === 4 ? 4 : 5
@@ -284,8 +306,8 @@ export function registerMqttHandlers(): void {
         username: str(payload?.username) || undefined,
         password: password || undefined,
         settings,
-        properties: readConnectProperties(payload?.properties),
-        will: readWill(payload?.will) ?? null,
+        properties,
+        will: will ?? null,
         subscriptions,
         tls,
         pendingId: payload?._pendingId,
