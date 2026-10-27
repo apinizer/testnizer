@@ -115,7 +115,16 @@ export default defineConfig(async (): Promise<UserConfig> => {
     },
     preload: {
       build: {
-        externalizeDeps: true,
+        // The window runs with `sandbox: true` (issue #294). A sandboxed preload
+        // can only `require` electron's renderer modules plus `events`,
+        // `timers` and `url` — any other runtime `require()` (for example
+        // `@electron-toolkit/preload`) throws before `window.api` exists and the
+        // app opens on a blank screen. So the preload is ONE self-contained
+        // bundle: every dependency is inlined and only `electron` stays a
+        // `require`. `tests/main/preload-sandbox.test.ts` guards the source side
+        // and `tests/e2e/ui/50-renderer-sandbox.spec.ts` reads the built file
+        // and fails on any other `require()`.
+        externalizeDeps: false,
         target: 'node24',
       },
     },
