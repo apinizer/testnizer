@@ -223,6 +223,11 @@ export function gitAuth(repoUrl: string, username: string, token: string): GitAu
  * - GIT_TRACE* / GIT_CURL_VERBOSE: git echoes the request headers, i.e. the
  *   `Authorization: Basic …` credential, onto stderr — which we surface to
  *   the user as the error text.
+ *
+ * Keep this a superset of simple-git's own guarded set
+ * (`@simple-git/argv-parser` `isGitEnvKey`): since simple-git 4 an explicitly
+ * passed guarded name THROWS, and simple-git 4.0.2 added VISUAL.
+ * `tests/main/git-config.test.ts` checks the names against `isGitEnvKey`.
  */
 const BLOCKED_GIT_ENV = new Set([
   'git_trace',
@@ -249,9 +254,20 @@ const BLOCKED_GIT_ENV = new Set([
   'git_template_dir',
   'git_ssh',
   'git_ssh_command',
+  'git_config_parameters',
+  'visual',
 ])
 
-/** process.env minus simple-git's blocklist, plus the per-call auth env. */
+/**
+ * process.env minus simple-git's blocklist, plus the per-call auth env.
+ *
+ * simple-git 4 drops every ambient `GIT_*` variable and throws on an
+ * explicitly passed one unless `allowEnvironment` lists it.
+ * {@link gitClientOptions} lists exactly the `GIT_*` names this returns
+ * ({@link gitAllowedEnvironment}), so git keeps seeing what it saw under
+ * simple-git 3: everything except the blocklist (GIT_TERMINAL_PROMPT=0 from
+ * {@link gitAuth}, a user's GIT_SSL_CAINFO, …).
+ */
 export function gitProcessEnv(auth: GitAuth): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(process.env)) {
@@ -268,6 +284,11 @@ export function gitProcessEnv(auth: GitAuth): Record<string, string> {
   return { ...out, ...auth.env }
 }
 
+/** The `GIT_*` names {@link gitProcessEnv} forwards: simple-git 4's `allowEnvironment`. */
+export function gitAllowedEnvironment(auth: GitAuth): string[] {
+  return Object.keys(gitProcessEnv(auth)).filter((k) => k.toLowerCase().startsWith('git_'))
+}
+
 /** simple-git constructor options for a repo (or none for clone): auth `-c` config + identity. */
 export async function gitClientOptions(
   auth: GitAuth,
@@ -275,6 +296,7 @@ export async function gitClientOptions(
 ): Promise<{
   baseDir?: string
   config: string[]
+  allowEnvironment: string[]
   unsafe: { allowUnsafeCredentialHelper: boolean }
 }> {
   return {
@@ -284,6 +306,7 @@ export async function gitClientOptions(
     // refuses with "Need to specify how to reconcile divergent branches" and
     // the raw text reached the toast.
     config: [...auth.config, 'pull.rebase=false', ...(await identityConfig())],
+    allowEnvironment: gitAllowedEnvironment(auth),
     unsafe: { allowUnsafeCredentialHelper: true },
   }
 }

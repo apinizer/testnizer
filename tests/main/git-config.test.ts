@@ -219,6 +219,81 @@ describe('gitProcessEnv / gitClientOptions', () => {
     // to reconcile divergent branches".
     expect(opts.config).toContain('pull.rebase=false')
   })
+
+  // simple-git 4 (issue #288): an explicitly passed guarded variable THROWS
+  // ("Use of "VISUAL" is not permitted…"), and every GIT_* name must be in
+  // allowEnvironment or it throws too. Before the fix every git call failed
+  // with 'Use of "GIT_TERMINAL_PROMPT" is blocked by the environment guard'.
+  const SIMPLE_GIT_GUARDED = [
+    'EDITOR',
+    'VISUAL', // added in simple-git 4.0.2 (GHSA-v5rq-49vh-5v5c)
+    'PAGER',
+    'PREFIX',
+    'SSH_ASKPASS',
+    'GIT_ASKPASS',
+    'GIT_CONFIG',
+    'GIT_CONFIG_GLOBAL',
+    'GIT_CONFIG_SYSTEM',
+    'GIT_CONFIG_COUNT',
+    'GIT_CONFIG_PARAMETERS', // new in simple-git 4
+    'GIT_EDITOR',
+    'GIT_SEQUENCE_EDITOR',
+    'GIT_EXEC_PATH',
+    'GIT_EXTERNAL_DIFF',
+    'GIT_PAGER',
+    'GIT_PROXY_COMMAND',
+    'GIT_TEMPLATE_DIR',
+    'GIT_SSH',
+    'GIT_SSH_COMMAND',
+  ]
+
+  it('drops every name simple-git guards, VISUAL and GIT_CONFIG_PARAMETERS included', async () => {
+    const { isGitEnvKey } = await import('@simple-git/argv-parser')
+    const saved = { ...process.env }
+    for (const k of SIMPLE_GIT_GUARDED) {
+      expect(isGitEnvKey(k.toLowerCase()), `${k} is guarded by simple-git`).toBe(true)
+      process.env[k] = 'x'
+    }
+    try {
+      const auth = gitAuth('https://h/r.git', 'u', 't')
+      const env = gitProcessEnv(auth)
+      for (const k of Object.keys(env)) {
+        expect(isGitEnvKey(k.toLowerCase()), `${k} reaches git`).toBe(false)
+      }
+      const allowed = (await gitClientOptions(auth)).allowEnvironment
+      expect(allowed).toContain('GIT_TERMINAL_PROMPT')
+      for (const k of allowed) expect(isGitEnvKey(k.toLowerCase())).toBe(false)
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]
+      Object.assign(process.env, saved)
+    }
+  })
+
+  it('a real git call works with a hostile shell env and still sees ambient GIT_* (v3 parity)', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { simpleGit } = await import('simple-git')
+    const dir = mkdtempSync(join(tmpdir(), 'testnizer-gitcfg-'))
+    const saved = { ...process.env }
+    process.env.VISUAL = 'vim'
+    process.env.EDITOR = 'vim'
+    process.env.GIT_EDITOR = 'vim'
+    process.env.GIT_CONFIG_PARAMETERS = "'core.editor=vim'"
+    process.env.GIT_AUTHOR_NAME = 'Ambient Author'
+    process.env.GIT_AUTHOR_EMAIL = 'ambient@example.test'
+    try {
+      const auth = gitAuth(`file://${dir}`, 'u', '')
+      const git = simpleGit(await gitClientOptions(auth, dir)).env(gitProcessEnv(auth))
+      await git.init()
+      const ident = await git.raw(['var', 'GIT_AUTHOR_IDENT'])
+      expect(ident).toContain('Ambient Author <ambient@example.test>')
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]
+      Object.assign(process.env, saved)
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('sameRemote', () => {
