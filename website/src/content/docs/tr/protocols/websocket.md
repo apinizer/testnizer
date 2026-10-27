@@ -11,108 +11,121 @@ sekme geçişlerinden etkilenmez.
 
 ## WebSocket sekmesi açma
 
-**+ Yeni** → **WebSocket** tıklayın (veya proje kenar çubuğundan WebSocket seçin).
-Ayrıca Postman veya Insomnia koleksiyonlarından mevcut bir `ws://` veya `wss://`
-isteğini içe aktarabilirsiniz.
+**+ Yeni** → **WebSocket**'e tıklayın (ya da proje kenar çubuğundan WebSocket'i
+seçin). Postman veya Insomnia koleksiyonlarındaki mevcut bir `ws://` veya `wss://`
+isteğini de içe aktarabilirsiniz; bir Postman v3 WebSocket isteği URL'si,
+parametreleri, header'ları, ayarları ve kayıtlı mesajlarıyla içe ve dışa aktarılır.
 
-## Bağlantı paneli
+Editörün üstünde bir bağlantı çubuğu, altında istek sekmeleri (**Mesaj**,
+**Parametreler**, **Başlıklar**, **Ayarlar**) ve en altta mesaj günlüğü bulunur.
 
-### URL
+## Bağlantı çubuğu
 
-`ws://` ve `wss://` her ikisi de desteklenir. Değişkenler gerçek zamanlı olarak çözülür:
+`ws://` ve `wss://` ikisi de desteklenir. Değişkenler gerçek zamanlı çözülür:
 
 ```
 wss://{{wsHost}}/chat?room={{roomId}}
 ```
 
-### Header'lar
+Yükseltmeyi (upgrade) yapmak için **Bağlan**'a tıklayın. Durum göstergesi bağlantı
+durumunu gösterir (bağlanıyor, bağlandı, bağlantı kesildi); el sıkışma sürerken
+**İptal**, bağlıyken **Bağlantıyı Kes** görünür ve temiz bir kapatma çerçevesi
+gönderir.
 
-HTTP yükseltme isteğine özel header'lar ekleyin. Yaygın kullanım durumları:
+Sunucu yükseltmeyi reddederse (101 olmayan HTTP yanıtı) hata mesajı ve HTTP yanıt
+header'ları günlükte gösterilir; böylece yetkilendirme hatalarını ya da protokol
+uyumsuzluklarını teşhis edebilirsiniz.
+
+## Parametreler ve Başlıklar
+
+**Parametreler**, el sıkışma URL'sinin sorgu parametreleridir; tablo ve URL
+senkron kalır ve bir satır silinmeden devre dışı bırakılabilir.
+
+**Başlıklar** HTTP upgrade isteğine eklenir. Yaygın kullanımlar:
 
 - `Authorization: Bearer {{token}}`
-- `Sec-WebSocket-Protocol: graphql-ws` (buna ihtiyaç duyan GraphQL abonelikleri için)
+- `Sec-WebSocket-Protocol: graphql-ws` (bunu gerektiren GraphQL subscription'ları için)
 - Özel cookie'ler (`Cookie` header'ını doğrudan ayarlayın)
 
-Bazı WebSocket sunucuları yükseltme sırasında bilinmeyen header'ları reddeder. Testnizer
-tam olarak tanımladığınız header'ları gönderir, fazlasını değil.
-
-### Bağlan / Bağlantıyı kes
-
-Yükseltmeyi gerçekleştirmek için **Bağlan**'a tıklayın. Durum göstergesi yeşile döner ve
-bağlantı durumunu gösterir (Bağlanıyor → Açık → Kapalı). Temiz kapatma çerçevesi
-göndermek için **Bağlantıyı kes**'e tıklayın.
-
-Sunucu yükseltmeyi reddederse (101 dışı HTTP yanıtı) hata mesajı ve HTTP yanıt
-header'ları zaman çizelgesinde gösterilir; böylece auth hatalarını veya protokol
-uyumsuzluklarını tespit edebilirsiniz.
+Bazı WebSocket sunucuları upgrade sırasında bilinmeyen header'ları reddeder.
+Testnizer tanımladığınız header'ları aynen gönderir, fazlasını değil.
 
 ## Mesaj gönderme
 
-### Mesaj oluşturucu
+### Mesaj sekmesi
 
-Editörün altındaki oluşturucu, göndermeden önce bir mesaj yazmanıza veya yapıştırmanıza
-olanak tanır. Formatı seçin:
+**Mesaj** sekmesi oluşturucudur. **Mesaj biçimi**ni seçin:
 
-- **Text** — UTF-8 metin çerçevesi olarak gönderilir
-- **JSON** — metinle aynı, ancak Testnizer JSON söz dizimini doğrular ve
-  oluşturucu alanını otomatik biçimlendirir
-- **Binary** — hex (`0xDEADBEEF`) veya Base64 (`data:`) yapıştırın; Testnizer
-  ikili çerçeveye dönüştürür
+- **Metin** — UTF-8 metin çerçevesi olarak gönderilir
+- **JSON**, **XML**, **HTML** — metin çerçevesi olarak gönderilir; **Biçimlendir**
+  içeriği güzel basar (yapamıyorsa nedenini söyler, örneğin geçersiz JSON)
+- **İkili** — **Base64** veya **Onaltılık**. Base64 içerik çözülür, onaltılık
+  baytlar (örneğin `48 65 6c 6c 6f`) ayrıştırılır ve her mesaj **gerçek bir ikili
+  çerçeve** olarak gider
 
-**Gönder**'e tıklayın veya `Ctrl+Enter` / `Cmd+Enter` tuşlarına basın.
+**Mesaj Gönder**'e tıklayın. `{{değişken}}` ikamesi oluşturucuda gönderim anında
+çalışır; aktif ortamdan ve projenin Globaller'inden her seferinde çözülür, böylece
+mesajı düzenlemeden gönderimler arasında bir değeri değiştirebilirsiniz.
 
-### Kaydedilen mesajlar
+### Kayıtlı mesajlar
 
-Sık kullanılan mesajlar (ping çerçeveleri, abonelik yükleri) sağdaki **Kaydedilen
-mesajlar** panelinde kaydedilebilir. Oluşturucuyu önceden doldurmak için kaydedilmiş
-bir mesaja tıklayın, ardından düzenleyip gönderin.
+Sık kullanılan mesajlar (abonelik yükleri, heartbeat) sağdaki **Kayıtlı mesajlar**
+bölmesinde tutulabilir. **Kaydet** oluşturucuyu saklar (yüklü olan kayıtlı mesajı
+günceller); bir kayıtlı mesajı oluşturucuya yüklemek için tıklayın, yeniden
+adlandırmak için çift tıklayın ya da günlükteki herhangi bir mesajdaki düğmeyle
+kaydedin. Kayıtlı mesajlar isteğe aittir: onunla birlikte yazılır (Ctrl+S) ve
+Postman v3 dışa aktarmasında taşınır.
 
-## Mesaj zaman çizelgesi
+## Ayarlar
 
-Gönderilen ve alınan her mesaj kronolojik sırayla merkezi zaman çizelgesinde görünür:
-
-- Mavi balon, → ok — gönderdiğiniz mesaj
-- Yeşil balon, ← ok — sunucudan gelen mesaj
-- Gri çizgi — bağlan / bağlantıyı kes / hata olayları
-
-Ayrıntı panelinde tam yükü görmek için herhangi bir zaman çizelgesi girişine tıklayın.
-Büyük yükler zaman çizelgesinde kısaltılır (ilk 256 bayt), ancak ayrıntı görünümünde
-tam olarak gösterilir.
-
-### Zaman çizelgesi kontrolleri
-
-| Kontrol | Eylem |
+| Ayar | Varsayılan |
 |---|---|
-| **Temizle** | Tüm zaman çizelgesi girişlerini kaldırır (bağlantıyı kesmez) |
-| **Duraklat** | Mevcut bir girişi incelerken yeni girişlerin kaydırılmasını durdurur |
-| **Filtrele** | Tüm yüklerde metin araması yapar |
-| **Gönderilenler / alınanlar** | Her yönün görünürlüğünü değiştirir |
+| **Sunucu sertifikasını doğrula** | Açık. Kendinden imzalı sertifikalı bir `wss://` sunucusuna bağlanmak için kapatın |
+| **El sıkışma zaman aşımı (ms)** | 15 000 |
+| **Yeniden bağlanma denemesi** | 0 (yeniden bağlanma yok) |
+| **Yeniden bağlanma aralığı (ms)** | 5 000 |
+| **En büyük mesaj boyutu (MB, 0 = sınırsız)** | 100 |
+
+Ayarlar bağlıyken kilitlidir ve bir sonraki Bağlan'da geçerli olur. **Ayarlar**
+sekmesindeki bir nokta, varsayılandan farklı bir şey olduğunu gösterir.
+
+Yeniden bağlanma **varsayılan olarak kapalıdır**: Socket.IO editörü gibi WebSocket
+editörü de kopmaları sessizce yeniden kurmak yerine görünür kılar; böylece aralıklı
+hataları örtmek yerine teşhis edebilirsiniz. Beklenmedik bir kopmadan sonra
+Testnizer'ın yeniden denemesi için **Yeniden bağlanma denemesi**'ni artırın; her
+deneme ve başarılı bir yeniden bağlanma günlükte bağlantı satırları olarak görünür.
+
+## Mesaj günlüğü
+
+Gönderilen ve alınan her mesaj günlükte kronolojik sırayla görünür. Yukarı ok
+gönderdiğiniz mesajı, aşağı ok sunucudan geleni, radyo simgesi bir bağlantı olayını
+(bağlandı, bağlantı kesildi, hata, yeniden bağlanıyor, yeniden bağlandı) işaretler.
+Tam yükü görmek için bir satıra tıklayın; büyük yükler satırda kısaltılır ama
+ayrıntı görünümünde tam gösterilir; ayrıntı mesajın boyutunu, zamanını ve türünü
+de gösterir.
+
+| Kontrol | İşlem |
+|---|---|
+| **Mesajlarda ara** | Tüm yüklerde metin araması |
+| **Mesajları filtrele** | **Tümü**, **Gönderilen**, **Alınan** veya **Bağlantı** |
+| **Süreleri karşılaştırmak için seç** | İki satır seçerek "Seçilenler arasında N ms" değerini görün |
+| **Mesajı kopyala** | Yükü kopyalar |
+| **Kayıtlı mesaj olarak kaydet** | Yükü kayıtlı mesajlara ekler |
+| **Hexdump** | Alınan ikili çerçeve için metin yerine hex dökümü gösterir |
+| **Satırları kaydır** | Uzun yükleri sarar |
+| **Otomatik kaydır** / **Temizle** | Yeni mesajları izler; tüm kayıtları siler (bağlantıyı kesmez) |
+
+Alınan mesajlar yalnızca bellekte tutulur; diske yazılmaz.
 
 ## Ping / Pong
 
-Testnizer, sunucu ping çerçevelerine otomatik olarak pong çerçevesiyle yanıt verir.
-Mesaj oluşturucudan manuel ping de gönderebilirsiniz (**Tür → Ping**).
-
-## Yeniden bağlan
-
-Bağlantı kesilirse Testnizer zaman çizelgesinde bir **Yeniden bağlan** düğmesi gösterir.
-Oluşturucu ve kaydedilen mesajlar korunur, böylece yükleri yeniden girmeden devam
-edebilirsiniz.
-
-Otomatik yeniden bağlanma kasıtlı olarak kapalıdır — Socket.IO editöründe
-olduğu gibi, WebSocket editörü de bağlantı düşmelerini sessizce yeniden kurmak
-yerine görünür kılar; böylece aralıklı hataları paspaslamak yerine teşhis
-edebilirsiniz.
-
-## Mesajlarda değişkenler
-
-`{{değişken}}` ikamesi, gönderim anında mesaj oluşturucuda çalışır. Değişken,
-her Gönder tuşuna bastığınızda aktif ortamdan (ve proje değişkenlerinden) çözülür,
-böylece mesajın kendisini düzenlemeden gönderimler arasında ortam değerini
-değiştirebilirsiniz.
+Testnizer, sunucunun ping çerçevelerine otomatik olarak pong çerçevesiyle yanıt verir.
 
 ## Bağlantı ömrü
 
-WebSocket bağlantıları Electron penceresine değil, Testnizer sekmesine bağlıdır.
-Başka bir sekmeye geçmek bağlantıyı kesmez. Sekmeyi kapatmak temiz kapatma
-çerçevesi gönderir.
+Bir WebSocket bağlantısı, Electron penceresine değil Testnizer sekmesine aittir.
+Başka bir sekmeye geçmek bağlantıyı kesmez. **Sekmeyi kapatmak bağlantıyı kapatır**;
+**projeden ayrılmak** da (başka bir projeye geçmek ya da Ana sayfaya dönmek)
+kapatır: bir bağlantı görmediğiniz bir projeye mesaj almaya devam etmemelidir. Aynı
+kural Socket.IO ve MQTT sekmeleri için de geçerlidir. Geri döndüğünüzde yeniden
+bağlanın; oluşturucu, header'lar ve kayıtlı mesajlar korunur.
