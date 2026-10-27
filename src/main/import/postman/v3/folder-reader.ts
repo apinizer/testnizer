@@ -17,6 +17,10 @@
  * then by name); a request's `examples:` / `messages:` path is replaced by
  * the parsed resource files; a path-backed script (`src:`) by its code.
  *
+ * The same reader takes a zipped folder (`../zip.ts`): a folder on disk and
+ * the entries of a .zip are two `V3EntrySource`s; the checks and limits below
+ * are applied once, here, to both.
+ *
  * Safety (the folder is untrusted input):
  *  - symbolic links are never followed (lstat) and are reported;
  *  - every path is resolved with realpath and must stay inside the picked
@@ -62,9 +66,73 @@ export interface V3FolderContent {
 interface Entry {
   /** POSIX path relative to the root. */
   rel: string
-  abs: string
   dir: boolean
   size: number
+}
+
+/** One file or folder an entry source reports; `rel` is a POSIX path relative to the root. */
+export interface V3SourceEntry {
+  rel: string
+  kind: 'dir' | 'file' | 'symlink' | 'other'
+  /** Bytes of a file (0 for anything else). */
+  size: number
+}
+
+/**
+ * Where a v3 tree comes from: a picked folder on disk (`folderSource`) or the
+ * entries of a .zip read in memory (`../zip.ts`). The `Reader` below is the
+ * ONE owner of the entry map, the checks on paths written inside YAML files
+ * and every count / size / depth limit (`V3_LIMITS`); a source only lists
+ * entries and returns bytes.
+ *
+ * `walk` reports every entry, a folder before its contents; the callback
+ * returns false for a folder that must not be descended. `read` returns one
+ * scanned regular file's bytes, after the `Reader` has checked the caps.
+ */
+export interface V3EntrySource {
+  walk(report: (e: V3SourceEntry) => boolean): void
+  read(rel: string): Buffer
+}
+
+/** A picked folder on disk. Symbolic links are reported, never followed; a read must stay inside the folder. */
+export function folderSource(root: string): V3EntrySource {
+  let st: fs.Stats
+  try {
+    st = fs.lstatSync(root)
+  } catch (e) {
+    throw new V3InputError(`Cannot open the folder: ${(e as Error).message}`)
+  }
+  if (st.isSymbolicLink()) throw new V3InputError('The picked folder is a symbolic link.')
+  if (!st.isDirectory()) throw new V3InputError('The picked path is not a folder.')
+  const realRoot = fs.realpathSync(root)
+  return {
+    walk(report) {
+      const walkDir = (absDir: string, relDir: string): void => {
+        for (const d of fs.readdirSync(absDir, { withFileTypes: true })) {
+          const rel = relDir ? `${relDir}/${d.name}` : d.name
+          const abs = path.join(absDir, d.name)
+          const ls = fs.lstatSync(abs)
+          const kind: V3SourceEntry['kind'] = ls.isSymbolicLink()
+            ? 'symlink'
+            : ls.isDirectory()
+              ? 'dir'
+              : ls.isFile()
+                ? 'file'
+                : 'other'
+          const descend = report({ rel, kind, size: kind === 'file' ? ls.size : 0 })
+          if (kind === 'dir' && descend) walkDir(abs, rel)
+        }
+      }
+      walkDir(root, '')
+    },
+    read(rel) {
+      const real = fs.realpathSync(path.join(root, ...rel.split('/')))
+      if (real !== realRoot && !real.startsWith(realRoot + path.sep)) {
+        throw new V3InputError(`"${rel}" resolves outside the picked folder.`)
+      }
+      return fs.readFileSync(real)
+    },
+  }
 }
 
 const SKIP_DIRS = new Set(['.git', 'node_modules'])
@@ -97,60 +165,49 @@ class Reader {
   readonly ignored: string[] = []
   private filesRead = 0
   private bytesRead = 0
-  private realRoot = ''
 
-  constructor(private readonly root: string) {}
+  constructor(private readonly source: V3EntrySource) {}
 
   scan(): void {
-    let st: fs.Stats
-    try {
-      st = fs.lstatSync(this.root)
-    } catch (e) {
-      throw new V3InputError(`Cannot open the folder: ${(e as Error).message}`)
-    }
-    if (st.isSymbolicLink()) throw new V3InputError('The picked folder is a symbolic link.')
-    if (!st.isDirectory()) throw new V3InputError('The picked path is not a folder.')
-    this.realRoot = fs.realpathSync(this.root)
     let count = 0
-    const walk = (absDir: string, relDir: string, depth: number): void => {
-      if (depth > V3_LIMITS.maxDirDepth) {
+    this.children.set('', [])
+    this.source.walk((se) => {
+      count++
+      if (count > V3_LIMITS.maxEntries) {
         throw new V3InputError(
-          `The folder is nested deeper than ${V3_LIMITS.maxDirDepth} levels (${relDir}).`,
+          `The folder holds more than ${V3_LIMITS.maxEntries} files and folders; pick a single collection or workspace folder.`,
         )
       }
-      const list: Entry[] = []
-      for (const d of fs.readdirSync(absDir, { withFileTypes: true })) {
-        count++
-        if (count > V3_LIMITS.maxEntries) {
+      if (se.kind === 'symlink') {
+        this.warnings.push(`"${se.rel}" is a symbolic link and was not followed.`)
+        return false
+      }
+      if (se.kind === 'other') return false
+      const dir = se.kind === 'dir'
+      if (dir) {
+        if (SKIP_DIRS.has(baseOf(se.rel))) {
+          this.ignored.push(`${se.rel}/`)
+          return false
+        }
+        if (se.rel.split('/').length > V3_LIMITS.maxDirDepth) {
           throw new V3InputError(
-            `The folder holds more than ${V3_LIMITS.maxEntries} files and folders; pick a single collection or workspace folder.`,
+            `The folder is nested deeper than ${V3_LIMITS.maxDirDepth} levels (${se.rel}).`,
           )
         }
-        const rel = relDir ? `${relDir}/${d.name}` : d.name
-        const abs = path.join(absDir, d.name)
-        const ls = fs.lstatSync(abs)
-        if (ls.isSymbolicLink()) {
-          this.warnings.push(`"${rel}" is a symbolic link and was not followed.`)
-          continue
-        }
-        if (ls.isDirectory()) {
-          if (SKIP_DIRS.has(d.name)) {
-            this.ignored.push(`${rel}/`)
-            continue
-          }
-          const e: Entry = { rel, abs, dir: true, size: 0 }
-          this.entries.set(rel, e)
-          list.push(e)
-          walk(abs, rel, depth + 1)
-        } else if (ls.isFile()) {
-          const e: Entry = { rel, abs, dir: false, size: ls.size }
-          this.entries.set(rel, e)
-          list.push(e)
-        }
       }
-      this.children.set(relDir, list)
-    }
-    walk(this.root, '', 0)
+      // A source reports a folder before its contents: no known parent (a
+      // skipped folder) or a second report of the same path → not taken.
+      const siblings = this.children.get(dirOf(se.rel))
+      if (!siblings || this.entries.has(se.rel)) return false
+      const e: Entry = { rel: se.rel, dir, size: dir ? 0 : se.size }
+      this.entries.set(se.rel, e)
+      siblings.push(e)
+      if (dir) this.children.set(se.rel, [])
+      return true
+    })
+    // Name order, whichever order the disk or the archive listed them in.
+    const byName = (a: Entry, b: Entry): number => baseOf(a.rel).localeCompare(baseOf(b.rel))
+    for (const list of this.children.values()) list.sort(byName)
   }
 
   list(relDir: string): Entry[] {
@@ -165,10 +222,6 @@ class Reader {
   readText(rel: string): string {
     const e = this.entries.get(rel)
     if (!e || e.dir) throw new V3InputError(`"${rel}" is not a file in the picked folder.`)
-    const real = fs.realpathSync(e.abs)
-    if (real !== this.realRoot && !real.startsWith(this.realRoot + path.sep)) {
-      throw new V3InputError(`"${rel}" resolves outside the picked folder.`)
-    }
     if (e.size > V3_LIMITS.maxFileBytes) {
       throw new V3InputError(
         `"${rel}" is larger than ${Math.round(V3_LIMITS.maxFileBytes / 1024 / 1024)} MB.`,
@@ -185,7 +238,7 @@ class Reader {
       )
     }
     this.consumed.add(rel)
-    return fs.readFileSync(real, 'utf8')
+    return this.source.read(rel).toString('utf8')
   }
 
   readYaml(rel: string): unknown {
@@ -402,9 +455,23 @@ const WORKSPACE_SIDE_DIRS = new Set([
   'docs',
 ])
 
+export const NOT_V3_FOLDER_MESSAGE =
+  'This folder is not a Postman v3 collection or workspace: it has no ".resources/definition.yaml", no "*.request.yaml" files and no "postman/collections" folder.'
+
 /** Read a picked folder. Throws `V3InputError` for an unusable folder. */
 export function readV3Folder(root: string): V3FolderContent {
-  const r = new Reader(root)
+  const content = readV3Source(folderSource(root))
+  if (!content) throw new V3InputError(NOT_V3_FOLDER_MESSAGE)
+  return content
+}
+
+/**
+ * Read a v3 tree from any entry source. Null when the tree is not a Postman
+ * v3 collection or workspace at all; throws `V3InputError` for one that is
+ * but cannot be used (limits, an empty workspace, unsafe references).
+ */
+export function readV3Source(source: V3EntrySource): V3FolderContent | null {
+  const r = new Reader(source)
   r.scan()
 
   // Workspace base: `postman/` (Native Git) or the picked folder itself when it
@@ -436,11 +503,7 @@ export function readV3Folder(root: string): V3FolderContent {
   }
 
   if (base === null) {
-    if (!looksLikeCollection(r, '')) {
-      throw new V3InputError(
-        'This folder is not a Postman v3 collection or workspace: it has no ".resources/definition.yaml", no "*.request.yaml" files and no "postman/collections" folder.',
-      )
-    }
+    if (!looksLikeCollection(r, '')) return null
     out.collections.push({ rel: '', doc: readCollectionDir(r, '') })
   } else {
     const colDir = join(base, 'collections')
@@ -477,8 +540,8 @@ export function readV3Folder(root: string): V3FolderContent {
 
   // Every other file under the picked folder: found, not opened.
   const listedDirs = r.ignored.filter((x) => x.endsWith('/')).map((x) => x.slice(0, -1))
-  for (const [rel, e] of r.entries) {
-    if (e.dir || r.consumed.has(rel)) continue
+  for (const rel of [...r.entries.keys()].sort()) {
+    if (r.entries.get(rel)?.dir || r.consumed.has(rel)) continue
     if (listedDirs.some((d) => rel.startsWith(d + '/'))) continue
     if (rel.startsWith('.postman/')) continue
     r.ignored.push(rel)
