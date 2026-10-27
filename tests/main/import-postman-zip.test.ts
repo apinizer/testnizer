@@ -21,7 +21,6 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import zlib from 'node:zlib'
-import { randomBytes } from 'node:crypto'
 import archiver from 'archiver'
 import { rawZip, unixMode, type RawZipEntry } from '../fixtures/raw-zip'
 
@@ -525,12 +524,12 @@ describe('issue #276 follow-up — a zipped Postman v3 folder', () => {
   })
 
   it('the v3 reader limits apply to a zipped folder too (one owner)', async () => {
-    // Incompressible, so the archive's own ratio guard lets it through and
-    // the v3 reader's 5 MB per-file cap is what refuses it.
-    const big = 'a: ' + randomBytes(4.6 * 1024 * 1024).toString('base64') + '\n'
+    // Stored (not deflated): ratio 1, so the archive's own guards let it
+    // through and the v3 reader's 5 MB per-file cap is what refuses it.
+    const big = 'a: ' + 'x'.repeat(6 * 1024 * 1024) + '\n'
     const zip = rawZip([
       { name: '.resources/definition.yaml', data: '$kind: collection\nname: Big\n' },
-      { name: 'Huge.request.yaml', data: big },
+      { name: 'Huge.request.yaml', data: big, method: 0 },
     ])
     const opened = await openZip(zip)
     expect(opened.success).toBe(false)
