@@ -57,3 +57,49 @@ describe('socketio.store.disconnect (#21)', () => {
     expect(s.events.map((e) => e.event)).toEqual(['hello', 'disconnected'])
   })
 })
+
+describe('socketio.store: Cancel during the handshake (issue #283)', () => {
+  it('the cancelled connect fails quietly: disconnected, no error, no error row', async () => {
+    let settle: (r: { success: false; error: string }) => void = () => {}
+    const api = (
+      globalThis as unknown as { window: { api: { socketio: Record<string, unknown> } } }
+    ).window.api.socketio
+    const connect = vi.fn(
+      () =>
+        new Promise((r) => {
+          settle = r
+        }),
+    )
+    api.connect = connect
+    api.onEvent = vi.fn(() => () => {})
+    api.onClosed = vi.fn(() => () => {})
+    useSocketIOStore.setState({
+      ...useSocketIOStore.getState(),
+      url: 'http://slow.test',
+      bearerToken: '',
+      bearerTokenWithheld: false,
+      withheldCredentials: [],
+      customHeaders: [],
+      params: [],
+      events: [],
+      connectionId: null,
+      connectionState: 'disconnected',
+      errorMessage: null,
+    })
+
+    const connecting = useSocketIOStore.getState().connect()
+    await vi.waitFor(() => expect(connect).toHaveBeenCalled())
+    expect(useSocketIOStore.getState().connectionState).toBe('connecting')
+
+    await useSocketIOStore.getState().disconnect()
+    expect(api.cancelConnect).toHaveBeenCalled()
+    // Main rejects the cancelled handshake (it no longer hangs).
+    settle({ success: false, error: 'Connection cancelled' })
+    await connecting
+
+    const s = useSocketIOStore.getState()
+    expect(s.connectionState).toBe('disconnected')
+    expect(s.errorMessage).toBeNull()
+    expect(s.events.some((e) => e.event === 'error')).toBe(false)
+  })
+})

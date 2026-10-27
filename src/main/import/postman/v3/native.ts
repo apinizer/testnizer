@@ -28,6 +28,7 @@ import {
   readWsSettings,
   isRtContentType,
   isSioArgContentType,
+  SIO_CLIENT_VERSIONS,
   type SioClientVersion,
 } from '../../../../shared/realtime'
 import { mqttMetaOf, sioMetaOf, wsMetaOf, type RtKeyValue } from '../../../../shared/realtime-meta'
@@ -381,10 +382,11 @@ function writeSocketIo(a: NativeWriteArgs): string {
   const headers = rows(kvList(doc.headers))
   const s = isRecord(doc.settings) ? doc.settings : {}
   const settings = readSioSettings(s)
-  const version = str(s.version) as SioClientVersion | undefined
-  if (version && version !== '4') {
+  // Every v3 enum value connects (issue #283): "2" with the 2.x client,
+  // "3" / "4" with the 4.x one. Anything else is read as the default.
+  if (s.version !== undefined && !SIO_CLIENT_VERSIONS.includes(s.version as SioClientVersion)) {
     a.warnings.push(
-      `"${label}": Socket.IO client v${version} is not available yet; the request connects after you switch it to v4 in Settings.`,
+      `"${label}": Socket.IO client version ${JSON.stringify(s.version)} is imported as v${settings.version}.`,
     )
   }
   const listeners = (Array.isArray(doc.events) ? doc.events : [])

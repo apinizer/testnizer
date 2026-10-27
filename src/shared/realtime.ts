@@ -66,10 +66,13 @@ export interface WsSettings extends RtSettingsBase {
   maxPayload: number
 }
 
-/** Socket.IO client versions. Only `'4'` ships (v2 / v3 clients are not bundled yet). */
+/**
+ * Socket.IO client versions (Postman v3's enum). `'2'` connects with the 2.x
+ * client (v2 servers, EIO=3); `'3'` and `'4'` both use the 4.x client, which
+ * talks to v3 and v4 servers alike (main `protocols/socketio-client.ts`).
+ */
 export type SioClientVersion = '2' | '3' | '4'
 export const SIO_CLIENT_VERSIONS: readonly SioClientVersion[] = ['2', '3', '4']
-export const SIO_SUPPORTED_VERSIONS: readonly SioClientVersion[] = ['4']
 
 /** Socket.IO transports: `auto` = WebSocket first, long-polling fallback (the pre-#283 behaviour). */
 export type SioTransport = 'auto' | 'websocket' | 'polling'

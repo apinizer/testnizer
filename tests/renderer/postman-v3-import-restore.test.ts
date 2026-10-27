@@ -41,7 +41,12 @@ function installApi(): void {
 }
 
 /** Write one v3 request with the import writer; returns the row id. */
-function importRow(kind: string, doc: Record<string, unknown>, name = 'Imported'): string {
+function importRow(
+  kind: string,
+  doc: Record<string, unknown>,
+  name = 'Imported',
+  warnings: string[] = [],
+): string {
   let captured: unknown[] = []
   const db = {
     prepare: () => ({
@@ -61,7 +66,7 @@ function importRow(kind: string, doc: Record<string, unknown>, name = 'Imported'
     ancestorAuth: false,
     sortOrder: 0,
     now: 1,
-    warnings: [],
+    warnings,
   })
   const [, , , rowName, , protocol, method, path, , requestSchema] = captured
   endpoints.set(id, { id, name: rowName, protocol, method, path, request_schema: requestSchema })
@@ -173,6 +178,24 @@ describe('issue #276 part 2 — imported v3 requests open in their editor', () =
     expect(s.settings.path).toBe('/rt')
     expect(s.savedMessages[0]).toMatchObject({ eventName: 'news', acknowledgement: true })
     expect(noIds(snapshotProtocol(activeTab()).protocolMeta)).toEqual(noIds(metaOf(id)))
+  })
+
+  it('Socket.IO client v2 (issue #283): imported without a warning, kept on Ctrl+S', async () => {
+    const warnings: string[] = []
+    const id = importRow(
+      'socket.io-request',
+      { url: 'https://io2.example.test', settings: { version: '2' } },
+      'v2',
+      warnings,
+    )
+    expect(warnings).toEqual([])
+    expect(
+      JSON.parse(String(endpoints.get(id)!.request_schema)).metadata.socketio.settings,
+    ).toMatchObject({ version: '2' })
+    await openEndpointTab(id)
+    expect(useSocketIOStore.getState().settings.version).toBe('2')
+    const snap = snapshotProtocol(activeTab()).protocolMeta.socketio as { settings: unknown }
+    expect(snap.settings).toMatchObject({ version: '2' })
   })
 
   it('MCP', async () => {

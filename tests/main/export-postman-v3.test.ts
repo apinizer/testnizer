@@ -617,7 +617,8 @@ describe('issue #277 — rows saved by the editor and by older builds', () => {
           bearerToken: '',
           customHeaders: [],
           params: [],
-          settings: DEFAULT_SIO_SETTINGS,
+          // Issue #283: a v2 request exports its client version.
+          settings: { ...DEFAULT_SIO_SETTINGS, version: '2' },
           listeners: [
             { id: 'l1', name: 'tick', description: 'clock', listen: true },
             { id: 'l2', name: 'muted', description: '', listen: false },
@@ -760,9 +761,10 @@ describe('issue #277 — rows saved by the editor and by older builds', () => {
     })
   })
 
-  it('current Socket.IO block: listeners with their listen flag', () => {
+  it('current Socket.IO block: listeners with their listen flag, client version', () => {
     expect(item('SIO now')).toMatchObject({
       url: 'https://sio-now.test/live',
+      settings: { version: '2' },
       events: [
         { name: 'tick', description: 'clock', subscribeOnConnect: true },
         { name: 'muted', subscribeOnConnect: false },

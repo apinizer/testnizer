@@ -1,4 +1,4 @@
-import { io, type Socket } from 'socket.io-client'
+import { createSioClient, type SioClient } from './socketio-client'
 import {
   DEFAULT_SIO_SETTINGS,
   bytesToBase64,
@@ -59,7 +59,7 @@ const MAX_PENDING_EVENTS = 1000
 export const SIO_ACK_TIMEOUT_MS = 15_000
 
 interface Connection {
-  socket: Socket
+  socket: SioClient
   info: SocketIOConnectionInfo
   onEvent?: (event: SocketIOEvent) => void
   /**
@@ -97,11 +97,15 @@ const connections = new Map<string, Connection>()
 /**
  * In-flight Socket.IO handshakes keyed by the renderer-supplied pendingId.
  * Removed once the connection opens (resolve) or fails (reject).
- * `socketIOCancelConnect` looks the entry up and disconnects, which causes
- * the pending `connect` promise to reject through the existing
- * `connect_error` path.
+ * `socketIOCancelConnect` tears the client down and rejects the pending
+ * `connect` promise itself: neither client reports anything when it is
+ * disconnected mid-handshake, so the promise (and its IPC call) would never
+ * settle.
  */
-const pendingConnects = new Map<string, Socket>()
+const pendingConnects = new Map<string, { socket: SioClient; cancel: () => void }>()
+
+/** The rejection a cancelled handshake gets. */
+export const SIO_CANCELLED_MESSAGE = 'Connection cancelled'
 let nextId = 1
 
 function makeId(): string {
@@ -169,18 +173,16 @@ export function decodeWireArgs(args: SioWireArg[]): unknown[] {
 
 // ─── Connect ─────────────────────────────────────────────────────────────
 
-function transportsOf(s: SioSettings): Array<'websocket' | 'polling'> {
-  if (s.transport === 'websocket') return ['websocket']
-  if (s.transport === 'polling') return ['polling']
-  return ['websocket', 'polling']
-}
-
 export async function socketIOConnect(options: {
   url: string
   namespace?: string
   auth?: Record<string, unknown>
   extraHeaders?: Record<string, string>
-  /** Settings tab (issue #283); missing keys take `DEFAULT_SIO_SETTINGS`. */
+  /**
+   * Settings tab (issue #283); missing keys take `DEFAULT_SIO_SETTINGS`.
+   * `version` picks the client (`socketio-client.ts`): `'2'` the 2.x client,
+   * `'3'` / `'4'` the 4.x one.
+   */
   settings?: Partial<SioSettings>
   /** Listened events; omitted = forward every event. */
   listen?: SioListenConfig
@@ -198,36 +200,24 @@ export async function socketIOConnect(options: {
   pendingId?: string
 }): Promise<SocketIOConnectionInfo> {
   const settings = readSioSettings({ ...DEFAULT_SIO_SETTINGS, ...(options.settings ?? {}) })
-  if (settings.version !== '4') {
-    throw new Error(
-      `Socket.IO client v${settings.version} is not available yet; use client version 4.`,
-    )
-  }
   return new Promise((resolve, reject) => {
     const connectionId = makeId()
     const ns = options.namespace || '/'
-    const fullUrl = options.url.replace(/\/$/, '') + (ns === '/' ? '' : ns)
     const reconnect = settings.retryCount > 0
 
-    const socket = io(fullUrl, {
+    const socket = createSioClient({
+      url: options.url,
+      namespace: ns,
       auth: options.auth,
       extraHeaders: options.extraHeaders,
-      path: settings.path,
-      // One Manager per request: two requests to the same server never share
-      // a transport (and its headers / TLS options).
-      forceNew: true,
-      reconnection: reconnect,
-      reconnectionAttempts: settings.retryCount,
-      reconnectionDelay: settings.retryDelay,
-      reconnectionDelayMax: Math.max(settings.retryDelay, 1),
-      randomizationFactor: 0,
-      timeout: settings.handshakeTimeout,
-      transports: transportsOf(settings),
-      rejectUnauthorized: settings.strictSSL,
+      settings,
     })
 
     if (options.pendingId) {
-      pendingConnects.set(options.pendingId, socket)
+      pendingConnects.set(options.pendingId, {
+        socket,
+        cancel: () => reject(new Error(SIO_CANCELLED_MESSAGE)),
+      })
     }
 
     const info: SocketIOConnectionInfo = {
@@ -237,7 +227,7 @@ export async function socketIOConnect(options: {
     }
 
     let opened = false
-    socket.once('connect', () => {
+    socket.onceConnect(() => {
       opened = true
       if (options.pendingId) pendingConnects.delete(options.pendingId)
       const conn: Connection = {
@@ -254,7 +244,7 @@ export async function socketIOConnect(options: {
       // Forward server-pushed events the listen config lets through. The
       // config only adjusts what reaches the renderer — listeners are never
       // re-attached on the socket.io client.
-      socket.onAny((event: string, ...args: unknown[]) => {
+      socket.onAny((event, args) => {
         if (!conn.listen.all && !conn.listen.events.has(event)) return
         dispatchEvent(conn, {
           direction: 'in',
@@ -272,12 +262,11 @@ export async function socketIOConnect(options: {
         options.onClose?.({ connectionId, reason })
       }
 
-      socket.on('disconnect', (reason: string) => {
+      socket.onDisconnect((reason) => {
         if (connections.get(connectionId) !== conn) return
-        // `active` = the client will reconnect by itself (never after a
-        // server kick or a client disconnect, and only when reconnection
-        // is configured).
-        if (reconnect && socket.active) {
+        // The client reconnects by itself only when reconnection is
+        // configured, and never after a server kick or a client disconnect.
+        if (reconnect && socket.willReconnect) {
           dispatchEvent(conn, {
             direction: 'system',
             event: 'reconnecting',
@@ -289,7 +278,7 @@ export async function socketIOConnect(options: {
         close(reason)
         socket.disconnect()
       })
-      socket.io.on('reconnect_attempt', (attempt: number) => {
+      socket.onReconnectAttempt((attempt) => {
         if (connections.get(connectionId) !== conn) return
         dispatchEvent(conn, {
           direction: 'system',
@@ -298,7 +287,7 @@ export async function socketIOConnect(options: {
           timestamp: Date.now(),
         })
       })
-      socket.io.on('reconnect', (attempt: number) => {
+      socket.onReconnect((attempt) => {
         if (connections.get(connectionId) !== conn) return
         dispatchEvent(conn, {
           direction: 'system',
@@ -307,7 +296,7 @@ export async function socketIOConnect(options: {
           timestamp: Date.now(),
         })
       })
-      socket.io.on('reconnect_failed', () => {
+      socket.onReconnectFailed(() => {
         close('reconnect failed')
         socket.disconnect()
       })
@@ -315,29 +304,30 @@ export async function socketIOConnect(options: {
       resolve(info)
     })
 
-    socket.once('connect_error', (err) => {
+    socket.onceConnectError((message) => {
       if (opened) return
       if (options.pendingId) pendingConnects.delete(options.pendingId)
       socket.disconnect()
-      reject(new Error(err.message))
+      reject(new Error(message))
     })
   })
 }
 
 /**
  * Abort an in-flight Socket.IO handshake. Returns true when a pending entry
- * was found and torn down (which will reject the pending promise through the
- * `connect_error` path), false otherwise.
+ * was found and torn down — its `connect` promise then rejects with
+ * `SIO_CANCELLED_MESSAGE` — false otherwise.
  */
 export function socketIOCancelConnect(pendingId: string): boolean {
-  const socket = pendingConnects.get(pendingId)
-  if (!socket) return false
+  const pending = pendingConnects.get(pendingId)
+  if (!pending) return false
   pendingConnects.delete(pendingId)
   try {
-    socket.disconnect()
+    pending.socket.disconnect()
   } catch {
     // Best-effort.
   }
+  pending.cancel()
   return true
 }
 
@@ -375,9 +365,11 @@ export function socketIOEmitArgs(
 ): void {
   const conn = liveConnection(connectionId)
   if (opts.ack) {
-    conn.socket
-      .timeout(opts.ackTimeoutMs ?? SIO_ACK_TIMEOUT_MS)
-      .emit(eventName, ...args, (err: Error | null, ...response: unknown[]) => {
+    conn.socket.emitWithAck(
+      eventName,
+      args,
+      opts.ackTimeoutMs ?? SIO_ACK_TIMEOUT_MS,
+      (err, response) => {
         if (connections.get(connectionId) !== conn) return
         dispatchEvent(conn, {
           direction: 'ack',
@@ -385,9 +377,10 @@ export function socketIOEmitArgs(
           ...(err ? { data: null, error: err.message } : eventPayload(response)),
           timestamp: Date.now(),
         })
-      })
+      },
+    )
   } else {
-    conn.socket.emit(eventName, ...args)
+    conn.socket.emit(eventName, args)
   }
   dispatchEvent(conn, {
     direction: 'out',

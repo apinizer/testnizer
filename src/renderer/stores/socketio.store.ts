@@ -571,13 +571,19 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
       } else {
         unsubscribe()
         const message = res.error ?? 'Connection failed'
-        patchTab(ownerTabId, (sl) => ({
-          connectionState: 'error',
-          errorMessage: message,
-          _pendingConnectId: undefined,
-          _unsubscribe: undefined,
-          events: [...sl.events, systemRow('error', message)],
-        }))
+        // A user Cancel cleared the pending id first: the rejection it causes
+        // is not an error to show.
+        patchTab(ownerTabId, (sl) =>
+          sl._pendingConnectId === pendingConnectId
+            ? {
+                connectionState: 'error',
+                errorMessage: message,
+                _pendingConnectId: undefined,
+                _unsubscribe: undefined,
+                events: [...sl.events, systemRow('error', message)],
+              }
+            : null,
+        )
       }
       // Logging is done in main (src/main/ipc/socketio.handler.ts) so all
       // protocols funnel through the same console:log channel.
@@ -585,6 +591,9 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
 
     disconnect: async () => {
       const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
+      // Cleared before the engine is told: its cancelled connect then fails
+      // with nothing left to mark as an error.
+      set({ _pendingConnectId: undefined })
       const api = getSioApi()
       if (api) {
         if (connectionState === 'connecting' && _pendingConnectId) {
