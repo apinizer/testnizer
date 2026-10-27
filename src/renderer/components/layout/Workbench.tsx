@@ -7,7 +7,7 @@ import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
 import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
-import { activateTabStores, switchActiveTab } from '../../lib/activate-tab'
+import { activateTabStores, cloneTabStores, switchActiveTab } from '../../lib/activate-tab'
 import { useTranslation } from '../../lib/i18n'
 import { useScrollStrip } from '../../lib/use-scroll-strip'
 import UrlBar from './UrlBar'
@@ -349,7 +349,7 @@ export function EndpointTabBar() {
       // Unsaved edits travel with the duplicate: the row is a copy of what is
       // SAVED, while the user is looking at what they have typed.
       const openedId = useTabsStore.getState().activeTabId
-      if (openedId) useRequestStore.getState().cloneTabState(tabId, openedId)
+      if (openedId) cloneTabStores(tabId, openedId, src.protocol)
       return
     }
 
@@ -364,7 +364,7 @@ export function EndpointTabBar() {
       url: src.url,
       folderId: src.folderId,
     })
-    useRequestStore.getState().cloneTabState(tabId, newId)
+    cloneTabStores(tabId, newId, src.protocol)
     // Switch every store onto the new tab so stale per-tab caches are loaded.
     handleSwitchTab(newId)
   }

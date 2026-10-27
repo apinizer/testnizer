@@ -5,6 +5,7 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -97,6 +98,8 @@ interface WebSocketStore extends TabWsState {
   setErrorMessage: (msg: string | null) => void
 
   /** Switch active tab — saves current state and loads target tab state. */
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   /** Remove cached state for a closed tab. Tears down its `_unsubscribe`. */
   removeTabState: (tabId: string) => void
@@ -180,9 +183,14 @@ export const WS_CREDENTIALS: CredentialSpec = {
  * disconnected.
  */
 function persistableWs(st: TabWsState): TabWsState {
+  return idleWs(withholdCredentials(st, WS_CREDENTIALS))
+}
+
+/** A tab with no live connection or timeline — what is stored and what Duplicate Tab copies. */
+function idleWs(st: TabWsState): TabWsState {
   const idle = emptyTabState()
   return {
-    ...withholdCredentials(st, WS_CREDENTIALS),
+    ...st,
     messages: idle.messages,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -617,6 +625,9 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
     setConnectionState: (connectionState) => set({ connectionState }),
     setErrorMessage: (errorMessage) => set({ errorMessage }),
+
+    cloneTabState: (srcTabId, dstTabId) =>
+      cloneTabSlice(useWebSocketStore, extractState, srcTabId, dstTabId, idleWs),
 
     switchToTab: (tabId) => {
       const state = get()

@@ -7,6 +7,7 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -111,6 +112,8 @@ interface GraphQLStore extends TabGraphQLState {
   clearSubscriptionEvents: () => void
 
   /** Switch active tab — saves current state and loads target tab state. */
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   /** Remove cached state for a closed tab. */
   removeTabState: (tabId: string) => void
@@ -240,9 +243,14 @@ export const GQL_CREDENTIALS: CredentialSpec = {
 }
 
 function persistableGql(st: TabGraphQLState): TabGraphQLState {
+  return idleGql(withholdCredentials(st, GQL_CREDENTIALS))
+}
+
+/** A tab with no request in flight, subscription or response — stored and copied by Duplicate Tab. */
+function idleGql(st: TabGraphQLState): TabGraphQLState {
   const idle = emptyTabState()
   return {
-    ...withholdCredentials(st, GQL_CREDENTIALS),
+    ...st,
     response: idle.response,
     isLoading: idle.isLoading,
     _inflightRequestId: idle._inflightRequestId,
@@ -758,6 +766,9 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   },
 
   clearSubscriptionEvents: () => set({ subscriptionEvents: [] }),
+
+  cloneTabState: (srcTabId, dstTabId) =>
+    cloneTabSlice(useGraphQLStore, extractState, srcTabId, dstTabId, idleGql),
 
   switchToTab: (tabId) => {
     const state = get()

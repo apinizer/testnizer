@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { KeyValuePair } from '../types'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
@@ -118,6 +119,8 @@ interface SocketIOStore extends TabSioState {
   disconnect: () => Promise<void>
   emit: () => Promise<void>
   clearEvents: () => void
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   removeTabState: (tabId: string) => void
   /** Whether `tabId`'s slice still waits for its withheld token (issue #243). */
@@ -253,12 +256,20 @@ function persistableSio(input: TabSioState): TabSioState {
   const st = migrateLegacyTab(input)
   const idle = emptyState()
   const literalToken = st.bearerToken !== '' && !isTemplateOnlyValue(st.bearerToken)
-  return {
+  return idleSio({
     ...withholdCredentials(st, SIO_CREDENTIALS),
     bearerToken: literalToken ? '' : st.bearerToken,
     // Still withheld when a restored tab is written again before its token
     // came back from the saved row.
     bearerTokenWithheld: literalToken || (st.bearerTokenWithheld && st.bearerToken === ''),
+  })
+}
+
+/** A tab with no live connection or events — what is stored and what Duplicate Tab copies. */
+function idleSio(st: TabSioState): TabSioState {
+  const idle = emptyState()
+  return {
+    ...st,
     events: idle.events,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -670,6 +681,9 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
     },
 
     clearEvents: () => set({ events: [] }),
+
+    cloneTabState: (srcTabId, dstTabId) =>
+      cloneTabSlice(useSocketIOStore, extractState, srcTabId, dstTabId, idleSio),
 
     switchToTab: (tabId) => {
       const state = get()

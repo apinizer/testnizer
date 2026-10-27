@@ -11,6 +11,7 @@ import type {
 } from '../types'
 import { loadTabbedState, attachTabbedPersist, storedBoundTabs } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   remapWithheldRows,
@@ -584,39 +585,34 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     set({ _tabStates: tabStates })
   },
 
-  cloneTabState: (srcTabId, dstTabId) => {
-    const state = get()
-    // Pull from cache, but if the source tab is the currently-loaded one its
-    // latest edits live on the live state — not in the cache yet.
-    const srcState =
-      state._currentTabId === srcTabId ? extractState(state) : state._tabStates.get(srcTabId)
-    if (!srcState) return
-    const tabStates = new Map(state._tabStates)
-    // KV/asssertion arrays carry stable ids — re-stamp them so future edits
-    // on the duplicate don't accidentally mutate the source via a shared id.
-    const rowIds = new Map<string, string>()
-    const restamp = (r: KeyValuePair): KeyValuePair => {
-      const id = makeId()
-      rowIds.set(r.id, id)
-      return { ...r, id }
-    }
-    const headers = srcState.headers.map(restamp)
-    tabStates.set(dstTabId, {
-      ...srcState,
-      params: srcState.params.map(restamp),
-      pathVariables: (srcState.pathVariables ?? []).map(restamp),
-      headers,
-      assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
-      // Issue #244: a value still withheld on the source stays withheld on
-      // the copy (its row is a copy of the source's), so Ctrl+S on the copy
-      // reloads it instead of writing the empty field.
-      withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], rowIds),
-      // The copy is a new draft: there is no row to reload it from.
-      unloaded: false,
-      unloadedProtocol: false,
-    })
-    set({ _tabStates: tabStates })
-  },
+  cloneTabState: (srcTabId, dstTabId) =>
+    // Live source / live destination handled by the one helper (a bound
+    // duplicate is already the current tab when this runs).
+    cloneTabSlice(useRequestStore, extractState, srcTabId, dstTabId, (srcState) => {
+      // KV/asssertion arrays carry stable ids — re-stamp them so future edits
+      // on the duplicate don't accidentally mutate the source via a shared id.
+      const rowIds = new Map<string, string>()
+      const restamp = (r: KeyValuePair): KeyValuePair => {
+        const id = makeId()
+        rowIds.set(r.id, id)
+        return { ...r, id }
+      }
+      const headers = srcState.headers.map(restamp)
+      return {
+        ...srcState,
+        params: srcState.params.map(restamp),
+        pathVariables: (srcState.pathVariables ?? []).map(restamp),
+        headers,
+        assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
+        // Issue #244: a value still withheld on the source stays withheld on
+        // the copy (its row is a copy of the source's), so Ctrl+S on the copy
+        // reloads it instead of writing the empty field.
+        withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], rowIds),
+        // The copy is a new draft: there is no row to reload it from.
+        unloaded: false,
+        unloadedProtocol: false,
+      }
+    }),
 
   sendRequest: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.

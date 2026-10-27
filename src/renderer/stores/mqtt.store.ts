@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
@@ -109,6 +110,8 @@ interface MqttStore extends TabMqttState {
   disconnect: () => Promise<void>
   publish: () => Promise<void>
   clearLog: () => void
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   removeTabState: (tabId: string) => void
 }
@@ -200,9 +203,14 @@ export const MQTT_CREDENTIALS: CredentialSpec = {
  * error. The connection does not survive a reload: stored as disconnected.
  */
 function persistableMqtt(st: TabMqttState): TabMqttState {
+  return idleMqtt(withholdCredentials(st, MQTT_CREDENTIALS))
+}
+
+/** A tab with no live connection or log — what is stored and what Duplicate Tab copies. */
+function idleMqtt(st: TabMqttState): TabMqttState {
   const idle = emptyState()
   return {
-    ...withholdCredentials(st, MQTT_CREDENTIALS),
+    ...st,
     log: idle.log,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -696,6 +704,9 @@ export const useMqttStore = create<MqttStore>((set, get) => {
     },
 
     clearLog: () => set({ log: [] }),
+
+    cloneTabState: (srcTabId, dstTabId) =>
+      cloneTabSlice(useMqttStore, extractState, srcTabId, dstTabId, idleMqtt),
 
     switchToTab: (tabId) => {
       const state = get()

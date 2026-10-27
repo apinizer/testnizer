@@ -11,6 +11,7 @@ import { useResponseStore } from './response.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { stripWsSecuritySecrets } from '../lib/key-material'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   trackCredentialEdits,
   withholdCredentials,
@@ -132,6 +133,8 @@ interface SoapStore extends WithheldState {
   }) => void
 
   /** Switch active tab — saves current state and loads target tab state */
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   /** Remove cached state for a closed tab */
   removeTabState: (tabId: string) => void
@@ -240,6 +243,9 @@ function persistableSoap(st: TabSoapState): TabSoapState {
   const stripped = wsSecurity === st.wsSecurity ? st : { ...st, wsSecurity }
   return withholdCredentials(stripped, SOAP_CREDENTIALS)
 }
+
+/** What Duplicate Tab copies: the whole slice — it holds no request in flight. */
+const idleSoap = (st: TabSoapState): TabSoapState => ({ ...st })
 
 const STORAGE_KEY = 'testnizer-soap'
 const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState, persistableSoap)
@@ -681,6 +687,9 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       })
     }
   },
+
+  cloneTabState: (srcTabId, dstTabId) =>
+    cloneTabSlice(useSoapStore, extractSoapTabState, srcTabId, dstTabId, idleSoap),
 
   switchToTab: (tabId) => {
     const state = get()

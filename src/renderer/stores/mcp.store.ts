@@ -30,6 +30,7 @@ import type {
 } from '../types/mcp'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -304,6 +305,8 @@ interface McpStore extends TabMcpState {
     action: 'accept' | 'decline' | 'cancel',
     content?: Record<string, string | number | boolean | string[]>,
   ) => Promise<void>
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   removeTabState: (tabId: string) => void
 }
@@ -519,13 +522,27 @@ function persistable(s: TabMcpState): TabMcpState {
   return {
     // Literal auth / header / env credentials (issue #244) — the saved row
     // keeps them, `lib/withheld-credentials.ts` reloads them after a restart.
-    ...withholdCredentials(s, MCP_CREDENTIALS),
+    ...idleMcp(withholdCredentials(s, MCP_CREDENTIALS)),
+    // Write-only secret never reaches localStorage.
+    oauthClientSecret: '',
+  }
+}
+
+/**
+ * A tab with no connection, logs, token session or scan — what is stored and
+ * what Duplicate Tab copies (the copy starts disconnected).
+ */
+function idleMcp(s: TabMcpState): TabMcpState {
+  return {
+    ...s,
     ...disconnectedPatch(),
     notifications: [],
     frames: [],
+    // Questions of a live call / connection belong to it, not to a copy.
+    pendingElicitations: [],
+    inputOutcome: null,
     section: MCP_EXPLORER_SECTION,
-    // Write-only secret and the token session never reach localStorage.
-    oauthClientSecret: '',
+    // The token session belongs to the tab it was opened in.
     ...oauthIdle(),
     // Scan results are transient; only the rate-limit opt-in survives.
     ...securityIdle(),
@@ -2155,6 +2172,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       }
     })
   },
+
+  cloneTabState: (srcTabId, dstTabId) =>
+    cloneTabSlice(useMcpStore, extractState, srcTabId, dstTabId, idleMcp),
 
   switchToTab: (tabId) => {
     const state = get()
