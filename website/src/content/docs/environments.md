@@ -104,23 +104,29 @@ need for a token-fetch script entirely).
 
 The recommended pattern:
 
-1. Put placeholder values in **initial value** (`{{authToken}}` defaults to
-   `"<paste-here>"` or empty)
-2. Each developer fills their **current value** locally
-3. Commit the project to Git — only initial values travel; current values are
-   stored in a separate, gitignored file
+1. Mark tokens, passwords and API keys as **secret**
+2. Put placeholders in **initial value** (`{{authToken}}` defaults to
+   `"<paste-here>"` or empty) for anything that is not secret
+3. Each developer fills their own **current value** locally
+4. Commit the project to Git — the **name** of a secret variable travels, its
+   **value** is written empty (and a pull never overwrites yours). A pull tells
+   you how many secret values are still empty on your machine
+
+Values of variables that are *not* marked secret travel with the project file,
+current values included, so mark anything sensitive as secret.
 
 This is how production-quality teams ship Testnizer projects without
 accidentally pushing a real bearer token to the repo.
 
-## Secrets in the OS keychain
+## Secrets at rest
 
-For long-lived credentials (OAuth refresh tokens, certificate passphrases),
-prefer the **Certificate manager** or per-request auth fields rather than
-environment variables. Those values pass through the OS keychain and never
-write plaintext to disk.
+Secret values are encrypted in the local database with the OS keychain (Keychain,
+DPAPI, libsecret) through Electron `safeStorage`; see
+[Secrets and sensitive variables](/docs/variables#secrets-and-sensitive-variables)
+for what happens where no keychain exists. Certificate passphrases and git tokens
+go through the same keychain.
 
-Environment "current values" are stored in plaintext within your project
-directory — convenient for development, not appropriate for production
-credentials. Always use the keychain-backed paths for tokens that grant
-production access.
+Credentials you type directly into a request's **Auth** tab are different: they are
+stored as plain text in the local database and are part of the request, so they
+travel with exports and Git. Reference a secret variable (`{{secretVar}}`) instead
+of typing the real value there.

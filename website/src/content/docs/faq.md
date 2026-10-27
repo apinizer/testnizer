@@ -100,10 +100,10 @@ local file and lists all available operations without making a network request.
 ## How are certificates and private keys stored?
 
 Client certificate files (PEM / P12) are referenced by their file path. The
-private key passphrase, if any, is stored through `electron-store` using the OS
-keychain on macOS (Keychain Access) and the Windows Credential Manager on
-Windows. On Linux, the passphrase is stored in an encrypted file in the
-application data directory using a machine-specific key.
+private key passphrase, if any, is encrypted with Electron `safeStorage` — the OS
+keychain: Keychain on macOS, DPAPI on Windows, libsecret on Linux. Where no keychain
+is available on Linux, the passphrase is stored without encryption on your computer.
+It is never written to project files, Git or exports.
 
 The certificate files themselves are never copied into the application data
 directory — Testnizer reads them from the path you specify at the time each
@@ -185,9 +185,9 @@ HTTP or SOCKS5 proxy address that applies to all requests made by Testnizer.
 Per-request proxy overrides are not currently supported; the proxy setting is
 global.
 
-Proxy authentication (username and password) is supported. The credentials are
-stored in `electron-store` and are not written to collection or environment
-files.
+Proxy authentication (username and password) is supported. The password is
+encrypted with the OS keychain (`safeStorage`) and is not written to collection or
+environment files.
 
 The system proxy configured in macOS Network Preferences or Windows Internet
 Options is respected by default unless you set a custom proxy in Testnizer

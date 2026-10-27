@@ -100,10 +100,10 @@ dosyayı ayrıştırır ve ağ isteği yapmadan tüm kullanılabilir operasyonla
 ## Sertifikalar ve özel anahtarlar nasıl saklanır?
 
 İstemci sertifika dosyaları (PEM / P12) dosya yollarıyla başvurulur. Özel anahtar
-parolası, varsa, macOS'ta `electron-store` aracılığıyla işletim sistemi anahtarlığında
-(Keychain Access) ve Windows'ta Windows Kimlik Bilgisi Yöneticisi'nde saklanır.
-Linux'ta parola, makineye özgü bir anahtar kullanılarak uygulama veri dizininde
-şifreli bir dosyada saklanır.
+parolası, varsa, Electron `safeStorage` ile — işletim sistemi anahtarlığıyla —
+şifrelenir: macOS'ta Keychain, Windows'ta DPAPI, Linux'ta libsecret. Linux'ta
+anahtarlık yoksa parola bilgisayarınızda şifrelenmeden saklanır. Proje dosyalarına,
+Git'e ya da dışa aktarımlara asla yazılmaz.
 
 Sertifika dosyalarının kendisi asla uygulama veri dizinine kopyalanmaz —
 Testnizer onları her istek yapıldığında belirttiğiniz yoldan okur.
@@ -182,8 +182,9 @@ tarafından yapılan tüm isteklere uygulanan HTTP veya SOCKS5 proxy adresi
 belirleyebilirsiniz. İstek başına proxy geçersiz kılmaları şu anda desteklenmez;
 proxy ayarı globaldir.
 
-Proxy kimlik doğrulama (kullanıcı adı ve parola) desteklenir. Kimlik bilgileri
-`electron-store`'da saklanır ve koleksiyon veya ortam dosyalarına yazılmaz.
+Proxy kimlik doğrulama (kullanıcı adı ve parola) desteklenir. Parola, işletim
+sistemi anahtarlığıyla (`safeStorage`) şifrelenir ve koleksiyon veya ortam
+dosyalarına yazılmaz.
 
 macOS Ağ Tercihleri'nde veya Windows İnternet Seçenekleri'nde yapılandırılan
 sistem proxy'si, Testnizer ayarlarında özel bir proxy belirlemediğiniz sürece

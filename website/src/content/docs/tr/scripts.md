@@ -411,7 +411,7 @@ data['userId']                             // geçerli yineleme veri satırı
 ## Insomnia & Bruno
 
 **Insomnia** ve **Bruno**'dan dışa aktarılan betikler değişiklik gerektirmeden
-çalışır. Globalleri aynı çalışma zamanına bağlanmıştır.
+çalışır. Bunların global nesneleri aynı çalışma zamanına bağlıdır.
 
 ### insomnia.\*
 

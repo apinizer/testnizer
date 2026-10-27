@@ -185,21 +185,23 @@ tasarlanmıştır — URL, başlıklar, sorgu parametreleri ve gövde metni.
 ## Sırlar ve hassas değişkenler
 
 Herhangi bir ortam değişkeni veya Global, oluşturulurken veya düzenlenirken
-**sır** olarak işaretlenebilir. Sır değişkenler, macOS'ta işletim sistemi anahtarlığı ve Windows
-Kimlik Bilgisi Yöneticisi tarafından desteklenen `electron-store` üzerinden saklanır.
+**sır** olarak işaretlenebilir. Değer (geçerli ve başlangıç), yerel veritabanında
+Electron `safeStorage` ile şifrelenir — macOS'ta Keychain, Windows'ta DPAPI,
+Linux'ta libsecret. Yalnızca sır değerler şifrelenir; adlar okunabilir kalır.
+Anahtarlık kullanılamıyorsa (bazı Linux kurulumları) değerler şifrelenmeden saklanır,
+ortam yöneticisi bunu söyler ve anahtarlık oluşunca sonraki açılışta şifrelenirler.
+Başka bir bilgisayarda ya da işletim sistemi anahtarlığı sıfırlanmadan önce
+şifrelenmiş bir değer çözülemez: alan, değeri yeniden girmenizi ister.
 
 Sır değişkenlerin davranışı:
 
-- Değer, Ortamlar panelinde, konsolda ve istek geçmişi görüntüleyicisinde
-  yıldız işaretleriyle maskelenir.
+- Değer; Ortamlar panelinde, Konsol'da, Geçmiş'te ve Runner sonuçlarında maskelenir.
 - `pm.environment.get('secretKey')`, betikler içinde gerçek değeri döndürür,
   böylece Authorization başlıklarında kullanabilirsiniz.
-- `pm.environment.toObject()`, sır anahtarların `"***"` ile değiştirildiği bir
-  nesne döndürür. Sır değerleri okumak için bu yönteme güvenmeyin.
-- Sır değerler hiçbir zaman dışa aktarılan koleksiyon dosyalarına yazılmaz. Sır
-  değişkene referans veren bir koleksiyonu dışa aktarırsanız, dışa aktarma yalnızca
-  değişken adını içerir (Postman dışa aktarması bunu boş değerli `type: secret`
-  olarak işaretler).
+- Sır değerler bu bilgisayarda kalır. Her proje dosyasına, Git commit'ine veya
+  push'una ve dışa aktarıma **boş değer** olarak yazılır — ad taşınır, değer
+  taşınmaz — ve bir pull ya da içe aktarma yerel değerinizin üzerine yazmaz
+  (Postman dışa aktarması değişkeni boş değerli `type: secret` olarak işaretler).
 - Bir sır değişkene yazan betik (`pm.environment.set`, `pm.globals.set`,
   `pm.collectionVariables.set` veya `pm.vault.set`) yeni değeri sızdırmaz:
   Çalıştır sırasında sonuçlarda, Geçmiş'te ve Konsol'da maskelenir; Gönder'de ise
@@ -209,6 +211,10 @@ Sır değişkenlerin davranışı:
   veya günceller, `await pm.vault.get('apiKey')` yalnızca sır olanları okur ve
   `await pm.vault.unset('apiKey')` bir sır Global'i siler. Bkz.
   [Betikler](/tr/docs/scripts#pmvault-ve-pmrequire).
+- Bir isteğin **Auth** sekmesine doğrudan yazdığınız kimlik bilgileri sır değişken
+  *değildir*: yerel veritabanında düz metin olarak saklanır ve istekle birlikte
+  taşınır. Gerçek değeri bir sır değişkene koyun ve `{{secretVar}}` olarak
+  başvurun.
 
 Ortam oluşturma ve düzenleme kılavuzu için
 [Ortamlar ve değişkenler](/tr/docs/environments) sayfasına bakın.

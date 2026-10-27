@@ -184,20 +184,24 @@ sending — URL, headers, query parameters, and body text.
 ## Secrets and sensitive variables
 
 Any environment variable or Global can be marked as **secret** when it is
-created or edited. Secret variables are stored through `electron-store` backed by the OS
-keychain on macOS and the Windows Credential Manager on Windows.
+created or edited. The value (current and initial) is encrypted in the local
+database with Electron `safeStorage` — Keychain on macOS, DPAPI on Windows,
+libsecret on Linux. Only the secret values are encrypted; names stay readable. If
+no keychain is available (some Linux setups) the values are stored unencrypted, the
+environment manager says so, and they are encrypted on a later start once a
+keychain exists. A value encrypted on another computer, or before the OS keychain
+was reset, cannot be decrypted: the field asks you to enter it again.
 
 Behavior of secret variables:
 
-- The value is masked with asterisks in the Environments panel, the console,
-  and the request history viewer.
+- The value is masked in the Environments panel, the Console, History and the
+  Runner results.
 - `pm.environment.get('secretKey')` returns the real value inside scripts so
   you can use it in Authorization headers.
-- `pm.environment.toObject()` returns an object where secret keys are replaced
-  with `"***"`. Do not rely on this method to read secret values.
-- Secret values are never written to exported collection files. If you export a
-  collection that references a secret variable, the export contains the
-  variable name only (a Postman export marks it `type: secret` with an empty
+- Secret values stay on this computer. They are written as **empty values** to
+  every project file, Git commit or push, and export — the name travels, the
+  value does not — and a pull or import never overwrites the value you have
+  locally (a Postman export marks the variable `type: secret` with an empty
   value).
 - A script that writes a secret variable (`pm.environment.set`,
   `pm.globals.set`, `pm.collectionVariables.set` or `pm.vault.set`) does not
@@ -209,6 +213,10 @@ Behavior of secret variables:
   secret Global, `await pm.vault.get('apiKey')` reads only secret ones, and
   `await pm.vault.unset('apiKey')` deletes a secret one. See
   [Scripts](/docs/scripts#pmvault-and-pmrequire).
+- Credentials you type straight into a request's **Auth** tab are *not* a secret
+  variable: they are stored as plain text in the local database and travel with
+  the request. Put the real value in a secret variable and reference it as
+  `{{secretVar}}`.
 
 For guidance on creating and organizing environments, see
 [Environments & variables](/docs/environments).

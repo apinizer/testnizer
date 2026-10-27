@@ -57,20 +57,26 @@ Orada protokol başına tek bir Node tarafındaki handler üzerinden yönlendiri
 biri yalnızca yapılandırdığınız uç noktaya yönlenir — asla bir satıcı sunucusuna
 değil.
 
-### 3. Sırlar hiçbir zaman düz metin olarak diske yazılmaz
+### 3. Saklanan sırlar işletim sistemi anahtarlığınızla şifrelenir
 
-Token'lar, parola ifadeleri ve sertifika anahtarları Electron'un
+Sır değişkenler, mock sunucu token'ları, git token'ları, sertifika parolaları ve
+keystore'lar Electron'un
 [`safeStorage`](https://www.electronjs.org/docs/latest/api/safe-storage) API'sından geçer.
-macOS'ta bu Keychain'dir. Windows'ta DPAPI. Linux'ta libsecret. Şifreli blob
-projenizin SQLite veritabanında yaşar. Ham değer yalnızca istek imzalanırken
-bellekte bulunur.
+macOS'ta bu Keychain'dir. Windows'ta DPAPI. Linux'ta libsecret. Şifreli blob yerel
+SQLite veritabanınızda yaşar ve ham değer yalnızca bir istek gerektirdiğinde ana
+süreçte çözülür. Anahtarlığın olmadığı yerde (bazı Linux kurulumları) bu değerler
+şifrelenmeden saklanır ve Testnizer bunu size söyler; anahtarlık kullanılabilir olunca
+sonraki açılışta şifrelenirler. Bir isteğin Auth sekmesine doğrudan yazdığınız kimlik
+bilgileri yerel veritabanında düz metindir — gerçek değeri bir sır değişkende tutun ve
+`{{secretVar}}` ile başvurun. Sır değerler her proje dosyasında, Git commit'inde ve
+dışa aktarımda boşaltılır.
 
 ## Bulut araçlarıyla karşılaştırma
 
 | Endişe | Bulut araçları | Testnizer |
 |---|---|---|
 | Koleksiyonlar nerede yaşar | Satıcı bulut çalışma alanı | Diskinizdeki yerel SQLite |
-| Token'lar nerede saklanır | Satıcı sunucularına senkronize edilir | İşletim sistemi anahtarlığı (Keychain / DPAPI / libsecret) |
+| Token'lar nerede saklanır | Satıcı sunucularına senkronize edilir | İşletim sistemi anahtarlığı (Keychain / DPAPI / libsecret), varsa |
 | JWT çözümleme | Web uygulaması token'ı uzak servise gönderir | Yerel kripto — token süreç içinde kalır |
 | WS-Security imzalama / şifreleme | Çevrimiçi araçlar veya ayrı bir masaüstü uygulama | xml-crypto + Node crypto ile yerleşik ana süreç |
 | Telemetri | Varsayılan olarak açık | Yok — ve opt-in da yok |

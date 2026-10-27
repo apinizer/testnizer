@@ -101,22 +101,29 @@ içindeki isteklerde kalıcı olurlar.
 
 Önerilen kalıp:
 
-1. **Başlangıç değerine** yer tutucu değerler koyun (`{{authToken}}` varsayılan
-   olarak `"<buraya-yapıştır>"` veya boş)
-2. Her geliştirici **geçerli değerini** yerel olarak doldurur
-3. Projeyi Git'e taahhüt edin — yalnızca başlangıç değerleri taşınır; geçerli
-   değerler ayrı, gitignore'da olan bir dosyada saklanır
+1. Token'ları, parolaları ve API anahtarlarını **sır** olarak işaretleyin
+2. Sır olmayan her şey için **başlangıç değerine** yer tutucu değerler koyun
+   (`{{authToken}}` varsayılan olarak `"<buraya-yapıştır>"` veya boş)
+3. Her geliştirici kendi **geçerli değerini** yerel olarak doldurur
+4. Projeyi Git'e commit edin — bir sır değişkenin **adı** taşınır, **değeri** boş
+   yazılır (ve bir pull sizinkinin üzerine yazmaz). Bir pull, makinenizde kaç sır
+   değerin hâlâ boş olduğunu söyler
 
-Üretim kalitesinde ekiplerin gerçek bir bearer token'ını yanlışlıkla depoya
-göndermeden Testnizer projelerini yayımlamasının yolu budur.
+Sır olarak işaretlenmeyen değişkenlerin değerleri, geçerli değerler dahil, proje
+dosyasıyla birlikte taşınır; bu yüzden hassas olan her şeyi sır olarak işaretleyin.
 
-## İşletim sistemi anahtarlığındaki sırlar
+Üretim kalitesinde ekipler, gerçek bir bearer token'ı yanlışlıkla depoya itmeden
+Testnizer projelerini böyle teslim eder.
 
-Uzun ömürlü kimlik bilgileri için (OAuth yenileme token'ları, sertifika parola
-ifadeleri), ortam değişkenleri yerine **Sertifika yöneticisini** veya istek başına
-auth alanlarını tercih edin. Bu değerler işletim sistemi anahtarlığından geçer ve
-hiçbir zaman düz metin olarak diske yazılmaz.
+## Diskteki sırlar
 
-Ortam "geçerli değerleri" proje dizininizdeki düz metin olarak saklanır — geliştirme
-için elverişlidir, ancak üretim kimlik bilgileri için uygun değildir. Üretim
-erişimi sağlayan token'lar için her zaman anahtarlık destekli yolları kullanın.
+Sır değerler, Electron `safeStorage` aracılığıyla işletim sistemi anahtarlığıyla
+(Keychain, DPAPI, libsecret) yerel veritabanında şifrelenir; anahtarlığın olmadığı
+yerde ne olduğu için bkz.
+[Sırlar ve hassas değişkenler](/tr/docs/variables#sırlar-ve-hassas-değişkenler).
+Sertifika parolaları ve git token'ları aynı anahtarlıktan geçer.
+
+Bir isteğin **Auth** sekmesine doğrudan yazdığınız kimlik bilgileri farklıdır:
+yerel veritabanında düz metin olarak saklanır ve isteğin parçasıdır; bu yüzden
+dışa aktarımlarla ve Git ile taşınır. Oraya gerçek değeri yazmak yerine bir sır
+değişkene (`{{secretVar}}`) başvurun.
