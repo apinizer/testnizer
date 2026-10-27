@@ -7,6 +7,7 @@ import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver
 import { makeId } from '../lib/utils'
 import { mqttMaskedSendError } from '../lib/masked-send-guard'
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import { t } from '../lib/i18n'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -340,7 +341,8 @@ export const useMqttStore = create<MqttStore>((set, get) => {
           resolvedSubscriptions([{ ...topic, subscribe: true }], vars()),
         )
       : await api.unsubscribe(s.connectionId, [name])
-    if (!res?.success) patchTab(owner, () => ({ errorMessage: res?.error ?? 'Request failed' }))
+    if (!res?.success)
+      patchTab(owner, () => ({ errorMessage: res?.error ?? t('mqtt.error.requestFailed') }))
   }
 
   return {
@@ -498,7 +500,7 @@ export const useMqttStore = create<MqttStore>((set, get) => {
       }
       const api = getMqttApi()
       if (!api) {
-        set({ connectionState: 'error', errorMessage: 'API not available' })
+        set({ connectionState: 'error', errorMessage: t('mqtt.error.apiUnavailable') })
         return
       }
       const ownerTabId = start._currentTabId
@@ -625,7 +627,7 @@ export const useMqttStore = create<MqttStore>((set, get) => {
         for (const run of early.splice(0)) run()
       } else {
         unsubscribe()
-        const message = res?.error ?? 'Connection failed'
+        const message = res?.error ?? t('mqtt.error.connectFailed')
         patchTab(ownerTabId, (sl) => ({
           connectionState: 'error',
           errorMessage: message,
@@ -689,7 +691,8 @@ export const useMqttStore = create<MqttStore>((set, get) => {
         retain: c.retain,
         properties: resolveMessageProps(c.properties, v),
       })
-      if (!res?.success) patchTab(owner, () => ({ errorMessage: res?.error ?? 'Publish failed' }))
+      if (!res?.success)
+        patchTab(owner, () => ({ errorMessage: res?.error ?? t('mqtt.error.publishFailed') }))
     },
 
     clearLog: () => set({ log: [] }),
