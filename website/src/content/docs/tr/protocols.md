@@ -1,6 +1,6 @@
 ---
 title: Protokollere genel bakış
-description: Testnizer'da HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MCP ve AI Chat için hızlı referans.
+description: Testnizer'da HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MQTT, MCP ve AI Chat için hızlı referans.
 order: 1
 section: Protokoller
 ---
@@ -15,11 +15,12 @@ Node ana sürecinde kendine ait bir motoru vardır.
 |---|---|---|---|
 | HTTP / REST | tam | `axios` | Metodlar, gövde modları, mTLS, scriptler, assertion'lar |
 | SOAP | tam | `soap` kütüphanesi + `wsse` | WSDL import, manuel envelope, WS-Security |
-| WebSocket | tam | `ws` | wss + özel header'lar + JSON composer |
+| WebSocket | tam | `ws` | wss + parametreler + özel header'lar, Metin / JSON / XML / HTML / ikili composer, kayıtlı mesajlar |
 | GraphQL | tam | `graphql` + `graphql-ws` | Sorgu + mutasyon + abonelik |
 | gRPC | tam | `@grpc/grpc-js` + `@grpc/proto-loader` | Dört streaming modu |
 | SSE | tam | `eventsource` | Uzun süreli akışlar, Last-Event-ID ile devam |
-| Socket.IO | tam | `socket.io-client` | Namespace'ler, auth, emit + subscribe, çift yönlü zaman çizelgesi |
+| Socket.IO | tam | `socket.io-client` (v4 ve v2) | İstemci v2 / v3 / v4, namespace'ler, auth, dinleyiciler, Onay (Ack), çok argümanlı emit, çift yönlü zaman çizelgesi |
+| MQTT | tam | `mqtt` (MQTT.js) | 3.1.1 ve 5.0, TLS, Son Vasiyet, konular, kayıtlı mesajlar |
 | MCP | tam | `@modelcontextprotocol/sdk` | Streamable HTTP / SSE / stdio; araçları listele ve çağır |
 | AI Chat | tam | sağlayıcıya özgü HTTP | 14 sağlayıcı + özel URL, streaming |
 
@@ -55,8 +56,11 @@ WS-Security yerleşik olarak gelir (UsernameToken, Timestamp, XML İmzası, XML
 
 ## WebSocket
 
-`ws://` veya `wss://` adreslerine özel header'larla bağlanın. Mesajlar bir
-zaman çizelgesinde görünür (zaman damgalarıyla birlikte gönderilen + alınan). Mesajları JSON veya metin olarak oluşturun.
+`ws://` veya `wss://` adreslerine sorgu parametreleri ve özel header'larla bağlanın.
+Mesajlar bir zaman çizelgesinde görünür (zaman damgalarıyla birlikte gönderilen +
+alınan; aranabilir ve filtrelenebilir). Mesajları metin, JSON, XML, HTML ya da gerçek
+ikili çerçeveler (Base64 / hex) olarak oluşturun ve yeniden kullandıklarınızı kayıtlı
+mesaj olarak saklayın.
 
 [Tam referans →](/tr/docs/protocols/websocket)
 
@@ -103,15 +107,30 @@ HTTP long-polling fallback ile müzakere eder, renderer yalnızca event'leri gö
 Akış:
 
 - URL'yi (örn. `http://localhost:3000`), namespace'i (`/` veya `/admin`) ve
-  isteğe bağlı bearer token'ı girin
-- **Connect**'e tıklayın — Testnizer `connect` ack'ını bekler, el sıkışma
+  isteğe bağlı bearer token'ı girin; istemci sürümünü (v4, v3 ya da Socket.IO 2
+  sunucuları için **v2**) Ayarlar'dan seçin
+- **Bağlan**'a tıklayın — Testnizer `connect` ack'ını bekler, el sıkışma
   başarısız olursa `connect_error` mesajını gösterir
-- Herhangi bir event'i JSON yüküyle **Emit** edin (event adı + gövde)
-- Herhangi bir event adına **Subscribe** olun; gelen event'ler zaman çizelgesine akar
+- Herhangi bir event'i bir veya daha fazla argümanla (metin, JSON veya ikili),
+  isteğe bağlı **Onay (ack)** ile **Gönder**in
+- **Olaylar** sekmesinde hangi olayların dinleneceğini seçin ya da **Tüm olayları
+  dinle**; gelen event'ler zaman çizelgesine akar
 - Çift yönlü zaman çizelgesi giden emit'ler için `↑`, gelen event'ler için `↓`
   ve zaman damgaları gösterir
 
 [Tam referans →](/tr/docs/protocols/socketio)
+
+## MQTT
+
+Bir MQTT 3.1.1 veya 5.0 aracısına (broker) `mqtt://`, `mqtts://`, `ws://` ya da
+`wss://` üzerinden bağlanın. Bağlanınca abone olunacak konuları ekleyin (ya da
+canlı açıp kapatın), QoS, retain bayrağı ve yük biçimiyle mesaj yayınlayın, bir Son
+Vasiyet tanımlayın ve her şeyi WebSocket ve Socket.IO editörlerinin kullandığı aynı
+aranabilir günlükte okuyun. MQTT 5.0, CONNECT özellikleri, mesaj özellikleri ve
+abonelik seçenekleri ekler. Postman v3 MQTT istekleri içe ve dışa aktarılır.
+Postman'in Görselleştirme (konu başına grafik) özelliği yoktur.
+
+[Tam referans →](/tr/docs/protocols/mqtt)
 
 ## MCP (Model Context Protocol)
 

@@ -1,6 +1,6 @@
 ---
 title: Protocols overview
-description: Quick reference for HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MCP and AI Chat in Testnizer.
+description: Quick reference for HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MQTT, MCP and AI Chat in Testnizer.
 order: 1
 section: Protocols
 ---
@@ -15,11 +15,12 @@ dedicated engine in the Node main process.
 |---|---|---|---|
 | HTTP / REST | full | `axios` | Methods, body modes, mTLS, scripts, assertions |
 | SOAP | full | `soap` library + `wsse` | WSDL import, manual envelope, WS-Security |
-| WebSocket | full | `ws` | wss + custom headers + JSON composer |
+| WebSocket | full | `ws` | wss + params + custom headers, Text / JSON / XML / HTML / binary composer, saved messages |
 | GraphQL | full | `graphql` + `graphql-ws` | Query + mutation + subscription |
 | gRPC | full | `@grpc/grpc-js` + `@grpc/proto-loader` | All four streaming modes |
 | SSE | full | `eventsource` | Long-lived streams, Last-Event-ID resume |
-| Socket.IO | full | `socket.io-client` | Namespaces, auth, emit + subscribe, bidirectional timeline |
+| Socket.IO | full | `socket.io-client` (v4 and v2) | Client v2 / v3 / v4, namespaces, auth, listeners, Ack, multi-argument emit, bidirectional timeline |
+| MQTT | full | `mqtt` (MQTT.js) | 3.1.1 and 5.0, TLS, Last Will, topics, saved messages |
 | MCP | full | `@modelcontextprotocol/sdk` | Streamable HTTP / SSE / stdio; list and invoke tools |
 | AI Chat | full | provider-specific HTTP | 14 providers + custom URL, streaming |
 
@@ -56,8 +57,10 @@ Encryption). [WS-Security guide →](/docs/ws-security)
 
 ## WebSocket
 
-Connect to `ws://` or `wss://` with custom headers. Messages appear in a
-timeline (sent + received with timestamps). Compose messages as JSON or text.
+Connect to `ws://` or `wss://` with query params and custom headers. Messages
+appear in a timeline (sent + received with timestamps, searchable and
+filterable). Compose messages as text, JSON, XML, HTML or real binary frames
+(Base64 / hex), and keep the ones you reuse as saved messages.
 
 [Full reference →](/docs/protocols/websocket)
 
@@ -105,15 +108,30 @@ displays events.
 Workflow:
 
 - Set the URL (e.g. `http://localhost:3000`), namespace (`/` or `/admin`), and
-  optional bearer token
+  optional bearer token; pick the client version (v4, v3 or **v2** for Socket.IO 2
+  servers) in Settings
 - Click **Connect** — Testnizer waits for the `connect` ack, surfaces
   `connect_error` if the handshake fails
-- **Emit** any event with a JSON payload (event name + body)
-- **Subscribe** to any event name; incoming events stream into the timeline
+- **Emit** any event with one or more arguments (text, JSON or binary), with an
+  optional **Ack**
+- On the **Events** tab choose which events to listen to, or **Listen to all
+  events**; incoming events stream into the timeline
 - Bidirectional timeline shows `↑` for outgoing emits and `↓` for incoming
   events, with timestamps
 
 [Full reference →](/docs/protocols/socketio)
+
+## MQTT
+
+Connect to an MQTT 3.1.1 or 5.0 broker over `mqtt://`, `mqtts://`, `ws://` or
+`wss://`. Add topics to subscribe to on Connect (or toggle them live), publish
+messages with a QoS, retain flag and payload format, set a Last Will, and read
+everything in the same searchable log the WebSocket and Socket.IO editors use.
+MQTT 5.0 adds CONNECT properties, message properties and subscription options.
+Postman v3 MQTT requests import and export. Postman's Visualization (per-topic
+charts) is not available.
+
+[Full reference →](/docs/protocols/mqtt)
 
 ## MCP (Model Context Protocol)
 
