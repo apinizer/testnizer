@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow, shell } from 'electron'
 import {
   mcpOAuthCancel,
+  mcpOAuthConfirm,
   mcpOAuthForget,
   mcpOAuthStart,
   type McpOAuthDone,
@@ -14,6 +15,9 @@ import { logEvent } from '../lib/console-logger'
  *
  *   mcp:oauth:start  (options)        → { oauthSessionId } — the flow runs async
  *   mcp:oauth:cancel (oauthSessionId) → { cancelled }
+ *   mcp:oauth:confirm (oauthSessionId, accept) → { answered } — issue #295:
+ *                     answers a step's `confirmation` (send the client secret
+ *                     to the advertised authorization server, or stop)
  *   mcp:oauth:forget (oauthSessionId) → { forgotten } — drops the tokens
  *
  * Events (main → every window, routed by `oauthSessionId` in the renderer):
@@ -132,6 +136,17 @@ export function registerMcpOAuthHandlers(): void {
     try {
       if (typeof oauthSessionId !== 'string') throw new Error('oauthSessionId is required')
       return { success: true, data: { cancelled: mcpOAuthCancel(oauthSessionId) } }
+    } catch (e) {
+      return { success: false, error: (e as Error).message }
+    }
+  })
+
+  // Issue #295: the answer to a step's `confirmation` — only a literal `true`
+  // lets the client secret go; anything else stops the flow.
+  ipcMain.handle('mcp:oauth:confirm', async (_event, oauthSessionId: unknown, accept: unknown) => {
+    try {
+      if (typeof oauthSessionId !== 'string') throw new Error('oauthSessionId is required')
+      return { success: true, data: { answered: mcpOAuthConfirm(oauthSessionId, accept === true) } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

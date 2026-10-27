@@ -3567,6 +3567,16 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.oauth.connect': 'Connect with token',
     'mcp.oauth.reconnect': 'Reconnect with token',
     'mcp.oauth.forget': 'Forget token',
+    'mcp.oauth.confirm.title': 'Send your client secret to this authorization server?',
+    'mcp.oauth.confirm.hint':
+      'The MCP server names an authorization server on a different host. Your client secret is sent there only after you confirm. Confirm only if you expect this host.',
+    'mcp.oauth.confirm.mcpServer': 'MCP server',
+    'mcp.oauth.confirm.authServer': 'Authorization server',
+    'mcp.oauth.confirm.tokenEndpoint': 'Token endpoint',
+    'mcp.oauth.confirm.remembered':
+      'Your answer is remembered for this server and these hosts until Testnizer closes.',
+    'mcp.oauth.confirm.accept': 'Confirm and continue',
+    'mcp.oauth.confirm.reject': 'Cancel',
     // ── MCP Security (issue #142) ──
     'mcp.security.tab': 'Security',
     'mcp.security.intro':
@@ -7827,6 +7837,16 @@ const translations: Record<Locale, Record<string, string>> = {
     'mcp.oauth.connect': 'Belirteçle bağlan',
     'mcp.oauth.reconnect': 'Belirteçle yeniden bağlan',
     'mcp.oauth.forget': 'Belirteci unut',
+    'mcp.oauth.confirm.title': 'İstemci sırrınız bu yetkilendirme sunucusuna gönderilsin mi?',
+    'mcp.oauth.confirm.hint':
+      'MCP sunucusu, farklı bir sunucudaki yetkilendirme sunucusunu gösteriyor. İstemci sırrınız oraya yalnızca siz onayladıktan sonra gönderilir. Yalnızca bu sunucuyu bekliyorsanız onaylayın.',
+    'mcp.oauth.confirm.mcpServer': 'MCP sunucusu',
+    'mcp.oauth.confirm.authServer': 'Yetkilendirme sunucusu',
+    'mcp.oauth.confirm.tokenEndpoint': 'Belirteç uç noktası',
+    'mcp.oauth.confirm.remembered':
+      'Yanıtınız bu sunucu ve bu adresler için Testnizer kapanana kadar hatırlanır.',
+    'mcp.oauth.confirm.accept': 'Onayla ve devam et',
+    'mcp.oauth.confirm.reject': 'İptal',
     // ── MCP Security (issue #142) ──
     'mcp.security.tab': 'Güvenlik',
     'mcp.security.intro':

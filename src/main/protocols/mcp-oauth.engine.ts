@@ -33,7 +33,16 @@
  *     `plainHttpTokenRequest` (the SDK has no opt-out); every other host or
  *     port still needs https, and https / loopback endpoints keep the SDK path;
  *   - token-endpoint errors are one `OAuthError` class with the RFC 6749
- *     `error` string in `.code` (v1 had a class per code) — see `errorMessage`.
+ *     `error` string in `.code` (v1 had a class per code) — see `errorMessage`;
+ *   - the SDK's fix for GHSA-6qxp-vccf-f47h does not cover direct
+ *     `exchangeAuthorization` / `refreshAuthorization` calls, so a
+ *     user-entered client secret is gated here (issue #295): when the
+ *     advertised authorization server or its token endpoint is on another
+ *     host than the MCP server, step 4 waits for the user to confirm
+ *     (`mcpOAuthConfirm`, remembered in memory per server / authorization
+ *     server / token endpoint) and every token request re-checks it
+ *     (`assertSecretDestinationConfirmed`). DCR and public clients are not
+ *     gated.
  *
  * Secrets discipline (CLAUDE.md "Anahtar materyali — TEK KAPI" spirit): the
  * access / refresh token, the client secret, the PKCE verifier and the
@@ -106,6 +115,20 @@ export interface McpOAuthExchange {
   error?: string
 }
 
+/**
+ * Issue #295 — the question a step asks while it waits for the user: a
+ * user-entered client secret is about to go to an authorization server on
+ * another host than the MCP server. Origins only — never a secret.
+ */
+export interface McpOAuthConfirmation {
+  /** Origin of the MCP server URL the flow runs against. */
+  mcpServer: string
+  /** Origin of the authorization server the MCP server advertised. */
+  authorizationServer: string
+  /** Origin of the token endpoint — where the client secret would go. */
+  tokenEndpoint: string
+}
+
 export interface McpOAuthStep {
   id: McpOAuthStepId
   /** 1-based position in the flow. */
@@ -120,6 +143,11 @@ export interface McpOAuthStep {
   note?: string
   error?: string
   durationMs?: number
+  /**
+   * Issue #295: set while the (running) step waits for the user to confirm
+   * the authorization server — answered through `mcpOAuthConfirm`.
+   */
+  confirmation?: McpOAuthConfirmation
 }
 
 export interface McpOAuthSummary {
@@ -178,7 +206,10 @@ export interface McpOAuthHooks {
   openUrl: (url: string) => void | Promise<void>
   onStep?: (oauthSessionId: string, step: McpOAuthStep) => void
   onDone?: (done: McpOAuthDone) => void
-  /** How long to wait for the browser to come back (default 180 s). */
+  /**
+   * How long to wait for the user: the browser to come back, and the
+   * authorization-server confirmation of issue #295 (default 180 s).
+   */
   callbackTimeoutMs?: number
   /** Per-HTTP-request timeout (default 15 s). */
   httpTimeoutMs?: number
@@ -228,6 +259,12 @@ interface TokenSession {
    * SDK's https-or-loopback rule applies to refresh as well.
    */
   plainHttpTokenHost?: string
+  /**
+   * Issue #295: the client secret was typed by the user (not issued by DCR),
+   * so a refresh may carry it only to a destination the user confirmed
+   * (`assertSecretDestinationConfirmed`) — refresh never asks.
+   */
+  userClientSecret?: true
   /** Single-flight refresh shared by concurrent 401s. */
   refreshing?: Promise<boolean>
   /**
@@ -247,10 +284,18 @@ interface Flow {
   /** Values scrubbed from every emitted record (tokens, secret, verifier, code). */
   secrets: Set<string>
   httpTimeoutMs: number
+  /** Answers the pending authorization-server confirmation (issue #295). */
+  answerConfirmation?: (accept: boolean) => void
 }
 
 const flows = new Map<string, Flow>()
 const tokenSessions = new Map<string, TokenSession>()
+/**
+ * Issue #295: `secretGateOf(...).key`s the user confirmed — main memory only,
+ * for as long as the app runs. Another authorization server or token
+ * endpoint is another key, so it asks again.
+ */
+const confirmedSecretDestinations = new Set<string>()
 
 class FlowCancelled extends Error {
   constructor() {
@@ -709,6 +754,89 @@ export function usesPlainHttpTokenEndpoint(tokenUrl: URL, allowedPin: string | u
   )
 }
 
+// ─── Client-secret destination (issue #295) ─────────────────
+
+/**
+ * Where a user-entered client secret is about to go, when that needs the
+ * user's confirmation: the MCP server names its authorization server
+ * (RFC 9728) and that server names its token endpoint (RFC 8414) — neither of
+ * which the user typed. `null` when the authorization server AND the token
+ * endpoint are on the MCP server's own host (any port): the secret then
+ * stays with the host the user chose. The key covers all three origins, so
+ * another authorization server or token endpoint asks again.
+ */
+export function secretGateOf(
+  serverUrl: URL,
+  authorizationServerUrl: string,
+  tokenUrl: URL,
+): { key: string; confirmation: McpOAuthConfirmation } | null {
+  const as = new URL(authorizationServerUrl)
+  const host = serverUrl.hostname.toLowerCase()
+  if (as.hostname.toLowerCase() === host && tokenUrl.hostname.toLowerCase() === host) return null
+  const confirmation: McpOAuthConfirmation = {
+    mcpServer: serverUrl.origin,
+    authorizationServer: as.origin,
+    tokenEndpoint: tokenUrl.origin,
+  }
+  return {
+    key: `${confirmation.mcpServer} ${confirmation.authorizationServer} ${confirmation.tokenEndpoint}`,
+    confirmation,
+  }
+}
+
+/**
+ * The last check before a token request carries a user-entered client
+ * secret (exchange and refresh, SDK and plain-HTTP paths alike): its
+ * destination must be one the user confirmed in this app session.
+ */
+function assertSecretDestinationConfirmed(
+  serverUrl: URL,
+  authorizationServerUrl: string,
+  tokenUrl: URL,
+): void {
+  const gate = secretGateOf(serverUrl, authorizationServerUrl, tokenUrl)
+  if (gate && !confirmedSecretDestinations.has(gate.key)) {
+    throw new Error(
+      `The client secret was not sent to ${tokenUrl.origin}: that authorization server was not confirmed`,
+    )
+  }
+}
+
+/**
+ * Wait for `mcpOAuthConfirm` — true = confirmed, false = declined. Rejects on
+ * cancel (`FlowCancelled`) and after `timeoutMs`, so a flow never hangs on an
+ * unanswered question.
+ */
+function awaitConfirmation(flow: Flow, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    const signal = flow.abort.signal
+    const finish = (fn: () => void): void => {
+      clearTimeout(timer)
+      signal.removeEventListener('abort', onAbort)
+      flow.answerConfirmation = undefined
+      fn()
+    }
+    const timer = setTimeout(
+      () =>
+        finish(() =>
+          reject(
+            new Error(
+              `Timed out after ${Math.round(timeoutMs / 1000)} s waiting for you to confirm the authorization server — the client secret was not sent`,
+            ),
+          ),
+        ),
+      timeoutMs,
+    )
+    const onAbort = (): void => finish(() => reject(new FlowCancelled()))
+    if (signal.aborted) {
+      onAbort()
+      return
+    }
+    signal.addEventListener('abort', onAbort)
+    flow.answerConfirmation = (accept) => finish(() => resolve(accept))
+  })
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v)
 }
@@ -1067,11 +1195,49 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
         client_id: manualClientId,
         ...(clientSecret ? { client_secret: clientSecret } : {}),
       }
-      skipStep(
-        flow,
-        'client-registration',
-        `Manual client "${manualClientId}" (${clientSecret ? 'confidential — secret kept in the main process' : 'public'}). Make sure ${redirectUri} is an allowed redirect URI.`,
-      )
+      const manualNote = `Manual client "${manualClientId}" (${clientSecret ? 'confidential — secret kept in the main process' : 'public'}). Make sure ${redirectUri} is an allowed redirect URI.`
+      // Issue #295: the secret would go to a host the MCP server named, not
+      // one the user typed — ask now, before the browser opens, so nobody
+      // signs in only to cancel. Enforced again before every token request.
+      const gate = clientSecret
+        ? secretGateOf(
+            serverUrl,
+            authorizationServerUrl,
+            tokenEndpointOf(authorizationServerUrl, metadata),
+          )
+        : null
+      if (gate && !confirmedSecretDestinations.has(gate.key)) {
+        const { confirmation } = gate
+        await runStep(flow, 'client-registration', async (step) => {
+          step.confirmation = confirmation
+          step.note = `Waiting for you to confirm the authorization server ${confirmation.authorizationServer} — the client secret goes to ${confirmation.tokenEndpoint} only after you do.`
+          // Listen before asking: an answer may arrive while the event is out.
+          const answered = awaitConfirmation(flow, callbackTimeoutMs)
+          emitStep(flow, step)
+          let accepted: boolean
+          try {
+            accepted = await answered
+          } finally {
+            delete step.confirmation
+          }
+          if (!accepted) {
+            throw new Error(
+              `Not confirmed — the client secret was not sent to ${confirmation.tokenEndpoint}. The MCP server ${confirmation.mcpServer} advertises the authorization server ${confirmation.authorizationServer}.`,
+            )
+          }
+          confirmedSecretDestinations.add(gate.key)
+          step.status = 'skipped'
+          step.note = `${manualNote} You confirmed sending the client secret to ${confirmation.tokenEndpoint}.`
+        })
+      } else {
+        skipStep(
+          flow,
+          'client-registration',
+          gate
+            ? `${manualNote} Sending the client secret to ${gate.confirmation.tokenEndpoint} was already confirmed in this session.`
+            : manualNote,
+        )
+      }
     } else {
       clientInformation = await runStep(flow, 'client-registration', async (step) => {
         if (!metadata.registration_endpoint) {
@@ -1174,6 +1340,9 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
     let plainHttp = false
     const tokens: OAuthTokens = await runStep(flow, 'token-exchange', async (step) => {
       const tokenUrl = tokenEndpointOf(authorizationServerUrl, metadata)
+      if (clientSecret && manualClientId) {
+        assertSecretDestinationConfirmed(serverUrl, authorizationServerUrl, tokenUrl)
+      }
       plainHttp = usesPlainHttpTokenEndpoint(tokenUrl, plainHttpTokenHost)
       // Step 6 already compared `iss` with the issuer (RFC 9207); SDK 2.x
       // re-checks it in `exchangeAuthorization`, so pass what the callback carried.
@@ -1230,6 +1399,7 @@ async function runFlow(flow: Flow, opts: McpOAuthStartOptions): Promise<McpOAuth
       resource,
       serverOrigin: serverUrl.origin,
       ...(plainHttpTokenHost ? { plainHttpTokenHost } : {}),
+      ...(manualClientId && clientSecret ? { userClientSecret: true as const } : {}),
     })
     return {
       oauthSessionId: flow.id,
@@ -1312,6 +1482,18 @@ export function mcpOAuthStart(
   return { oauthSessionId: id, finished }
 }
 
+/**
+ * Answer the authorization-server question of a running flow (issue #295):
+ * `accept` lets the client secret go to the shown token endpoint, otherwise
+ * the flow stops. Returns false when that flow asks nothing (any more).
+ */
+export function mcpOAuthConfirm(oauthSessionId: string, accept: boolean): boolean {
+  const answer = flows.get(oauthSessionId)?.answerConfirmation
+  if (!answer) return false
+  answer(accept)
+  return true
+}
+
 /** Abort a running flow (pending fetch, browser wait). Returns false when none is running. */
 export function mcpOAuthCancel(oauthSessionId: string): boolean {
   const flow = flows.get(oauthSessionId)
@@ -1370,6 +1552,15 @@ async function refreshSession(session: TokenSession, timeoutMs: number): Promise
     session.refreshing = (async () => {
       try {
         const tokenUrl = tokenEndpointOf(session.authorizationServerUrl, session.metadata)
+        // Issue #295: refresh never asks — it reuses the flow's confirmation
+        // and sends nothing to a destination nobody confirmed.
+        if (session.userClientSecret) {
+          assertSecretDestinationConfirmed(
+            new URL(session.serverOrigin),
+            session.authorizationServerUrl,
+            tokenUrl,
+          )
+        }
         const t = usesPlainHttpTokenEndpoint(tokenUrl, session.plainHttpTokenHost)
           ? {
               refresh_token: refreshToken,

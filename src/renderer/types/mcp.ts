@@ -118,6 +118,8 @@ export type McpOAuthStepId = McpOAuthStep['id']
 export type McpOAuthStepStatus = McpOAuthStep['status']
 export type McpOAuthHttpRequest = NonNullable<McpOAuthStep['request']>
 export type McpOAuthHttpResponse = NonNullable<McpOAuthStep['response']>
+/** Issue #295 — what a step asks before a client secret goes to another host. */
+export type McpOAuthConfirmation = NonNullable<McpOAuthStep['confirmation']>
 export type McpOAuthDoneEvent = EventOf<McpBridge['onOauthDone']>
 export type McpOAuthSummary = NonNullable<McpOAuthDoneEvent['summary']>
 

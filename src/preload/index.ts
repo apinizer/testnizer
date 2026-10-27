@@ -1100,6 +1100,9 @@ const api = {
       ipcRenderer.invoke('mcp:oauth:cancel', oauthSessionId),
     oauthForget: (oauthSessionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:oauth:forget', oauthSessionId),
+    // issue #295 — confirm (or refuse) sending the client secret to the advertised AS
+    oauthConfirm: (oauthSessionId: string, accept: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:oauth:confirm', oauthSessionId, accept),
     onOauthStep: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)

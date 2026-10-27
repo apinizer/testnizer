@@ -2,6 +2,7 @@ import type { InputHTMLAttributes } from 'react'
 import { KeyRound, ShieldAlert, X } from 'lucide-react'
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
+import McpOAuthConfirmCard from './McpOAuthConfirmCard'
 import McpOAuthHttpOptIn from './McpOAuthHttpOptIn'
 import McpOAuthStepRow from './McpOAuthStepRow'
 import McpOAuthSummaryCard from './McpOAuthSummaryCard'
@@ -62,6 +63,10 @@ export default function McpOAuthSection({ embedded = false }: { embedded?: boole
   }
 
   const started = running || steps.length > 0
+  // Issue #295: a running step that waits for the user to confirm the host.
+  const confirmation = running
+    ? steps.find((s) => s.status === 'running' && s.confirmation)?.confirmation
+    : undefined
 
   return (
     <div data-testid="mcp-oauth-tab" className={frame}>
@@ -132,6 +137,7 @@ export default function McpOAuthSection({ embedded = false }: { embedded?: boole
           <span className="text-[12px] text-[var(--hint)]">{t('mcp.oauth.noUrl')}</span>
         )}
       </div>
+      {confirmation && <McpOAuthConfirmCard confirmation={confirmation} />}
       {started && (
         <div>
           <SectionLabel>{t('mcp.oauth.steps')}</SectionLabel>

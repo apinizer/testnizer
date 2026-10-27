@@ -53,6 +53,7 @@ vi.mock('../../../src/main/protocols/mcp-oauth.engine', () => ({
   }),
   mcpOAuthCancel: vi.fn((id: string) => id === 'mcp-oauth-1'),
   mcpOAuthForget: vi.fn((id: string) => id === 'mcp-oauth-1'),
+  mcpOAuthConfirm: vi.fn((id: string, _accept: boolean) => id === 'mcp-oauth-1'),
 }))
 
 const { registerMcpOAuthHandlers } = await import('../../../src/main/ipc/mcp-oauth.handler')
@@ -172,5 +173,22 @@ describe('mcp:oauth:cancel / forget', () => {
       data: { forgotten: true },
     })
     expect(await harness.invoke('mcp:oauth:forget', undefined)).toMatchObject({ success: false })
+  })
+})
+
+describe('mcp:oauth:confirm (issue #295)', () => {
+  it('answers the flow; only a literal true confirms', async () => {
+    expect(await harness.invoke('mcp:oauth:confirm', 'mcp-oauth-1', true)).toEqual({
+      success: true,
+      data: { answered: true },
+    })
+    expect(engine.mcpOAuthConfirm).toHaveBeenLastCalledWith('mcp-oauth-1', true)
+    await harness.invoke('mcp:oauth:confirm', 'mcp-oauth-1', 'yes')
+    expect(engine.mcpOAuthConfirm).toHaveBeenLastCalledWith('mcp-oauth-1', false)
+    expect(await harness.invoke('mcp:oauth:confirm', 'other', true)).toEqual({
+      success: true,
+      data: { answered: false },
+    })
+    expect(await harness.invoke('mcp:oauth:confirm', 7, true)).toMatchObject({ success: false })
   })
 })

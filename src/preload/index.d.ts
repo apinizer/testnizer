@@ -1711,6 +1711,16 @@ interface McpOAuthStep {
   note?: string
   error?: string
   durationMs?: number
+  /**
+   * Issue #295: the running step waits for the user to confirm sending the
+   * client secret to an authorization server on another host — answer with
+   * `oauthConfirm`. Origins only.
+   */
+  confirmation?: {
+    mcpServer: string
+    authorizationServer: string
+    tokenEndpoint: string
+  }
 }
 
 interface McpOAuthSummary {
@@ -1922,6 +1932,8 @@ interface McpApi {
   oauthStart(options: McpOAuthStartOptions): Promise<IpcResult<{ oauthSessionId: string }>>
   oauthCancel(oauthSessionId: string): Promise<IpcResult<{ cancelled: boolean }>>
   oauthForget(oauthSessionId: string): Promise<IpcResult<{ forgotten: boolean }>>
+  /** Issue #295: answer a step's `confirmation`; `answered: false` when nothing was asked. */
+  oauthConfirm(oauthSessionId: string, accept: boolean): Promise<IpcResult<{ answered: boolean }>>
   onOauthStep(callback: (event: McpOAuthStepEvent) => void): () => void
   onOauthDone(callback: (event: McpOAuthDoneEvent) => void): () => void
   securityScan(request: McpSecurityScanRequest): Promise<IpcResult<{ scanId: string }>>

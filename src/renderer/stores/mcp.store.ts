@@ -260,6 +260,11 @@ interface McpStore extends TabMcpState {
   /** Run the OAuth 2.1 debugger flow against this tab's server (issue #141). */
   startOAuth: () => Promise<void>
   cancelOAuth: () => Promise<void>
+  /**
+   * Issue #295: answer the running step's `confirmation` — send the client
+   * secret to the advertised authorization server, or stop the flow.
+   */
+  answerOAuthConfirmation: (accept: boolean) => Promise<void>
   /** Drop this tab's tokens in main and clear the flow state. */
   forgetOAuth: () => Promise<void>
   /** Use the last flow's token for this tab and (re)connect with it. */
@@ -1512,6 +1517,20 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     } catch {
       /* the flow already finished */
     }
+  },
+
+  answerOAuthConfirmation: async (accept) => {
+    const { oauthFlowId, oauthRunning, _currentTabId: ownerTabId } = get()
+    const api = getMcpApi()
+    if (!oauthRunning || !oauthFlowId || !api?.oauthConfirm) return
+    let res: Awaited<ReturnType<McpBridge['oauthConfirm']>>
+    try {
+      res = await api.oauthConfirm(oauthFlowId, accept)
+    } catch (e) {
+      res = { success: false, error: errText(e, 'Could not answer the confirmation') }
+    }
+    if (!res.success)
+      patchTab(ownerTabId, { oauthError: res.error ?? 'Could not answer the confirmation' })
   },
 
   forgetOAuth: async () => {

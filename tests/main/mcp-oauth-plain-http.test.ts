@@ -20,6 +20,7 @@ import { mockMcpServerManager } from '../../src/main/mock-mcp/server'
 import type { MockMcpServerDef } from '../../src/main/mock-mcp/types'
 import {
   createMcpOAuthFetch,
+  mcpOAuthConfirm,
   mcpOAuthForget,
   mcpOAuthHasToken,
   mcpOAuthStart,
@@ -260,7 +261,13 @@ async function runFlow(options: McpOAuthStartOptions): Promise<Run> {
   const { oauthSessionId, finished } = mcpOAuthStart(options, {
     openUrl: browserFollow,
     callbackTimeoutMs: 5_000,
-    onStep: (_id, step) => events.push(step),
+    onStep: (id, step) => {
+      events.push(step)
+      // Issue #295: a typed client secret going to the intranet AS (another
+      // host than the 127.0.0.1 MCP server) is confirmed first — answer yes;
+      // `mcp-oauth-secret-confirm.test.ts` covers the question itself.
+      if (step.confirmation) setTimeout(() => mcpOAuthConfirm(id, true), 0)
+    },
   })
   startedIds.push(oauthSessionId)
   const done = await finished
