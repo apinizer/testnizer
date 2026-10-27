@@ -29,6 +29,12 @@ and asserts the following:
 - **Settings:** they read back as written.
 - **Backup (issue #297):** exactly one pre-migration backup exists. It holds
   every row and its secrets are sealed.
+- **Without a keychain (Linux CI, `basic_text`):** the app reports
+  `encrypted: false` and keeps the issue #239 plaintext fallback. The test
+  then asserts that fallback instead: every value unchanged and readable, no
+  `enc:v1:` anywhere, no sealing marker, an unsealed backup holding every row,
+  and the "stored unencrypted" note in the environment manager. On macOS
+  (mock keychain) and Windows (DPAPI) an unencrypted answer fails the test.
 - **Second start:** no new backup is taken, and the saved request Sends to
   the local test server.
 

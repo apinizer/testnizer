@@ -210,26 +210,30 @@ function expectNoLoss(report: DiffReport, where: string): void {
   expect(report.rowsCompared, `${where}: nothing was compared`).toBeGreaterThan(20)
 }
 
-/** Secret columns that must be sealed when the OS keychain is available. */
-function expectSecretsSealed(snap: DbSnapshot, where: string): void {
+/**
+ * The at-rest state of the secret columns (issue #239). With a working OS
+ * keychain every non-empty secret is sealed (`enc:v1:`). Without one —
+ * headless Linux, `basic_text` — the app keeps the plaintext fallback by
+ * design and seals on a later start that has a keychain; then no value may
+ * carry the prefix (a half-sealed DB would be a bug), and `expectNoLoss`
+ * has already proven each value is byte-for-byte the old one.
+ */
+function expectSecretsAtRest(snap: DbSnapshot, where: string, sealed: boolean): void {
+  const check = (v: unknown, what: string): void => {
+    if (typeof v !== 'string' || v === '') return
+    expect(
+      v.startsWith('enc:v1:'),
+      `${where}: ${what} ${sealed ? 'left in plaintext' : 'sealed without a keychain'}`,
+    ).toBe(sealed)
+  }
   for (const table of ['environment_variables', 'global_variables']) {
     for (const row of snap.get(table)?.rows.values() ?? []) {
       if (!isSecretRow(row)) continue
-      for (const col of ['value', 'initial_value']) {
-        const v = row[col]
-        if (typeof v === 'string' && v !== '') {
-          expect(v.startsWith('enc:v1:'), `${where}: ${table}.${col} left in plaintext`).toBe(true)
-        }
-      }
+      for (const col of ['value', 'initial_value']) check(row[col], `${table}.${col}`)
     }
   }
   for (const row of snap.get('mock_mcp_servers')?.rows.values() ?? []) {
-    const v = row.bearer_token
-    if (typeof v === 'string' && v !== '') {
-      expect(v.startsWith('enc:v1:'), `${where}: mock_mcp_servers.bearer_token in plaintext`).toBe(
-        true,
-      )
-    }
+    check(row.bearer_token, 'mock_mcp_servers.bearer_token')
   }
 }
 
@@ -290,11 +294,61 @@ async function passGates(page: Page): Promise<void> {
   ).toBeVisible({ timeout: 30_000 })
 }
 
-/** Every sealed value decrypts to its original; settings are what was written. */
-async function verifySecretsAndSettings(page: Page, m: PopulateManifest): Promise<void> {
-  const status = await ipc<{ available?: boolean }>(page, 'secureStorage.status')
-  expect(status.success).toBe(true)
+interface SecureStorageStatus {
+  encrypted: boolean
+  backend?: string
+}
 
+/**
+ * What the app reports about the OS keychain (`secureStorage:status`). The
+ * test runs pinned to Chromium's test key stores (launch.ts `keychainArgs`):
+ * on macOS the mock keychain and on Windows DPAPI always encrypt, so there an
+ * unencrypted answer fails the test. On Linux `--password-store=basic`
+ * selects `basic_text`, which the app treats as no keychain — the plaintext
+ * fallback path, asserted as such by the callers.
+ */
+async function secureStorageStatus(page: Page): Promise<SecureStorageStatus> {
+  const status = await ipc<SecureStorageStatus>(page, 'secureStorage.status')
+  expect(status.success, status.error).toBe(true)
+  const s = status.data!
+  console.log(`[upgrade-data] secureStorage:status ${JSON.stringify(s)} on ${process.platform}`)
+  if (process.platform !== 'linux') {
+    expect(s.encrypted, `the OS keychain must encrypt on ${process.platform}`).toBe(true)
+  }
+  return s
+}
+
+/**
+ * Issue #239 note in the environment manager: shown exactly when secrets are
+ * stored unencrypted. Opens the first project if the app is on Project Home.
+ */
+async function expectSecureStorageNote(page: Page, encrypted: boolean): Promise<void> {
+  if (
+    !(await page
+      .getByTestId('nav-apis')
+      .isVisible()
+      .catch(() => false))
+  ) {
+    await page.getByTestId('project-card').first().click()
+    await expect(page.getByTestId('nav-apis')).toBeVisible({ timeout: 15_000 })
+  }
+  await page.getByTestId('footer-env').click()
+  const modal = page.getByTestId('environment-modal')
+  await expect(modal).toBeVisible({ timeout: 8_000 })
+  const note = modal.getByTestId('secret-storage-unencrypted')
+  if (encrypted) {
+    // The note asks main once per mount; give that answer time to arrive.
+    await page.waitForTimeout(1_000)
+    await expect(note).toHaveCount(0)
+  } else {
+    await expect(note).toBeVisible({ timeout: 10_000 })
+  }
+  await page.keyboard.press('Escape')
+  await expect(modal).toBeHidden({ timeout: 5_000 })
+}
+
+/** Every secret reads back as its original; settings are what was written. */
+async function verifySecretsAndSettings(page: Page, m: PopulateManifest): Promise<void> {
   const envVars = await ipc<Array<{ id: string; value: string; initial_value: string }>>(
     page,
     'envVariable.list',
@@ -402,30 +456,42 @@ async function openAndVerify(
   m: PopulateManifest,
   before: DbSnapshot,
   where: string,
-  opts: { verifySecrets?: boolean; waitForSealing?: boolean } = {},
-): Promise<{ after: DbSnapshot; localStorage: Record<string, string> }> {
+  opts: { verifySecrets?: boolean; waitForSealing?: boolean; checkNote?: boolean } = {},
+): Promise<{ after: DbSnapshot; localStorage: Record<string, string>; encrypted: boolean }> {
   const { app, page } = await launchBuild(build, userData)
   let localStorage: Record<string, string>
+  let encrypted = false
   try {
     // Read localStorage BEFORE the app gets a chance to rewrite it.
     localStorage = await readLocalStorage(page)
     await passGates(page)
     if (opts.verifySecrets !== false) await verifySecretsAndSettings(page, m)
     if (opts.waitForSealing) {
-      // The #239 sweep runs ~1 s after the window is ready, not at open; a
-      // user who quits sooner keeps plaintext until the next start. Wait for
-      // its marker so the DB checked below is the sealed one.
+      encrypted = (await secureStorageStatus(page)).encrypted
       const dbPath = path.join(userData, 'testnizer.db')
-      await expect
-        .poll(() => readDbSetting(dbPath, SECRET_AT_REST_MARKER), { timeout: 30_000 })
-        .not.toBeNull()
+      if (encrypted) {
+        // The #239 sweep runs ~1 s after the window is ready, not at open; a
+        // user who quits sooner keeps plaintext until the next start. Wait
+        // for its marker so the DB checked below is the sealed one.
+        await expect
+          .poll(() => readDbSetting(dbPath, SECRET_AT_REST_MARKER), { timeout: 30_000 })
+          .not.toBeNull()
+      } else {
+        // No keychain: the sweep returns without sealing and without the
+        // marker, so a later start with a keychain still seals (the #239
+        // design, secret-at-rest-migration.ts). Give it the delay it would
+        // take, then prove it left the marker unset.
+        await page.waitForTimeout(3_000)
+        expect(readDbSetting(dbPath, SECRET_AT_REST_MARKER), 'marker without a keychain').toBeNull()
+      }
+      if (opts.checkNote) await expectSecureStorageNote(page, encrypted)
     }
   } finally {
     await closeGracefully(app)
   }
   const after = snapshotDb(path.join(userData, 'testnizer.db'))
   expectNoLoss(diffSnapshots(before, after, CHANGE_RULES), where)
-  return { after, localStorage }
+  return { after, localStorage, encrypted }
 }
 
 test.describe('Electron upgrade keeps user data (issue #291)', () => {
@@ -451,18 +517,25 @@ test.describe('Electron upgrade keeps user data (issue #291)', () => {
       const settingsBefore = readJson(path.join(userData, 'settings.json'))
 
       // First start of this build on the 1.5.4 profile.
-      const { after } = await openAndVerify(CURRENT_BUILD, userData, manifest, before, 'live DB', {
-        waitForSealing: true,
-      })
-      expectSecretsSealed(after, 'live DB')
+      const { after, encrypted } = await openAndVerify(
+        CURRENT_BUILD,
+        userData,
+        manifest,
+        before,
+        'live DB',
+        { waitForSealing: true, checkNote: true },
+      )
+      expectSecretsAtRest(after, 'live DB', encrypted)
       expectCountsKept(before, after, 'live DB')
 
-      // Issue #297: exactly one pre-migration copy, holding every row, sealed.
+      // Issue #297: exactly one pre-migration copy, holding every row. Its
+      // secrets are sealed when the keychain works; without one the copy
+      // keeps the same plaintext fallback as the live DB.
       const backups = backupFiles(userData)
       expect(backups).toHaveLength(1)
       const backup = snapshotDb(backups[0])
       expectNoLoss(diffSnapshots(before, backup, CHANGE_RULES), 'pre-migration backup')
-      expectSecretsSealed(backup, 'pre-migration backup')
+      expectSecretsAtRest(backup, 'pre-migration backup', encrypted)
 
       // electron-store: every 1.5.4 key is still there with the same value.
       expectSettingsKept(settingsBefore, readJson(path.join(userData, 'settings.json')))
@@ -543,15 +616,14 @@ test.describe('Electron upgrade keeps user data (issue #291)', () => {
       // ── 2. THIS build opens a copy ─────────────────────────────────────────
       fs.cpSync(written, upgraded, { recursive: true })
       const settingsBefore = readJson(path.join(written, 'settings.json'))
-      const { after, localStorage: lsNew } = await openAndVerify(
-        CURRENT_BUILD,
-        upgraded,
-        manifest,
-        before,
-        `${label} → current`,
-        { waitForSealing: true },
-      )
-      expectSecretsSealed(after, 'upgrade')
+      const {
+        after,
+        localStorage: lsNew,
+        encrypted,
+      } = await openAndVerify(CURRENT_BUILD, upgraded, manifest, before, `${label} → current`, {
+        waitForSealing: true,
+      })
+      expectSecretsAtRest(after, 'upgrade', encrypted)
       expectCountsKept(before, after, 'upgrade')
       const backups = backupFiles(upgraded)
       expect(backups.length).toBeGreaterThanOrEqual(1)
