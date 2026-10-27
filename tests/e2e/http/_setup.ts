@@ -2,7 +2,7 @@ import { test, _electron as electron, type ElectronApplication, type Page } from
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { electronLaunchOptions } from '../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../helpers/electron-env'
 
 /**
  * Shared setup for HTTP e2e specs. Uses **worker-scoped** fixtures so the
@@ -38,7 +38,7 @@ export const httpTest = test.extend<object, HttpFixtures>({
   ],
   window: [
     async ({ app }, use) => {
-      const win = await app.firstWindow()
+      const win = await firstAppWindow(app)
       await win.waitForLoadState('domcontentloaded')
       await use(win)
     },

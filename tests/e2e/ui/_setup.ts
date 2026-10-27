@@ -11,7 +11,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { bootstrapWorkbench, closeAllTabs } from '../helpers/ui/bootstrap'
-import { electronLaunchOptions } from '../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../helpers/electron-env'
 
 export interface UiFixtures {
   app: ElectronApplication
@@ -164,7 +164,7 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
   ],
   window: [
     async ({ app }, use) => {
-      const win = await app.firstWindow()
+      const win = await firstAppWindow(app)
       await win.waitForLoadState('domcontentloaded')
       await bootstrapWorkbench(win)
       await use(win)

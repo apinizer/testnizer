@@ -13,7 +13,7 @@ import {
   setPasswordViaIpc,
   TEST_PASSWORD,
 } from '../../helpers/ui/login-flow'
-import { electronLaunchOptions } from '../../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../../helpers/electron-env'
 
 uiTest.describe('Tur1 — Auth & EULA [MST-001, MST-008]', () => {
   uiTest('MST-001 EULA accept reveals workbench', async ({ window }) => {
@@ -29,7 +29,7 @@ uiTest.describe('Tur1 — Password lifecycle [MST-002]', () => {
     const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-tur1-auth-'))
     const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
     try {
-      const win = await app.firstWindow()
+      const win = await firstAppWindow(app)
       await win.waitForLoadState('domcontentloaded')
       await waitForApiBridge(win)
       await acceptEula(win)
@@ -43,7 +43,7 @@ uiTest.describe('Tur1 — Password lifecycle [MST-002]', () => {
       // Relaunch → login gate.
       await app.close()
       const app2 = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-      const win2 = await app2.firstWindow()
+      const win2 = await firstAppWindow(app2)
       await win2.waitForLoadState('domcontentloaded')
       await waitForApiBridge(win2)
       await loginWithPassword(win2, TEST_PASSWORD)
@@ -57,7 +57,7 @@ uiTest.describe('Tur1 — Password lifecycle [MST-002]', () => {
       await app2.close()
 
       const app3 = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-      const win3 = await app3.firstWindow()
+      const win3 = await firstAppWindow(app3)
       await win3.waitForLoadState('domcontentloaded')
       await waitForApiBridge(win3)
       await acceptEula(win3).catch(() => {})

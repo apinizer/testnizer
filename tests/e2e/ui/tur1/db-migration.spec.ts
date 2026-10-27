@@ -48,7 +48,7 @@ const DatabaseSync: SqliteCtor | null = (() => {
     return null
   }
 })()
-import { electronLaunchOptions } from '../../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../../helpers/electron-env'
 
 const mainPath = path.resolve(__dirname, '../../../../out/main/index.js')
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -57,7 +57,7 @@ async function launchApp(
   userDataDir: string,
 ): Promise<{ app: ElectronApplication; window: Page }> {
   const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-  const window = await app.firstWindow()
+  const window = await firstAppWindow(app)
   await window.waitForLoadState('domcontentloaded')
   return { app, window }
 }

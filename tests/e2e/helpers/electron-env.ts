@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import type { ElectronApplication, Page } from '@playwright/test'
 
 /**
  * Build a clean environment for `electron.launch()`.
@@ -69,4 +70,24 @@ export function electronLaunchOptions(mainPath: string, userDataDir: string) {
     args: [mainPath, `--user-data-dir=${userDataDir}`],
     env: cleanLaunchEnv(),
   }
+}
+
+/**
+ * The app's first window, once its own document has loaded.
+ *
+ * Electron 44 hands the BrowserWindow to Playwright while it still shows the
+ * empty initial document (url '', title "Loading file:///…/index.html").
+ * Electron 33 only did so after `loadFile` / `loadURL` had committed. So
+ * `firstWindow()` + `waitForLoadState('domcontentloaded')` resolved on the
+ * EMPTY document, and every spec that read the title or the DOM right after it
+ * failed (issue #291). Wait for the app's own URL first.
+ */
+export async function firstAppWindow(app: ElectronApplication): Promise<Page> {
+  const page = await app.firstWindow()
+  const appUrl = /^(file|https?):/
+  if (!appUrl.test(page.url())) {
+    await page.waitForURL(appUrl, { waitUntil: 'domcontentloaded' })
+  }
+  await page.waitForLoadState('domcontentloaded')
+  return page
 }

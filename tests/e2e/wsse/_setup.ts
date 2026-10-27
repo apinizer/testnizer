@@ -2,7 +2,7 @@ import { test, _electron as electron, type ElectronApplication, type Page } from
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { electronLaunchOptions } from '../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../helpers/electron-env'
 
 /**
  * Shared setup for WS-Security e2e specs. Mirrors the worker-scoped fixture
@@ -33,7 +33,7 @@ export const wsseTest = test.extend<object, WsseFixtures>({
   ],
   window: [
     async ({ app }, use) => {
-      const win = await app.firstWindow()
+      const win = await firstAppWindow(app)
       await win.waitForLoadState('domcontentloaded')
       await use(win)
     },

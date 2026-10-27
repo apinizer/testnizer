@@ -11,7 +11,7 @@ import { test, expect, _electron as electron, type ElectronApplication, type Pag
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { electronLaunchOptions } from '../../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../../helpers/electron-env'
 import { bootstrapWorkbench } from '../../helpers/ui/bootstrap'
 
 const mainPath = path.resolve(__dirname, '../../../../out/main/index.js')
@@ -20,7 +20,7 @@ const FIXTURES_CERTS = path.resolve(__dirname, '../../../fixtures/certs')
 
 async function launchBootstrapped(userDataDir: string): Promise<{ app: ElectronApplication; window: Page }> {
   const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-  const window = await app.firstWindow()
+  const window = await firstAppWindow(app)
   await window.waitForLoadState('domcontentloaded')
   await bootstrapWorkbench(window)
   return { app, window }
@@ -36,7 +36,7 @@ test.describe('Tur1 — Shell secure storage [MST-227, MST-228, MST-229]', () =>
 
     try {
       app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-      const window = await app.firstWindow()
+      const window = await firstAppWindow(app)
       await window.waitForLoadState('domcontentloaded')
       await bootstrapWorkbench(window)
 
@@ -85,7 +85,7 @@ test.describe('Tur1 — Shell secure storage [MST-227, MST-228, MST-229]', () =>
 
     try {
       app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-      const window = await app.firstWindow()
+      const window = await firstAppWindow(app)
       await window.waitForLoadState('domcontentloaded')
       await bootstrapWorkbench(window)
 
@@ -310,7 +310,7 @@ test.describe('Tur1 — Shell secure storage [MST-227, MST-228, MST-229]', () =>
 
     try {
       app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-      const window = await app.firstWindow()
+      const window = await firstAppWindow(app)
       await window.waitForLoadState('domcontentloaded')
       await bootstrapWorkbench(window)
 
@@ -361,7 +361,7 @@ test.describe('Tur1 — Shell secure storage [MST-227, MST-228, MST-229]', () =>
 
     try {
       app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-      const window = await app.firstWindow()
+      const window = await firstAppWindow(app)
       await window.waitForLoadState('domcontentloaded')
 
       // No out/main/lib/secure-storage.js exists in the single-file bundle; we
