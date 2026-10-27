@@ -799,6 +799,37 @@ export const parityCases: ParityCase[] = [
     expectTests: [],
   },
 
+  // pm.sendRequest graphql / file bodies (issue #281). Both fell through the
+  // normaliser and went out with NO body, on both paths.
+  {
+    name: 'pm.sendRequest sends a graphql body as JSON and refuses a file body (issue #281)',
+    script: `
+      const post = (body) => pm.sendRequest({ url: '${ECHO_URL}', method: 'POST', body });
+      const gql = await post({
+        mode: 'graphql',
+        graphql: { query: '{ me { id } }', variables: '{"n":1}' },
+      });
+      pm.environment.set('gql', JSON.stringify(gql.json()));
+      let fileErr = 'none';
+      try {
+        await post({ mode: 'file', file: { src: '/etc/hosts' } });
+      } catch (e) { fileErr = e.message }
+      pm.environment.set('fileErr', fileErr);
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {
+      gql: JSON.stringify({
+        method: 'POST',
+        body: {
+          type: 'json',
+          content: JSON.stringify({ query: '{ me { id } }', variables: { n: 1 } }),
+        },
+      }),
+      fileErr: 'pm.sendRequest: a "file" body (/etc/hosts) is not supported in scripts',
+    },
+    expectTests: [],
+  },
+
   // ── issue #281: collection variables = project variables; pm.vault ─────────
   // A Testnizer project is the Postman collection: pm.collectionVariables reads
   // and writes the project variables (the "Globals" list), the SAME scope as

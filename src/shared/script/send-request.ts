@@ -38,6 +38,10 @@ interface PmSendBodyInput {
   raw?: string
   urlencoded?: PmSendBodyRow[] | Record<string, unknown>
   formdata?: PmSendBodyRow[] | Record<string, unknown>
+  /** `mode: 'graphql'` — `variables` is a JSON string (Postman) or an object. */
+  graphql?: { query?: unknown; variables?: unknown; operationName?: unknown }
+  /** `mode: 'file'` — refused (no file sandbox for scripts). */
+  file?: { src?: unknown }
   options?: { raw?: { language?: string } }
 }
 
@@ -169,10 +173,42 @@ function normalizeBody(b: string | PmSendBodyInput | undefined): PmSendOptions['
           .map(({ file: _file, ...row }) => ({ ...row, type: 'text' as const })),
       }
     }
+    case 'graphql':
+      // Postman's wire shape: one JSON body `{query, variables}` sent as
+      // `application/json` — the engine's `json` type adds that header unless
+      // the script set its own Content-Type.
+      return { type: 'json', content: JSON.stringify(graphqlPayload(b.graphql)) }
+    case 'file': {
+      // Same reason as the formdata file part: a script must not read an
+      // arbitrary local path from the main process. Refused, never dropped.
+      const src = typeof b.file?.src === 'string' && b.file.src ? ` (${b.file.src})` : ''
+      throw new Error(`pm.sendRequest: a "file" body${src} is not supported in scripts`)
+    }
     default:
-      // TODO(issue #281): `file` and `graphql` modes are not mapped yet.
       return undefined
   }
+}
+
+/**
+ * `{query, operationName?, variables}` of a graphql body. A string `variables`
+ * is parsed the way the GraphQL editor's Send parses it (`graphql.store.ts`):
+ * empty or unparsable → `{}`; an object is used as-is.
+ */
+function graphqlPayload(g: PmSendBodyInput['graphql']): Record<string, unknown> {
+  const query = typeof g?.query === 'string' ? g.query : ''
+  const raw = g?.variables
+  let variables: unknown = {}
+  if (typeof raw === 'string') {
+    try {
+      variables = JSON.parse(raw || '{}') as unknown
+    } catch {
+      variables = {}
+    }
+  } else if (raw && typeof raw === 'object') {
+    variables = raw
+  }
+  const op = typeof g?.operationName === 'string' && g.operationName ? g.operationName : undefined
+  return { query, ...(op ? { operationName: op } : {}), variables }
 }
 
 /** Wrap a transport response as the object `pm.sendRequest` resolves with. */
