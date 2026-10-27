@@ -14,6 +14,16 @@ Platform seçiminizi [İndirme sayfasından](/download) yapın. Yükleyiciler im
 
 Yükleyiciyi çalıştırmadan önce bütünlüğünü doğrulamak isterseniz, [Sürümleri doğrulama](/tr/docs/build-from-source) sayfasına bakın.
 
+### Sistem gereksinimleri
+
+Testnizer 1.6.0, Electron 44 üzerinde çalışır ve bu da macOS için alt sınırı belirler:
+**macOS 13 (Ventura) veya üstü**. macOS 11 ya da 12'de Testnizer 1.4.10 ve sonrası
+1.6.0 güncellemesini önermez ve olduğu gibi çalışmaya devam eder; bu sürümlerde elle
+kurmayın. Windows ve Linux (x64 ve arm64) değişmedi. Veritabanınız, şifrelenmiş
+sırlarınız, ayarlarınız ve açık sekmeleriniz 1.6.0'a değişmeden taşınır ve yeni bir
+sürümün ilk açılışı bir [veritabanı yedeği](#güncellemeden-sonra-bir-yedeği-geri-yükleme)
+alır.
+
 ## İlk açılış
 
 Testnizer, Hoş Geldiniz ekranıyla açılır. Hesap oluşturma yok, bulut girişi yok,

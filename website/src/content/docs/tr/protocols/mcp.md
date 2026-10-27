@@ -131,7 +131,18 @@ için birden çok sekme açın.
 - **Uzak MCP sunucuları** Testnizer'ın IP adresini ve bir araca ilettiğiniz
   argümanları görür. Harici bir hizmete yapılan herhangi bir HTTP API
   çağrısıyla aynı şekilde değerlendirin.
-- **Otomatik olarak hiçbir gizli bilgi gönderilmez.** HTTP MCP sunucuları
-  için kimlik doğrulama, sunucunuz gerektiriyorsa URL'nin kendisine
-  bağlanmalıdır (örn. bir query parametresinde token ile); native MCP auth
-  akışları gelişmektedir ve spec stabilleştikçe eklenecektir.
+- **Otomatik olarak hiçbir gizli bilgi gönderilmez.** Kimlik bilgileri yalnızca
+  **Yetkilendirme** sekmesinde ayarladığınız kimlik doğrulama (Kimlik Doğrulama Yok,
+  Basic, Bearer, API Key veya OAuth 2.1) ya da eklediğiniz header'lar için gider.
+- **OAuth istemci sırrınız beklemediğiniz bir sunucuya gönderilmez.** OAuth
+  hata ayıklayıcısında **istemci sırrı** olan elle girilmiş bir istemci, MCP
+  sunucusunun kendisinin bildirdiği yetkilendirme sunucusuyla konuşur. Bu sunucu ya
+  da belirteç uç noktası MCP sunucusundan **farklı bir sunucuda (host)** ise
+  hata ayıklayıcı tarayıcıyı açmadan önce durur ve sorar: **İstemci sırrınız bu
+  yetkilendirme sunucusuna gönderilsin mi?** **MCP sunucusu**, **Yetkilendirme
+  sunucusu** ve **Belirteç uç noktası** kaynaklarını gösterir; sırrınız oraya yalnızca
+  **Onayla ve devam et**'ten sonra gider, **İptal** akışı net bir adım hatasıyla
+  bitirir. Yanıtınız o sunucu kombinasyonu için Testnizer kapanana kadar hatırlanır —
+  başka bir sunucu yeniden sorar — ve belirteç yenileme asla sormaz. Aynı sunucudaki
+  yetkilendirme sunucuları, genel (public) istemciler ve dinamik istemci kaydı
+  sormaz. Sırrın kendisi arayüz katmanına hiçbir zaman ulaşmaz.

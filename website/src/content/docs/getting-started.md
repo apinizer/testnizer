@@ -17,6 +17,16 @@ launch).
 
 If you want to verify the integrity of the installer before running it, see [Verifying releases](/docs/build-from-source).
 
+### System requirements
+
+Testnizer 1.6.0 runs on Electron 44, which sets the floor on macOS:
+**macOS 13 (Ventura) or later**. On macOS 11 or 12, Testnizer 1.4.10 or later
+does not offer the 1.6.0 update and keeps working as it is; do not install it by
+hand on those versions. Windows and Linux (x64 and arm64) are unchanged. Your
+database, encrypted secrets, settings and open tabs carry over to 1.6.0
+unchanged, and the first start of a new build keeps a [database
+backup](#restoring-a-backup-after-an-update).
+
 ## First launch
 
 Testnizer opens to a Welcome screen. There is no account creation, no cloud

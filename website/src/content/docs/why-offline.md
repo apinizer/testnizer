@@ -38,6 +38,16 @@ The React UI runs with a strict
 that goes anywhere except the renderer's own origin. Even if a malicious
 dependency tried to phone home from the UI thread, it physically can't.
 
+The renderer is also **sandboxed** (Chromium's OS sandbox, with context isolation
+on and Node integration off), and the preload exposes only the audited
+`window.api` bridge plus plain `platform` and `versions` values — no raw IPC and
+none of the process environment. **Web permissions are denied by default**:
+camera, microphone, geolocation, notifications, device access and the like are
+refused for every frame, including a response body shown in a preview. Only the
+app's own window may write to the clipboard (every Copy button), read it (Import →
+Paste from clipboard) and take a video response fullscreen. The inline PDF preview
+of a response runs under the same policy.
+
 ### 2. Every API call goes through an audited handler
 
 When you hit "Send", the request crosses the IPC boundary into Electron's main

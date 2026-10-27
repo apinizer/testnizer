@@ -126,7 +126,18 @@ in one tab while iterating against an HTTP server in another.
   Testnizer cannot sandbox the child process beyond what the host OS provides.
 - **Remote MCP servers** see Testnizer's IP address and any arguments you
   pass to a tool. Treat the same as any HTTP API call to an external service.
-- **No secrets are sent automatically.** Authentication for HTTP MCP servers
-  must be wired into the URL itself (e.g. with a token in a query parameter)
-  if your server requires it; native MCP auth flows are evolving and will be
-  added as the spec stabilises.
+- **No secrets are sent automatically.** Credentials go out only for the
+  authentication you set on the **Authorization** tab (No Auth, Basic, Bearer,
+  API Key or OAuth 2.1) or in the headers you add.
+- **Your OAuth client secret is not sent to a host you did not expect.** In the
+  OAuth debugger, a manual client with a **client secret** talks to the
+  authorization server the MCP server itself advertises. If that server, or its
+  token endpoint, is on a **different host** than the MCP server, the debugger
+  stops before opening the browser and asks: **Send your client secret to this
+  authorization server?** It shows the **MCP server**, **Authorization server**
+  and **Token endpoint** origins, and your secret goes there only after
+  **Confirm and continue**; **Cancel** ends the flow with a clear step error.
+  The answer is remembered for that combination of hosts until Testnizer closes —
+  any other host asks again — and a token refresh never asks. Same-host
+  authorization servers, public clients and dynamic client registration do not
+  prompt. The secret itself never reaches the screen layer.

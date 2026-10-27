@@ -39,6 +39,16 @@ React arayüzü katı bir
 bağımlılık arayüz thread'inden dışarıya sinyal göndermeye çalışsa bile, fiziksel
 olarak bunu yapamaz.
 
+Renderer ayrıca **sandbox'lıdır** (Chromium'un işletim sistemi sandbox'ı; context
+isolation açık, Node entegrasyonu kapalı) ve preload yalnızca denetlenmiş
+`window.api` köprüsünü ile düz `platform` ve `versions` değerlerini sunar — ham IPC
+yok, süreç ortam değişkenlerinden hiçbiri yok. **Web izinleri varsayılan olarak
+reddedilir**: kamera, mikrofon, konum, bildirimler, aygıt erişimi ve benzerleri,
+önizlemede gösterilen bir yanıt gövdesi dahil her çerçeve için reddedilir. Yalnızca
+uygulamanın kendi penceresi panoya yazabilir (her Kopyala düğmesi), panodan
+okuyabilir (İçe Aktar → panodan yapıştır) ve bir video yanıtını tam ekrana
+alabilir. Bir yanıtın satır içi PDF önizlemesi de aynı politika altında çalışır.
+
 ### 2. Her API çağrısı denetlenmiş bir handler üzerinden geçer
 
 "Gönder"e bastığınızda, istek IPC sınırından Electron'un ana sürecine geçer.
