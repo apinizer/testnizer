@@ -216,14 +216,26 @@ describe.each(VERSIONS)('Socket.IO client v%s', (version) => {
   })
 
   describe('reconnection', () => {
+    // A reconnected socket of an earlier case can reach the server after the
+    // next case cleared `sockets`: each case finds its own server socket by a
+    // handshake header instead of taking `sockets[0]`.
+    let caseNo = 0
+    async function ownServerSocket(marker: string): Promise<Socket> {
+      const mine = (): Socket | undefined =>
+        sockets.find((s) => s.connected && s.handshake.headers['x-case'] === marker)
+      await waitFor(() => mine() !== undefined)
+      return mine()!
+    }
+
     it('a dropped transport with retries configured reconnects and says so', async () => {
       const closed: SocketIOClosedInfo[] = []
+      const marker = `reconnect-${version}-${++caseNo}`
       const { events } = await open({
+        extraHeaders: { 'X-Case': marker },
         settings: { retryCount: 3, retryDelay: 50 },
         onClose: (c) => closed.push(c),
       })
-      await waitFor(() => sockets.length === 1)
-      sockets[0].conn.close()
+      ;(await ownServerSocket(marker)).conn.close()
       await waitFor(() => events.some((e) => e.event === 'reconnected'))
       expect(events.some((e) => e.direction === 'system' && e.event === 'reconnecting')).toBe(true)
       expect(closed).toEqual([])
@@ -231,9 +243,13 @@ describe.each(VERSIONS)('Socket.IO client v%s', (version) => {
 
     it('a server kick never reconnects, even with retries configured', async () => {
       const closed: SocketIOClosedInfo[] = []
-      await open({ settings: { retryCount: 3, retryDelay: 50 }, onClose: (c) => closed.push(c) })
-      await waitFor(() => sockets.length === 1)
-      sockets[0].disconnect(true)
+      const marker = `kick-${version}-${++caseNo}`
+      await open({
+        extraHeaders: { 'X-Case': marker },
+        settings: { retryCount: 3, retryDelay: 50 },
+        onClose: (c) => closed.push(c),
+      })
+      ;(await ownServerSocket(marker)).disconnect(true)
       await waitFor(() => closed.length === 1)
       expect(closed[0].reason).toBe('io server disconnect')
     })
