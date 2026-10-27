@@ -29,7 +29,7 @@ interface ProtocolApi {
 
 let seq = 0
 /** Pending connect replies of the current test, settled by `settleAll`. */
-let held: Array<() => void> = []
+let held: Array<(outcome?: 'fail' | 'succeed') => void> = []
 
 function protocolApi(reply: (id: string) => unknown, hold = false): ProtocolApi {
   return {
@@ -37,7 +37,13 @@ function protocolApi(reply: (id: string) => unknown, hold = false): ProtocolApi 
       const id = `conn-${++seq}`
       if (!hold) return Promise.resolve({ success: true, data: reply(id) })
       return new Promise((r) =>
-        held.push(() => r({ success: false, error: 'Connection cancelled' })),
+        held.push((outcome = 'fail') =>
+          r(
+            outcome === 'succeed'
+              ? { success: true, data: reply(id) }
+              : { success: false, error: 'Connection cancelled' },
+          ),
+        ),
       )
     }),
     disconnect: vi.fn(async () => ({ success: true, data: true })),
@@ -202,5 +208,22 @@ describe.each(CASES)('$name', (c) => {
     expect(api.cancelConnect).toHaveBeenCalledTimes(1)
     for (const settle of held) settle()
     await pending
+  })
+})
+
+describe('Socket.IO: a handshake that completes as it is given up', () => {
+  it('is closed at once instead of being adopted by a tab that left it', async () => {
+    const api = installApi(true).socketio
+    const pending = CASES[1].connect('t-a')
+    await vi.waitFor(() => expect(api.connect).toHaveBeenCalled())
+    useWorkspaceStore.setState({ activeProjectId: 'p2' } as never)
+    // The engine finished the handshake before the cancel reached it.
+    for (const settle of held) settle('succeed')
+    await pending
+    expect(api.disconnect).toHaveBeenCalledWith('conn-' + seq)
+    expect(CASES[1].slice('t-a')).toMatchObject({
+      connectionId: null,
+      connectionState: 'disconnected',
+    })
   })
 })

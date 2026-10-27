@@ -565,7 +565,12 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
         _configured: { url, meta: { socketio: sioMetaOf(start) } },
       })
 
-      if (res.success && res.data) {
+      if (res.success && res.data && sliceOf(ownerTabId)?._pendingConnectId !== pendingConnectId) {
+        // The handshake finished just as it was given up (Cancel, the tab
+        // closed, its project left): close the connection nobody owns.
+        unsubscribe()
+        void api.disconnect(res.data.connectionId).catch(() => {})
+      } else if (res.success && res.data) {
         connId = res.data.connectionId
         patchTab(ownerTabId, (sl) => ({
           connectionId: connId,
