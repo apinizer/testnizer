@@ -1,6 +1,6 @@
 import { resolve } from 'path'
 import { execSync } from 'node:child_process'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig, type UserConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import type { PluginOption } from 'vite'
@@ -54,45 +54,53 @@ async function loadVisualizer(): Promise<PluginOption | null> {
   }
 }
 
-export default defineConfig(async () => {
+export default defineConfig(async (): Promise<UserConfig> => {
   const visualizer = await loadVisualizer()
   const rendererPlugins: PluginOption[] = [react(), tailwindcss()]
   if (visualizer) rendererPlugins.push(visualizer)
 
   return {
     main: {
-      // The shared script runtime (src/shared/script) pulls script deps into
-      // the MAIN process graph (via runner.handler.ts). `uuid@14` is ESM-ONLY
-      // with NO CJS `require` export (its package.json `exports` map has only
-      // `node`/`default`, both ESM) — so externalizeDepsPlugin leaving it as a
-      // runtime `require("uuid")` crashes the bundle ON LOAD under Electron's
-      // Node 20 (no require(ESM) support) with ERR_REQUIRE_ESM, before
-      // app.whenReady() ever runs — the v1.4.19 launch-crash regression.
-      // Excluding uuid from externalization makes Rollup bundle it (ESM→CJS)
-      // into out/main, so there is no runtime require() of an ES module.
-      //   • Only uuid needs this: cheerio + csv-parse are also ESM packages but
-      //     ship a CJS `require` export, so Node 20 resolves them fine when
-      //     externalized — do NOT bundle them (bundling cheerio drags in undici
-      //     and its top-level `require("node:sqlite")`, a Node-22-only builtin
-      //     absent in Electron's Node 20, re-crashing the bundle).
-      //   • System Node ≥22 HIDES this class of bug: it supports require(ESM),
-      //     so a plain `node -e "require('uuid')"` test passes while Electron
-      //     (Node 20) crashes. Verify launch with the built app, not bare node.
-      //   • `jose` (#63/#73) is the same shape as uuid: "type":"module" with only
-      //     an ESM `default` export condition and NO `require` condition, so it
-      //     must be BUNDLED too. Main-side jose usage is funnelled through TWO
-      //     documented doors and no others: src/main/lib/jose-runtime.ts (the
-      //     jose:* IPC surface) and src/shared/script/jose.ts (the script
-      //     sandbox's `require('jose')` / `pm.jose`, compiled into BOTH bundles
-      //     so it cannot import a src/main module). Both are STATIC imports, so
-      //     this exclusion stays the single lever that decides how jose enters
-      //     the bundle. `tests/main/shared/jose.test.ts` fails if a third door
-      //     appears or if 'jose' drops out of this exclude list.
-      plugins: [externalizeDepsPlugin({ exclude: ['uuid', 'jose'] })],
+      // Dependency externalization (electron-vite 5: `build.externalizeDeps`,
+      // which replaced the deprecated `externalizeDepsPlugin` and is ON by
+      // default — so the exclusions MUST live here; a leftover plugin call would
+      // not stop the default one from externalizing everything).
+      //
+      // Every dependency stays a runtime `require()` EXCEPT the ESM-only ones
+      // listed in `exclude`, which Rollup bundles (ESM→CJS) into out/main:
+      //   • `uuid@14` is ESM-ONLY with NO CJS `require` export. Electron 33's
+      //     Node 20 could not require() an ES module, so externalizing it
+      //     crashed the bundle ON LOAD with ERR_REQUIRE_ESM before
+      //     app.whenReady() ran — the v1.4.19 launch-crash regression.
+      //   • `jose` (#63/#73) has the same shape: "type":"module", only an ESM
+      //     `default` export condition, no `require` condition. Main-side jose
+      //     usage goes through TWO documented doors and no others:
+      //     src/main/lib/jose-runtime.ts (the jose:* IPC surface) and
+      //     src/shared/script/jose.ts (the script sandbox's `require('jose')` /
+      //     `pm.jose`, compiled into BOTH bundles so it cannot import a
+      //     src/main module). Both are STATIC imports, so this exclusion stays
+      //     the single lever that decides how jose enters the bundle.
+      //     `tests/main/shared/jose.test.ts` fails if a third door appears or
+      //     if 'jose' drops out of this exclude list.
+      //   • Electron 44 runs Node 24, where require(ESM) works, so this is no
+      //     longer the only thing standing between us and a launch crash. The
+      //     bundling stays anyway (issue #291): it is proven, it keeps one module
+      //     system in out/main, and a future dependency whose ESM graph uses
+      //     top-level await would still fail require(ESM) (ERR_REQUIRE_ASYNC_MODULE).
+      //   • Do NOT bundle cheerio / csv-parse: they ship a CJS `require` export,
+      //     and bundling cheerio drags in undici and its top-level
+      //     `require("node:sqlite")`.
+      //   • System Node HIDES this class of bug. Verify launch with the built
+      //     app + `npm run test:e2e:smoke`, not bare node.
       define: {
         __BUILD_ID__: JSON.stringify(buildId()),
       },
       build: {
+        externalizeDeps: { exclude: ['uuid', 'jose'] },
+        // electron-vite derives the syntax target from the Electron major, but
+        // its table stops at Electron 39 and silently falls back to that
+        // entry. Name the runtime we actually ship: Electron 44 = Node 24.
+        target: 'node24',
         rollupOptions: {
           external: [
             'better-sqlite3',
@@ -106,7 +114,10 @@ export default defineConfig(async () => {
       },
     },
     preload: {
-      plugins: [externalizeDepsPlugin()],
+      build: {
+        externalizeDeps: true,
+        target: 'node24',
+      },
     },
     renderer: {
       resolve: {
@@ -116,6 +127,8 @@ export default defineConfig(async () => {
       },
       plugins: rendererPlugins,
       build: {
+        // Electron 44 = Chromium 152 (see the main `target` note above).
+        target: 'chrome152',
         rollupOptions: {
           output: {
             // Split monaco-editor (and its @monaco-editor/react adapter) into

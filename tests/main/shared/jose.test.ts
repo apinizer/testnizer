@@ -191,9 +191,11 @@ describe('buildScriptBindings wiring', () => {
  * ESM-in-main containment (the v1.4.19 ERR_REQUIRE_ESM launch-crash class).
  *
  * jose@6 is ESM-only. electron-vite externalizes every dependency to a runtime
- * `require()`, which Electron 33's Node 20 cannot do for an ES module — the app
- * would die before a window opens. Two things must therefore hold forever:
- *   1. jose stays in `externalizeDepsPlugin({ exclude: [...] })`, so Rollup
+ * `require()`, which Electron 33's Node 20 could not do for an ES module — the
+ * app died before a window opened. Electron 44 (Node 24) can require(ESM), but
+ * the bundling stays (issue #291), so two things must still hold:
+ *   1. jose stays in the main build's `externalizeDeps: { exclude: [...] }`
+ *      (electron-vite 5 — it replaced `externalizeDepsPlugin`), so Rollup
  *      BUNDLES it into out/main;
  *   2. every jose import is STATIC (no `await import`, no `require(varName)`),
  *      so both Rollup (main) and Vite (renderer) can see and bundle it.
@@ -242,9 +244,26 @@ describe('ESM containment — jose enters the bundles statically', () => {
     ])
   })
 
-  it('electron-vite still excludes jose from externalization', () => {
-    const config = read('electron.vite.config.ts')
-    expect(config).toMatch(/externalizeDepsPlugin\(\{\s*exclude:\s*\[[^\]]*'jose'[^\]]*\]/)
+  it('electron-vite still excludes jose (and uuid) from externalization', async () => {
+    // Evaluate the real config rather than grepping it: electron-vite 5 turns
+    // `build.externalizeDeps` ON by default, so what matters is the resolved
+    // main-process option, not the presence of some string in the file.
+    const mod = (await import('../../../electron.vite.config')) as {
+      default: () => Promise<{ main?: { build?: { externalizeDeps?: unknown } } }>
+    }
+    const config = await mod.default()
+    const ext = config.main?.build?.externalizeDeps as { exclude?: string[] } | undefined
+    expect(ext?.exclude).toEqual(expect.arrayContaining(['jose', 'uuid']))
+  })
+
+  it('no leftover externalizeDepsPlugin call can externalize jose behind the option', () => {
+    // electron-vite 5 deprecated the plugin; a stray `externalizeDepsPlugin()`
+    // (no exclude list) next to the option would externalize jose again.
+    const code = read('electron.vite.config.ts')
+      .split('\n')
+      .filter((l) => !l.trim().startsWith('//'))
+      .join('\n')
+    expect(code).not.toMatch(/externalizeDepsPlugin\s*\(/)
   })
 
   it('the shared runtime resolves jose statically, never dynamically', () => {
