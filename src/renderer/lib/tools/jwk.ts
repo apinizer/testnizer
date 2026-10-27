@@ -5,7 +5,8 @@
  *
  * RENDERER ONLY. `jose@6` is ESM-only; importing it into the MAIN bundle is the
  * v1.4.19 launch-crash class (electron-vite externalizes dependencies, and
- * Electron's Node 20 cannot `require(ESM)`) — main therefore has exactly one
+ * Electron 33's Node 20 could not `require(ESM)`; the bundling rule outlived
+ * the move to Node 24, issue #291) — main therefore has exactly one
  * jose door, `src/main/lib/jose-runtime.ts`. The renderer half has no such
  * constraint: Vite bundles jose into the renderer chunk, so this module imports
  * it directly, exactly as `lib/tools/jwt.ts` already does.

@@ -25,12 +25,14 @@ import fs from 'node:fs'
 // Playwright/Node test process throws "compiled against a different Node.js
 // version". node:sqlite has no such ABI coupling.
 //
-// It IS, however, a Node 22.5+ builtin, and CI pins Node 20 to match Electron
-// 33's runtime. A STATIC import there fails at module-load — which Playwright
+// It IS, however, a Node 22.5+ builtin. CI pinned Node 20 to match Electron
+// 33's runtime, where a STATIC import failed at module-load — which Playwright
 // counts as a collection error that fails the ENTIRE `--project=ui` run before
 // a single test executes. That is how the nightly full sweep had been dying:
-// invisibly, because the per-PR subset never loads tests/e2e/ui/tur1/. Resolve
-// it lazily and skip the group instead of taking the suite down with us.
+// invisibly, because the per-PR subset never loads tests/e2e/ui/tur1/. CI now
+// pins Node 24 (Electron 44, issue #291), so the group runs there, but the
+// lazy resolve stays: a developer on an older Node gets a skip, not a dead
+// suite.
 type SqliteStatement = { run(...params: unknown[]): unknown }
 type SqliteDatabase = {
   exec(sql: string): void
@@ -233,7 +235,7 @@ function seedOldSchemaDb(userDataDir: string): void {
 }
 
 test.describe('Tur1 — DB schema migration forward [MST-281]', () => {
-  test.skip(!DatabaseSync, 'node:sqlite needs Node >= 22.5; CI pins Node 20 to match Electron 33')
+  test.skip(!DatabaseSync, 'node:sqlite needs Node >= 22.5 (this Node is older)')
 
   test('MST-281 app runs migrations on old-schema DB without crashing', async () => {
     if (!fs.existsSync(mainPath)) {

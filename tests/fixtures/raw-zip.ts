@@ -4,7 +4,7 @@
  * backslashes, symbolic-link mode bits, the encryption flag, declared sizes
  * that lie. Stored (0) or deflated (8) entries, one central directory, no
  * zip64. The CRC-32 table is hand-rolled: `zlib.crc32` needs Node ≥ 22 and CI
- * runs Node 20.
+ * ran Node 20 when this was written (it runs Node 24 since issue #291).
  */
 import zlib from 'node:zlib'
 

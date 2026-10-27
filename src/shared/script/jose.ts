@@ -7,11 +7,12 @@
  * `src/main/lib/jose-runtime.ts` is the one place the rest of MAIN imports it.
  * Two doors, one lever: `jose@6` is ESM-only ("type":"module", no `require`
  * export condition), so electron-vite MUST bundle it rather than externalize it
- * — `externalizeDepsPlugin({ exclude: ['uuid', 'jose'] })` in
+ * — the main build's `externalizeDeps: { exclude: ['uuid', 'jose'] }` in
  * electron.vite.config.ts. Without that exclusion an externalized jose becomes a
- * runtime `require('jose')` in out/main, and Electron 33's Node 20 cannot
- * require() an ES module: the app dies ON LOAD with ERR_REQUIRE_ESM before a
- * window opens (the v1.4.19 launch-crash class, CLAUDE.md).
+ * runtime `require('jose')` in out/main. Electron 33's Node 20 could not
+ * require() an ES module, so the app died ON LOAD with ERR_REQUIRE_ESM before a
+ * window opened (the v1.4.19 launch-crash class, CLAUDE.md). Electron 44's
+ * Node 24 can, but the bundling stays (issue #291).
  *
  * The import below is a STATIC namespace import — never `await import()`, never
  * `require(variableName)`. That matters twice over:
@@ -313,8 +314,8 @@ async function verifyJws(
 
 /**
  * Algorithms whose availability depends on the HOST's WebCrypto, not on this
- * shared module. Electron 33's Chromium (Send) has no Ed25519, Node 20 (Run)
- * does — so an EdDSA script silently worked on Run and threw on Send, the exact
+ * shared module. Electron 33's Chromium (Send) had no Ed25519 while its Node 20
+ * (Run) did — so an EdDSA script silently worked on Run and threw on Send, the exact
  * Send≡Run divergence this file exists to prevent. Fail the SAME way on both,
  * with a message that names the reason rather than surfacing a raw
  * `NotSupportedError` from one runtime only.

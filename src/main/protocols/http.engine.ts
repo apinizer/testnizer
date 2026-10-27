@@ -978,7 +978,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
   }
 
   // Legacy-TLS sidecar route. Customers (banks, government API gateways)
-  // still run TLS 1.0/1.1 backends that Electron 33's BoringSSL can't talk
+  // still run TLS 1.0/1.1 backends that Electron's BoringSSL can't talk
   // to. When the user picks one of those protocol bounds we hand the whole
   // request off to system curl, which uses the OS TLS stack and can speak
   // them. See src/main/protocols/curl-shim.ts.

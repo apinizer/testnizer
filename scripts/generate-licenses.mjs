@@ -61,7 +61,7 @@ const BUNDLED_BINARIES = [
     publisher: 'curl, hackers, and Daniel Stenberg',
     url: 'https://curl.se/docs/copyright.html',
     notes:
-      'Statically-linked binary bundled per-platform from stunnel/static-curl. Used by Testnizer\'s TLS 1.0/1.1 legacy sidecar (src/main/protocols/curl-shim.ts) so legacy backends remain reachable on Electron 33 (BoringSSL).',
+      'Statically-linked binary bundled per-platform from stunnel/static-curl. Used by Testnizer\'s TLS 1.0/1.1 legacy sidecar (src/main/protocols/curl-shim.ts) so legacy backends remain reachable on Electron (BoringSSL).',
   },
 ]
 

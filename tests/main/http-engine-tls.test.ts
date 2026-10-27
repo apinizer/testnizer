@@ -77,7 +77,7 @@ describe('tls-presets — version validator', () => {
   })
 
   it('returns TLS 1.0 / 1.1 as-is so the engine can route them through the curl sidecar', () => {
-    // BoringSSL (Electron 33) still can't negotiate TLS 1.0/1.1, but the
+    // BoringSSL (Electron) still can't negotiate TLS 1.0/1.1, but the
     // engine now detects them at the HTTP entry point and routes through
     // system curl. The normaliser must therefore SURFACE the value rather
     // than swallowing it (v1.4.2 — F25). The engine has its own
