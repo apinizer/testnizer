@@ -208,6 +208,18 @@ describe('connect / publish', () => {
     expect(subscribe).toHaveBeenCalledWith('c1', [expect.objectContaining({ topic: 'a/r1' })])
   })
 
+  it('a topic added while connected starts unsubscribed (editable), then subscribes on toggle', async () => {
+    mq().setUrl('mqtt://b.test')
+    await mq().connect()
+    mq().addTopic()
+    const row = mq().topics[0]
+    expect(row.subscribe).toBe(false)
+    mq().updateTopic(row.id, { name: 'late/#' })
+    await mq().toggleTopic(row.id)
+    expect(mq().topics[0].subscribe).toBe(true)
+    expect(subscribe).toHaveBeenCalledWith('c1', [expect.objectContaining({ topic: 'late/#' })])
+  })
+
   it('events land on the tab that connected, even after a tab switch (issue #76)', async () => {
     openTab('t-a')
     mq().switchToTab('t-a')
