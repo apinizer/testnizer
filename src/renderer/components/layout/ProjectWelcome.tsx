@@ -1,4 +1,15 @@
-import { Globe, Radio, Cpu, Bot, FileCode2, Hexagon, Activity, Cloud, Zap } from 'lucide-react'
+import {
+  Globe,
+  Radio,
+  Cpu,
+  Bot,
+  FileCode2,
+  Hexagon,
+  Activity,
+  Cloud,
+  Zap,
+  RadioTower,
+} from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -30,7 +41,8 @@ export default function ProjectWelcome() {
       | 'grpc'
       | 'ai'
       | 'mcp'
-      | 'socketio',
+      | 'socketio'
+      | 'mqtt',
     method?: string,
   ) {
     const id = makeTabId()
@@ -102,6 +114,13 @@ export default function ProjectWelcome() {
       iconColor: '#E65100',
       label: t('welcome.socketio'),
       onClick: () => createTab(t('welcome.socketio'), 'socketio'),
+    },
+    {
+      icon: <RadioTower size={32} strokeWidth={1.5} />,
+      iconBg: '#E0F2F1',
+      iconColor: '#00695C',
+      label: t('welcome.mqtt'),
+      onClick: () => createTab(t('welcome.mqtt'), 'mqtt'),
     },
   ]
 

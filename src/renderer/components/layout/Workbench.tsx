@@ -24,6 +24,7 @@ import SseEditor from '../protocols/SseEditor'
 import AiChatEditor from '../protocols/AiChatEditor'
 import McpEditor from '../protocols/McpEditor'
 import SocketIOEditor from '../protocols/SocketIOEditor'
+import MqttEditor from '../protocols/MqttEditor'
 import RunnerTab from '../runner/RunnerTab'
 import JwtTool from '../tools/JwtTool'
 import JsonFormatTool from '../tools/JsonFormatTool'
@@ -1291,6 +1292,19 @@ export default function Workbench() {
           <EndpointTabBar />
           <HistoryHiddenNote />
           <SocketIOEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'mqtt') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <HistoryHiddenNote />
+          <MqttEditor key={activeTab.id} />
         </div>
       )
     }

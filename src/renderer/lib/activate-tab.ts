@@ -8,6 +8,7 @@ import { useGraphQLStore } from '../stores/graphql.store'
 import { useAiChatStore } from '../stores/ai-chat.store'
 import { useMcpStore } from '../stores/mcp.store'
 import { useSocketIOStore } from '../stores/socketio.store'
+import { useMqttStore } from '../stores/mqtt.store'
 import { storedBoundTabs } from './persist-helpers'
 
 interface TabbedSlices {
@@ -24,6 +25,7 @@ const PROTOCOL_STORES: Record<string, TabbedSlices> = {
   ai: useAiChatStore,
   mcp: useMcpStore,
   socketio: useSocketIOStore,
+  mqtt: useMqttStore,
 }
 
 /**
@@ -68,6 +70,7 @@ export function activateTabStores(tabId: string): void {
   useAiChatStore.getState().switchToTab(tabId)
   useMcpStore.getState().switchToTab(tabId)
   useSocketIOStore.getState().switchToTab(tabId)
+  useMqttStore.getState().switchToTab(tabId)
   if (protocolLostAtStartup.delete(tabId)) useRequestStore.setState({ unloadedProtocol: true })
 }
 

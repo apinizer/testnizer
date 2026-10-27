@@ -26,6 +26,7 @@ export type ConsoleProtocol =
   | 'sse'
   | 'mcp'
   | 'socketio'
+  | 'mqtt'
   | 'ai'
 
 export type ConsoleLevel = 'info' | 'success' | 'warning' | 'error'
@@ -102,6 +103,7 @@ export type ConsoleLogFilter =
   | 'sse'
   | 'mcp'
   | 'socketio'
+  | 'mqtt'
   | 'ai'
 
 interface ConsoleStore {
@@ -375,6 +377,7 @@ export function selectFilteredEntries(
     case 'sse':
     case 'mcp':
     case 'socketio':
+    case 'mqtt':
     case 'ai':
       list = list.filter((e) => e.protocol === filter)
       break

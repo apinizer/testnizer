@@ -22,6 +22,7 @@ import {
   FileCode2,
   Hexagon,
   Cloud,
+  RadioTower,
   Settings,
   ChevronsDownUp,
   ChevronsUpDown,
@@ -458,6 +459,13 @@ const PROTOCOL_OPTIONS: Array<{
     icon: <Zap size={12} strokeWidth={2} />,
     iconColor: '#E65100',
     iconBg: '#FFF3E0',
+  },
+  {
+    key: 'mqtt',
+    labelKey: 'newDropdown.mqtt',
+    icon: <RadioTower size={12} strokeWidth={2} />,
+    iconColor: '#00695C',
+    iconBg: '#E0F2F1',
   },
 ]
 

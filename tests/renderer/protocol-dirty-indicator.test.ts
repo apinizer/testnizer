@@ -20,9 +20,13 @@ import { useSoapStore } from '../../src/renderer/stores/soap.store'
 import { useWebSocketStore } from '../../src/renderer/stores/websocket.store'
 import { useSseStore } from '../../src/renderer/stores/sse.store'
 import { useSocketIOStore } from '../../src/renderer/stores/socketio.store'
+import { useMqttStore } from '../../src/renderer/stores/mqtt.store'
 import { useGrpcStore } from '../../src/renderer/stores/grpc.store'
 import { useGraphQLStore } from '../../src/renderer/stores/graphql.store'
-import { snapshotProtocol, restoreProtocolFromMetadata } from '../../src/renderer/lib/save-active-request'
+import {
+  snapshotProtocol,
+  restoreProtocolFromMetadata,
+} from '../../src/renderer/lib/save-active-request'
 import type { Tab } from '../../src/renderer/types'
 
 /** Open a single tab backed by a saved request and make it the active tab. */
@@ -83,6 +87,13 @@ describe('protocol dirty indicator (#8)', () => {
     expect(isActiveTabDirty()).toBe(true)
   })
 
+  it('MQTT: setComposer flags the active saved-request tab dirty (issue #284)', () => {
+    openSavedTab('tab-mqtt', 'mqtt')
+    expect(isActiveTabDirty()).toBe(false)
+    useMqttStore.getState().setComposer({ topic: 'a/b' })
+    expect(isActiveTabDirty()).toBe(true)
+  })
+
   it('gRPC: setRequestBody flags the active saved-request tab dirty', () => {
     openSavedTab('tab-grpc', 'grpc')
     expect(isActiveTabDirty()).toBe(false)
@@ -100,7 +111,13 @@ describe('protocol dirty indicator (#8)', () => {
   it('flags a scratch request tab too — new tabs must not lose edits silently (#101)', () => {
     useTabsStore.setState({
       tabs: [
-        { id: 'tab-scratch', name: 'Scratch', protocol: 'graphql', isDirty: false, isLoading: false },
+        {
+          id: 'tab-scratch',
+          name: 'Scratch',
+          protocol: 'graphql',
+          isDirty: false,
+          isLoading: false,
+        },
       ],
       activeTabId: 'tab-scratch',
     })

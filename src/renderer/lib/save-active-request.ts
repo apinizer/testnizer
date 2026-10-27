@@ -15,6 +15,7 @@ import { useSoapStore } from '../stores/soap.store'
 import { useWebSocketStore } from '../stores/websocket.store'
 import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
+import { useMqttStore } from '../stores/mqtt.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { restoreMcpCall, useMcpStore, type McpTransport } from '../stores/mcp.store'
@@ -31,7 +32,14 @@ import {
   NOT_LOADED_ERROR,
 } from './withheld-credentials'
 import { orphanTab } from './orphan-tab'
-import { readSioMeta, readWsMeta, sioMetaOf, wsMetaOf } from './realtime-meta'
+import {
+  mqttMetaOf,
+  readMqttMeta,
+  readSioMeta,
+  readWsMeta,
+  sioMetaOf,
+  wsMetaOf,
+} from './realtime-meta'
 import { mergeParamsFromUrl } from './url-query-sync'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
@@ -169,6 +177,17 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       // One writer for the block (`lib/realtime-meta.ts`), shared with the
       // History row's `configured` (issue #283).
       protocolMeta: { socketio: sioMetaOf(sio) },
+    }
+  }
+  if (protocol === 'mqtt') {
+    const mqtt = useMqttStore.getState()
+    return {
+      effectiveUrl: mqtt.url || url,
+      effectiveMethod: 'GET',
+      effectiveBody: { type: 'none' },
+      // One writer for the block (`lib/realtime-meta.ts`), shared with the
+      // History row's `configured` and the Postman v3 import (issue #284).
+      protocolMeta: { mqtt: mqttMetaOf(mqtt) },
     }
   }
   if (protocol === 'grpc') {
@@ -413,6 +432,9 @@ function switchProtocolToTab(protocol: string, tabId: string): void {
     case 'socketio':
       useSocketIOStore.getState().switchToTab(tabId)
       break
+    case 'mqtt':
+      useMqttStore.getState().switchToTab(tabId)
+      break
     case 'grpc':
       useGrpcStore.getState().switchToTab(tabId)
       break
@@ -512,6 +534,13 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
       ...(read.bearerToken !== undefined ? { bearerTokenWithheld: false } : {}),
       activeSavedMessageId: null,
     })
+    return
+  }
+
+  if (protocol === 'mqtt' && meta.mqtt && typeof meta.mqtt === 'object') {
+    // One reader (`lib/realtime-meta.ts`); keys the block lacks keep the tab's
+    // defaults. Not an edit: `setState`, the dirty dot stays.
+    useMqttStore.setState({ ...readMqttMeta(meta.mqtt), activeSavedMessageId: null })
     return
   }
 

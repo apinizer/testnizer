@@ -329,3 +329,32 @@ describe('MCP store', () => {
     expect(stored).toContain('{{query}}')
   })
 })
+
+// ─── MQTT (issue #284) ─────────────────────────────────────────────────
+
+describe('MQTT store', () => {
+  const KEY = 'testnizer-mqtt'
+
+  it('keeps the message log and errors out of localStorage; the request stays', async () => {
+    const { useMqttStore } = await import('../../src/renderer/stores/mqtt.store')
+    const row = {
+      id: 'r1',
+      direction: 'received' as const,
+      topic: 't',
+      content: `{"token":"${CANARY}"}`,
+      contentType: 'json' as const,
+      timestamp: 1,
+    }
+    useMqttStore.setState({
+      _currentTabId: 'tab-1',
+      _tabStates: new Map([['tab-2', { ...useMqttStore.getState(), log: [row] }]]),
+      url: 'mqtt://config.example.test',
+      log: [row],
+      errorMessage: CANARY,
+    })
+    const stored = raw(KEY)
+    expect(stored).not.toContain(CANARY)
+    expect(stored).toContain('mqtt://config.example.test')
+    expect(useMqttStore.getState().log).toHaveLength(1)
+  })
+})

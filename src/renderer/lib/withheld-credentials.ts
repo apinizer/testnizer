@@ -28,6 +28,7 @@ import { useSseStore, SSE_CREDENTIALS } from '../stores/sse.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { useGrpcStore, GRPC_CREDENTIALS } from '../stores/grpc.store'
 import { useSocketIOStore, SIO_CREDENTIALS } from '../stores/socketio.store'
+import { useMqttStore, MQTT_CREDENTIALS } from '../stores/mqtt.store'
 import { useSoapStore, SOAP_CREDENTIALS } from '../stores/soap.store'
 import { HTTP_CREDENTIALS } from '../stores/request.store'
 import { MCP_CREDENTIALS } from '../stores/mcp.store'
@@ -412,6 +413,14 @@ const ADAPTERS: WithheldAdapter[] = [
     asTabbed(useSocketIOStore),
     metaBlock('socketio'),
     SIO_CREDENTIALS,
+  ),
+  // Password, broker URL, credential-named user properties (issue #284).
+  tabbedAdapter(
+    'MQTT credentials',
+    'mqtt',
+    asTabbed(useMqttStore),
+    metaBlock('mqtt'),
+    MQTT_CREDENTIALS,
   ),
   // The bearer token keeps its own single-field marker (issue #243).
   {

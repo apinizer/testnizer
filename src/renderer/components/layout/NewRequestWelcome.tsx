@@ -8,6 +8,7 @@ import {
   Activity,
   Cloud,
   Zap,
+  RadioTower,
   Clock,
 } from 'lucide-react'
 import { useEffect, useMemo } from 'react'
@@ -160,6 +161,11 @@ export default function NewRequestWelcome() {
     openTab({ id, name: t('welcome.socketio'), protocol: 'socketio', url: '' })
   }
 
+  function createMqtt() {
+    const id = makeTabId()
+    openTab({ id, name: t('welcome.mqtt'), protocol: 'mqtt', url: '' })
+  }
+
   const actions: QuickAction[] = [
     {
       icon: <Globe size={28} strokeWidth={1.5} />,
@@ -214,6 +220,12 @@ export default function NewRequestWelcome() {
       iconBg: '#FFF3E0',
       label: t('welcome.socketio'),
       onClick: createSocketIO,
+    },
+    {
+      icon: <RadioTower size={28} strokeWidth={1.5} />,
+      iconBg: '#E0F2F1',
+      label: t('welcome.mqtt'),
+      onClick: createMqtt,
     },
   ]
 

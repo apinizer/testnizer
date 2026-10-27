@@ -18,6 +18,7 @@ export type Protocol =
   | 'ai'
   | 'mcp'
   | 'socketio'
+  | 'mqtt'
   | 'runner'
   | 'mockServer'
   // Mock MCP Server editor (issue #140) — tab carries `mockMcpServerId`.

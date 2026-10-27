@@ -91,6 +91,21 @@ export function socketioMaskedSendError(req: {
   return maskedCredentialsGuard(req)
 }
 
+/**
+ * MQTT connect (URL, password, CONNECT / will user properties, will payload)
+ * or a publish (payload + its user properties). Issue #284.
+ */
+export function mqttMaskedSendError(req: {
+  url?: string
+  password?: string
+  userProperties?: KeyValuePair[]
+  willUserProperties?: KeyValuePair[]
+  willPayload?: string
+  payload?: string
+}): string | null {
+  return maskedCredentialsGuard(req)
+}
+
 /** SOAP: endpoint URL + the envelope that goes on the wire. */
 export function soapMaskedSendError(req: { endpointUrl: string; envelope: string }): string | null {
   return maskedCredentialsGuard(req)

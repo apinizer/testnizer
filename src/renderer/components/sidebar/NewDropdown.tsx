@@ -10,6 +10,7 @@ import {
   Hexagon,
   Cloud,
   Zap,
+  RadioTower,
   Plus,
 } from 'lucide-react'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -146,6 +147,13 @@ export default function NewDropdown() {
       label: t('newDropdown.socketio'),
       bg: '#FFF3E0',
       action: () => createProtocolTab('socketio', t('welcome.socketio')),
+    },
+    {
+      icon: <RadioTower size={16} strokeWidth={1.75} />,
+      iconColor: '#00695C',
+      label: t('newDropdown.mqtt'),
+      bg: '#E0F2F1',
+      action: () => createProtocolTab('mqtt', t('welcome.mqtt')),
     },
     // Import entries: listed here too (issue #5) in addition to the dedicated
     // Import dropdown, since users expect them under the New (+) menu.

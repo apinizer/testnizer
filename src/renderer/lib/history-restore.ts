@@ -175,7 +175,14 @@ export function httpHistoryRestore(entry: Row): HttpHistoryRestore {
 }
 
 /** Protocols whose History rows reopen through `restoreProtocolFromMetadata`. */
-export const HISTORY_META_PROTOCOLS = ['websocket', 'grpc', 'graphql', 'sse', 'socketio'] as const
+export const HISTORY_META_PROTOCOLS = [
+  'websocket',
+  'grpc',
+  'graphql',
+  'sse',
+  'socketio',
+  'mqtt',
+] as const
 export type HistoryMetaProtocol = (typeof HISTORY_META_PROTOCOLS)[number]
 
 export function isHistoryMetaProtocol(p: string | undefined): p is HistoryMetaProtocol {
@@ -230,6 +237,10 @@ function legacyMeta(protocol: HistoryMetaProtocol, snap: Json, entry: Row): Json
       url: str(snap.url) ?? entry.url ?? '',
       customHeaders: toKeyValueRows(snap.headers),
     }
+  }
+  if (protocol === 'mqtt') {
+    // Every MQTT row carries `configured`; a row without it reopens the URL.
+    return { url: str(snap.url) ?? entry.url ?? '' }
   }
   if (protocol === 'grpc') {
     return {
