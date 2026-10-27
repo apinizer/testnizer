@@ -56,14 +56,16 @@ The test then works in three steps:
    variables (current and initial values), project variables, an HTTP mock with
    auth, a Mock MCP server with a bearer token, a certificate row, an OTP entry,
    history, a Runner result, a test suite, settings including the AI key and
-   a proxy password, and two open tabs, one with an unsaved draft.
+   a proxy password, and three open tabs (HTTP with an unsaved draft,
+   GraphQL, Socket.IO).
 2. **This build opens a copy.** The same row, secret, settings and backup checks
    run as in the automatic test. On top of that:
-   - localStorage reads back: for the same app version on the older Electron,
-     every key the old Chromium wrote; for an older app version, the tab list
-     and the request drafts (other tab stores may reshape their own snapshot
-     on load, as the Socket.IO store does in 1.6.0);
-   - both tabs and the draft are restored on screen;
+   - every localStorage key the old Chromium wrote reads back with its
+     values. When the old build is an older app version, a value the app
+     itself renames on load is first mapped to its new place
+     (`LEGACY_LOCAL_STORAGE` in the spec: the 1.5.x Socket.IO `emitPayload`
+     must arrive as `emitArgs`), so the check still holds;
+   - all three tabs and the draft are restored on screen;
    - the saved request Sends.
 3. **The old build opens what this build left (downgrade).** No row or column
    is lost; new tables and columns are additive. Sealed values decrypt on the
@@ -110,7 +112,14 @@ for unsigned builds and does not happen with the Developer ID build.
 
 A 1.5.x install on macOS 11 or 12 must NOT be offered 1.6.0. Electron 44 needs
 macOS 13, and `latest-mac.yml` carries `minimumSystemVersion: 22.0.0`. Check
-for updates there: the app must report that no update is available.
+for updates there: the app must report that no update is available. Only
+installs on 1.4.10 or later honour that field (electron-updater 6.8.3); 1.4.9
+and older would still download 1.6.0.
+
+The release is published (not a draft) while the mac job runs, so for the few
+seconds between electron-builder's upload and the stamp step the unstamped
+manifest is live. After tagging, confirm the release's `latest-mac.yml` ends
+with `minimumSystemVersion: 22.0.0`.
 
 **Linux (deb or AppImage, GNOME and KDE)**
 
