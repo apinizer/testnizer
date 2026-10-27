@@ -81,7 +81,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'scriptHelp.api.request': 'Read-only info about the request that was sent.',
     'scriptHelp.api.environment':
       'Read/write the active environment’s variables. Persists across requests in the run.',
-    'scriptHelp.api.globals': 'Read/write global variables. Visible to every project.',
+    'scriptHelp.api.globals':
+      "Read/write global variables — this project's Globals, shared by every request in it whichever environment is active.",
     'scriptHelp.api.variables': 'Local-then-env-then-global lookup. Set is local to this script.',
     'scriptHelp.api.test': 'Register a named assertion. The callback can be async.',
     'scriptHelp.api.expect':
@@ -1240,7 +1241,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'data.importBtn': 'Open Import…',
     'data.exportData': 'Export data',
     'data.exportDesc':
-      'Export the current project as Testnizer JSON, Postman v2.1, OpenAPI 3 or Insomnia.',
+      'Export the current project as Testnizer JSON, Postman v2.1, Postman v3 (folder or JSON), OpenAPI 3 or Insomnia.',
     'data.exportBtn': 'Export project',
     'data.clearCache': 'Clear cache',
     'data.clearCacheDesc':
@@ -4342,7 +4343,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'scriptHelp.api.request': 'Gönderilen istek hakkında salt-okunur bilgi.',
     'scriptHelp.api.environment':
       'Aktif environment değişkenlerini oku/yaz. Run boyunca istekler arasında kalıcı.',
-    'scriptHelp.api.globals': 'Global değişkenleri oku/yaz. Her projeden görünür.',
+    'scriptHelp.api.globals':
+      'Global değişkenleri oku/yaz — bu projenin Globalleri; hangi ortam aktif olursa olsun projedeki her istek kullanır.',
     'scriptHelp.api.variables':
       "Önce local, sonra env, sonra global arar. `set` yalnızca bu script'e özeldir.",
     'scriptHelp.api.test': 'İsimli bir doğrulama kaydeder. Callback async olabilir.',
@@ -5506,7 +5508,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'data.importBtn': 'İçe Aktarmayı Aç…',
     'data.exportData': 'Veri dışa aktar',
     'data.exportDesc':
-      'Mevcut projeyi Testnizer JSON, Postman v2.1, OpenAPI 3 veya Insomnia olarak dışa aktarın.',
+      'Mevcut projeyi Testnizer JSON, Postman v2.1, Postman v3 (klasör veya JSON), OpenAPI 3 veya Insomnia olarak dışa aktarın.',
     'data.exportBtn': 'Projeyi dışa aktar',
     'data.clearCache': 'Önbelleği temizle',
     'data.clearCacheDesc':
