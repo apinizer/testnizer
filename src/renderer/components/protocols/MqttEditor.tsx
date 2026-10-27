@@ -6,12 +6,8 @@ import MqttConnectionBar from './mqtt/MqttConnectionBar'
 import MqttComposer from './mqtt/MqttComposer'
 import MqttTopicsTab from './mqtt/MqttTopicsTab'
 import MqttLog from './mqtt/MqttLog'
-import {
-  MqttAuthTab,
-  MqttPropertiesTab,
-  MqttSettingsTab,
-  MqttWillTab,
-} from './mqtt/MqttConnectTabs'
+import { MqttAuthTab, MqttPropertiesTab, MqttSettingsTab } from './mqtt/MqttConnectTabs'
+import MqttWillTab from './mqtt/MqttWillTab'
 import RealtimeTabStrip, { type RealtimeTab } from './realtime/RealtimeTabStrip'
 
 type MqttTab = 'message' | 'topics' | 'auth' | 'properties' | 'will' | 'settings'
