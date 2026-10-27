@@ -6,6 +6,8 @@ import { Checkbox, INPUT_CLS } from '../../mock-mcp/ui'
 import ContentTypeSelect from '../realtime/ContentTypeSelect'
 import MqttMessagePropsForm from './MqttMessagePropsForm'
 import { QosSelect } from './mqtt-ui'
+import MonacoWrapper from '../../shared/MonacoWrapper'
+import { RT_MONACO_LANGUAGE } from '../../../lib/realtime-format'
 import CredentialRestartHint from '../../shared/CredentialRestartHint'
 import { scrubMessageCredentials } from '../../../lib/credential-text'
 
@@ -49,16 +51,16 @@ export default function MqttWillTab() {
           testId="mqtt-will-format"
         />
       </div>
-      <textarea
-        value={w.payload}
-        onChange={(e) => set({ payload: e.target.value })}
-        placeholder={t('mqtt.will.payloadPlaceholder')}
-        aria-label={t('mqtt.will.payload')}
-        data-testid="mqtt-will-payload"
-        rows={3}
-        spellCheck={false}
-        className="w-full resize-y rounded-md border border-[var(--border2)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
-      />
+      {/* Monaco like the composer: `{{var}}` highlighting + completion (issue #284 audit). */}
+      <div data-testid="mqtt-will-payload" className="min-h-0">
+        <MonacoWrapper
+          value={w.payload}
+          onChange={(payload) => set({ payload })}
+          language={RT_MONACO_LANGUAGE[w.type]}
+          height={80}
+          ariaLabel={t('mqtt.will.payload')}
+        />
+      </div>
       {scrubMessageCredentials(w.payload) !== w.payload && (
         <CredentialRestartHint id="mqtt-will-restart-hint-text" testId="mqtt-will-restart-hint" />
       )}

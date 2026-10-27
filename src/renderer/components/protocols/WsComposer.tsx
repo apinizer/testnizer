@@ -3,22 +3,13 @@ import { Save, Send, Wand2 } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import { useTranslation } from '../../lib/i18n'
-import { WS_CONTENT_TYPES, isBinaryContentType, type RtContentType } from '../../../shared/realtime'
-import { beautify, canBeautify } from '../../lib/realtime-format'
+import { WS_CONTENT_TYPES, isBinaryContentType } from '../../../shared/realtime'
+import { RT_MONACO_LANGUAGE, beautify, canBeautify } from '../../lib/realtime-format'
 import { GhostButton, PrimaryButton } from '../mock-mcp/ui'
 import ContentTypeSelect from './realtime/ContentTypeSelect'
 import SavedMessagesPane from './realtime/SavedMessagesPane'
 import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { scrubMessageCredentials } from '../../lib/credential-text'
-
-const MONACO_LANGUAGE: Record<RtContentType, string> = {
-  text: 'plaintext',
-  json: 'json',
-  xml: 'xml',
-  html: 'html',
-  base64: 'plaintext',
-  hex: 'plaintext',
-}
 
 /**
  * WebSocket Message tab (issue #282), Postman's composer: format (Text, JSON,
@@ -112,7 +103,7 @@ export default function WsComposer() {
           <MonacoWrapper
             value={content}
             onChange={setContent}
-            language={MONACO_LANGUAGE[mode]}
+            language={RT_MONACO_LANGUAGE[mode]}
             height={120}
           />
         </div>

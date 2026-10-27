@@ -2,12 +2,14 @@ import { Plug, Unplug, X } from 'lucide-react'
 import { useSocketIOStore } from '../../../stores/socketio.store'
 import { useTranslation } from '../../../lib/i18n'
 import McpStatusPill from '../mcp/McpStatusPill'
+import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import {
   CB_ERROR_BOX,
   CB_INPUT,
   CB_ROW,
   CB_TARGET,
-  CB_URL,
+  CB_URL_FIELD,
+  CB_URL_FIELDSET,
   cbPrimaryButton,
 } from '../connection-bar-ui'
 
@@ -38,15 +40,17 @@ export default function SocketIOConnectionBar() {
       <div data-testid="socketio-connection-row" className={CB_ROW}>
         <McpStatusPill state={connectionState} testId="socketio-status" />
         <div className={CB_TARGET}>
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={isConnected}
-            data-testid="socketio-url"
-            placeholder="http://localhost:3000"
-            className={CB_URL}
-          />
+          <fieldset disabled={isConnected} className={CB_URL_FIELDSET}>
+            <VariableAutocompleteInput
+              value={url}
+              onChange={setUrl}
+              data-testid="socketio-url"
+              placeholder="http://localhost:3000"
+              spellCheck={false}
+              autoComplete="off"
+              className={CB_URL_FIELD}
+            />
+          </fieldset>
           <button
             type="button"
             onClick={() => void (busy ? disconnect() : connect())}

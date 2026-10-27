@@ -3,14 +3,15 @@ import { useMqttStore } from '../../../stores/mqtt.store'
 import { useTranslation } from '../../../lib/i18n'
 import { MQTT_VERSIONS, randomMqttClientId, type MqttVersion } from '../../../../shared/mqtt'
 import McpStatusPill from '../mcp/McpStatusPill'
+import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import {
   CB_ERROR_BOX,
   CB_ICON_BUTTON,
-  CB_INPUT,
   CB_ROW,
   CB_SELECT,
   CB_TARGET,
-  CB_URL,
+  CB_URL_FIELD,
+  CB_URL_FIELDSET,
   cbPrimaryButton,
 } from '../connection-bar-ui'
 
@@ -61,19 +62,21 @@ export default function MqttConnectionBar() {
           ))}
         </select>
         <div className={CB_TARGET}>
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !busy && url.trim()) void connect()
-            }}
-            disabled={busy}
-            data-testid="mqtt-url"
-            aria-label={t('mqtt.url')}
-            placeholder="mqtt://broker.example.com:1883"
-            className={CB_URL}
-          />
+          <fieldset disabled={busy} className={CB_URL_FIELDSET}>
+            <VariableAutocompleteInput
+              value={url}
+              onChange={setUrl}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !busy && url.trim()) void connect()
+              }}
+              data-testid="mqtt-url"
+              aria-label={t('mqtt.url')}
+              placeholder="mqtt://broker.example.com:1883"
+              spellCheck={false}
+              autoComplete="off"
+              className={CB_URL_FIELD}
+            />
+          </fieldset>
           <button
             type="button"
             onClick={() => void (busy ? disconnect() : connect())}
@@ -97,16 +100,21 @@ export default function MqttConnectionBar() {
         </div>
       </div>
       <div data-testid="mqtt-options-row" className={CB_ROW}>
-        <input
-          type="text"
-          value={clientId}
-          onChange={(e) => setClientId(e.target.value)}
+        <fieldset
           disabled={busy}
-          data-testid="mqtt-client-id"
-          aria-label={t('mqtt.clientId')}
-          placeholder={t('mqtt.clientIdPlaceholder')}
-          className={`w-[18rem] max-w-full ${CB_INPUT}`}
-        />
+          className="m-0 flex w-[18rem] max-w-full border-0 p-0 disabled:opacity-60"
+        >
+          <VariableAutocompleteInput
+            value={clientId}
+            onChange={setClientId}
+            data-testid="mqtt-client-id"
+            aria-label={t('mqtt.clientId')}
+            placeholder={t('mqtt.clientIdPlaceholder')}
+            spellCheck={false}
+            autoComplete="off"
+            className={`min-w-0 ${CB_URL_FIELD}`}
+          />
+        </fieldset>
         <button
           type="button"
           onClick={() => setClientId(randomMqttClientId())}

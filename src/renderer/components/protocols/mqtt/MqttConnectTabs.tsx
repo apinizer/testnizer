@@ -45,10 +45,10 @@ export function MqttAuthTab() {
         />
       </Field>
       <Field label={t('mqtt.auth.password')}>
-        <input
+        <VariableAutocompleteInput
           type="password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={setPassword}
           data-testid="mqtt-password"
           aria-describedby="mqtt-password-hint-text"
           autoComplete="off"

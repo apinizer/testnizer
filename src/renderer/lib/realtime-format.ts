@@ -12,6 +12,16 @@ import {
 } from '../../shared/realtime'
 import { formatXml } from './tools/xml-format'
 
+/** The Monaco language of a message body format (composers, the MQTT will payload). */
+export const RT_MONACO_LANGUAGE: Readonly<Record<RtContentType, string>> = {
+  text: 'plaintext',
+  json: 'json',
+  xml: 'xml',
+  html: 'html',
+  base64: 'plaintext',
+  hex: 'plaintext',
+}
+
 export type BeautifyResult = { ok: true; output: string } | { ok: false; error: string }
 
 /** Formats Beautify supports (Postman: JSON, XML, HTML). */

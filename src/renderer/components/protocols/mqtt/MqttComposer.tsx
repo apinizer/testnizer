@@ -4,9 +4,9 @@ import { useMqttStore } from '../../../stores/mqtt.store'
 import MonacoWrapper from '../../shared/MonacoWrapper'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { useTranslation } from '../../../lib/i18n'
-import { MQTT_CONTENT_TYPES, type MqttContentType } from '../../../../shared/mqtt'
+import { MQTT_CONTENT_TYPES } from '../../../../shared/mqtt'
 import { isBinaryContentType } from '../../../../shared/realtime'
-import { beautify, canBeautify } from '../../../lib/realtime-format'
+import { RT_MONACO_LANGUAGE, beautify, canBeautify } from '../../../lib/realtime-format'
 import { Checkbox, GhostButton, INPUT_CLS, PrimaryButton } from '../../mock-mcp/ui'
 import ContentTypeSelect from '../realtime/ContentTypeSelect'
 import SavedMessagesPane from '../realtime/SavedMessagesPane'
@@ -14,15 +14,6 @@ import MqttMessagePropsForm from './MqttMessagePropsForm'
 import { QosSelect } from './mqtt-ui'
 import CredentialRestartHint from '../../shared/CredentialRestartHint'
 import { scrubMessageCredentials } from '../../../lib/credential-text'
-
-const MONACO_LANGUAGE: Record<MqttContentType, string> = {
-  text: 'plaintext',
-  json: 'json',
-  xml: 'xml',
-  html: 'html',
-  base64: 'plaintext',
-  hex: 'plaintext',
-}
 
 /**
  * MQTT Message tab (issue #284), Postman's publish composer: topic, QoS,
@@ -161,7 +152,7 @@ export default function MqttComposer() {
           <MonacoWrapper
             value={c.content}
             onChange={(content) => setComposer({ content })}
-            language={MONACO_LANGUAGE[c.contentType]}
+            language={RT_MONACO_LANGUAGE[c.contentType]}
             height={120}
           />
         </div>

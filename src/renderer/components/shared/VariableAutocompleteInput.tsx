@@ -40,6 +40,13 @@ interface VariableAutocompleteInputProps {
    * (the HTTP URL bar's cURL paste, issue #278).
    */
   onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void
+  /**
+   * `password` keeps the field masked: suggestions still open on `{{`, but no
+   * coloured overlay is drawn — it would show the text in clear.
+   */
+  type?: 'text' | 'password'
+  'aria-label'?: string
+  'aria-describedby'?: string
 }
 
 /**
@@ -57,7 +64,11 @@ export default function VariableAutocompleteInput({
   spellCheck,
   autoComplete,
   onPaste,
+  type = 'text',
+  'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
 }: VariableAutocompleteInputProps) {
+  const masked = type === 'password'
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [queryStart, setQueryStart] = useState(-1) // cursor position where {{ started
@@ -372,12 +383,13 @@ export default function VariableAutocompleteInput({
 
   // Hide the real text in the input so only the overlay shows colored text,
   // but keep the caret visible.
-  const inputOverlayHider: React.CSSProperties = value
-    ? {
-        color: 'transparent',
-        caretColor: ((inputStyle as React.CSSProperties).color as string) || 'var(--text)',
-      }
-    : {}
+  const inputOverlayHider: React.CSSProperties =
+    value && !masked
+      ? {
+          color: 'transparent',
+          caretColor: ((inputStyle as React.CSSProperties).color as string) || 'var(--text)',
+        }
+      : {}
 
   return (
     <>
@@ -393,6 +405,9 @@ export default function VariableAutocompleteInput({
         <input
           ref={inputRef}
           data-testid={testId}
+          type={type}
+          aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
@@ -429,7 +444,7 @@ export default function VariableAutocompleteInput({
             variable" report. Variables are distinguished by color only.
           */}
           <span style={{ whiteSpace: 'pre' }}>
-            {segments.map((seg, i) => {
+            {(masked ? [] : segments).map((seg, i) => {
               if (!seg.isVar) return <span key={i}>{seg.text}</span>
               // Strip the surrounding `{{` `}}` to extract the bare name.
               const varName = seg.text.slice(2, -2)
