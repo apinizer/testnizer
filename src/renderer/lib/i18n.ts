@@ -1647,7 +1647,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.noVariables': 'No variables in this environment.',
     'runnerVars.globals': 'Globals',
     'runnerVars.enterValue': 'Enter value',
-    'runnerVars.noGlobals': 'No global variables in this workspace.',
+    'runnerVars.noGlobals': 'No global variables in this project.',
     'runnerVars.add': 'Add',
     'runnerVars.selectEnv': 'Select an environment to see its variables.',
 
@@ -5883,7 +5883,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerVars.noVariables': 'Bu ortamda değişken yok.',
     'runnerVars.globals': 'Globaller',
     'runnerVars.enterValue': 'Değer girin',
-    'runnerVars.noGlobals': 'Bu çalışma alanında global değişken yok.',
+    'runnerVars.noGlobals': 'Bu projede global değişken yok.',
     'runnerVars.add': 'Ekle',
     'runnerVars.selectEnv': 'Değişkenleri görmek için bir ortam seçin.',
 

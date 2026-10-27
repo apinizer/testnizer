@@ -2,9 +2,9 @@
  * Load the variable map a request should see, given a project context.
  *
  * Layering (each step overrides the previous):
- *   1. Workspace-level globals (broadest scope)
- *   2. Project-level globals
- *   3. The project's active environment's variables (highest priority)
+ *   1. The project's globals (`global_variables.project_id`) — the rows Send
+ *      reads through `globalVariable:listByProject`, nothing wider
+ *   2. The project's active environment's variables (highest priority)
  *
  * Used by:
  *   - The Collection Runner (`runner.handler.ts`) when executing a
@@ -20,7 +20,6 @@ import { getDb } from '../db/database'
 import { openSecret } from './secret-at-rest'
 
 export interface EnvVarLoadOptions {
-  workspaceId?: string
   projectId?: string
   /** Explicit override — when omitted, the project's active env is used. */
   environmentId?: string
@@ -71,9 +70,8 @@ function undecryptable(key: string): string {
 }
 
 /**
- * The same variables, kept apart by scope: `globals` (workspace globals, then
- * project globals over them) and `environment` (the active / requested
- * environment). The Collection Runner backs the separate `pm.globals` and
+ * The same variables, kept apart by scope: `globals` (the project's globals)
+ * and `environment` (the active / requested environment). The Collection Runner backs the separate `pm.globals` and
  * `pm.environment` script objects with these (issue #281); `loadEnvVars` is
  * their merge.
  */
@@ -85,15 +83,11 @@ export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
   const environment: Record<string, string> = {}
   const db = getDb()
 
-  if (opts.workspaceId) {
-    const rows = db
-      .prepare(
-        'SELECT key, value, initial_value FROM global_variables WHERE workspace_id = ? AND enabled = 1',
-      )
-      .all(opts.workspaceId) as DualValueRow[]
-    for (const r of rows) globals[r.key] = effectiveValue(r)
-  }
-
+  // Project rows ONLY. This used to start from every row of the WORKSPACE
+  // (`workspace_id = ?`) and overlay the project's: every row carries a
+  // workspace id, so another project's globals — and legacy rows saved
+  // without a project — resolved on Run and in the mock while Send, which
+  // reads only the active project's rows, left them unresolved.
   if (opts.projectId) {
     const rows = db
       .prepare(

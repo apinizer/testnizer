@@ -431,7 +431,7 @@ class MockMcpServerManager extends EventEmitter {
       loadEnv: () => {
         if (!s.def.projectId) return undefined
         try {
-          return loadEnvVars({ projectId: s.def.projectId, workspaceId: s.def.workspaceId })
+          return loadEnvVars({ projectId: s.def.projectId })
         } catch {
           return undefined
         }

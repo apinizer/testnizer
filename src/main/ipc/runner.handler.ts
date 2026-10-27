@@ -2631,7 +2631,6 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
   }
   const loadedScopes = loadEnvVarScopes({
     environmentId: effectiveEnvId,
-    workspaceId: options.workspaceId,
     projectId: options.projectId,
   })
   const scopes: RunVarScopes = { ...loadedScopes, locals: {} }

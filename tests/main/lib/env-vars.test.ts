@@ -18,7 +18,7 @@ vi.mock('../../../src/main/db/database', () => ({
   getDb: () => testDb,
 }))
 
-const { loadEnvVars } = await import('../../../src/main/lib/env-vars')
+const { loadEnvVars, loadEnvVarScopes } = await import('../../../src/main/lib/env-vars')
 
 let workspaceId: string
 let projectId: string
@@ -50,13 +50,18 @@ function seedEnvVar(
     .run(randomUUID(), envId, key, value, enabled, initialValue)
 }
 
-function seedGlobalVar(key: string, value: string, initialValue: string | null): void {
+function seedGlobalVar(
+  key: string,
+  value: string,
+  initialValue: string | null,
+  ownerProjectId: string | null = projectId,
+): void {
   testDb
     .prepare(
       `INSERT INTO global_variables (id, workspace_id, project_id, key, value, enabled, secret, initial_value)
        VALUES (?, ?, ?, ?, ?, 1, 0, ?)`,
     )
-    .run(randomUUID(), workspaceId, projectId, key, value, initialValue)
+    .run(randomUUID(), workspaceId, ownerProjectId, key, value, initialValue)
 }
 
 beforeEach(() => {
@@ -116,5 +121,37 @@ describe('loadEnvVars — dual-value (Current → Initial) fallback', () => {
 
     const vars = loadEnvVars({ workspaceId, projectId })
     expect(vars.AccessURL).toBe('https://env.example.com')
+  })
+})
+
+/**
+ * Run / Mock resolve exactly the globals Send resolves. Send reads
+ * `globalVariable:listByProject` — the active project's rows only. The loader
+ * used to start from every `global_variables` row of the WORKSPACE, so a
+ * global of another project in the same workspace (and a legacy row without a
+ * project) resolved on Run and in the mock, and never on Send.
+ */
+describe('loadEnvVars — project scope (Send parity)', () => {
+  it("never resolves another project's global of the same workspace", () => {
+    const otherProject = seedProject(testDb, workspaceId, 'Project B')
+    seedGlobalVar('onlyInB', 'from-b', null, otherProject)
+
+    expect(loadEnvVars({ workspaceId, projectId })).not.toHaveProperty('onlyInB')
+    expect(loadEnvVarScopes({ workspaceId, projectId }).globals).not.toHaveProperty('onlyInB')
+    // Project B still sees its own.
+    expect(loadEnvVars({ workspaceId, projectId: otherProject }).onlyInB).toBe('from-b')
+  })
+
+  it('a same-named global of another project does not leak into this one', () => {
+    const otherProject = seedProject(testDb, workspaceId, 'Project B')
+    seedGlobalVar('token', 'b-token', null, otherProject)
+
+    expect(loadEnvVars({ workspaceId, projectId })).not.toHaveProperty('token')
+  })
+
+  it('ignores a legacy global without a project (Send never shows it)', () => {
+    seedGlobalVar('legacyWs', 'ws-wide', null, null)
+
+    expect(loadEnvVars({ workspaceId, projectId })).not.toHaveProperty('legacyWs')
   })
 })
