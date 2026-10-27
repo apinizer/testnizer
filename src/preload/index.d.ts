@@ -2820,11 +2820,6 @@ interface ContextMenuApi {
   show(target: { editable: boolean; hasSelection: boolean }): Promise<IpcResult<{ shown: boolean }>>
 }
 
-interface ResponseViewerApi {
-  /** Issue #294: write the PDF body to a private temp file and open it in the OS viewer. */
-  openPdf(base64: string): Promise<IpcResult<null>>
-}
-
 interface DialogApi {
   openFile(options?: {
     title?: string
@@ -3549,7 +3544,6 @@ interface ApiBridge {
   mock: MockApi
   mockMcp: MockMcpApi
   dialog: DialogApi
-  response: ResponseViewerApi
   contextMenu: ContextMenuApi
 }
 

@@ -279,7 +279,6 @@ exports[`preload under the renderer sandbox (issue #294) > window.api surface is
   "project.update (function)",
   "request.cancel (function)",
   "request.send (function)",
-  "response.openPdf (function)",
   "runner.deleteHistory (function)",
   "runner.execute (function)",
   "runner.export (function)",

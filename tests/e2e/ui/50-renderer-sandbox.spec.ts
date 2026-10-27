@@ -5,9 +5,10 @@
  *     bridge still works under it: the built preload `require`s nothing but
  *     electron, `window.api` / `window.electron` / electron-log's bridge exist,
  *     a real Send succeeds and Settings → About reads the runtime versions.
- *  2. A PDF response is never rendered in an iframe of the app document;
- *     "Open in PDF viewer" writes the body to a private temp file and hands it
- *     to `shell.openPath` (stubbed here — no viewer pops up).
+ *  2. A PDF response still previews inline (Chromium's PDF viewer refuses a
+ *     `sandbox`ed iframe, and PDFium runs in Chromium's own sandboxed
+ *     processes), and the permission policy refuses what that frame asks for
+ *     even where the app document itself is allowed (clipboard read).
  *  3. Web permissions are deny-by-default. Measured before this change, Electron
  *     granted all of these: Notification.requestPermission → "granted",
  *     permissions.query for notifications / geolocation / camera / microphone →
@@ -210,7 +211,7 @@ uiTest.describe('Renderer sandbox [issue #294]', () => {
     ).toBe(true)
   })
 
-  uiTest('a PDF response opens in the system viewer, never in an iframe', async ({ app, window }) => {
+  uiTest('a PDF response previews inline and its frame gets no permissions', async ({ window }) => {
     const pdf = minimalPdf()
     const server = http.createServer((_req, res) => {
       res.writeHead(200, { 'content-type': 'application/pdf', 'content-length': pdf.length })
@@ -218,17 +219,6 @@ uiTest.describe('Renderer sandbox [issue #294]', () => {
     })
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
     const port = (server.address() as AddressInfo).port
-
-    // Record shell.openPath instead of launching a real viewer.
-    await app.evaluate(({ shell }) => {
-      const g = globalThis as unknown as { __openedPaths?: string[]; __realOpenPath?: unknown }
-      g.__openedPaths = []
-      g.__realOpenPath = shell.openPath
-      shell.openPath = async (p: string) => {
-        g.__openedPaths!.push(p)
-        return ''
-      }
-    })
     try {
       await navigateSidebar(window, 'apis')
       await openHttpRequestTab(window)
@@ -237,34 +227,59 @@ uiTest.describe('Renderer sandbox [issue #294]', () => {
       expect(await waitForResponseStatus(window, 20_000)).toBe(200)
       await window.getByTestId('res-tab-body').click()
 
-      const preview = window.getByTestId('res-binary-preview')
-      await expect(preview.getByTestId('res-binary-pdf')).toBeVisible({ timeout: 10_000 })
-      await expect(preview.locator('iframe')).toHaveCount(0)
-      expect(window.frames().some((f) => f.url().startsWith('chrome-extension://'))).toBe(false)
-      await expect(window.getByTestId('res-binary-download')).toBeVisible()
-
-      await window.getByTestId('res-binary-open-pdf').click()
+      const frame = window.getByTestId('res-binary-preview').locator('iframe')
+      await expect(frame).toHaveCount(1, { timeout: 10_000 })
+      expect(await frame.getAttribute('src')).toMatch(/^blob:/)
+      expect(await frame.getAttribute('sandbox')).toBeNull()
+      // Chromium's PDF viewer (an extension frame) loaded inside it.
       await expect
-        .poll(() =>
-          app.evaluate(
-            () => (globalThis as unknown as { __openedPaths: string[] }).__openedPaths.length,
-          ),
+        .poll(() => window.frames().some((f) => f.url().startsWith('chrome-extension://')), {
+          timeout: 10_000,
+        })
+        .toBe(true)
+
+      // The frame is same-origin with the app (blob:file://), so reach its
+      // navigator from the app document: every request is attributed to the
+      // SUBFRAME and refused — clipboard-read included, which the app
+      // document itself is allowed (see the clipboard test above).
+      const fromFrame = await window.evaluate(async () => {
+        const iframe = document.querySelector<HTMLIFrameElement>(
+          '[data-testid="res-binary-preview"] iframe',
         )
-        .toBe(1)
-      const opened = await app.evaluate(
-        () => (globalThis as unknown as { __openedPaths: string[] }).__openedPaths[0],
-      )
-      expect(path.extname(opened)).toBe('.pdf')
-      expect(path.basename(path.dirname(opened))).toMatch(/^testnizer-pdf-/)
-      expect(fs.readFileSync(opened).equals(pdf)).toBe(true)
-      if (process.platform !== 'win32') {
-        expect(fs.statSync(opened).mode & 0o777).toBe(0o600)
-      }
-    } finally {
-      await app.evaluate(({ shell }) => {
-        const g = globalThis as unknown as { __realOpenPath?: typeof shell.openPath }
-        if (g.__realOpenPath) shell.openPath = g.__realOpenPath
+        const w = iframe?.contentWindow as (Window & typeof globalThis) | null
+        if (!w) return { error: 'no frame window' }
+        const within = <T,>(p: Promise<T>, ms = 5000): Promise<T | 'TIMEOUT'> =>
+          Promise.race([p, new Promise<'TIMEOUT'>((r) => setTimeout(() => r('TIMEOUT'), ms))])
+        const query = async (name: string): Promise<string> => {
+          try {
+            const st = await within(w.navigator.permissions.query({ name: name as PermissionName }))
+            return typeof st === 'string' ? st : st.state
+          } catch (e) {
+            return `error: ${(e as Error).name}`
+          }
+        }
+        let clipboardRead = 'resolved'
+        try {
+          await within(w.navigator.clipboard.readText())
+        } catch (e) {
+          clipboardRead = (e as Error).name
+        }
+        return {
+          clipboardReadQuery: await query('clipboard-read'),
+          notifications: await query('notifications'),
+          geolocation: await query('geolocation'),
+          notificationRequest: await within(w.Notification.requestPermission()),
+          clipboardRead,
+        }
       })
+      expect(fromFrame).toEqual({
+        clipboardReadQuery: 'denied',
+        notifications: 'denied',
+        geolocation: 'denied',
+        notificationRequest: 'denied',
+        clipboardRead: 'NotAllowedError',
+      })
+    } finally {
       server.close()
     }
   })

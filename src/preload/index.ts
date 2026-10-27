@@ -86,13 +86,6 @@ const api = {
     }): Promise<unknown> => ipcRenderer.invoke('dialog:openFile', options ?? {}),
   },
 
-  // ─── Response viewer ─────────────────────────────────────
-  // Issue #294: a PDF body opens in the system viewer (Chromium cannot show a
-  // PDF in a sandboxed frame). Bytes only — main picks the file name.
-  response: {
-    openPdf: (base64: string): Promise<unknown> => ipcRenderer.invoke('response:openPdf', base64),
-  },
-
   // ─── Request ─────────────────────────────────────────────
   request: {
     send: (options: unknown): Promise<unknown> => ipcRenderer.invoke('request:send', options),

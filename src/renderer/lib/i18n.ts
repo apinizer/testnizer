@@ -892,10 +892,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.binary.type': 'binary',
     'response.binary.imageAlt': 'Response',
     'response.binary.pdfTitle': 'PDF response',
-    'response.binary.openPdf': 'Open in PDF viewer',
-    'response.binary.openPdfHint':
-      'PDFs open in your system PDF viewer, not inside Testnizer, so an untrusted document never renders in the app window.',
-    'response.binary.openPdfFailed': 'Could not open the PDF',
     'response.cookies.none': 'No cookies in response.',
     'response.cookies.name': 'Name',
     'response.cookies.value': 'Value',
@@ -5158,10 +5154,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'response.binary.type': 'ikili',
     'response.binary.imageAlt': 'Yanıt',
     'response.binary.pdfTitle': 'PDF yanıtı',
-    'response.binary.openPdf': 'PDF görüntüleyicide aç',
-    'response.binary.openPdfHint':
-      'PDF dosyaları Testnizer içinde değil, sisteminizin PDF görüntüleyicisinde açılır; böylece güvenilmeyen bir belge uygulama penceresinde işlenmez.',
-    'response.binary.openPdfFailed': 'PDF açılamadı',
     'response.cookies.none': 'Yanıtta çerez yok.',
     'response.cookies.name': 'Ad',
     'response.cookies.value': 'Değer',

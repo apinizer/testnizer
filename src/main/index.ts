@@ -25,7 +25,6 @@ import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
 import { mcpDisconnectAll } from './protocols/mcp.engine'
 import { mqttDisconnectAll } from './protocols/mqtt.engine'
 import { installPermissionPolicy, type AppDocument } from './lib/permission-policy'
-import { cleanupOpenedPdfs } from './ipc/response-pdf.handler'
 import pkg from '../../package.json'
 
 function getIconPath(): string {
@@ -492,7 +491,5 @@ app.on('will-quit', () => {
   } catch {
     /* ignore */
   }
-  // PDFs handed to the system viewer this session (issue #294).
-  cleanupOpenedPdfs()
   closeDatabase()
 })

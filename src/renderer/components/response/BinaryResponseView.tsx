@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, ExternalLink, File as FileIcon } from 'lucide-react'
+import { Download, File as FileIcon } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
-import { toast } from '../../lib/toast'
 import MonacoWrapper from '../shared/MonacoWrapper'
 
 /** Decode a base64 string into a Blob of the given MIME type (null on failure). */
@@ -54,12 +53,8 @@ function formatBytes(n?: number): string {
 /**
  * Preview / download panel for binary response bodies (issue #25). The body
  * arrives base64-encoded; we rebuild an in-memory Blob and an object URL so
- * images render inline, audio / video play in place (CSP allows `blob:` for
- * media-src), and anything else offers a Download.
- *
- * PDFs open in the system viewer instead of an iframe (issue #294): Chromium
- * will not run its PDF viewer in a `sandbox`ed frame, and an untrusted body
- * must not render in an unsandboxed frame of the app's own document.
+ * images render inline, PDFs / audio / video play in a frame (CSP allows
+ * `blob:` for frame-src / media-src), and anything else offers a Download.
  */
 export default function BinaryResponseView({
   base64,
@@ -102,21 +97,6 @@ export default function BinaryResponseView({
   const isAudio = contentType.startsWith('audio/')
   const isVideo = contentType.startsWith('video/')
   const filename = `response.${extForContentType(contentType)}`
-
-  const [openingPdf, setOpeningPdf] = useState(false)
-  async function openPdf(): Promise<void> {
-    setOpeningPdf(true)
-    try {
-      const r = (await window.api?.response?.openPdf(base64)) as
-        | { success: boolean; error?: string }
-        | undefined
-      if (!r?.success) {
-        toast.error(t('response.binary.openPdfFailed'), { description: r?.error })
-      }
-    } finally {
-      setOpeningPdf(false)
-    }
-  }
 
   return (
     <div className="flex h-full flex-col">
@@ -197,32 +177,17 @@ export default function BinaryResponseView({
               style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
             />
           ) : isPdf ? (
-            <div
-              className="flex flex-col items-center gap-2 text-center"
-              data-testid="res-binary-pdf"
-            >
-              <FileIcon size={40} style={{ color: 'var(--muted)' }} />
-              <div style={{ color: 'var(--text)' }}>{t('response.binary.pdfTitle')}</div>
-              <div style={{ color: 'var(--muted)', fontSize: 13 }}>{formatBytes(size)}</div>
-              <button
-                type="button"
-                onClick={() => void openPdf()}
-                disabled={openingPdf}
-                data-testid="res-binary-open-pdf"
-                className="mt-1 flex cursor-pointer items-center gap-1 rounded px-2 py-[3px] disabled:cursor-default disabled:opacity-60"
-                style={{
-                  color: 'var(--accent-text)',
-                  background: 'var(--accent-light)',
-                  border: 'none',
-                  fontSize: 13,
-                }}
-              >
-                <ExternalLink size={13} /> {t('response.binary.openPdf')}
-              </button>
-              <div style={{ color: 'var(--hint)', fontSize: 12, maxWidth: 360 }}>
-                {t('response.binary.openPdfHint')}
-              </div>
-            </div>
+            // No `sandbox` attribute, on purpose (issue #294): Chromium's PDF
+            // viewer refuses to load in a sandboxed frame (every token set ends
+            // in chrome-error://), and PDFium already runs in Chromium's own
+            // sandboxed processes. The app renderer itself is `sandbox: true`,
+            // and the main-process permission policy denies anything this
+            // frame asks for (it is a subframe, not the app document).
+            <iframe
+              src={url}
+              title={t('response.binary.pdfTitle')}
+              className="h-full w-full border-none"
+            />
           ) : isAudio ? (
             <audio controls src={url} />
           ) : isVideo ? (
