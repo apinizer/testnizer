@@ -28,6 +28,7 @@ import ImportResultPanel, { type ImportReport } from './ImportResultPanel'
 import {
   classifyPostmanText,
   isPostmanVariablesKind,
+  isZipMagic,
   type PostmanArtifactKind,
 } from '../../../shared/postman-detect'
 import type { WsdlParseResult, TreeNode } from '../../types'
@@ -386,6 +387,12 @@ export default function ImportModal() {
               typeof fetchResult.data === 'string'
                 ? fetchResult.data
                 : JSON.stringify(fetchResult.data, null, 2)
+            // A .zip arrives here as mangled text; it is read from a file only.
+            if (isZipMagic(content)) {
+              setImportError(t('import.zipFromFileOnly'))
+              setImportLoading(false)
+              return
+            }
             // Same mismatch guard as file uploads — catches the case
             // where a `?wsdl` URL is pasted under the OpenAPI option.
             const detected = detectImportFormat(content, url)
@@ -427,13 +434,32 @@ export default function ImportModal() {
     setImportError('')
 
     try {
-      const result = await window.api?.importExport?.openFile()
-      if (!result?.success || !result.data) {
+      const result = await window.api?.importExport?.openFile({ format: selectedFormat.id })
+      if (!result?.success) {
+        // Main refuses a .zip it cannot import (another card, an unsafe or
+        // non-Postman archive) with a reason worth showing.
+        if (result?.error) setImportError(result.error)
+        setImportLoading(false)
+        return
+      }
+      if (!result.data) {
         setImportLoading(false)
         return
       }
 
-      const fileData = result.data as { content: string; filePath: string }
+      const fileData = result.data as {
+        content: string
+        filePath: string
+        archive?: PostmanFolderPickInfo
+      }
+
+      // A .zip (Postman card, issue #276 follow-up): main read it in memory
+      // and holds it behind a one-time handle — the same path as a picked
+      // Postman v3 folder.
+      if (fileData.archive) {
+        acceptPostmanPick(fileData.archive)
+        return
+      }
 
       // Detect the file's actual format and surface obvious mismatches
       // BEFORE the user spends time picking a destination folder.
@@ -475,6 +501,18 @@ export default function ImportModal() {
     }
   }
 
+  /** A Postman v3 folder or a .zip main has read and holds behind a handle → the destination step. */
+  function acceptPostmanPick(pick: PostmanFolderPickInfo) {
+    setPendingFolder(pick)
+    setPendingFileContent(null)
+    setPendingFileName('')
+    setPendingFilePath(null)
+    const archiveName = pick.source === 'zip' ? pick.folderName.replace(/\.zip$/i, '') : ''
+    goToFolderStep(
+      pick.collections.length === 1 ? pick.collections[0] : archiveName || pick.folderName,
+    )
+  }
+
   /** Pick a Postman v3 collection / workspace folder (main shows the dialog and checks it). */
   async function handlePickPostmanFolder() {
     setImportLoading(true)
@@ -486,13 +524,7 @@ export default function ImportModal() {
         return
       }
       if (!res.data) return // dialog dismissed
-      setPendingFolder(res.data)
-      setPendingFileContent(null)
-      setPendingFileName('')
-      setPendingFilePath(null)
-      goToFolderStep(
-        res.data.collections.length === 1 ? res.data.collections[0] : res.data.folderName,
-      )
+      acceptPostmanPick(res.data)
     } catch (err) {
       setImportError((err as Error).message || t('toast.importFailed'))
     } finally {
@@ -1023,6 +1055,9 @@ export default function ImportModal() {
                     )}
                     Click to select a {selectedFormat.name} file
                   </button>
+                  {selectedFormat.id === 'postman' && (
+                    <div className="mt-1.5 text-[var(--hint)]">{t('import.postmanFileHint')}</div>
+                  )}
                 </div>
               )}
 

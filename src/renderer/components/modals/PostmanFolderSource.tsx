@@ -1,10 +1,12 @@
-import { FolderOpen, Loader2 } from 'lucide-react'
+import { FileArchive, FolderOpen, Loader2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
 
-/** A picked Postman v3 folder (`importExport.pickPostmanFolder`). */
+/** A picked Postman v3 folder (`importExport.pickPostmanFolder`) or a .zip (`importExport.openFile`). */
 export interface PostmanFolderPickInfo {
   handle: string
   folderName: string
+  /** Absent from older callers: a folder. */
+  source?: 'folder' | 'zip'
   kind: 'workspace' | 'collection'
   collections: string[]
   requestCount: number
@@ -56,10 +58,21 @@ export function PostmanFolderSummary({ pick }: { pick: PostmanFolderPickInfo }) 
       data-testid="import-postman-folder-summary"
       className="flex items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
     >
-      <FolderOpen size={16} className="mt-0.5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
+      {pick.source === 'zip' ? (
+        <FileArchive
+          size={16}
+          className="mt-0.5 shrink-0 text-[var(--accent)]"
+          aria-hidden="true"
+        />
+      ) : (
+        <FolderOpen size={16} className="mt-0.5 shrink-0 text-[var(--accent)]" aria-hidden="true" />
+      )}
       <div className="min-w-0 text-[var(--text)]">
         <div>
-          {t('import.postmanFolder.ready')} <span className="font-semibold">{pick.folderName}</span>
+          {t(
+            pick.source === 'zip' ? 'import.postmanFolder.readyZip' : 'import.postmanFolder.ready',
+          )}{' '}
+          <span className="font-semibold">{pick.folderName}</span>
         </div>
         <div className="text-[var(--sub)]">
           {summary}

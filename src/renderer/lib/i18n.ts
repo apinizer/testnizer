@@ -1019,10 +1019,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.postmanFolder.hint':
       'A Postman 12 collection folder (it holds ".resources" and *.request.yaml files) or a workspace folder (it holds "postman/collections").',
     'import.postmanFolder.ready': 'Ready to import folder:',
+    'import.postmanFolder.readyZip': 'Ready to import archive:',
     'import.postmanFolder.summary':
       '{collections} collection(s) · {requests} request(s) · {environments} environment(s)',
     'import.postmanFolder.globals': 'globals',
     'import.postmanFolder.eachInFolder': 'Each collection is imported into its own folder.',
+    'import.postmanFileHint':
+      'A collection, environment or globals file (JSON or YAML), or a .zip: a Postman data export, zipped collection files or a zipped v3 folder.',
+    'import.zipFromFileOnly': 'This URL returns a .zip archive. Download it and import the file.',
 
     // Settings Modal
     'settings.title': 'Settings',
@@ -5172,10 +5176,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'import.postmanFolder.hint':
       'Postman 12 koleksiyon klasörü (".resources" ve *.request.yaml dosyalarını içerir) ya da çalışma alanı klasörü ("postman/collections" içerir).',
     'import.postmanFolder.ready': 'İçe aktarılmaya hazır klasör:',
+    'import.postmanFolder.readyZip': 'İçe aktarılmaya hazır arşiv:',
     'import.postmanFolder.summary':
       '{collections} koleksiyon · {requests} istek · {environments} ortam',
     'import.postmanFolder.globals': 'global değişkenler',
     'import.postmanFolder.eachInFolder': 'Her koleksiyon kendi klasörüne aktarılır.',
+    'import.postmanFileHint':
+      'Koleksiyon, ortam ya da global değişken dosyası (JSON veya YAML) ya da .zip: Postman veri dışa aktarımı, sıkıştırılmış koleksiyon dosyaları veya sıkıştırılmış v3 klasörü.',
+    'import.zipFromFileOnly': 'Bu URL bir .zip arşivi döndürüyor. Dosyayı indirip içe aktarın.',
 
     // Settings Modal
     'settings.title': 'Ayarlar',
