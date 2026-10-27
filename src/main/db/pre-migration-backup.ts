@@ -21,6 +21,12 @@
  *   out the only clean pre-migration copy.
  * - The copy is written under a `.partial` name and renamed when complete, so
  *   a crash mid-copy never leaves a file that counts as a backup.
+ * - Before the rename, secret values in the COPY are sealed with the same
+ *   sweep the live DB gets (`sealSecretsAtRestSync`, issue #239) and the copy
+ *   is VACUUMed with `secure_delete` on, so a copy of a DB written before
+ *   secrets were encrypted holds no plaintext secret. Without a keychain the
+ *   copy keeps them as the live DB does (plaintext fallback). If sealing
+ *   fails, the copy is deleted and the backup counts as failed.
  * - Retention deletes only inside `backups/`, only regular files whose name
  *   matches our pattern.
  */
@@ -39,6 +45,8 @@ import {
 } from 'fs'
 import { join } from 'path'
 import type { BuildIdentity } from '../lib/build-identity'
+import { isEncryptionAvailable } from '../lib/secure-storage'
+import { plaintextSecretsRemain, sealSecretsAtRestSync } from './secret-at-rest-migration'
 
 export const BACKUP_DIR_NAME = 'backups'
 export const BUILD_MARKER_FILE = 'last-started-build.json'
@@ -112,6 +120,35 @@ export interface PreMigrationBackupOptions {
   dbPath: string
   build: BuildIdentity
   now?: () => number
+  /** Injected for tests; defaults to `isEncryptionAvailable`. */
+  encryptionAvailable?: () => boolean
+}
+
+/**
+ * Seal the secret values of the copy at `file` (never the live DB) with the
+ * live DB's sweep, then VACUUM it so no freed page keeps the plaintext.
+ * Throws when a secret is left unsealed while the keychain is available.
+ */
+function sealSecretsInCopy(file: string, encryptionAvailable: () => boolean): void {
+  // Same rule as the live DB: no keychain → the plaintext fallback.
+  if (!encryptionAvailable()) return
+  const copy = new Database(file, { fileMustExist: true })
+  try {
+    // A rollback journal, never a WAL: the copy must be one self-contained
+    // file when it is renamed.
+    copy.pragma('journal_mode = DELETE')
+    copy.pragma('secure_delete = ON')
+    // Only values change, never keys; an old DB's dangling reference must not
+    // make the UPDATE fail.
+    copy.pragma('foreign_keys = OFF')
+    const sweep = sealSecretsAtRestSync(copy)
+    if (sweep.skipped > 0 || plaintextSecretsRemain(copy)) {
+      throw new Error('could not encrypt the secret values in the backup copy')
+    }
+    if (sweep.sealed > 0 || sweep.opened > 0) copy.exec('VACUUM')
+  } finally {
+    copy.close()
+  }
 }
 
 /**
@@ -153,6 +190,7 @@ export function backupBeforeMigration(opts: PreMigrationBackupOptions): PreMigra
     } catch {
       // Best effort — not supported the same way on every filesystem.
     }
+    sealSecretsInCopy(partial, opts.encryptionAvailable ?? isEncryptionAvailable)
     renameSync(partial, target)
     partial = null
 

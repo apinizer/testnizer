@@ -19,10 +19,14 @@
  * - A row that fails is skipped and its rowid logged — never its content.
  * - `secure_delete` is on (database.ts), so pages freed from here on are
  *   zeroed; VACUUM handles what was freed before.
+ * - The same sweep seals the pre-migration backup copy (issue #297,
+ *   `sealSecretsAtRestSync`), which may come from an older schema: a missing
+ *   table or column is skipped, never an error.
  */
 import type Database from 'better-sqlite3'
 import { sealMockAuthJson, sealSecret, storedVariableValue } from '../lib/secret-at-rest'
-import { isEncryptionAvailable } from '../lib/secure-storage'
+import { isEncryptedSecret, isEncryptionAvailable } from '../lib/secure-storage'
+import { mapMockAuthSecrets } from '../lib/local-secrets'
 import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
 
 export const SECRET_AT_REST_MIGRATION_KEY = 'migration.secretAtRest.v1'
@@ -72,19 +76,41 @@ const PLAIN_SQL = (col: string): string =>
 
 interface Ctx {
   batch: number
-  pause: () => Promise<void>
   skip: (table: string, rowid: number, error: unknown) => void
   result: SecretSweepResult
 }
 
+/**
+ * The sweep is a generator that yields after every batch, so one
+ * implementation serves both drivers: the live DB yields to the event loop
+ * between batches ({@link sealSecretsAtRest}), the pre-migration backup copy
+ * runs straight through ({@link sealSecretsAtRestSync}).
+ */
+type Sweep = Generator<void, void, void>
+
+/**
+ * Columns each step reads. The live DB always has them (the sweep runs after
+ * migrations); the pre-migration backup copy (issue #297) can come from an
+ * older schema, where a missing table or column means there is nothing of
+ * that kind to seal.
+ */
+function hasColumns(db: Database.Database, table: string, columns: string[]): boolean {
+  const present = new Set(
+    (db.pragma(`table_info(${table})`) as Array<{ name: string }>).map((c) => c.name),
+  )
+  return columns.every((c) => present.has(c))
+}
+
+const VARIABLE_COLUMNS = ['secret', 'value', 'initial_value']
+
 /** Rowid-batched loop over `select` (rowid > ?, LIMIT ?), one transaction per batch. */
-async function eachBatch<R extends { rid: number }>(
+function* eachBatch<R extends { rid: number }>(
   db: Database.Database,
   ctx: Ctx,
   table: string,
   select: Database.Statement,
   handle: (row: R) => void,
-): Promise<void> {
+): Sweep {
   let last = 0
   for (;;) {
     const rows = select.all(last, ctx.batch) as R[]
@@ -99,11 +125,12 @@ async function eachBatch<R extends { rid: number }>(
       }
     })()
     last = rows[rows.length - 1].rid
-    await ctx.pause()
+    yield
   }
 }
 
-async function sweepVariables(db: Database.Database, ctx: Ctx, table: string): Promise<void> {
+function* sweepVariables(db: Database.Database, ctx: Ctx, table: string): Sweep {
+  if (!hasColumns(db, table, VARIABLE_COLUMNS)) return
   const select = db.prepare(
     `SELECT rowid AS rid, secret, value, initial_value FROM ${table}
       WHERE rowid > ? AND (
@@ -112,7 +139,7 @@ async function sweepVariables(db: Database.Database, ctx: Ctx, table: string): P
       ) ORDER BY rowid LIMIT ?`,
   )
   const update = db.prepare(`UPDATE ${table} SET value = ?, initial_value = ? WHERE rowid = ?`)
-  await eachBatch<{ rid: number; secret: number; value: string; initial_value: string | null }>(
+  yield* eachBatch<{ rid: number; secret: number; value: string; initial_value: string | null }>(
     db,
     ctx,
     table,
@@ -129,18 +156,14 @@ async function sweepVariables(db: Database.Database, ctx: Ctx, table: string): P
   )
 }
 
-async function sweepMockAuth(
-  db: Database.Database,
-  ctx: Ctx,
-  table: string,
-  column: string,
-): Promise<void> {
+function* sweepMockAuth(db: Database.Database, ctx: Ctx, table: string, column: string): Sweep {
+  if (!hasColumns(db, table, [column])) return
   const select = db.prepare(
     `SELECT rowid AS rid, ${column} AS raw FROM ${table}
       WHERE rowid > ? AND COALESCE(${column}, '') != '' ORDER BY rowid LIMIT ?`,
   )
   const update = db.prepare(`UPDATE ${table} SET ${column} = ? WHERE rowid = ?`)
-  await eachBatch<{ rid: number; raw: string }>(db, ctx, table, select, (r) => {
+  yield* eachBatch<{ rid: number; raw: string }>(db, ctx, table, select, (r) => {
     const next = sealMockAuthJson(r.raw)
     if (next === r.raw) return
     update.run(next, r.rid)
@@ -148,13 +171,14 @@ async function sweepMockAuth(
   })
 }
 
-async function sweepMcpBearer(db: Database.Database, ctx: Ctx): Promise<void> {
+function* sweepMcpBearer(db: Database.Database, ctx: Ctx): Sweep {
+  if (!hasColumns(db, 'mock_mcp_servers', ['bearer_token'])) return
   const select = db.prepare(
     `SELECT rowid AS rid, bearer_token AS raw FROM mock_mcp_servers
       WHERE rowid > ? AND ${PLAIN_SQL('bearer_token')} ORDER BY rowid LIMIT ?`,
   )
   const update = db.prepare('UPDATE mock_mcp_servers SET bearer_token = ? WHERE rowid = ?')
-  await eachBatch<{ rid: number; raw: string }>(db, ctx, 'mock_mcp_servers', select, (r) => {
+  yield* eachBatch<{ rid: number; raw: string }>(db, ctx, 'mock_mcp_servers', select, (r) => {
     const next = sealSecret(r.raw)
     if (next === r.raw) return
     update.run(next, r.rid)
@@ -171,11 +195,36 @@ export async function sealSecretsAtRest(
   db: Database.Database,
   opts: Pick<SecretAtRestMigrationOptions, 'batchSize' | 'yieldBetweenBatches' | 'onSkip'> = {},
 ): Promise<SecretSweepResult> {
+  const pause = opts.yieldBetweenBatches ?? yieldTurn
+  const ctx = sweepContext(opts)
+  const sweep = sweepAll(db, ctx)
+  while (!sweep.next().done) await pause()
+  if (ctx.result.sealed > 0 || ctx.result.opened > 0) invalidateSecretInventory()
+  return ctx.result
+}
+
+/**
+ * The same sweep without yielding between batches, for a DB no one else is
+ * using: the pre-migration backup copy (issue #297), sealed before the copy
+ * is kept. Never touches the live DB's secret inventory.
+ */
+export function sealSecretsAtRestSync(
+  db: Database.Database,
+  opts: Pick<SecretAtRestMigrationOptions, 'batchSize' | 'onSkip'> = {},
+): SecretSweepResult {
+  const ctx = sweepContext(opts)
+  const sweep = sweepAll(db, ctx)
+  while (!sweep.next().done) {
+    // Straight through.
+  }
+  return ctx.result
+}
+
+function sweepContext(opts: Pick<SecretAtRestMigrationOptions, 'batchSize' | 'onSkip'>): Ctx {
   const result: SecretSweepResult = { sealed: 0, opened: 0, skipped: 0 }
   const onSkip = opts.onSkip ?? defaultSkip
-  const ctx: Ctx = {
+  return {
     batch: Math.max(1, opts.batchSize ?? DEFAULT_BATCH),
-    pause: opts.yieldBetweenBatches ?? yieldTurn,
     skip: (table, rowid, error) => {
       result.skipped++
       try {
@@ -186,13 +235,14 @@ export async function sealSecretsAtRest(
     },
     result,
   }
-  await sweepVariables(db, ctx, 'environment_variables')
-  await sweepVariables(db, ctx, 'global_variables')
-  await sweepMockAuth(db, ctx, 'mock_servers', 'auth_config')
-  await sweepMockAuth(db, ctx, 'mock_endpoints', 'auth_override')
-  await sweepMcpBearer(db, ctx)
-  if (result.sealed > 0 || result.opened > 0) invalidateSecretInventory()
-  return result
+}
+
+function* sweepAll(db: Database.Database, ctx: Ctx): Sweep {
+  yield* sweepVariables(db, ctx, 'environment_variables')
+  yield* sweepVariables(db, ctx, 'global_variables')
+  yield* sweepMockAuth(db, ctx, 'mock_servers', 'auth_config')
+  yield* sweepMockAuth(db, ctx, 'mock_endpoints', 'auth_override')
+  yield* sweepMcpBearer(db, ctx)
 }
 
 function hasRun(db: Database.Database): boolean {
@@ -213,17 +263,36 @@ function markRun(db: Database.Database, info: Record<string, unknown>): void {
   )
 }
 
-/** Any plaintext secret left (encryption was unavailable for it)? */
-function plaintextSecretsRemain(db: Database.Database): boolean {
+/** Any plaintext secret left (encryption was unavailable for it, or a row failed)? */
+export function plaintextSecretsRemain(db: Database.Database): boolean {
   const q = (sql: string): boolean => db.prepare(sql).get() !== undefined
+  const variables = (table: string): boolean =>
+    hasColumns(db, table, VARIABLE_COLUMNS) &&
+    q(
+      `SELECT 1 FROM ${table} WHERE secret = 1 AND (${PLAIN_SQL('value')} OR ${PLAIN_SQL('initial_value')}) LIMIT 1`,
+    )
+  // Mock auth secrets are fields inside a JSON blob; SQL cannot see them.
+  const mockAuth = (table: string, column: string): boolean => {
+    if (!hasColumns(db, table, [column])) return false
+    const rows = db
+      .prepare(`SELECT ${column} AS raw FROM ${table} WHERE COALESCE(${column}, '') != ''`)
+      .all() as Array<{ raw: string }>
+    return rows.some((r) => {
+      let plain = false
+      mapMockAuthSecrets(r.raw, (s) => {
+        if (s !== '' && !isEncryptedSecret(s)) plain = true
+        return s
+      })
+      return plain
+    })
+  }
   return (
-    q(
-      `SELECT 1 FROM environment_variables WHERE secret = 1 AND (${PLAIN_SQL('value')} OR ${PLAIN_SQL('initial_value')}) LIMIT 1`,
-    ) ||
-    q(
-      `SELECT 1 FROM global_variables WHERE secret = 1 AND (${PLAIN_SQL('value')} OR ${PLAIN_SQL('initial_value')}) LIMIT 1`,
-    ) ||
-    q(`SELECT 1 FROM mock_mcp_servers WHERE ${PLAIN_SQL('bearer_token')} LIMIT 1`)
+    variables('environment_variables') ||
+    variables('global_variables') ||
+    (hasColumns(db, 'mock_mcp_servers', ['bearer_token']) &&
+      q(`SELECT 1 FROM mock_mcp_servers WHERE ${PLAIN_SQL('bearer_token')} LIMIT 1`)) ||
+    mockAuth('mock_servers', 'auth_config') ||
+    mockAuth('mock_endpoints', 'auth_override')
   )
 }
 
