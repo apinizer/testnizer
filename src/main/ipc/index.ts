@@ -35,6 +35,7 @@ import { registerMcpHandlers } from './mcp.handler'
 import { registerMcpOAuthHandlers } from './mcp-oauth.handler'
 import { registerMcpSecurityHandlers } from './mcp-security.handler'
 import { registerSocketIOHandlers } from './socketio.handler'
+import { registerMqttHandlers } from './mqtt.handler'
 import { registerMockHandlers } from './mock.handler'
 import { registerMockMcpHandlers } from './mock-mcp.handler'
 import { registerTlsHandlers } from './tls.handler'
@@ -78,6 +79,7 @@ export function registerAllHandlers(): void {
   registerMcpOAuthHandlers()
   registerMcpSecurityHandlers()
   registerSocketIOHandlers()
+  registerMqttHandlers()
   registerMockHandlers()
   registerMockMcpHandlers()
   registerTlsHandlers()

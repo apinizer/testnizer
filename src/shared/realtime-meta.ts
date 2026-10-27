@@ -1,6 +1,6 @@
 /**
- * Saved-request metadata of the WebSocket and Socket.IO editors (issues
- * #282 / #283) — ONE writer and ONE reader per protocol, used by Ctrl+S /
+ * Saved-request metadata of the WebSocket, Socket.IO and MQTT editors (issues
+ * #282 / #283 / #284) — ONE writer and ONE reader per protocol, used by Ctrl+S /
  * Save As (`snapshotProtocol`), the History row's `configured` (the store's
  * connect) and every reopen path (`applyProtocolMetadata`, History restore,
  * the tab snapshot loader) — and by the Postman v3 import / export in main
@@ -36,6 +36,22 @@ import {
   type WsSavedMessage,
   type WsSettings,
 } from './realtime'
+import {
+  isMqttVersion,
+  normalizeMqttSaved,
+  normalizeTopics,
+  readConnectProperties,
+  readLastWill,
+  readMqttSettings,
+  readPublishDraft,
+  type MqttConnectProperties,
+  type MqttLastWill,
+  type MqttPublishDraft,
+  type MqttSavedMessage,
+  type MqttSettings,
+  type MqttTopic,
+  type MqttVersion,
+} from './mqtt'
 
 /**
  * A key / value row as the editors keep it (structurally the renderer's
@@ -259,5 +275,66 @@ export function readWsMeta(raw: unknown): Partial<WsRequestFields> {
   else if (isRtContentType(w.composerMode)) out.composerMode = w.composerMode
   if (typeof w.autoScroll === 'boolean') out.autoScroll = w.autoScroll
   if (w.savedMessages !== undefined) out.savedMessages = normalizeWsSaved(w.savedMessages)
+  return out
+}
+
+// ─── MQTT (issue #284) ──────────────────────────────────────────────────
+
+/** The MQTT editor fields that are part of the saved request. */
+export interface MqttRequestFields {
+  url: string
+  /** Empty = a random id is generated at connect. */
+  clientId: string
+  version: MqttVersion
+  username: string
+  password: string
+  settings: MqttSettings
+  /** MQTT 5 CONNECT properties. */
+  properties: MqttConnectProperties
+  lastWill: MqttLastWill
+  topics: MqttTopic[]
+  composer: MqttPublishDraft
+  savedMessages: MqttSavedMessage[]
+}
+
+/**
+ * The `metadata.mqtt` block (Ctrl+S, Save As, History `configured`, the
+ * Postman v3 import). Key names are the v3 `mqtt-request` ones.
+ */
+export function mqttMetaOf(s: MqttRequestFields): Record<string, unknown> {
+  return {
+    url: s.url,
+    clientId: s.clientId,
+    version: s.version,
+    username: s.username,
+    password: s.password,
+    settings: s.settings,
+    properties: s.properties,
+    lastWill: s.lastWill,
+    topics: s.topics,
+    composer: s.composer,
+    savedMessages: s.savedMessages,
+  }
+}
+
+/**
+ * A `metadata.mqtt` block → the editor fields it defines. Keys the block does
+ * not carry are absent from the result (the caller keeps its own); a present
+ * key of the wrong shape reads as that field's default, never throws.
+ */
+export function readMqttMeta(raw: unknown): Partial<MqttRequestFields> {
+  const m = isRecord(raw) ? raw : {}
+  const out: Partial<MqttRequestFields> = {}
+  if (typeof m.url === 'string') out.url = m.url
+  if (typeof m.clientId === 'string') out.clientId = m.clientId
+  if (m.version !== undefined) out.version = isMqttVersion(m.version) ? m.version : 5
+  if (typeof m.username === 'string') out.username = m.username
+  if (typeof m.password === 'string') out.password = m.password
+  if (m.settings !== undefined) out.settings = readMqttSettings(m.settings)
+  if (m.properties !== undefined) out.properties = readConnectProperties(m.properties)
+  if (m.lastWill !== undefined) out.lastWill = readLastWill(m.lastWill)
+  if (m.topics !== undefined) out.topics = normalizeTopics(m.topics)
+  if (m.composer !== undefined) out.composer = readPublishDraft(m.composer)
+  if (m.savedMessages !== undefined) out.savedMessages = normalizeMqttSaved(m.savedMessages)
   return out
 }

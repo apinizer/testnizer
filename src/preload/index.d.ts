@@ -529,6 +529,15 @@ interface ConsoleApi {
 import type { ExportSkippedItem } from '../shared/collection-export'
 import type { HistoryConfigured } from '../shared/history-snapshot'
 import type { SioListenConfig, SioSettings, SioWireArg, WsSettings } from '../shared/realtime'
+import type {
+  MqttConnectProperties,
+  MqttQos,
+  MqttSettings,
+  MqttVersion,
+  MqttWirePublish,
+  MqttWireSubscription,
+  MqttWireWill,
+} from '../shared/mqtt'
 import type { MockServerKind } from '../shared/mock-kind'
 import type {
   AiApprovalDecision,
@@ -1976,6 +1985,81 @@ interface SocketIOApi {
   setListen(connectionId: string, cfg: SioListenConfig): Promise<IpcResult<boolean>>
   onEvent(callback: (event: SocketIOEventPayload) => void): () => void
   onClosed(callback: (event: SocketIOClosedPayload) => void): () => void
+}
+
+// ─── MQTT (issue #284) ───────────────────────────────────────────
+
+interface MqttConnectRequest {
+  url: string
+  /** Empty = a random id is generated. */
+  clientId?: string
+  version?: MqttVersion
+  username?: string
+  password?: string
+  settings?: Partial<MqttSettings>
+  properties?: MqttConnectProperties
+  will?: MqttWireWill | null
+  subscriptions?: MqttWireSubscription[]
+  _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _pendingId?: string
+  /** Editor state (`{{var}}` kept) for History reopen. */
+  _configured?: HistoryConfigured
+}
+
+interface MqttConnectResponse {
+  connectionId: string
+  clientId: string
+  url: string
+  sessionPresent: boolean
+  reasonCode: number
+  properties?: Record<string, unknown>
+}
+
+/** `mqtt:event` — one timeline entry of a connection. */
+type MqttEventPayload = { connectionId: string } & (
+  | {
+      type: 'message'
+      direction: 'in' | 'out'
+      topic: string
+      payload: string
+      binary: boolean
+      qos: MqttQos
+      retain: boolean
+      dup?: boolean
+      properties?: Record<string, unknown>
+      timestamp: number
+    }
+  | {
+      type: 'system'
+      event: string
+      detail: string
+      topic?: string
+      reasonCode?: number
+      timestamp: number
+    }
+)
+
+/** `mqtt:closed` — the broker ended the connection. */
+interface MqttClosedPayload {
+  connectionId: string
+  reason: string
+}
+
+interface MqttApi {
+  connect(options: MqttConnectRequest): Promise<IpcResult<MqttConnectResponse>>
+  cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
+  disconnect(connectionId: string): Promise<IpcResult<boolean>>
+  publish(connectionId: string, message: MqttWirePublish): Promise<IpcResult<boolean>>
+  subscribe(
+    connectionId: string,
+    subscriptions: MqttWireSubscription[],
+  ): Promise<IpcResult<Array<{ topic: string; qos: number; refused: boolean }>>>
+  unsubscribe(connectionId: string, topics: string[]): Promise<IpcResult<boolean>>
+  onEvent(callback: (event: MqttEventPayload) => void): () => void
+  onClosed(callback: (event: MqttClosedPayload) => void): () => void
 }
 
 // ─── Updater ─────────────────────────────────────────────────────
@@ -3428,6 +3512,7 @@ interface ApiBridge {
   aiChat: AiChatApi
   mcp: McpApi
   socketio: SocketIOApi
+  mqtt: MqttApi
   updater: UpdaterApi
   branch: BranchApi
   git: GitApi

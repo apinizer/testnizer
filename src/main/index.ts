@@ -20,6 +20,7 @@ import { initLogging } from './diagnostics'
 import { maybeInitTelemetry } from './telemetry'
 import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
 import { mcpDisconnectAll } from './protocols/mcp.engine'
+import { mqttDisconnectAll } from './protocols/mqtt.engine'
 import pkg from '../../package.json'
 
 function getIconPath(): string {
@@ -401,6 +402,11 @@ app.on('will-quit', () => {
   }
   try {
     mcpDisconnectAll()
+  } catch {
+    /* ignore */
+  }
+  try {
+    mqttDisconnectAll()
   } catch {
     /* ignore */
   }

@@ -31,6 +31,7 @@ export type ConsoleProtocol =
   | 'sse'
   | 'mcp'
   | 'socketio'
+  | 'mqtt'
   | 'ai'
 
 export type ConsoleLevel = 'info' | 'success' | 'warning' | 'error'

@@ -1196,6 +1196,40 @@ const api = {
     },
   },
 
+  // ─── MQTT (issue #284) ──────────────────────────────────────
+  mqtt: {
+    connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('mqtt:connect', options),
+    cancelConnect: (pendingId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:cancelConnect', pendingId),
+    disconnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:disconnect', connectionId),
+    publish: (connectionId: string, message: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:publish', connectionId, message),
+    subscribe: (connectionId: string, subscriptions: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:subscribe', connectionId, subscriptions),
+    unsubscribe: (connectionId: string, topics: string[]): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:unsubscribe', connectionId, topics),
+    onEvent: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mqtt:event', handler)
+      return () => {
+        ipcRenderer.removeListener('mqtt:event', handler)
+      }
+    },
+    /** The broker closed the connection: `{ connectionId, reason }`. */
+    onClosed: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mqtt:closed', handler)
+      return () => {
+        ipcRenderer.removeListener('mqtt:closed', handler)
+      }
+    },
+  },
+
   // ─── Mock Server ────────────────────────────────────────────
   mock: {
     server: {
