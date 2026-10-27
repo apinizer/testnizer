@@ -16,10 +16,10 @@
  *  - `settings` → `protocolProfileBehavior` (same key names);
  *  - `url` + `queryParams` + `pathVariables` → `url {raw, query, variable}`;
  *  - `examples[] (http-example)` → `response[]`.
- * Non-HTTP kinds (GraphQL, gRPC, WebSocket, Socket.IO, MCP, LLM) become
+ * Non-HTTP kinds (GraphQL, gRPC, WebSocket, Socket.IO, MQTT, MCP, LLM) become
  * items WITHOUT a request; their v3 document rides in `nativeOf` (a WeakMap,
  * never a JSON key, so a v2 file cannot smuggle one in) and `native.ts`
- * writes them. MQTT / Kafka / Data / unknown kinds are skipped and reported.
+ * writes them. Kafka / Data / unknown kinds are skipped and reported.
  */
 import type {
   PostmanAuth,
@@ -40,6 +40,7 @@ export const NATIVE_KINDS = new Set([
   'grpc-request',
   'websocket-request',
   'socket.io-request',
+  'mqtt-request',
   'mcp-request',
   'llm-request',
 ])
@@ -419,9 +420,7 @@ export function convertV3Collection(root: Doc, warnings: string[]): V3Conversion
         continue
       }
       skipped++
-      if (kind === 'mqtt-request') {
-        warnings.push(`"${label}": MQTT request skipped — MQTT support is coming (issue #284).`)
-      } else if (kind === 'kafka-request' || kind === 'data-request') {
+      if (kind === 'kafka-request' || kind === 'data-request') {
         warnings.push(
           `"${label}": ${kind === 'kafka-request' ? 'Kafka' : 'Data (database / file)'} request skipped — Testnizer does not support ${kindLabel(kind)} requests.`,
         )

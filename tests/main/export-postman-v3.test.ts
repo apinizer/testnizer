@@ -58,8 +58,16 @@ import { writeSharedProjectSettings } from '../../src/main/lib/project-settings'
 import { storedVariableValue } from '../../src/main/lib/secret-at-rest'
 import { buildPostmanV3SuiteExport, v3JsonText } from '../../src/main/export/postman-v3'
 import { sanitizeFileStem } from '../../src/main/export/postman-v3/folder-writer'
-import { sioMetaOf, wsMetaOf } from '../../src/shared/realtime-meta'
+import { mqttMetaOf, sioMetaOf, wsMetaOf } from '../../src/shared/realtime-meta'
 import { DEFAULT_SIO_SETTINGS, DEFAULT_WS_SETTINGS } from '../../src/shared/realtime'
+import {
+  DEFAULT_MQTT_SETTINGS,
+  emptyConnectProperties,
+  emptyLastWill,
+  emptyMessageProperties,
+  emptyPublishDraft,
+  emptyWillProperties,
+} from '../../src/shared/mqtt'
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'postman')
 const SCHEMA = JSON.parse(fs.readFileSync(path.join(FIX, 'v3-schema', 'collection.json'), 'utf-8'))
@@ -279,6 +287,7 @@ describe('issue #277 — Postman v3 JSON', () => {
       'socket.io-request',
       'mcp-request',
       'llm-request',
+      'mqtt-request',
     ])
       expect(kinds.has(k), k).toBe(true)
   })
@@ -363,7 +372,7 @@ describe('issue #277 — Postman v3 folder', () => {
       ).map((r) => r.protocol),
     )
     // The comparison covers every kind, not only HTTP.
-    for (const p of ['http', 'graphql', 'grpc', 'websocket', 'socketio', 'mcp', 'ai'])
+    for (const p of ['http', 'graphql', 'grpc', 'websocket', 'socketio', 'mcp', 'ai', 'mqtt'])
       expect(protocols.has(p), p).toBe(true)
     expect(snapshot(back)).toEqual(snapshot(seeded))
     expect(envSnapshot(back)).toEqual(envSnapshot(seeded))
@@ -533,6 +542,7 @@ describe('issue #277 — Testnizer-native HTTP rows (Ctrl+S shapes) round-trip',
 describe('issue #277 — rows saved by the editor and by older builds', () => {
   type V3Item = Record<string, unknown> & { name: string }
   let items: V3Item[] = []
+  let notes: string[] = []
   beforeAll(async () => {
     const pid = newProject('Editor rows')
     const db = getDb()
@@ -650,11 +660,62 @@ describe('issue #277 — rows saved by the editor and by older builds', () => {
         },
       },
     })
+    // Issue #284: the MQTT Ctrl+S block, with what v3 cannot carry.
+    ep('MQTT now', 'mqtt', {
+      url: 'mqtt://broker.now.test:1883',
+      metadata: {
+        mqtt: mqttMetaOf({
+          url: 'mqtt://broker.now.test:1883',
+          clientId: '',
+          version: 4,
+          username: 'dev',
+          password: '{{mqttPw}}',
+          settings: { ...DEFAULT_MQTT_SETTINGS, keepAlive: 30 },
+          properties: emptyConnectProperties(),
+          lastWill: {
+            ...emptyLastWill(),
+            topic: 'clients/now',
+            payload: '<gone/>',
+            type: 'xml',
+            properties: emptyWillProperties(),
+          },
+          topics: [
+            {
+              id: 't',
+              name: 'sensors/#',
+              qos: 1,
+              subscribe: true,
+              description: '',
+              noLocal: false,
+              retainAsPublished: false,
+              retainHandling: 0,
+            },
+          ],
+          composer: { ...emptyPublishDraft(), topic: 'scratch', content: 'not saved' },
+          savedMessages: [
+            {
+              ...emptyPublishDraft(),
+              id: 's',
+              name: 'Ping',
+              description: '',
+              topic: 'sensors/ping',
+              content: '1',
+              contentType: 'text',
+              properties: {
+                ...emptyMessageProperties(),
+                userProperties: [{ id: 'u', key: 'off', value: 'x', enabled: false }],
+              },
+            },
+          ],
+        }),
+      },
+    })
     const res = await call('export:postmanV3Json', pid)
     expect(res.success, res.error).toBe(true)
     const doc = JSON.parse(res.data as string)
     expect(validate(doc), JSON.stringify(validate.errors?.slice(0, 5), null, 2)).toBe(true)
     items = doc.items
+    notes = res.notes ?? []
   })
   const item = (name: string): V3Item => items.find((i) => i.name === name)!
 
@@ -723,6 +784,26 @@ describe('issue #277 — rows saved by the editor and by older builds', () => {
       method: 'tools/call',
       params: { name: 'search', arguments: { q: '{{term}}' } },
     })
+  })
+
+  it('MQTT block (issue #284): connection, topics, will and saved messages; the rest is noted', () => {
+    const m = item('MQTT now')
+    expect(m).toMatchObject({
+      $kind: 'mqtt-request',
+      url: 'mqtt://broker.now.test:1883',
+      version: 4,
+      topics: [{ name: 'sensors/#', qos: 1, subscribe: true }],
+      lastWill: { topic: 'clients/now', payload: '<gone/>', type: 'text' },
+      settings: { keepAlive: 30, cleanSession: true },
+      messages: [{ $kind: 'mqtt-message', name: 'Ping', topic: 'sensors/ping', content: '1' }],
+    })
+    // An empty client id stays out (a random one is generated at connect).
+    expect(m).not.toHaveProperty('clientId')
+    expect(JSON.stringify(m.auth)).toContain('{{mqttPw}}')
+    const n = notes.filter((x) => x.includes('MQTT now')).join('\n')
+    expect(n).toMatch(/Last Will payload format XML is exported as text/)
+    expect(n).toMatch(/disabled message user properties were not exported/)
+    expect(n).toMatch(/unsaved message in the composer/)
   })
 })
 

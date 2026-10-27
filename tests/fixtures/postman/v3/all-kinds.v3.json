@@ -205,7 +205,55 @@
     {
       "$kind": "mqtt-request",
       "name": "MQ",
-      "url": "mqtt://broker.example.test"
+      "url": "mqtt://broker.example.test",
+      "clientId": "all-kinds",
+      "version": 4,
+      "topics": [
+        {
+          "name": "orders/#",
+          "qos": 2,
+          "subscribe": true,
+          "description": "All orders"
+        }
+      ],
+      "lastWill": {
+        "topic": "clients/all-kinds",
+        "payload": "gone",
+        "type": "text",
+        "qos": 0,
+        "retain": false
+      },
+      "auth": {
+        "type": "basic",
+        "credentials": [
+          {
+            "key": "username",
+            "value": "u"
+          },
+          {
+            "key": "password",
+            "value": "{{mqPw}}"
+          }
+        ]
+      },
+      "settings": {
+        "cleanSession": true,
+        "keepAlive": 60,
+        "autoReconnect": false,
+        "connectionTimeout": 30000,
+        "strictSSL": true
+      },
+      "messages": [
+        {
+          "$kind": "mqtt-message",
+          "name": "New order",
+          "topic": "orders/new",
+          "content": "{\"id\":1}",
+          "contentType": "json",
+          "qos": 1,
+          "retain": false
+        }
+      ]
     },
     {
       "$kind": "data-request",

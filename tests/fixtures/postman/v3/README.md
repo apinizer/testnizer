@@ -11,8 +11,10 @@ files are constructed from the public v3 JSON Schema
   reported, not imported (`postman/specs/`, `.postman/`). It mixes the list
   and `key: value` map forms seen in repositories, multi-auth, path-backed
   scripts (one inside, one climbing out of the collection), examples and
-  saved messages under `.resources/<request>.resources/`, and request kinds
-  Testnizer skips (MQTT, Kafka, an unknown kind).
+  saved messages under `.resources/<request>.resources/` (WebSocket,
+  Socket.IO and MQTT), an MQTT request exercising every v3 `mqtt-request`
+  field (issue #284), and request kinds Testnizer skips (Kafka, an unknown
+  kind).
 - `collection-only/` — one collection folder without a definition file.
 - `all-kinds.v3.json` — a monolithic v3 JSON collection (the shape the JSON
   Schema validates) with one item per kind.

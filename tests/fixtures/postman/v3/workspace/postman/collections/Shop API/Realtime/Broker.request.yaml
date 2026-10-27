@@ -1,4 +1,58 @@
 $kind: mqtt-request
-url: mqtt://broker.example.test
-clientId: shop
+name: Broker
+description: Device telemetry over MQTT 5.
+url: 'mqtts://{{mqttHost}}:8883'
+clientId: shop-{{deviceId}}
+version: 5
+topics:
+  - name: devices/+/telemetry
+    qos: 1
+    subscribe: true
+    description: Every device
+    settings:
+      noLocal: true
+      retainAsPublished: false
+      retainHandling: 1
+  - name: alerts/#
+    qos: 0
+    subscribe: false
+    settings: 0
+lastWill:
+  topic: devices/shop/status
+  payload: offline
+  type: text
+  qos: 1
+  retain: true
+  properties:
+    willDelayInterval: 10
+    contentType: text/plain
+    userProperties:
+      - key: reason
+        value: crash
+properties:
+  sessionExpiryInterval: 300
+  receiveMaximum: 50
+  maximumPacketSize: 1048576
+  requestResponseInformation: true
+  userProperties:
+    - key: tenant
+      value: shop
+    - key: region
+      value: eu
+      disabled: true
+      description: Not sent yet
+auth:
+  type: basic
+  credentials:
+    - key: username
+      value: '{{mqttUser}}'
+    - key: password
+      value: '{{mqttPassword}}'
+settings:
+  cleanSession: false
+  keepAlive: 45
+  autoReconnect: true
+  connectionTimeout: 20000
+  strictSSL: false
+messages: .resources/Broker.resources/messages
 order: 8000

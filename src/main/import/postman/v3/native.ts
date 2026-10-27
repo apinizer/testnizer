@@ -6,7 +6,7 @@
  * Each kind writes `request_schema.metadata.<protocol>` in exactly the shape
  * the editor's Ctrl+S writes (`snapshotProtocol` in
  * `src/renderer/lib/save-active-request.ts`) so the opened tab restores it
- * (`restoreProtocolFromMetadata`). WebSocket / Socket.IO go through the ONE
+ * (`restoreProtocolFromMetadata`). WebSocket / Socket.IO / MQTT go through the ONE
  * realtime writer (`src/shared/realtime-meta.ts`), which also writes the keys
  * older builds read.
  *
@@ -30,7 +30,16 @@ import {
   isSioArgContentType,
   type SioClientVersion,
 } from '../../../../shared/realtime'
-import { sioMetaOf, wsMetaOf, type RtKeyValue } from '../../../../shared/realtime-meta'
+import { mqttMetaOf, sioMetaOf, wsMetaOf, type RtKeyValue } from '../../../../shared/realtime-meta'
+import {
+  emptyPublishDraft,
+  isMqttVersion,
+  normalizeMqttSaved,
+  normalizeTopics,
+  readConnectProperties,
+  readLastWill,
+  readMqttSettings,
+} from '../../../../shared/mqtt'
 import { normalizeMcpProtocolOption, type McpSavedCall } from '../../../../shared/mcp-call'
 import { parseJsonWithVars } from '../../../../shared/json-with-vars'
 import { resolveProviderUrl, type AiProvider } from '../../../protocols/ai-chat.engine'
@@ -428,6 +437,121 @@ function writeSocketIo(a: NativeWriteArgs): string {
   return insertEndpoint(a, 'socketio', 'GET', extractPath(url), schema)
 }
 
+// ─── MQTT (issue #284) ────────────────────────────────────────────────
+
+/** v3 user-property rows → editor rows (`disabled` kept for the CONNECT list). */
+function userPropRows(raw: unknown): RtKeyValue[] {
+  return rows(kvList(raw))
+}
+
+/**
+ * The v3 `mqtt-request` keys are the editor's own (`src/shared/mqtt.ts`), so
+ * the readers there do the work; only the nested shapes differ: a topic's
+ * MQTT 5 options sit under `settings` (or `0` = none), user properties are
+ * key / value lists. What Testnizer has no field for is reported.
+ */
+function writeMqtt(a: NativeWriteArgs): string {
+  const { doc, label } = a.native
+  const url = str(doc.url) ?? ''
+  if (doc.version !== undefined && !isMqttVersion(doc.version)) {
+    a.warnings.push(`"${label}": MQTT version ${JSON.stringify(doc.version)} is imported as 5.0.`)
+  }
+  let username = ''
+  let password = ''
+  const auth = ownAuth(doc, label, a.warnings)
+  if (auth?.type === 'basic') {
+    const b = auth.basic as { username?: string; password?: string } | undefined
+    username = b?.username ?? ''
+    password = b?.password ?? ''
+  } else if (auth && auth.type !== 'none') {
+    a.warnings.push(`"${label}": ${auth.type} auth is not available for MQTT; imported as no auth.`)
+  }
+  warnNoInherit(a, doc, 'MQTT')
+  const props = isRecord(doc.properties) ? doc.properties : {}
+  const properties = readConnectProperties({
+    ...props,
+    userProperties: userPropRows(props.userProperties),
+  })
+  const will = isRecord(doc.lastWill) ? doc.lastWill : {}
+  const willProps = isRecord(will.properties) ? will.properties : {}
+  const lastWill = readLastWill({
+    ...will,
+    properties: { ...willProps, userProperties: userPropRows(willProps.userProperties) },
+  })
+  const dropped = new Set<string>()
+  const topics = normalizeTopics(
+    (Array.isArray(doc.topics) ? doc.topics : [])
+      .filter(isRecord)
+      .filter((t) => str(t.name)?.trim())
+      .map((t) => {
+        const opts = isRecord(t.settings) ? t.settings : {}
+        if (opts.subscriptionIdentifier !== undefined) dropped.add('subscription identifiers')
+        if (Array.isArray(t.userProperties) && t.userProperties.length > 0)
+          dropped.add('subscription user properties')
+        return {
+          name: str(t.name),
+          qos: t.qos,
+          subscribe: t.subscribe !== false,
+          description: str(t.description) ?? '',
+          noLocal: opts.noLocal,
+          retainAsPublished: opts.retainAsPublished,
+          retainHandling: opts.retainHandling,
+        }
+      }),
+  )
+  const savedMessages = normalizeMqttSaved(
+    (Array.isArray(doc.messages) ? doc.messages : []).filter(isRecord).map((m, i) => {
+      const mp = isRecord(m.properties) ? m.properties : {}
+      if (mp.subscriptionIdentifier !== undefined) dropped.add('message subscription identifiers')
+      return {
+        name: str(m.name)?.trim() || `Message ${i + 1}`,
+        ...(str(m.description) ? { description: str(m.description) } : {}),
+        topic: str(m.topic) ?? '',
+        content: str(m.content) ?? '',
+        contentType: m.contentType,
+        qos: m.qos,
+        retain: m.retain === true,
+        properties: { ...mp, userProperties: userPropRows(mp.userProperties) },
+      }
+    }),
+  )
+  if (dropped.size > 0)
+    a.warnings.push(`"${label}": MQTT ${[...dropped].join(', ')} were not imported.`)
+  reportExamples(doc, label, a.warnings)
+  const first = savedMessages[0]
+  const meta = mqttMetaOf({
+    url,
+    clientId: str(doc.clientId) ?? '',
+    version: doc.version === 4 ? 4 : 5,
+    username,
+    password,
+    settings: readMqttSettings(doc.settings),
+    properties,
+    lastWill,
+    topics,
+    composer: first
+      ? {
+          topic: first.topic,
+          content: first.content,
+          contentType: first.contentType,
+          qos: first.qos,
+          retain: first.retain,
+          properties: first.properties,
+        }
+      : emptyPublishDraft(),
+    savedMessages,
+  })
+  const schema: Record<string, unknown> = {
+    url,
+    method: 'GET',
+    params: [],
+    headers: [],
+    body: { type: 'none' },
+    metadata: { mqtt: meta },
+  }
+  return insertEndpoint(a, 'mqtt', 'GET', extractPath(url), schema)
+}
+
 // ─── MCP ──────────────────────────────────────────────────────────────
 
 /** A v3 JSON-RPC `message` → the saved call (tool / resource / prompt); null when it is none of them. */
@@ -677,6 +801,8 @@ export function insertNativeItem(a: NativeWriteArgs): string {
       return writeWebsocket(a)
     case 'socket.io-request':
       return writeSocketIo(a)
+    case 'mqtt-request':
+      return writeMqtt(a)
     case 'mcp-request':
       return writeMcp(a)
     case 'llm-request':

@@ -6,7 +6,8 @@
  * Fixtures are constructed (tests/fixtures/postman/v3/README.md): both the
  * list and the `key: value` map forms, multi-auth, path-backed scripts (one
  * climbing out of the collection), examples and saved messages under
- * `.resources/`, every request kind (MQTT / Kafka / an unknown kind skipped).
+ * `.resources/`, every request kind (Kafka / an unknown kind skipped; MQTT
+ * imported since issue #284).
  *
  * Fail-before: v3 folders had no import path at all and a v3 JSON file was
  * refused ("Testnizer imports Postman v3 in a later version").
@@ -52,7 +53,7 @@ import { initDatabase, getDb } from '../../src/main/db/database'
 import { registerImportExportHandlers } from '../../src/main/ipc/import-export.handler'
 import { readSharedProjectSettings } from '../../src/main/lib/project-settings'
 import * as trust from '../../src/main/lib/mcp-stdio-trust'
-import { readWsMeta, readSioMeta } from '../../src/shared/realtime-meta'
+import { readWsMeta, readSioMeta, type MqttRequestFields } from '../../src/shared/realtime-meta'
 
 const FIX = path.join(__dirname, '..', 'fixtures', 'postman', 'v3')
 const WORKSPACE = path.join(FIX, 'workspace')
@@ -260,6 +261,7 @@ describe('issue #276 part 2 — Postman v3 workspace folder', () => {
       'Tools',
       'Local server',
       'Assistant',
+      'Broker',
     ])
   })
 
@@ -505,16 +507,70 @@ describe('issue #276 part 2 — Postman v3 workspace folder', () => {
     expect(w).toMatch(/Assistant.*credentials in the file were not imported/)
   })
 
-  it('MQTT, Kafka and unknown kinds are skipped and reported', () => {
+  it('MQTT (issue #284): every v3 mqtt-request field lands in the editor block', () => {
+    const e = ep(pid, 'Broker')
+    expect(e.protocol).toBe('mqtt')
+    expect(e.description).toBe('Device telemetry over MQTT 5.')
+    const m = e.schema.metadata.mqtt as MqttRequestFields
+    expect(m).toMatchObject({
+      url: 'mqtts://{{mqttHost}}:8883',
+      clientId: 'shop-{{deviceId}}',
+      version: 5,
+      username: '{{mqttUser}}',
+      password: '{{mqttPassword}}',
+      settings: {
+        cleanSession: false,
+        keepAlive: 45,
+        autoReconnect: true,
+        connectionTimeout: 20000,
+        strictSSL: false,
+      },
+      properties: {
+        sessionExpiryInterval: 300,
+        receiveMaximum: 50,
+        maximumPacketSize: 1048576,
+        requestResponseInformation: true,
+      },
+      lastWill: {
+        topic: 'devices/shop/status',
+        payload: 'offline',
+        type: 'text',
+        qos: 1,
+        retain: true,
+        properties: { willDelayInterval: 10, contentType: 'text/plain' },
+      },
+    })
+    expect(m.properties.userProperties.map((r) => [r.key, r.value, r.enabled])).toEqual([
+      ['tenant', 'shop', true],
+      ['region', 'eu', false],
+    ])
+    expect(m.lastWill.properties.userProperties[0]).toMatchObject({ key: 'reason', value: 'crash' })
+    expect(m.topics.map((t) => [t.name, t.qos, t.subscribe, t.noLocal, t.retainHandling])).toEqual([
+      ['devices/+/telemetry', 1, true, true, 1],
+      ['alerts/#', 0, false, false, 0],
+    ])
+    expect(m.savedMessages.map((x) => [x.name, x.topic, x.contentType, x.qos, x.retain])).toEqual([
+      ['Reboot', 'devices/{{deviceId}}/commands', 'json', 2, false],
+      ['Firmware chunk', 'devices/shop/firmware', 'base64', 1, true],
+    ])
+    expect(m.savedMessages[0].properties).toMatchObject({
+      contentType: 'application/json',
+      responseTopic: 'devices/shop/replies',
+      correlationData: 'req-1',
+      messageExpiryInterval: 60,
+      payloadFormatIndicator: true,
+      topicAlias: 3,
+    })
+    // The composer opens the first saved message.
+    expect(m.composer).toMatchObject({ topic: 'devices/{{deviceId}}/commands', qos: 2 })
+    expect(res.warnings!.join('\n')).not.toMatch(/MQTT request skipped/)
+  })
+
+  it('Kafka and unknown kinds are skipped and reported', () => {
     const w = res.warnings!.join('\n')
-    expect(w).toMatch(
-      /"Realtime \/ Broker": MQTT request skipped — MQTT support is coming \(issue #284\)/,
-    )
     expect(w).toMatch(/Orders topic.*Kafka request skipped/)
     expect(w).toMatch(/Pigeon.*unknown request kind "carrier-pigeon-request" skipped/)
-    expect(endpoints(pid).some((e) => ['Broker', 'Orders topic', 'Pigeon'].includes(e.name))).toBe(
-      false,
-    )
+    expect(endpoints(pid).some((e) => ['Orders topic', 'Pigeon'].includes(e.name))).toBe(false)
   })
 
   it('unknown files and Native Git side content are listed, not imported', () => {
@@ -643,7 +699,7 @@ describe('issue #276 part 2 — a single collection folder and a v3 JSON file', 
     const pid = newProject()
     const r = await importText(pid, fs.readFileSync(path.join(FIX, 'all-kinds.v3.json'), 'utf-8'))
     expect(r.success).toBe(true)
-    expect(r.endpointCount).toBe(7)
+    expect(r.endpointCount).toBe(8)
     expect(endpoints(pid).map((e) => [e.name, e.protocol])).toEqual([
       ['Create user', 'http'],
       ['GQL', 'graphql'],
@@ -652,6 +708,7 @@ describe('issue #276 part 2 — a single collection folder and a v3 JSON file', 
       ['SIO', 'socketio'],
       ['MCP', 'mcp'],
       ['LLM', 'ai'],
+      ['MQ', 'mqtt'],
     ])
     // Collection auth with a {{var}} credential → project auth (project root, no auth yet).
     expect((readSharedProjectSettings(pid)?.auth as { type: string }).type).toBe('bearer')
@@ -661,7 +718,13 @@ describe('issue #276 part 2 — a single collection folder and a v3 JSON file', 
     })
     expect(ep(pid, 'Create user').schema.pathVariables[0]).toMatchObject({ key: 'id', value: '7' })
     const w = r.warnings!.join('\n')
-    expect(w).toMatch(/MQTT request skipped/)
+    expect(w).not.toMatch(/MQTT request skipped/)
+    expect(ep(pid, 'MQ').schema.metadata.mqtt).toMatchObject({
+      version: 4,
+      username: 'u',
+      password: '{{mqPw}}',
+      topics: [{ name: 'orders/#', qos: 2, description: 'All orders' }],
+    })
     expect(w).toMatch(/Data \(database \/ file\) request skipped/)
   })
 

@@ -1,0 +1,8 @@
+$kind: mqtt-message
+name: Firmware chunk
+topic: devices/shop/firmware
+content: 'AAEC/w=='
+contentType: base64
+qos: 1
+retain: true
+order: 2000

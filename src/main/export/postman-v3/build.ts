@@ -7,7 +7,8 @@
  *
  * Protocol → kind (research 01-formats §7.4): http / soap / sse →
  * `http-request`, graphql → `graphql-request`, grpc → `grpc-request`,
- * websocket → `websocket-request`, socketio → `socket.io-request`, mcp →
+ * websocket → `websocket-request`, socketio → `socket.io-request`, mqtt →
+ * `mqtt-request`, mcp →
  * `mcp-request`, ai → `llm-request`. Every field mirrors what the importer
  * (`src/main/import/postman/v3/`) reads back, so Testnizer → v3 → Testnizer
  * keeps the request. What v3 cannot hold is listed in `notes`.
@@ -20,7 +21,17 @@
 import { readRequestSettings } from '../../../shared/request-settings'
 import { readPathVariables } from '../../../shared/path-variables'
 import { withAssertionScript } from '../../../shared/assertions-to-script'
-import { readSioMeta, readWsMeta } from '../../../shared/realtime-meta'
+import { readMqttMeta, readSioMeta, readWsMeta } from '../../../shared/realtime-meta'
+import {
+  DEFAULT_MQTT_SETTINGS,
+  emptyConnectProperties,
+  emptyLastWill,
+  emptyPublishDraft,
+  type MqttContentType,
+  type MqttKeyValue,
+  type MqttMessageProperties,
+  type MqttWillProperties,
+} from '../../../shared/mqtt'
 import { parseJsonWithVars } from '../../../shared/json-with-vars'
 import {
   soapTransportFromMeta,
@@ -497,6 +508,130 @@ class Builder {
     return doc
   }
 
+  /**
+   * MQTT (issue #284): the editor block already uses the v3 key names
+   * (`src/shared/mqtt.ts`); only empty / default values are left out so an
+   * import of the file restores the same block. v3 has no field for the
+   * composer draft (the importer opens the first saved message in it), XML /
+   * HTML payload formats, or disabled message user properties — noted.
+   */
+  mqtt(req: ExportRequest): Json {
+    const m = readMqttMeta(req.meta.mqtt)
+    const doc = this.head(req, 'mqtt-request')
+    doc.url = m.url ?? str(req.schema.url)
+    if (m.clientId) doc.clientId = m.clientId
+    doc.version = m.version ?? 5
+    const encoding = (t: MqttContentType, what: string): string => {
+      if (t === 'xml' || t === 'html') {
+        this.note(req.name, `the ${what} format ${t.toUpperCase()} is exported as text.`)
+        return 'text'
+      }
+      return t
+    }
+    const plainRows = (list: MqttKeyValue[], what: string): Json[] => {
+      if (list.some((r) => !r.enabled && r.key.trim()))
+        this.note(req.name, `disabled ${what} user properties were not exported.`)
+      return list
+        .filter((r) => r.enabled && r.key.trim())
+        .map((r) => ({ key: r.key, value: r.value }))
+    }
+    const msgProps = (
+      p: Partial<MqttMessageProperties & MqttWillProperties>,
+      what: string,
+    ): Json | undefined => {
+      const out: Json = {}
+      if (p.payloadFormatIndicator) out.payloadFormatIndicator = true
+      if (p.messageExpiryInterval != null) out.messageExpiryInterval = p.messageExpiryInterval
+      if (p.willDelayInterval != null) out.willDelayInterval = p.willDelayInterval
+      if (p.topicAlias != null) out.topicAlias = p.topicAlias
+      if (p.responseTopic) out.responseTopic = p.responseTopic
+      if (p.correlationData) out.correlationData = p.correlationData
+      if (p.contentType) out.contentType = p.contentType
+      const up = plainRows(p.userProperties ?? [], what)
+      if (up.length > 0) out.userProperties = up
+      return Object.keys(out).length > 0 ? out : undefined
+    }
+    const topics = (m.topics ?? [])
+      .filter((t) => t.name.trim())
+      .map((t) => {
+        const topic: Json = { name: t.name, qos: t.qos, subscribe: t.subscribe }
+        if (t.description) topic.description = t.description
+        if (t.noLocal || t.retainAsPublished || t.retainHandling !== 0)
+          topic.settings = {
+            noLocal: t.noLocal,
+            retainAsPublished: t.retainAsPublished,
+            retainHandling: t.retainHandling,
+          }
+        return topic
+      })
+    if (topics.length > 0) doc.topics = topics
+    const will = m.lastWill ?? emptyLastWill()
+    if (will.topic.trim()) {
+      const w: Json = {
+        topic: will.topic,
+        payload: will.payload,
+        type: encoding(will.type, 'Last Will payload'),
+        qos: will.qos,
+        retain: will.retain,
+      }
+      const wp = msgProps(will.properties, 'Last Will')
+      if (wp) w.properties = wp
+      doc.lastWill = w
+    }
+    const cp = m.properties ?? emptyConnectProperties()
+    const props: Json = {}
+    if (cp.sessionExpiryInterval != null) props.sessionExpiryInterval = cp.sessionExpiryInterval
+    if (cp.receiveMaximum != null) props.receiveMaximum = cp.receiveMaximum
+    if (cp.maximumPacketSize != null) props.maximumPacketSize = cp.maximumPacketSize
+    if (cp.requestResponseInformation) props.requestResponseInformation = true
+    const cup = rows(cp.userProperties)
+    if (cup.length > 0) props.userProperties = cup
+    if (Object.keys(props).length > 0) doc.properties = props
+    if (m.username || m.password) {
+      const a = authToV3({
+        type: 'basic',
+        basic: { username: m.username ?? '', password: m.password ?? '' },
+      })
+      if (a) doc.auth = a
+    }
+    const st = m.settings ?? DEFAULT_MQTT_SETTINGS
+    doc.settings = {
+      cleanSession: st.cleanSession,
+      keepAlive: st.keepAlive,
+      autoReconnect: st.autoReconnect,
+      connectionTimeout: st.connectionTimeout,
+      strictSSL: st.strictSSL,
+    }
+    const saved = m.savedMessages ?? []
+    const msgs = saved.map((msg) => {
+      const out: Json = {
+        $kind: 'mqtt-message',
+        name: msg.name || 'message',
+        ...(msg.description ? { description: msg.description } : {}),
+        content: msg.content,
+        topic: msg.topic,
+        qos: msg.qos,
+        retain: msg.retain,
+        contentType: encoding(msg.contentType, 'message'),
+      }
+      const p = msgProps(msg.properties, 'message')
+      if (p) out.properties = p
+      return out
+    })
+    if (msgs.length > 0) doc.messages = msgs
+    const c = m.composer ?? emptyPublishDraft()
+    const first = saved[0]
+    const draftOf = (d: typeof c): string =>
+      JSON.stringify([d.topic, d.content, d.contentType, d.qos, d.retain, d.properties])
+    const composerEmpty = !c.topic.trim() && !c.content.trim()
+    if (!composerEmpty && (!first || draftOf(first) !== draftOf(c)))
+      this.note(
+        req.name,
+        'the unsaved message in the composer has no Postman v3 field; save it as a saved message to export it.',
+      )
+    return doc
+  }
+
   mcp(req: ExportRequest): Json {
     const m = isRecord(req.meta.mcp) ? req.meta.mcp : {}
     const doc = this.head(req, 'mcp-request')
@@ -584,6 +719,8 @@ class Builder {
         return this.websocket(req)
       case 'socketio':
         return this.socketio(req)
+      case 'mqtt':
+        return this.mqtt(req)
       case 'mcp':
         return this.mcp(req)
       case 'ai':
