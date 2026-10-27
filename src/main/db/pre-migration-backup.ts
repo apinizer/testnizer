@@ -28,7 +28,14 @@
  *   copy keeps them as the live DB does (plaintext fallback). If sealing
  *   fails, the copy is deleted and the backup counts as failed.
  * - Retention deletes only inside `backups/`, only regular files whose name
- *   matches our pattern.
+ *   matches our pattern, and only after a new copy was written and renamed:
+ *   a failed backup never reduces the number of existing copies.
+ * - Free-space guard: before copying, the volume of `backups/` must have at
+ *   least 2 × (size of `testnizer.db` + `-wal`) + {@link FREE_SPACE_MARGIN_BYTES}
+ *   free (the copy, plus the room the seal step's VACUUM of the copy needs).
+ *   Otherwise nothing is written or pruned and the backup counts as failed
+ *   with code `low-disk-space`, so the one-time notice says why. If the probe
+ *   itself fails, the backup goes ahead as before.
  */
 import Database from 'better-sqlite3'
 import {
@@ -40,6 +47,7 @@ import {
   readdirSync,
   renameSync,
   statSync,
+  statfsSync,
   unlinkSync,
   writeFileSync,
 } from 'fs'
@@ -51,6 +59,8 @@ import { plaintextSecretsRemain, sealSecretsAtRestSync } from './secret-at-rest-
 export const BACKUP_DIR_NAME = 'backups'
 export const BUILD_MARKER_FILE = 'last-started-build.json'
 export const BACKUPS_TO_KEEP = 3
+/** Fixed headroom on top of 2 × the DB size, so the backup never fills the disk. */
+export const FREE_SPACE_MARGIN_BYTES = 50 * 1024 * 1024
 
 /** `testnizer.db.<label>.<timestamp>` — the label never contains a path separator. */
 const BACKUP_NAME = /^testnizer\.db\.([0-9A-Za-z._-]+)\.(\d+)$/
@@ -58,7 +68,10 @@ const BACKUP_NAME = /^testnizer\.db\.([0-9A-Za-z._-]+)\.(\d+)$/
 export type PreMigrationBackupOutcome =
   | { status: 'skipped'; reason: 'first-start' | 'same-build' | 'already-backed-up' }
   | { status: 'created'; path: string; pruned: string[]; pruneError?: string }
-  | { status: 'failed'; error: string }
+  | { status: 'failed'; error: string; code?: BackupFailureCode }
+
+/** Why a backup failed, when the notice should say it in the UI language. */
+export type BackupFailureCode = 'low-disk-space'
 
 /** `<version>-<build>` reduced to characters that are safe in a file name. */
 export function backupLabel(build: BuildIdentity): string {
@@ -122,7 +135,30 @@ export interface PreMigrationBackupOptions {
   now?: () => number
   /** Injected for tests; defaults to `isEncryptionAvailable`. */
   encryptionAvailable?: () => boolean
+  /** Free bytes on the volume of `dir`. Injected for tests; defaults to `statfsSync`. */
+  freeBytes?: (dir: string) => number
 }
+
+function statfsFreeBytes(dir: string): number {
+  const s = statfsSync(dir)
+  return Number(s.bavail) * Number(s.bsize)
+}
+
+function fileSize(file: string): number {
+  try {
+    return statSync(file).size
+  } catch {
+    return 0
+  }
+}
+
+/** Bytes the copy needs free: 2 × (DB + WAL) + the fixed margin. */
+export function requiredFreeBytes(dbPath: string): number {
+  return 2 * (fileSize(dbPath) + fileSize(`${dbPath}-wal`)) + FREE_SPACE_MARGIN_BYTES
+}
+
+const MB = 1024 * 1024
+const toMb = (bytes: number): number => Math.ceil(bytes / MB)
 
 /**
  * Seal the secret values of the copy at `file` (never the live DB) with the
@@ -175,6 +211,27 @@ export function backupBeforeMigration(opts: PreMigrationBackupOptions): PreMigra
     }
 
     mkdirSync(dir, { recursive: true, mode: 0o700 })
+
+    // Free-space guard. A probe that fails (or reports nonsense) never blocks
+    // the backup; a probe that says "too little" skips it before any write.
+    let available: number | null = null
+    try {
+      const probed = (opts.freeBytes ?? statfsFreeBytes)(dir)
+      if (Number.isFinite(probed) && probed >= 0) available = probed
+    } catch {
+      available = null
+    }
+    const required = requiredFreeBytes(dbPath)
+    if (available !== null && available < required) {
+      return {
+        status: 'failed',
+        code: 'low-disk-space',
+        error:
+          'not enough free disk space for the pre-update backup ' +
+          `(needs about ${toMb(required)} MB, ${Math.floor(available / MB)} MB free)`,
+      }
+    }
+
     const target = join(dir, `testnizer.db.${label}.${now()}`)
     partial = `${target}.partial`
     const source = new Database(dbPath, { readonly: true, fileMustExist: true })
@@ -227,8 +284,11 @@ export function backupFailureNotice(
   locale: string,
   error: string,
   backupsDir: string,
+  code?: BackupFailureCode,
 ): BackupFailureNotice {
   if (locale === 'tr') {
+    const reason =
+      code === 'low-disk-space' ? 'güncelleme öncesi yedek için yeterli boş disk alanı yok' : error
     return {
       title: 'Testnizer — Yedek alınamadı',
       message: 'Testnizer, veritabanınızı güncellemeden önce yedekleyemedi.',
@@ -236,7 +296,7 @@ export function backupFailureNotice(
         'Uygulama normal şekilde açıldı. Testnizer, yeni bir sürüm veritabanını güncellemeden ' +
         'önce bir kopyasını alır; güncelleme ters giderse verileriniz bu kopyadan kurtarılabilir. ' +
         'Bu kez kopya alınamadı ve güncelleme kopya olmadan yapıldı.' +
-        `\n\nNeden: ${error}\n\nYedek klasörü:\n${backupsDir}`,
+        `\n\nNeden: ${reason}\n\nYedek klasörü:\n${backupsDir}`,
       button: 'Tamam',
     }
   }

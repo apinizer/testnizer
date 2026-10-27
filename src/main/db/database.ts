@@ -8,6 +8,8 @@ import { currentBuildIdentity, type BuildIdentity } from '../lib/build-identity'
 import {
   backupBeforeMigration,
   writeBuildMarker,
+  type BackupFailureCode,
+  type PreMigrationBackupOptions,
   type PreMigrationBackupOutcome,
 } from './pre-migration-backup'
 
@@ -31,6 +33,8 @@ export interface InitDatabaseResult {
    * Not set when the DB was corrupt and recovered: that dialog covers it.
    */
   backupFailed?: string
+  /** Why the copy failed, when the notice should name it (e.g. low disk space). */
+  backupFailedCode?: BackupFailureCode
   /** Set when the "last started build" marker could not be written. */
   markerError?: string
 }
@@ -122,7 +126,13 @@ export function openAndMigrate(dbPath: string): Database.Database {
  * @throws if even the fresh-DB creation fails — the caller is expected to show
  *   an error and quit gracefully rather than leave a windowless process.
  */
-export function initDatabase(options: { build?: BuildIdentity } = {}): InitDatabaseResult {
+export function initDatabase(
+  options: {
+    build?: BuildIdentity
+    /** Test seam for the pre-migration copy (e.g. a fake free-space probe). */
+    backup?: Pick<PreMigrationBackupOptions, 'freeBytes'>
+  } = {},
+): InitDatabaseResult {
   const userData = app.getPath('userData')
   const dbPath = join(userData, 'testnizer.db')
   const build = options.build ?? currentBuildIdentity()
@@ -130,7 +140,7 @@ export function initDatabase(options: { build?: BuildIdentity } = {}): InitDatab
   // Issue #297: copy the DB before this build's migrations touch it. Opens the
   // file read-only and never throws; a corrupt file simply fails here and is
   // then quarantined below exactly as before.
-  const preMigrationBackup = backupBeforeMigration({ userData, dbPath, build })
+  const preMigrationBackup = backupBeforeMigration({ userData, dbPath, build, ...options.backup })
 
   let recovered = false
   let backupPath: string | undefined
@@ -163,6 +173,8 @@ export function initDatabase(options: { build?: BuildIdentity } = {}): InitDatab
     preMigrationBackup,
     backupFailed:
       !recovered && preMigrationBackup.status === 'failed' ? preMigrationBackup.error : undefined,
+    backupFailedCode:
+      !recovered && preMigrationBackup.status === 'failed' ? preMigrationBackup.code : undefined,
     markerError,
   }
 }

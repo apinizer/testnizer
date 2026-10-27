@@ -66,7 +66,9 @@ OS keychain, so those need re-entering on a new machine.)
 
 The first time a new version starts, Testnizer copies the database to
 `backups/testnizer.db.<version>-<build>.<timestamp>` before updating it. The 3
-newest copies are kept. To go back to one:
+newest copies are kept. If the disk has less free space than about twice the
+database size plus 50 MB, no copy is taken (and none is deleted) and Testnizer
+tells you once. To go back to one:
 
 1. Quit Testnizer. If the new version itself is the problem, install the
    previous version first; a newer version updates the restored copy again.

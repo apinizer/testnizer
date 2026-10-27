@@ -38,7 +38,9 @@ import {
   BUILD_MARKER_FILE,
   backupBeforeMigration,
   backupFailureNotice,
+  backupLabel,
   readBuildMarker,
+  requiredFreeBytes,
 } from '../../src/main/db/pre-migration-backup'
 
 const A = { version: '1.5.4', build: 'aaaaaaa' }
@@ -346,5 +348,169 @@ describe('pre-migration backup (issue #297)', () => {
     expect(tr.message).toBe('Testnizer, veritabanınızı güncellemeden önce yedekleyemedi.')
     expect(tr.detail).toContain('Yedek klasörü')
     expect(tr.button).toBe('Tamam')
+  })
+
+  it('the low-disk-space notice names the reason in the UI language', () => {
+    const error =
+      'not enough free disk space for the pre-update backup (needs about 90 MB, 10 MB free)'
+    const en = backupFailureNotice('en', error, '/data/backups', 'low-disk-space')
+    expect(en.detail).toContain(
+      'Reason: not enough free disk space for the pre-update backup (needs about 90 MB',
+    )
+    const tr = backupFailureNotice('tr', error, '/data/backups', 'low-disk-space')
+    expect(tr.detail).toContain('Neden: güncelleme öncesi yedek için yeterli boş disk alanı yok')
+    expect(tr.detail).not.toContain('not enough free disk space')
+  })
+})
+
+/** Seeds `n` older copies of another build so a stray prune would show. */
+function seedOldCopies(dir: string, n: number): string[] {
+  mkdirSync(backupsOf(dir), { recursive: true })
+  const names: string[] = []
+  for (let i = 0; i < n; i++) {
+    const name = `testnizer.db.${backupLabel(A)}.${1000 + i}`
+    copyFileSync(dbOf(dir), path.join(backupsOf(dir), name))
+    names.push(name)
+  }
+  return names.sort()
+}
+
+describe('pre-migration backup free-space guard (issue #297)', () => {
+  it('too little free space: no copy, nothing pruned, notice reason set, startup goes on', () => {
+    const dir = freshDir()
+    initDatabase({ build: A })
+    addWorkspaces(4, 'keep')
+    closeDatabase()
+    // More old copies than are kept: a prune would delete at least one.
+    const seeded = seedOldCopies(dir, 4)
+    const live = dbOf(dir)
+    const hashes = (): string[] =>
+      [live, `${live}-wal`].filter((f) => existsSync(f)).map((f) => sha(f))
+    const required = requiredFreeBytes(live)
+    const probed: string[] = []
+    const tooLittle = (d: string): number => {
+      probed.push(d)
+      return required - 1
+    }
+
+    // The copy step alone never touches the live files.
+    const before = hashes()
+    const direct = backupBeforeMigration({
+      userData: dir,
+      dbPath: live,
+      build: B,
+      freeBytes: tooLittle,
+    })
+    expect(direct).toMatchObject({ status: 'failed', code: 'low-disk-space' })
+    expect(direct.status === 'failed' && direct.error).toMatch(
+      /^not enough free disk space for the pre-update backup/,
+    )
+    expect(hashes()).toEqual(before)
+    // The probe looked at the backups folder's volume.
+    expect(probed).toEqual([backupsOf(dir)])
+
+    const result = initDatabase({ build: B, backup: { freeBytes: tooLittle } })
+    expect(result.preMigrationBackup).toMatchObject({ status: 'failed', code: 'low-disk-space' })
+    expect(result.backupFailed).toMatch(/not enough free disk space/)
+    expect(result.backupFailedCode).toBe('low-disk-space')
+    expect(result.recovered).toBe(false)
+    // Nothing written (not even a partial) and nothing pruned.
+    expect(readdirSync(backupsOf(dir)).sort()).toEqual(seeded)
+    // Startup went on: the DB is open, migrated and has the rows.
+    const row = getDb().prepare("SELECT COUNT(*) AS c FROM workspaces WHERE id LIKE 'keep-%'").get()
+    expect(row).toEqual({ c: 4 })
+    expect(readBuildMarker(dir)).toEqual(B)
+  })
+
+  it('exactly the required free space is enough', () => {
+    const dir = freshDir()
+    initDatabase({ build: A })
+    closeDatabase()
+    const live = dbOf(dir)
+    const outcome = backupBeforeMigration({
+      userData: dir,
+      dbPath: live,
+      build: B,
+      freeBytes: () => requiredFreeBytes(live),
+    })
+    expect(outcome.status).toBe('created')
+  })
+
+  it('the required space counts the WAL as well as the main file', () => {
+    const dir = freshDir()
+    initDatabase({ build: A })
+    closeDatabase()
+    const live = dbOf(dir)
+    const withoutWal = requiredFreeBytes(live)
+    writeFileSync(`${live}-wal`, Buffer.alloc(4096))
+    expect(requiredFreeBytes(live)).toBe(withoutWal + 2 * 4096)
+    rmSync(`${live}-wal`)
+  })
+
+  it('a free-space probe that throws does not block the backup', () => {
+    const dir = freshDir()
+    initDatabase({ build: A })
+    closeDatabase()
+    const result = initDatabase({
+      build: B,
+      backup: {
+        freeBytes: () => {
+          throw new Error('ENOSYS: statfs not supported')
+        },
+      },
+    })
+    expect(result.preMigrationBackup.status).toBe('created')
+    expect(result.backupFailed).toBeUndefined()
+    expect(backupFiles(dir)).toHaveLength(1)
+  })
+
+  it('a probe that reports nonsense (NaN) does not block the backup', () => {
+    freshDir()
+    initDatabase({ build: A })
+    closeDatabase()
+    const result = initDatabase({ build: B, backup: { freeBytes: () => Number.NaN } })
+    expect(result.preMigrationBackup.status).toBe('created')
+  })
+
+  it('the default probe (statfs) on a real volume lets a small DB through', () => {
+    freshDir()
+    initDatabase({ build: A })
+    closeDatabase()
+    const result = initDatabase({ build: B })
+    expect(result.preMigrationBackup.status).toBe('created')
+  })
+
+  it('a failed write never prunes existing copies', () => {
+    const dir = freshDir()
+    initDatabase({ build: A })
+    closeDatabase()
+    const seeded = seedOldCopies(dir, 4)
+    const T = 9_999_999
+    // A directory where the `.partial` copy goes: VACUUM INTO fails.
+    const partial = path.join(backupsOf(dir), `testnizer.db.${backupLabel(B)}.${T}.partial`)
+    mkdirSync(partial)
+
+    const outcome = backupBeforeMigration({
+      userData: dir,
+      dbPath: dbOf(dir),
+      build: B,
+      now: () => T,
+      freeBytes: () => Number.MAX_SAFE_INTEGER,
+    })
+
+    expect(outcome.status).toBe('failed')
+    expect(backupFiles(dir).sort()).toEqual(seeded)
+    rmSync(partial, { recursive: true, force: true })
+
+    // Control: a write that succeeds does prune down to the kept count.
+    const ok = backupBeforeMigration({
+      userData: dir,
+      dbPath: dbOf(dir),
+      build: B,
+      now: () => T,
+      freeBytes: () => Number.MAX_SAFE_INTEGER,
+    })
+    expect(ok.status).toBe('created')
+    expect(backupFiles(dir)).toHaveLength(3)
   })
 })

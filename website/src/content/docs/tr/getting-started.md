@@ -64,7 +64,9 @@ bu yüzden yeni bir makinede yeniden girilmeleri gerekir.)
 
 Yeni bir sürüm ilk kez açıldığında Testnizer, veritabanını güncellemeden önce
 `backups/testnizer.db.<sürüm>-<derleme>.<zaman damgası>` olarak kopyalar. En yeni 3 kopya
-tutulur. Birine geri dönmek için:
+tutulur. Diskteki boş alan veritabanı boyutunun yaklaşık iki katı artı 50 MB'tan azsa kopya
+alınmaz (mevcutlardan hiçbiri de silinmez) ve Testnizer bunu bir kez bildirir. Birine geri
+dönmek için:
 
 1. Testnizer'dan çıkın. Sorun yeni sürümün kendisindeyse önce önceki sürümü kurun; daha
    yeni bir sürüm geri yüklenen kopyayı yeniden günceller.

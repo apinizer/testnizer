@@ -417,6 +417,7 @@ app.whenReady().then(() => {
           locale,
           backupFailed,
           join(app.getPath('userData'), BACKUP_DIR_NAME),
+          dbInit.backupFailedCode,
         )
         const options = {
           type: 'warning' as const,
