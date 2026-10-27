@@ -28,8 +28,25 @@ function getWindow(): BrowserWindow | null {
 }
 
 // Track per-connection metadata so emit/disconnect events can carry
-// `durationMs` deltas relative to the original connect.
-const sioContext = new Map<string, { url: string; connectedAt: number }>()
+// `durationMs` deltas relative to the original connect, and every Console
+// entry of the connection can scrub its auth values.
+const sioContext = new Map<string, { url: string; connectedAt: number; secrets: unknown[] }>()
+
+/**
+ * The secret values a connection carries — its handshake auth entries (the
+ * editor's bearer token → `token`). ONE source for History (`extra_secrets`)
+ * and EVERY Console entry (`secrets`) of the connection (issue #283): on a v2
+ * server the token travels in the handshake QUERY, and a v2 refusal or a
+ * transport error can carry that URL — or the bare token — in its message.
+ */
+function sioSecrets(auth: Record<string, unknown> | undefined): unknown[] {
+  return Object.values(auth ?? {})
+}
+
+/** The secrets of an open connection (none once it is gone). */
+function secretsOf(connectionId: string): unknown[] | undefined {
+  return sioContext.get(connectionId)?.secrets
+}
 
 function previewJson(value: unknown, max = 80): string {
   let s: string
@@ -59,6 +76,7 @@ function handleServerClose({ connectionId, reason }: SocketIOClosedInfo): void {
     url: ctx?.url,
     direction: 'in',
     durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+    secrets: ctx?.secrets,
   })
 }
 
@@ -107,6 +125,7 @@ export function registerSocketIOHandlers(): void {
       },
     ) => {
       const started = Date.now()
+      const secrets = sioSecrets(options.auth)
       const fullTarget = `${options.url}${options.namespace && options.namespace !== '/' ? options.namespace : ''}`
       try {
         const data = await socketIOConnect({
@@ -120,7 +139,7 @@ export function registerSocketIOHandlers(): void {
           pendingId: options._pendingId,
         })
         const connectedAt = Date.now()
-        sioContext.set(data.connectionId, { url: fullTarget, connectedAt })
+        sioContext.set(data.connectionId, { url: fullTarget, connectedAt, secrets })
         // Wire event push back to renderer
         socketIOSetEventCallback(data.connectionId, (event: SocketIOEvent) => {
           getWindow()?.webContents.send('socketio:event', {
@@ -140,6 +159,7 @@ export function registerSocketIOHandlers(): void {
             namespace: options.namespace ?? '/',
             hasAuth: !!options.auth,
           },
+          secrets,
         })
         try {
           historyRepo.addHistory({
@@ -159,7 +179,7 @@ export function registerSocketIOHandlers(): void {
               ...(options.settings ? { settings: options.settings } : {}),
               ...(options._configured ? { configured: options._configured } : {}),
             }),
-            extra_secrets: Object.values(options.auth ?? {}),
+            extra_secrets: secrets,
             response_snapshot: JSON.stringify({
               connectionId: data.connectionId,
               connectedAt,
@@ -181,6 +201,7 @@ export function registerSocketIOHandlers(): void {
           statusText: err.message,
           durationMs: failedAt - started,
           error: { message: err.message, stack: err.stack },
+          secrets,
         })
         try {
           historyRepo.addHistory({
@@ -197,7 +218,7 @@ export function registerSocketIOHandlers(): void {
               namespace: options.namespace,
               ...(options._configured ? { configured: options._configured } : {}),
             }),
-            extra_secrets: Object.values(options.auth ?? {}),
+            extra_secrets: secrets,
             response_snapshot: JSON.stringify({ error: err.message }),
           })
         } catch {
@@ -231,6 +252,7 @@ export function registerSocketIOHandlers(): void {
         url: ctx?.url,
         direction: 'out',
         durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+        secrets: ctx?.secrets,
       })
       sioContext.delete(connectionId)
       return { success: true, data: true }
@@ -241,6 +263,7 @@ export function registerSocketIOHandlers(): void {
         category: 'connection',
         message: `Socket.IO disconnect failed: ${err.message}`,
         error: { message: err.message },
+        secrets: secretsOf(connectionId),
       })
       return { success: false, error: err.message }
     }
@@ -263,6 +286,7 @@ export function registerSocketIOHandlers(): void {
           url: ctx?.url,
           sizeBytes: Buffer.byteLength(body, 'utf-8'),
           durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+          secrets: ctx?.secrets,
         })
         return { success: true, data: true }
       } catch (e) {
@@ -274,6 +298,7 @@ export function registerSocketIOHandlers(): void {
           direction: 'out',
           eventName,
           error: { message: err.message },
+          secrets: secretsOf(connectionId),
         })
         return { success: false, error: err.message }
       }
@@ -306,6 +331,7 @@ export function registerSocketIOHandlers(): void {
           sizeBytes: utf8Length(body),
           durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
           meta: { args: args.length, ack: opts?.ack === true },
+          secrets: ctx?.secrets,
         })
         return { success: true, data: true }
       } catch (e) {
@@ -317,6 +343,7 @@ export function registerSocketIOHandlers(): void {
           direction: 'out',
           eventName,
           error: { message: err.message },
+          secrets: secretsOf(connectionId),
         })
         return { success: false, error: err.message }
       }
