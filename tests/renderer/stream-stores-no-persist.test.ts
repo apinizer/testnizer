@@ -108,15 +108,18 @@ describe('WebSocket store', () => {
       _currentTabId: 'tab-1',
       _tabStates: new Map([['tab-2', { ...useWebSocketStore.getState(), messages: [received] }]]),
       url: 'wss://config.example.test/ws',
-      composerContent: '{"hello":"{{name}}"}',
+      // Issue #284 audit: the draft stays, except a literal credential member
+      // of JSON-looking text — that one is withheld like an HTTP JSON body.
+      composerContent: `{"hello":"{{name}}","token":"${CANARY}"}`,
       messages: [received],
       errorMessage: `closed: ${CANARY}`,
     })
     const stored = raw(KEY)
     expect(stored).not.toContain(CANARY)
     expect(stored).toContain('wss://config.example.test/ws')
-    expect(stored).toContain('{{name}}')
+    expect(stored).toContain('{\\"hello\\":\\"{{name}}\\",\\"token\\":\\"\\"}')
     expect(useWebSocketStore.getState().messages).toHaveLength(1)
+    expect(useWebSocketStore.getState().composerContent).toContain(CANARY)
   })
 
   it('scrubs an old snapshot on load', async () => {

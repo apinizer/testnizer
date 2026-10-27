@@ -18,7 +18,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
-import { urlCredentialText } from '../lib/credential-text'
+import { messageCredentialText, urlCredentialText } from '../lib/credential-text'
 import { isCredentialArgName } from '../../shared/credential-headers'
 import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
 import {
@@ -196,9 +196,11 @@ function extractState(s: SocketIOStore): TabSioState {
 
 /**
  * Issue #247 / #283: credential-named handshake headers and query params, and
- * `?token=…` / `user:pass@` in the connection URL, never reach the snapshot —
- * the generic marker (`lib/credential-withhold.ts`). The bearer token keeps
- * its own flag (issue #243).
+ * `?token=…` / `user:pass@` in the connection URL, and credential-named
+ * members of a JSON-looking emit argument or saved message argument (issue
+ * #284 audit), never reach the snapshot — the generic marker
+ * (`lib/credential-withhold.ts`). The bearer token keeps its own flag
+ * (issue #243).
  */
 export const SIO_CREDENTIALS: CredentialSpec = {
   fields: [],
@@ -206,7 +208,11 @@ export const SIO_CREDENTIALS: CredentialSpec = {
     credentialRows('customHeaders'),
     { list: 'params', isCredentialName: isCredentialArgName },
   ],
-  texts: [urlCredentialText('url')],
+  texts: [
+    urlCredentialText('url'),
+    messageCredentialText('emitArgs[].content'),
+    messageCredentialText('savedMessages[].args[].content'),
+  ],
 }
 
 /**
@@ -635,6 +641,8 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
     },
 
     emit: async () => {
+      // Issue #284: an emit argument credential withheld after a restart is reloaded first.
+      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
       const s = get()
       const { connectionId } = s
       if (!connectionId) return

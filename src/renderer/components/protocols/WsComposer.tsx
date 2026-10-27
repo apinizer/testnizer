@@ -8,6 +8,8 @@ import { beautify, canBeautify } from '../../lib/realtime-format'
 import { GhostButton, PrimaryButton } from '../mock-mcp/ui'
 import ContentTypeSelect from './realtime/ContentTypeSelect'
 import SavedMessagesPane from './realtime/SavedMessagesPane'
+import CredentialRestartHint from '../shared/CredentialRestartHint'
+import { scrubMessageCredentials } from '../../lib/credential-text'
 
 const MONACO_LANGUAGE: Record<RtContentType, string> = {
   text: 'plaintext',
@@ -114,6 +116,12 @@ export default function WsComposer() {
             height={120}
           />
         </div>
+        {scrubMessageCredentials(content) !== content && (
+          <CredentialRestartHint
+            id="ws-composer-restart-hint-text"
+            testId="ws-composer-restart-hint"
+          />
+        )}
       </div>
       <div className="w-56 shrink-0 border-l border-[var(--border)] pl-3">
         <SavedMessagesPane

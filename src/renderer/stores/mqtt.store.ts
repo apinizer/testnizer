@@ -14,7 +14,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
-import { urlCredentialText } from '../lib/credential-text'
+import { messageCredentialText, urlCredentialText } from '../lib/credential-text'
 import {
   DEFAULT_MQTT_SETTINGS,
   DEFAULT_MQTT_VERSION,
@@ -169,19 +169,28 @@ function extractState(s: MqttStore): TabMqttState {
 }
 
 /**
- * Issues #244 / #247 / #284: the password, credential-named CONNECT / will
- * user properties and `user:pass@` / `?token=…` in the broker URL never hold
- * a literal value in the localStorage snapshot (the row and its name stay;
- * `{{var}}`-only values are kept). The saved row keeps the value —
- * `lib/withheld-credentials.ts` reloads it.
+ * Issues #244 / #247 / #284: the password, credential-named CONNECT / will /
+ * message user properties, `user:pass@` / `?token=…` in the broker URL and
+ * credential-named members of a JSON-looking will payload, composer draft or
+ * saved message never hold a literal value in the localStorage snapshot (the
+ * row, its name and the rest of the text stay; `{{var}}`-only values are
+ * kept). The saved row keeps the value — `lib/withheld-credentials.ts`
+ * reloads it.
  */
 export const MQTT_CREDENTIALS: CredentialSpec = {
   fields: ['password'],
   rows: [
     credentialRows('properties.userProperties'),
     credentialRows('lastWill.properties.userProperties'),
+    credentialRows('composer.properties.userProperties'),
+    credentialRows('savedMessages[].properties.userProperties'),
   ],
-  texts: [urlCredentialText('url')],
+  texts: [
+    urlCredentialText('url'),
+    messageCredentialText('lastWill.payload'),
+    messageCredentialText('composer.content'),
+    messageCredentialText('savedMessages[].content'),
+  ],
 }
 
 /**
@@ -654,6 +663,8 @@ export const useMqttStore = create<MqttStore>((set, get) => {
     },
 
     publish: async () => {
+      // Issue #284: a message body credential withheld after a restart is reloaded first.
+      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
       const s = get()
       if (!s.connectionId || s.connectionState !== 'connected') return
       const c = s.composer

@@ -12,7 +12,7 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
-import { urlCredentialText } from '../lib/credential-text'
+import { messageCredentialText, urlCredentialText } from '../lib/credential-text'
 import { isCredentialArgName } from '../../shared/credential-headers'
 import { makeId } from '../lib/utils'
 import { wsMaskedSendError } from '../lib/masked-send-guard'
@@ -152,10 +152,11 @@ function extractState(s: WebSocketStore): TabWsState {
 
 /**
  * Issue #244 / #247 / #282: credential-named handshake headers and query
- * params, and `?token=…` / `user:pass@` in the connection URL, never hold a
- * literal value in the snapshot (the row and its name stay; `{{var}}`-only
- * values are kept). The saved row keeps the value —
- * `lib/withheld-credentials.ts` reloads it.
+ * params, `?token=…` / `user:pass@` in the connection URL and
+ * credential-named members of a JSON-looking composer draft or saved message
+ * (issue #284 audit) never hold a literal value in the snapshot (the row, its
+ * name and the rest of the text stay; `{{var}}`-only values are kept). The
+ * saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
  */
 export const WS_CREDENTIALS: CredentialSpec = {
   fields: [],
@@ -163,7 +164,11 @@ export const WS_CREDENTIALS: CredentialSpec = {
     credentialRows('customHeaders'),
     { list: 'params', isCredentialName: isCredentialArgName },
   ],
-  texts: [urlCredentialText('url')],
+  texts: [
+    urlCredentialText('url'),
+    messageCredentialText('composerContent'),
+    messageCredentialText('savedMessages[].content'),
+  ],
 }
 
 /**
@@ -476,6 +481,8 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     },
 
     sendMessage: async () => {
+      // Issue #284: a composer credential withheld after a restart is reloaded first.
+      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
       const { connectionId, composerContent, composerMode, connectionState } = get()
       if (connectionState !== 'connected' || !connectionId || !composerContent.trim()) return
       // Issue #195: a History mask left in a credential field is never sent.

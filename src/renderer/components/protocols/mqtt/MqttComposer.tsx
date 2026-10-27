@@ -12,6 +12,8 @@ import ContentTypeSelect from '../realtime/ContentTypeSelect'
 import SavedMessagesPane from '../realtime/SavedMessagesPane'
 import MqttMessagePropsForm from './MqttMessagePropsForm'
 import { QosSelect } from './mqtt-ui'
+import CredentialRestartHint from '../../shared/CredentialRestartHint'
+import { scrubMessageCredentials } from '../../../lib/credential-text'
 
 const MONACO_LANGUAGE: Record<MqttContentType, string> = {
   text: 'plaintext',
@@ -163,6 +165,12 @@ export default function MqttComposer() {
             height={120}
           />
         </div>
+        {scrubMessageCredentials(c.content) !== c.content && (
+          <CredentialRestartHint
+            id="mqtt-composer-restart-hint-text"
+            testId="mqtt-composer-restart-hint"
+          />
+        )}
       </div>
       <div className="w-56 shrink-0 border-l border-[var(--border)] pl-3">
         <SavedMessagesPane

@@ -6,6 +6,8 @@ import { Checkbox, INPUT_CLS } from '../../mock-mcp/ui'
 import ContentTypeSelect from '../realtime/ContentTypeSelect'
 import MqttMessagePropsForm from './MqttMessagePropsForm'
 import { QosSelect } from './mqtt-ui'
+import CredentialRestartHint from '../../shared/CredentialRestartHint'
+import { scrubMessageCredentials } from '../../../lib/credential-text'
 
 /** Last Will tab: sent only when the topic is set; MQTT 5 will properties under it. */
 export default function MqttWillTab() {
@@ -57,6 +59,9 @@ export default function MqttWillTab() {
         spellCheck={false}
         className="w-full resize-y rounded-md border border-[var(--border2)] bg-[var(--input-bg)] px-2 py-1.5 font-mono text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]"
       />
+      {scrubMessageCredentials(w.payload) !== w.payload && (
+        <CredentialRestartHint id="mqtt-will-restart-hint-text" testId="mqtt-will-restart-hint" />
+      )}
       {v5 && (
         <MqttMessagePropsForm
           value={w.properties}

@@ -5,6 +5,8 @@ import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { Checkbox, GhostButton, PrimaryButton } from '../../mock-mcp/ui'
 import SavedMessagesPane from '../realtime/SavedMessagesPane'
 import SioArgRow from './SioArgRow'
+import CredentialRestartHint from '../../shared/CredentialRestartHint'
+import { scrubMessageCredentials } from '../../../lib/credential-text'
 
 /**
  * Socket.IO Message tab (issue #283), Postman's composer: event name (empty =
@@ -75,6 +77,12 @@ export default function SioComposer() {
             <SioArgRow key={arg.id} arg={arg} index={i} removable={emitArgs.length > 1} />
           ))}
         </div>
+        {emitArgs.some((a) => scrubMessageCredentials(a.content) !== a.content) && (
+          <CredentialRestartHint
+            id="socketio-args-restart-hint-text"
+            testId="socketio-args-restart-hint"
+          />
+        )}
         <button
           type="button"
           onClick={addArg}
