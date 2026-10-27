@@ -1,6 +1,20 @@
 // v1.1.0 — mcp + socketio bridge
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+
+/**
+ * `window.electron` — exactly what the renderer reads (issue #294): the
+ * platform and runtime versions shown in Settings → About. It used to be
+ * `@electron-toolkit/preload`'s `electronAPI`, which handed the page a generic
+ * `ipcRenderer` (any channel, `sendSync` included — around the narrow
+ * `window.api` surface) and a getter returning the whole `process.env`. Plain
+ * values copied once at load; nothing callable.
+ */
+const electronInfo = {
+  process: {
+    platform: process.platform as string,
+    versions: { ...process.versions } as Record<string, string | undefined>,
+  },
+}
 
 const api = {
   // ─── Auth ───────────────────────────────────────────────
@@ -1326,14 +1340,14 @@ const api = {
 
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
+    contextBridge.exposeInMainWorld('electron', electronInfo)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-expect-error fallback for non-isolated context
-  window.electron = electronAPI
+  window.electron = electronInfo
   // @ts-expect-error fallback
   window.api = api
 }

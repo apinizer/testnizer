@@ -14,6 +14,9 @@
  *     permissions.query for notifications / geolocation / camera / microphone →
  *     "granted", geolocation → error 3 (timeout, i.e. it was allowed to try).
  *     The allow-list (clipboard read/write for the app document) keeps working.
+ *  4. `window.electron` is platform + versions only: no generic `ipcRenderer`
+ *     and no `process.env` — a canary env var set at launch must not be
+ *     readable anywhere in the renderer.
  *
  * getUserMedia is deliberately NOT asserted: on a machine without a usable
  * capture device it neither resolves nor rejects within seconds, before AND
@@ -21,10 +24,12 @@
  */
 import fs from 'node:fs'
 import http from 'node:http'
+import os from 'node:os'
 import path from 'node:path'
 import type { AddressInfo } from 'node:net'
-import { expect } from '@playwright/test'
+import { test, expect, _electron as electron, type ElectronApplication } from '@playwright/test'
 import { uiTest } from './_setup'
+import { electronLaunchOptions, firstAppWindow } from '../helpers/electron-env'
 import { dismissOverlays, navigateSidebar, openHttpRequestTab } from '../helpers/ui/bootstrap'
 import { fillUrl, clickSend, waitForResponseStatus } from '../helpers/ui/request-flow'
 import { localHttpBin } from '../helpers/test-servers'
@@ -102,7 +107,11 @@ uiTest.describe('Renderer sandbox [issue #294]', () => {
         electron?: { process?: { versions?: Record<string, string>; platform?: string } }
         __electronLog?: unknown
       }
+      const e = w.electron as Record<string, unknown> | undefined
       return {
+        electronKeys: Object.keys(e ?? {}),
+        electronProcessKeys: Object.keys((e?.process as object | undefined) ?? {}).sort(),
+        ipcRenderer: typeof e?.ipcRenderer,
         api: Object.keys(w.api ?? {}).length,
         electronVersion: w.electron?.process?.versions?.electron,
         platform: w.electron?.process?.platform,
@@ -111,6 +120,9 @@ uiTest.describe('Renderer sandbox [issue #294]', () => {
         require: typeof (globalThis as { require?: unknown }).require,
       }
     })
+    expect(seen.electronKeys).toEqual(['process'])
+    expect(seen.electronProcessKeys).toEqual(['platform', 'versions'])
+    expect(seen.ipcRenderer).toBe('undefined')
     expect(seen.api).toBeGreaterThan(40)
     expect(seen.electronVersion).toMatch(/^44\./)
     expect(seen.platform).toBe(process.platform)
@@ -284,3 +296,65 @@ uiTest.describe('Renderer sandbox [issue #294]', () => {
     }
   })
 })
+
+// Its own app instance: the canary has to be in the environment the app is
+// LAUNCHED with, which the shared worker-scoped fixture cannot vary.
+test.describe('Renderer sandbox — environment does not leak [issue #294]', () => {
+  test('a canary env var set at launch is not readable in the renderer', async () => {
+    const mainPath = path.resolve(__dirname, '../../../out/main/index.js')
+    const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-env-canary-'))
+    const canary = `tz-canary-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const opts = electronLaunchOptions(mainPath, userDataDir)
+    let app: ElectronApplication | undefined
+    try {
+      app = await electron.launch({
+        ...opts,
+        env: { ...opts.env, TESTNIZER_E2E_ENV_CANARY: canary },
+      })
+      // The main process does see it — otherwise the test proves nothing.
+      expect(await app.evaluate(() => process.env.TESTNIZER_E2E_ENV_CANARY)).toBe(canary)
+
+      const window = await firstAppWindow(app)
+      await window.waitForLoadState('domcontentloaded')
+      const seen = await window.evaluate((needle) => {
+        const w = window as unknown as Record<string, unknown>
+        const electronJson = JSON.stringify(w.electron ?? null)
+        const e = w.electron as { ipcRenderer?: unknown; process?: { env?: unknown } } | undefined
+        return {
+          hasElectron: typeof w.electron,
+          ipcRenderer: typeof e?.ipcRenderer,
+          env: typeof e?.process?.env,
+          inElectron: electronJson.includes(needle),
+          // Anything enumerable on window that a page could read.
+          inGlobals: Object.keys(w).some((k) => {
+            try {
+              return JSON.stringify(w[k])?.includes(needle) ?? false
+            } catch {
+              return false
+            }
+          }),
+        }
+      }, canary)
+      expect(seen).toEqual({
+        hasElectron: 'object',
+        ipcRenderer: 'undefined',
+        env: 'undefined',
+        inElectron: false,
+        inGlobals: false,
+      })
+    } finally {
+      // A throwaway profile: close with a bound, then make sure it is gone.
+      if (app) {
+        const closing = app.close().catch(() => {})
+        await Promise.race([closing, new Promise((r) => setTimeout(r, 10_000))])
+        try {
+          app.process().kill('SIGKILL')
+        } catch {
+          /* already gone */
+        }
+      }
+      fs.rmSync(userDataDir, { recursive: true, force: true })
+    }
+  })
+})
+

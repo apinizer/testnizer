@@ -1,4 +1,10 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
+/** `window.electron` (issue #294): platform + runtime versions only. */
+interface ElectronInfo {
+  process: {
+    platform: string
+    versions: Record<string, string | undefined>
+  }
+}
 import type {
   IpcResult,
   Workspace,
@@ -3549,7 +3555,7 @@ interface ApiBridge {
 
 declare global {
   interface Window {
-    electron: ElectronAPI
+    electron: ElectronInfo
     api: ApiBridge
   }
 }

@@ -405,25 +405,3 @@ exports[`preload under the renderer sandbox (issue #294) > window.api surface is
   "wsse.verify (function)",
 ]
 `;
-
-exports[`preload under the renderer sandbox (issue #294) > window.electron surface is unchanged 1`] = `
-[
-  "ipcRenderer.invoke (function)",
-  "ipcRenderer.on (function)",
-  "ipcRenderer.once (function)",
-  "ipcRenderer.postMessage (function)",
-  "ipcRenderer.removeAllListeners (function)",
-  "ipcRenderer.removeListener (function)",
-  "ipcRenderer.send (function)",
-  "ipcRenderer.sendSync (function)",
-  "ipcRenderer.sendTo (function)",
-  "ipcRenderer.sendToHost (function)",
-  "process.env (getter)",
-  "process.platform (getter)",
-  "process.versions (getter)",
-  "webFrame.insertCSS (function)",
-  "webFrame.setZoomFactor (function)",
-  "webFrame.setZoomLevel (function)",
-  "webUtils.getPathForFile (function)",
-]
-`;

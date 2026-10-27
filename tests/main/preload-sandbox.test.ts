@@ -5,14 +5,15 @@
  * `events`, `timers` and `url`; anything else throws at load and the renderer
  * opens with no `window.api` at all. Two guards here:
  *
- *  1. The preload's runtime imports stay `electron` + `@electron-toolkit/preload`
- *     (the latter only `require`s electron), and electron-vite bundles them into
- *     one file (`externalizeDeps: false`). The e2e spec
+ *  1. The preload's only runtime import is `electron`, and electron-vite bundles
+ *     the preload into one file (`externalizeDeps: false`). The e2e spec
  *     `tests/e2e/ui/50-renderer-sandbox.spec.ts` checks the BUILT file.
- *  2. What the preload exposes on `window.api` / `window.electron` did not change
- *     with the sandbox switch: the snapshot was taken from the preload as it was
- *     before issue #294, so a member that silently disappears (or a new
- *     unreviewed one) shows up as a diff.
+ *  2. What the preload exposes on `window.api` is snapshotted (taken from the
+ *     preload as it was before issue #294), so a member that silently
+ *     disappears — or a new, unreviewed one — shows up as a diff.
+ *  3. `window.electron` is platform + versions only: no generic `ipcRenderer`
+ *     and no `process.env` (it used to be @electron-toolkit/preload's
+ *     `electronAPI`, which exposed both).
  */
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import fs from 'node:fs'
@@ -44,29 +45,6 @@ vi.mock('electron', () => {
   }
 })
 
-// The real toolkit build, evaluated with the mocked `electron` above: vitest
-// would otherwise load the external CJS package natively, against the real
-// electron binary path instead of the mock.
-vi.mock('@electron-toolkit/preload', async () => {
-  const electron = await import('electron')
-  const nodeFs = await import('node:fs')
-  const nodePath = await import('node:path')
-  const src = nodeFs.readFileSync(
-    nodePath.resolve(__dirname, '../../node_modules/@electron-toolkit/preload/dist/index.cjs'),
-    'utf8',
-  )
-  const mod: { exports: Record<string, unknown> } = { exports: {} }
-  new Function('require', 'module', 'exports', src)(
-    (id: string) => {
-      if (id !== 'electron') throw new Error(`unexpected require(${id})`)
-      return electron
-    },
-    mod,
-    mod.exports,
-  )
-  return mod.exports
-})
-
 /** Every key path of an exposed object; functions are leaves. */
 function surface(value: unknown, prefix: string, out: string[]): string[] {
   if (value && typeof value === 'object') {
@@ -89,9 +67,12 @@ function surface(value: unknown, prefix: string, out: string[]): string[] {
 const ROOT = path.resolve(__dirname, '../..')
 
 describe('preload under the renderer sandbox (issue #294)', () => {
+  const CANARY = `env-canary-${Math.random().toString(36).slice(2)}`
+
   beforeAll(async () => {
     const proc = process as NodeJS.Process & { contextIsolated?: boolean }
     proc.contextIsolated = true
+    process.env.TESTNIZER_PRELOAD_CANARY = CANARY
     await import('../../src/preload/index')
   })
 
@@ -103,8 +84,19 @@ describe('preload under the renderer sandbox (issue #294)', () => {
     expect(surface(exposed.api, '', [])).toMatchSnapshot()
   })
 
-  it('window.electron surface is unchanged', () => {
-    expect(surface(exposed.electron, '', [])).toMatchSnapshot()
+  it('window.electron is platform + versions only — no ipcRenderer, no env', () => {
+    const electron = exposed.electron as {
+      process: { platform: unknown; versions: Record<string, unknown> }
+    } & Record<string, unknown>
+    expect(Object.keys(electron)).toEqual(['process'])
+    expect(Object.keys(electron.process).sort()).toEqual(['platform', 'versions'])
+    expect(electron.process.platform).toBe(process.platform)
+    expect(electron.process.versions.node).toBe(process.versions.node)
+    for (const v of Object.values(electron.process.versions)) expect(typeof v).toBe('string')
+    expect(electron.ipcRenderer).toBeUndefined()
+    // Plain data only: nothing callable, no getters, and no environment value.
+    expect(surface(electron, '', []).every((p) => !p.endsWith('(function)'))).toBe(true)
+    expect(JSON.stringify(electron)).not.toContain(CANARY)
   })
 
   it('the preload source imports nothing a sandboxed preload cannot load once bundled', () => {
@@ -112,17 +104,8 @@ describe('preload under the renderer sandbox (issue #294)', () => {
     const runtimeImports = [...src.matchAll(/^import\s+(?!type\b)[^'"]*from\s+['"]([^'"]+)['"]/gm)]
       .map((m) => m[1])
       .sort()
-    expect(runtimeImports).toEqual(['@electron-toolkit/preload', 'electron'])
+    expect(runtimeImports).toEqual(['electron'])
     expect(src).not.toMatch(/\brequire\(/)
-  })
-
-  it('@electron-toolkit/preload only requires electron (safe to inline)', () => {
-    const dist = fs.readFileSync(
-      path.join(ROOT, 'node_modules/@electron-toolkit/preload/dist/index.cjs'),
-      'utf8',
-    )
-    const requires = [...dist.matchAll(/require\(['"]([^'"]+)['"]\)/g)].map((m) => m[1])
-    expect([...new Set(requires)]).toEqual(['electron'])
   })
 
   it('electron-vite bundles the preload dependencies (externalizeDeps: false)', () => {
