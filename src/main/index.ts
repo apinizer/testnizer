@@ -6,6 +6,7 @@ import {
   ipcMain,
   nativeImage,
   Menu,
+  session,
   type MenuItemConstructorOptions,
 } from 'electron'
 import { join } from 'path'
@@ -23,6 +24,8 @@ import { maybeInitTelemetry } from './telemetry'
 import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
 import { mcpDisconnectAll } from './protocols/mcp.engine'
 import { mqttDisconnectAll } from './protocols/mqtt.engine'
+import { installPermissionPolicy, type AppDocument } from './lib/permission-policy'
+import { cleanupOpenedPdfs } from './ipc/response-pdf.handler'
 import pkg from '../../package.json'
 
 function getIconPath(): string {
@@ -30,6 +33,20 @@ function getIconPath(): string {
     return join(__dirname, '../../resources/icon.png')
   }
   return join(process.resourcesPath, 'resources/icon.png')
+}
+
+/**
+ * Where the renderer document comes from. `createWindow` loads it and the
+ * permission policy (issue #294) only trusts a top-level frame showing it.
+ */
+function appDocument(): AppDocument {
+  return {
+    devServerUrl:
+      is.dev && process.env['ELECTRON_RENDERER_URL']
+        ? process.env['ELECTRON_RENDERER_URL']
+        : undefined,
+    indexHtmlPath: join(__dirname, '../renderer/index.html'),
+  }
 }
 
 function createWindow(): BrowserWindow {
@@ -49,7 +66,11 @@ function createWindow(): BrowserWindow {
     trafficLightPosition: { x: 12, y: 14 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      // OS sandbox for the renderer (issue #294): a renderer exploit reached
+      // through a response body or a user script has no unsandboxed process to
+      // land in. The preload is a single bundle that only `require`s electron
+      // (see electron.vite.config.ts), which is all a sandboxed preload may load.
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: !is.dev,
@@ -77,10 +98,11 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  const doc = appDocument()
+  if (doc.devServerUrl) {
+    mainWindow.loadURL(doc.devServerUrl)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(doc.indexHtmlPath)
   }
 
   return mainWindow
@@ -313,6 +335,11 @@ app.whenReady().then(() => {
     mainLog.warn(`[db] could not record the started build: ${dbInit.markerError}`)
   }
 
+  // Deny-by-default web permissions (issue #294): Electron would otherwise
+  // grant camera, microphone, geolocation, notifications… to any frame.
+  // Denials are logged at debug level only (not written to main.log).
+  installPermissionPolicy(session.defaultSession, appDocument(), (m) => mainLog.debug(m))
+
   // Register all IPC handlers
   registerAllHandlers()
   // Project settings that travel with the project moved from electron-store
@@ -465,5 +492,7 @@ app.on('will-quit', () => {
   } catch {
     /* ignore */
   }
+  // PDFs handed to the system viewer this session (issue #294).
+  cleanupOpenedPdfs()
   closeDatabase()
 })

@@ -30,6 +30,7 @@ import { registerJoseHandlers } from './jose.handler'
 import { registerJwksHandlers } from './jwks.handler'
 import { registerContextMenuHandlers } from './context-menu.handler'
 import { registerDialogHandlers } from './dialog.handler'
+import { registerResponsePdfHandlers } from './response-pdf.handler'
 import { registerEulaHandlers } from './eula.handler'
 import { registerMcpHandlers } from './mcp.handler'
 import { registerMcpOAuthHandlers } from './mcp-oauth.handler'
@@ -74,6 +75,7 @@ export function registerAllHandlers(): void {
   registerJwksHandlers()
   registerContextMenuHandlers()
   registerDialogHandlers()
+  registerResponsePdfHandlers()
   registerEulaHandlers()
   registerMcpHandlers()
   registerMcpOAuthHandlers()
