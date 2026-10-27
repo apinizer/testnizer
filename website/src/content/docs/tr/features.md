@@ -25,7 +25,7 @@ birinci sınıf bir istek türüdür — eklenti değil. Bkz. [Protokoller](/tr/
 | Socket.IO | İstemci v4 / v3 / v2, namespace, dinleyiciler, Ack, çok argümanlı emit, kayıtlı mesajlar, event timeline |
 | MQTT | 3.1.1 ve 5.0, `mqtt(s)://` ve `ws(s)://`, konular, QoS, retain, Last Will, kayıtlı mesajlar |
 | SSE | Uzun ömürlü akışlar, adlı event'ler, `Last-Event-ID` resume |
-| MCP | Streamable HTTP / SSE / stdio; tool listele + çağır |
+| MCP | Streamable HTTP / SSE / stdio; araçlar, kaynaklar, istemler, bildirimler, OAuth 2.1, güvenlik taraması |
 | AI Chat | Çoklu LLM provider + özel URL, streaming, tools köprüsü |
 
 ## İstek oluşturma

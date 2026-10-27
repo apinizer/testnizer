@@ -21,7 +21,7 @@ dedicated engine in the Node main process.
 | SSE | full | `eventsource` | Long-lived streams, Last-Event-ID resume |
 | Socket.IO | full | `socket.io-client` (v4 and v2) | Client v2 / v3 / v4, namespaces, auth, listeners, Ack, multi-argument emit, bidirectional timeline |
 | MQTT | full | `mqtt` (MQTT.js) | 3.1.1 and 5.0, TLS, Last Will, topics, saved messages |
-| MCP | full | `@modelcontextprotocol/sdk` | Streamable HTTP / SSE / stdio; list and invoke tools |
+| MCP | full | `@modelcontextprotocol/client` (SDK v2) | Streamable HTTP / SSE / stdio; tools, resources, prompts, notifications, OAuth 2.1, security scan |
 | AI Chat | full | provider-specific HTTP | 14 providers + custom URL, streaming |
 
 ## HTTP
@@ -136,8 +136,8 @@ charts) is not available.
 ## MCP (Model Context Protocol)
 
 Testnizer is an MCP **client**. It connects to MCP servers, discovers their
-tools, and invokes them with arguments — the same role Claude Desktop plays
-when it calls a tool. Built on the official `@modelcontextprotocol/sdk`.
+tools, resources and prompts, and calls them with arguments — the same role
+Claude Desktop plays when it calls a tool. Built on the official MCP SDK (v2).
 
 Three transports:
 
@@ -147,9 +147,10 @@ Three transports:
 - **stdio** — Testnizer launches the server as a local subprocess. Enter the
   full command (e.g. `npx @modelcontextprotocol/server-everything`)
 
-After connecting, the **Tools** panel lists every tool the server advertises
-along with its input schema. Pick a tool, fill in the JSON arguments, click
-**Invoke**, and inspect the structured result.
+After connecting, the **Tools**, **Resources** and **Prompts** lists show what
+the server advertises. Pick a tool, fill in the arguments (a form built from
+the input schema, or raw JSON), click **Run**, and inspect the result. The
+**Messages** pane shows server notifications and the raw JSON-RPC frames.
 
 [Full reference →](/docs/protocols/mcp)
 

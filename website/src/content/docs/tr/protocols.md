@@ -21,7 +21,7 @@ Node ana sürecinde kendine ait bir motoru vardır.
 | SSE | tam | `eventsource` | Uzun süreli akışlar, Last-Event-ID ile devam |
 | Socket.IO | tam | `socket.io-client` (v4 ve v2) | İstemci v2 / v3 / v4, namespace'ler, auth, dinleyiciler, Onay (Ack), çok argümanlı emit, çift yönlü zaman çizelgesi |
 | MQTT | tam | `mqtt` (MQTT.js) | 3.1.1 ve 5.0, TLS, Son Vasiyet, konular, kayıtlı mesajlar |
-| MCP | tam | `@modelcontextprotocol/sdk` | Streamable HTTP / SSE / stdio; araçları listele ve çağır |
+| MCP | tam | `@modelcontextprotocol/client` (SDK v2) | Streamable HTTP / SSE / stdio; araçlar, kaynaklar, istemler, bildirimler, OAuth 2.1, güvenlik taraması |
 | AI Chat | tam | sağlayıcıya özgü HTTP | 14 sağlayıcı + özel URL, streaming |
 
 ## HTTP
@@ -134,9 +134,10 @@ Postman'in Görselleştirme (konu başına grafik) özelliği yoktur.
 
 ## MCP (Model Context Protocol)
 
-Testnizer bir MCP **istemcisidir**. MCP sunucularına bağlanır, araçlarını keşfeder
-ve onları argümanlarla çağırır — Claude Desktop'un bir aracı çağırırken üstlendiği
-rolün aynısı. Resmi `@modelcontextprotocol/sdk` üzerine kuruludur.
+Testnizer bir MCP **istemcisidir**. MCP sunucularına bağlanır, araçlarını,
+kaynaklarını ve istemlerini keşfeder ve onları argümanlarla çağırır — Claude
+Desktop'un bir aracı çağırırken üstlendiği rolün aynısı. Resmi MCP SDK'sı (v2)
+üzerine kuruludur.
 
 Üç transport:
 
@@ -146,9 +147,11 @@ rolün aynısı. Resmi `@modelcontextprotocol/sdk` üzerine kuruludur.
 - **stdio** — Testnizer sunucuyu yerel bir alt süreç olarak başlatır. Tam komutu
   girin (örn. `npx @modelcontextprotocol/server-everything`)
 
-Bağlandıktan sonra **Tools** paneli sunucunun yayınladığı her aracı input
-şemasıyla birlikte listeler. Bir aracı seçin, JSON argümanları doldurun,
-**Invoke**'a tıklayın ve yapılandırılmış sonucu inceleyin.
+Bağlandıktan sonra **Araçlar**, **Kaynaklar** ve **İstemler** listeleri
+sunucunun yayınladıklarını gösterir. Bir araç seçin, argümanları doldurun
+(girdi şemasından üretilen bir form ya da ham JSON), **Çalıştır**'a tıklayın ve
+sonucu inceleyin. **Messages** paneli sunucu bildirimlerini ve ham JSON-RPC
+çerçevelerini gösterir.
 
 [Tam referans →](/tr/docs/protocols/mcp)
 

@@ -25,7 +25,7 @@ panel, and Node-side engine — not a plugin. See [Protocols overview](/docs/pro
 | Socket.IO | Client v4 / v3 / v2, namespaces, listeners, Ack, multi-argument emit, saved messages, event timeline |
 | MQTT | 3.1.1 and 5.0, `mqtt(s)://` and `ws(s)://`, topics, QoS, retain, Last Will, saved messages |
 | SSE | Long-lived streams, named events, `Last-Event-ID` resume |
-| MCP | Streamable HTTP / SSE / stdio; list + invoke tools |
+| MCP | Streamable HTTP / SSE / stdio; tools, resources, prompts, notifications, OAuth 2.1, security scan |
 | AI Chat | Multiple LLM providers + custom URL, streaming, tools bridge |
 
 ## Building requests
