@@ -8,7 +8,9 @@
  *   - handshake headers reach the server (welcome echoes `x-e2e`);
  *   - binary argument (hex) out and binary back, shown as a hexdump; an Ack
  *     emit gets its acknowledgement row; Postman listen semantics;
- *   - save → close → reopen keeps listeners, settings and saved messages.
+ *   - save → close → reopen keeps listeners, settings and saved messages;
+ *   - client v2 (Settings): EIO=3 handshake, header, token in the query, ack;
+ *     v3 uses the v4 client (EIO=4, token in the auth packet).
  *   WebSocket
  *   - a Binary · Hex message is sent as a real binary frame (the echo server
  *     decodes the bytes back to "Hi");
@@ -104,6 +106,49 @@ uiTest.describe('Realtime parity — Socket.IO (#275, #283)', () => {
 
     await window.getByTestId('socketio-connect').click()
   })
+
+  for (const [version, eio, tokenIn] of [
+    ['2', 3, 'query'],
+    ['3', 4, 'auth'],
+  ] as const) {
+    uiTest(
+      `client v${version}: EIO=${eio}, header + token arrive, ack works`,
+      async ({ window }) => {
+        const marker = `hdr-v${version}-${uid()}`
+        await openSocketIO(window)
+        await window.getByTestId('socketio-bearer-token').fill(`tok-${uid()}`)
+        await window.getByTestId('socketio-tab-headers').click()
+        const rows = window.locator('[data-testid^="kv-row-"]')
+        const row = rows.nth((await rows.count()) - 1)
+        await row.getByTestId('kv-key').fill('X-E2E')
+        await row.getByTestId('kv-value').locator('input').fill(marker)
+        await window.getByTestId('socketio-tab-events').click()
+        await window.getByTestId('socketio-listen-all').check()
+        await window.getByTestId('socketio-tab-settings').click()
+        await window.getByTestId('socketio-settings-version').selectOption(version)
+        await expect(window.getByTestId('socketio-settings-version-hint')).toContainText(
+          version === '2' ? 'query parameter' : 'same client',
+        )
+        await window.getByTestId('socketio-tab-message').click()
+        await connectSocketIO(window)
+
+        const welcome = sioRow(window, /welcome/).filter({ hasText: marker })
+        await expect(welcome).toHaveCount(1, { timeout: 15_000 })
+        await expect(welcome).toContainText(new RegExp(`"eio":\\s?${eio}`))
+        await expect(welcome).toContainText(new RegExp(`"tokenIn":\\s?"${tokenIn}"`))
+
+        await window.getByTestId('socketio-payload').fill('{"n":1}')
+        await window.getByTestId('socketio-ack').check()
+        await emit(window, 'ack-me')
+        await expect(sioRow(window, /Ack · ack-me/)).toHaveCount(1, { timeout: 10_000 })
+
+        await window.getByTestId('socketio-connect').click()
+        await expect(window.getByTestId('socketio-connect')).toHaveText(/Connect/, {
+          timeout: 10_000,
+        })
+      },
+    )
+  }
 
   uiTest('save → reopen keeps listeners, settings and saved messages', async ({ window }) => {
     const name = `SIO-Parity-${uid()}`

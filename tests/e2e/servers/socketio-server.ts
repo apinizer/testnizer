@@ -18,14 +18,28 @@ export async function startSocketIoServer(port: number): Promise<SocketIoServer>
     res.end('socket.io echo')
   })
 
-  const io = new Server(httpServer, { cors: { origin: '*', methods: ['GET', 'POST'] } })
+  // `allowEIO3` also accepts Socket.IO v2 clients (EIO=3), the documented
+  // compatibility path — the editor's client v2 connects here (issue #283).
+  const io = new Server(httpServer, {
+    cors: { origin: '*', methods: ['GET', 'POST'] },
+    allowEIO3: true,
+  })
 
   const onConnect = (socket: import('socket.io').Socket) => {
     // `xE2e` echoes the handshake header so specs can prove headers are sent (issue #283).
+    // `eio` = the client's protocol (3 = a v2 client); `tokenIn` = where the
+    // handshake token arrived (v2 has no auth packet: the query). The token
+    // value itself is never echoed.
     socket.emit('welcome', {
       id: socket.id,
       ts: Date.now(),
       xE2e: socket.handshake.headers['x-e2e'] ?? null,
+      eio: socket.conn.protocol,
+      tokenIn: socket.handshake.auth?.token
+        ? 'auth'
+        : socket.handshake.query.token
+          ? 'query'
+          : null,
     })
     socket.onAny((event: string, ...args: unknown[]) => {
       // An emit with "Ack" carries the ack callback last (issue #283).
