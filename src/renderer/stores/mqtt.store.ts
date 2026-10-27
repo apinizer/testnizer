@@ -34,6 +34,7 @@ import {
   type MqttWireSubscription,
 } from '../../shared/mqtt'
 import { mqttMetaOf, type MqttRequestFields } from '../lib/realtime-meta'
+import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -691,17 +692,7 @@ export const useMqttStore = create<MqttStore>((set, get) => {
     },
 
     removeTabState: (tabId) => {
-      const slice = sliceOf(tabId)
-      if (slice?.connectionId) {
-        void getMqttApi()
-          ?.disconnect(slice.connectionId)
-          .catch(() => {})
-      } else if (slice?._pendingConnectId) {
-        void getMqttApi()
-          ?.cancelConnect(slice._pendingConnectId)
-          .catch(() => {})
-      }
-      slice?._unsubscribe?.()
+      releaseConnection(sliceOf(tabId), getMqttApi())
       if (get()._currentTabId === tabId) {
         set({
           connectionId: null,
@@ -717,48 +708,6 @@ export const useMqttStore = create<MqttStore>((set, get) => {
   }
 })
 
-/**
- * Close every connection opened in another project when the active project
- * changes: its tab is no longer on screen, and a connection nobody sees must
- * not keep receiving (and keep a broker session).
- */
-export function closeConnectionsOutsideProject(projectId: string | null): void {
-  const s = useMqttStore.getState()
-  const live: Array<[string | null, TabMqttState]> = [[s._currentTabId, s]]
-  for (const [id, sl] of s._tabStates) if (id !== s._currentTabId) live.push([id, sl])
-  for (const [, sl] of live) {
-    if (!sl.connectionId && !sl._pendingConnectId) continue
-    if ((sl._projectId ?? null) === projectId) continue
-    if (sl.connectionId)
-      void getMqttApi()
-        ?.disconnect(sl.connectionId)
-        .catch(() => {})
-    else if (sl._pendingConnectId)
-      void getMqttApi()
-        ?.cancelConnect(sl._pendingConnectId)
-        .catch(() => {})
-    sl._unsubscribe?.()
-  }
-  const reset = (sl: TabMqttState): TabMqttState =>
-    (sl.connectionId || sl._pendingConnectId) && (sl._projectId ?? null) !== projectId
-      ? {
-          ...sl,
-          connectionId: null,
-          connectionState: 'disconnected',
-          reconnecting: false,
-          _pendingConnectId: undefined,
-          _unsubscribe: undefined,
-          log: sl.connectionId
-            ? [...sl.log, systemRow('disconnected', 'project switched')]
-            : sl.log,
-        }
-      : sl
-  const map = new Map<string, TabMqttState>()
-  for (const [id, sl] of s._tabStates) map.set(id, reset(sl))
-  const current = reset(extractState(s))
-  useMqttStore.setState({ ...current, _tabStates: map })
-}
-
 attachTabbedPersist(
   useMqttStore,
   STORAGE_KEY,
@@ -768,8 +717,16 @@ attachTabbedPersist(
 )
 // Issue #244: a user edit to a withheld value drops its marker.
 trackCredentialEdits(useMqttStore, MQTT_CREDENTIALS)
-// A project switch closes the connections of the project left behind.
-useWorkspaceStore.subscribe((next, prev) => {
-  if (next.activeProjectId !== prev.activeProjectId)
-    closeConnectionsOutsideProject(next.activeProjectId ?? null)
+// Leaving a project closes the connections opened in it (one rule for the
+// realtime editors, `lib/realtime-connections.ts`).
+bindConnectionsToProject({
+  store: useMqttStore,
+  extract: extractState,
+  api: getMqttApi,
+  closed: (sl, wasConnected) => ({
+    ...sl,
+    connectionState: 'disconnected' as const,
+    reconnecting: false,
+    log: wasConnected ? [...sl.log, systemRow('disconnected', 'project switched')] : sl.log,
+  }),
 })

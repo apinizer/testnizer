@@ -31,6 +31,7 @@ import {
 } from '../../shared/realtime'
 import { readSioMeta, sioMetaOf, type SioRequestFields } from '../lib/realtime-meta'
 import { savedMessageFromTimeline } from '../lib/socketio-timeline'
+import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -76,6 +77,8 @@ interface TabSioState extends WithheldState, SioRequestFields {
   _pendingConnectId?: string
   /** Push subscriptions of this tab's connection (events + closed). */
   _unsubscribe?: () => void
+  /** The project the connection was opened in (closed on leaving it). */
+  _projectId?: string | null
 }
 
 interface SocketIOStore extends TabSioState {
@@ -159,6 +162,7 @@ function emptyState(): TabSioState {
     newListener: '',
     _pendingConnectId: undefined,
     _unsubscribe: undefined,
+    _projectId: null,
   }
 }
 
@@ -186,6 +190,7 @@ function extractState(s: SocketIOStore): TabSioState {
     newListener: s.newListener,
     _pendingConnectId: s._pendingConnectId,
     _unsubscribe: s._unsubscribe,
+    _projectId: s._projectId,
   }
 }
 
@@ -254,6 +259,7 @@ function persistableSio(input: TabSioState): TabSioState {
     connectionState: idle.connectionState,
     _pendingConnectId: undefined,
     _unsubscribe: undefined,
+    _projectId: null,
   }
 }
 
@@ -473,6 +479,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
         events: [],
         _pendingConnectId: pendingConnectId,
         _unsubscribe: undefined,
+        _projectId: useWorkspaceStore.getState().activeProjectId,
       })
 
       // Resolve `{{var}}` in URL / namespace / token / headers so users can
@@ -660,15 +667,14 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
     },
 
     removeTabState: (tabId) => {
-      const slice = sliceOf(tabId)
-      if (slice?.connectionId) {
-        getSioApi()
-          ?.disconnect(slice.connectionId)
-          .catch(() => {})
-      }
-      slice?._unsubscribe?.()
+      releaseConnection(sliceOf(tabId), getSioApi())
       if (get()._currentTabId === tabId) {
-        set({ connectionId: null, connectionState: 'disconnected', _unsubscribe: undefined })
+        set({
+          connectionId: null,
+          connectionState: 'disconnected',
+          _pendingConnectId: undefined,
+          _unsubscribe: undefined,
+        })
       }
       const tabStates = new Map(get()._tabStates)
       tabStates.delete(tabId)
@@ -694,3 +700,17 @@ attachTabbedPersist(
 )
 // Issue #247: a user edit to a withheld URL / header / param drops its marker.
 trackCredentialEdits(useSocketIOStore, SIO_CREDENTIALS)
+// Leaving a project closes the connections opened in it (one rule for the
+// realtime editors, `lib/realtime-connections.ts`).
+bindConnectionsToProject({
+  store: useSocketIOStore,
+  extract: extractState,
+  api: getSioApi,
+  closed: (sl, wasConnected) => ({
+    ...sl,
+    connectionState: 'disconnected' as const,
+    events: wasConnected
+      ? [...sl.events, systemRow('disconnected', 'project switched')]
+      : sl.events,
+  }),
+})

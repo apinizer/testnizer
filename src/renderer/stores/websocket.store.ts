@@ -30,6 +30,7 @@ import {
   type WsSettings,
 } from '../../shared/realtime'
 import { wsMetaOf, type WsRequestFields } from '../lib/realtime-meta'
+import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -58,6 +59,8 @@ interface TabWsState extends WithheldState, WsRequestFields {
    * once the connection opens or fails.
    */
   _pendingConnectId?: string
+  /** The project the connection was opened in (closed on leaving it). */
+  _projectId?: string | null
 }
 
 interface WebSocketStore extends TabWsState {
@@ -120,6 +123,7 @@ function emptyTabState(): TabWsState {
     connectedAt: null,
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
+    _projectId: null,
   }
 }
 
@@ -142,6 +146,7 @@ function extractState(s: WebSocketStore): TabWsState {
     connectedAt: s.connectedAt,
     _unsubscribe: s._unsubscribe,
     _pendingConnectId: s._pendingConnectId,
+    _projectId: s._projectId,
   }
 }
 
@@ -180,6 +185,7 @@ function persistableWs(st: TabWsState): TabWsState {
     connectedAt: idle.connectedAt,
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
+    _projectId: null,
   }
 }
 
@@ -263,6 +269,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
         errorMessage: null,
         messages: [],
         _pendingConnectId: pendingConnectId,
+        _projectId: useWorkspaceStore.getState().activeProjectId,
       })
 
       // Params are part of the URL (URL ⇄ Params sync), resolved with it.
@@ -623,21 +630,28 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     },
 
     removeTabState: (tabId) => {
-      const tabStates = new Map(get()._tabStates)
-      const removed = tabStates.get(tabId)
-      if (removed?._unsubscribe) {
-        removed._unsubscribe()
+      const state = get()
+      const live = state._currentTabId === tabId
+      const cached = state._tabStates.get(tabId)
+      // Closing the tab closes its connection (it used to stay open in main
+      // with nothing left to disconnect it).
+      releaseConnection(live ? extractState(state) : cached, getWsApi())
+      if (live && cached?._unsubscribe && cached._unsubscribe !== state._unsubscribe) {
+        cached._unsubscribe()
       }
+      const tabStates = new Map(state._tabStates)
       tabStates.delete(tabId)
-      set({ _tabStates: tabStates })
-
-      // If the closed tab was also the live one, also tear down live listener
-      // (it may already be the same function reference, so guard with a flag).
-      if (get()._currentTabId === tabId) {
-        const liveUnsub = get()._unsubscribe
-        if (liveUnsub && liveUnsub !== removed?._unsubscribe) liveUnsub()
-        set({ _unsubscribe: undefined })
-      }
+      set(
+        live
+          ? {
+              _tabStates: tabStates,
+              connectionId: null,
+              connectionState: 'disconnected',
+              _pendingConnectId: undefined,
+              _unsubscribe: undefined,
+            }
+          : { _tabStates: tabStates },
+      )
     },
 
     reset: () => {
@@ -657,3 +671,17 @@ attachTabbedPersist(
 )
 // Issue #244: a user edit to a withheld value drops its marker.
 trackCredentialEdits(useWebSocketStore, WS_CREDENTIALS)
+// Leaving a project closes the connections opened in it (one rule for the
+// realtime editors, `lib/realtime-connections.ts`).
+bindConnectionsToProject({
+  store: useWebSocketStore,
+  extract: extractState,
+  api: getWsApi,
+  closed: (sl, wasConnected) => ({
+    ...sl,
+    connectionState: 'disconnected' as const,
+    messages: wasConnected
+      ? [...sl.messages, systemRow('disconnected', 'project switched')]
+      : sl.messages,
+  }),
+})
