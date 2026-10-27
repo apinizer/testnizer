@@ -406,9 +406,10 @@ const ADAPTERS: WithheldAdapter[] = [
     metaBlock('soap'),
     SOAP_CREDENTIALS,
   ),
-  // The connection URL (issue #247) — the generic marker.
+  // The connection URL (issue #247), handshake rows (#283) and emit / saved
+  // message arguments (#284 audit) — the generic marker.
   tabbedAdapter(
-    'Socket.IO URL',
+    'Socket.IO credentials',
     'socketio',
     asTabbed(useSocketIOStore),
     metaBlock('socketio'),

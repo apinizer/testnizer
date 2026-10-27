@@ -254,7 +254,6 @@ function migrateLegacyTab(st: TabSioState): TabSioState {
  */
 function persistableSio(input: TabSioState): TabSioState {
   const st = migrateLegacyTab(input)
-  const idle = emptyState()
   const literalToken = st.bearerToken !== '' && !isTemplateOnlyValue(st.bearerToken)
   return idleSio({
     ...withholdCredentials(st, SIO_CREDENTIALS),
