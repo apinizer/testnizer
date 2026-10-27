@@ -170,7 +170,9 @@ export async function populateInRenderer(args: PopulateArgs): Promise<PopulateMa
       {
         url: 'http://127.0.0.1:1',
         namespace: '/chat',
-        listeners: ['message'],
+        // The pre-1.6.0 shape (issue #283 renamed these to listeners/emitArgs):
+        // the profile is written as an older build would have saved it.
+        subscriptions: ['message', 'room-update'],
         emitEvent: 'join',
         emitPayload: '{"room":"a"}',
       },
@@ -202,7 +204,9 @@ export async function populateInRenderer(args: PopulateArgs): Promise<PopulateMa
       protocol,
       method: protocol === 'graphql' ? 'POST' : 'GET',
       path: '/',
-      request_schema: JSON.stringify(schema),
+      // Where the app reads protocol fields from when it opens the request
+      // (`request_schema.metadata.<protocol>`, as 1.5.4 and 1.6.0 do).
+      request_schema: JSON.stringify({ url: schema.url, metadata: { [protocol]: schema } }),
     })
     endpointIds.push(ep.id)
   }

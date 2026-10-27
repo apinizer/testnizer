@@ -143,6 +143,49 @@ const CHANGE_RULES: ChangeRule[] = [
   ),
 ]
 
+/**
+ * localStorage snapshots a NEWER app version reshapes when it loads them. Each
+ * entry maps an old value to where the app's own migration must have put it,
+ * so the comparison still proves the user's input arrived — under its new
+ * name. Only for an older app version; the same version on another Electron
+ * is compared as is.
+ */
+const LEGACY_LOCAL_STORAGE: Record<string, (old: unknown, note: (msg: string) => void) => unknown> =
+  {
+    // Issue #283 (1.6.0): Socket.IO tab state `subscriptions` → `listeners`,
+    // `emitPayload` → `emitArgs[0].content`, with the old "show every event"
+    // behaviour kept (`listenAll: true`). `newSubscription` was the text typed
+    // into the add-subscription box and not yet added; the new editor has no
+    // such box, so it is dropped — reported, never silently.
+    'testnizer-socketio': (old, note) => {
+      const walk = (v: unknown): unknown => {
+        if (Array.isArray(v)) return v.map(walk)
+        if (!v || typeof v !== 'object') return v
+        const o = v as Record<string, unknown>
+        if (!('subscriptions' in o) && !('emitPayload' in o)) {
+          return Object.fromEntries(Object.entries(o).map(([k, x]) => [k, walk(x)]))
+        }
+        const { subscriptions, emitPayload, newSubscription, ...rest } = o
+        if (typeof newSubscription === 'string' && newSubscription.trim() !== '') {
+          note(`unsubmitted add-subscription text dropped: ${JSON.stringify(newSubscription)}`)
+        }
+        const names = Array.isArray(subscriptions)
+          ? subscriptions.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
+          : []
+        note(
+          `subscriptions ${JSON.stringify(names)} → listeners; emitPayload ${JSON.stringify(emitPayload)} → emitArgs`,
+        )
+        return {
+          ...rest,
+          listeners: names.map((name) => ({ name, listen: true })),
+          listenAll: true,
+          ...(typeof emitPayload === 'string' ? { emitArgs: [{ content: emitPayload }] } : {}),
+        }
+      }
+      return walk(old)
+    },
+  }
+
 function expectNoLoss(report: DiffReport, where: string): void {
   // The evidence line for the release report: what was compared, and every
   // difference a documented migration accounted for.
@@ -480,6 +523,12 @@ test.describe('Electron upgrade keeps user data (issue #291)', () => {
           await treeOpenNode(page, 'GraphQL users')
           await treeClearSearch(page)
           await expect(page.getByTestId('endpoint-tab')).toHaveCount(2, { timeout: 10_000 })
+          // Pin it (double click), then open the Socket.IO request: its tab
+          // snapshot is the one a newer app version reshapes on load.
+          await page.getByTestId('endpoint-tab').filter({ hasText: 'GraphQL users' }).dblclick()
+          await treeOpenNode(page, 'Socket.IO chat')
+          await treeClearSearch(page)
+          await expect(page.getByTestId('endpoint-tab')).toHaveCount(3, { timeout: 10_000 })
           await page.waitForTimeout(1_500) // persisted snapshots are debounced
           lsOld = await readLocalStorage(page)
         } finally {
@@ -533,16 +582,15 @@ test.describe('Electron upgrade keeps user data (issue #291)', () => {
       }
       // Every old value is still there; a newer store may ADD fields with
       // defaults when it loads an older snapshot (the MCP tab state does).
-      // Across app VERSIONS a tab store may also rename fields on load (1.6.0
-      // reshaped the Socket.IO tab state, issues #282/#283) — that is the app's
-      // own snapshot migration, not the runtime. So for an older app version
-      // only the tab list and the request drafts are compared value for value;
-      // for the same app version on the older Electron, every key is.
-      const TAB_KEYS = new Set(['testnizer-tabs', 'testnizer-tabs-by-project', 'testnizer-request'])
+      // Across app VERSIONS a store may also rename fields on load — that is
+      // the app's own snapshot migration, so the old value is first mapped to
+      // where that migration puts it (LEGACY_LOCAL_STORAGE), and must then be
+      // there. Nothing is skipped.
       const sameApp = oldBuild.version === CURRENT_BUILD.version
       for (const [k, v] of Object.entries(lsOld)) {
-        if (!sameApp && !TAB_KEYS.has(k)) continue
-        const oldV = parsed(v)
+        let oldV = parsed(v)
+        const migrate = sameApp ? undefined : LEGACY_LOCAL_STORAGE[k]
+        if (migrate) oldV = migrate(oldV, (note) => console.log(`[upgrade-data] ${k}: ${note}`))
         if (oldV && typeof oldV === 'object') {
           expect(parsed(lsNew[k]), `localStorage ${k}`).toMatchObject(
             oldV as Record<string, unknown>,
@@ -576,6 +624,7 @@ test.describe('Electron upgrade keeps user data (issue #291)', () => {
           const tabs = page.getByTestId('endpoint-tab')
           await expect(tabs.filter({ hasText: 'Get echo' })).toHaveCount(1, { timeout: 15_000 })
           await expect(tabs.filter({ hasText: 'GraphQL users' })).toHaveCount(1)
+          await expect(tabs.filter({ hasText: 'Socket.IO chat' })).toHaveCount(1)
           await tabs.filter({ hasText: 'Get echo' }).click()
           await expect(page.getByTestId('url-input')).toHaveValue(`{{baseUrl}}/get?draft=${label}`)
           await sendSavedRequest(page, manifest, httpBase)
