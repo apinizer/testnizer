@@ -19,6 +19,7 @@ import {
   DEFAULT_MQTT_SETTINGS,
   emptyConnectProperties,
   emptyLastWill,
+  emptyMessageProperties,
   emptyPublishDraft,
   emptyWillProperties,
 } from '../../../src/shared/mqtt'
@@ -250,6 +251,36 @@ describe('mqtt:connect — credential-named MQTT 5 user properties (issue #284)'
       expect(history).not.toContain(v)
       expect(JSON.stringify(consoleEntries)).not.toContain(v)
     }
+  })
+
+  it('History: the name rule masks credential-named user properties the connect never sends', async () => {
+    // Composer / saved-message PUBLISH properties ride only in `configured`
+    // (the editor template) — they are not connection secrets, so only the
+    // `userProperties` name rule in sensitive-scrub keeps them off disk.
+    const COMPOSER = 'CANARY-mqtt-composer-auth-5c0e'
+    const SAVED = 'CANARY-mqtt-saved-apikey-77a1'
+    const req = request(v5.url)
+    const mqtt = req._configured.meta.mqtt as Record<string, unknown>
+    mqtt.composer = {
+      ...emptyPublishDraft(),
+      topic: 'cmd',
+      properties: { ...emptyMessageProperties(), userProperties: [kv('authorization', COMPOSER)] },
+    }
+    mqtt.savedMessages = [
+      {
+        ...emptyPublishDraft(),
+        id: 'm1',
+        name: 'Saved',
+        properties: { ...emptyMessageProperties(), userProperties: [kv('x-api-key', SAVED)] },
+      },
+    ]
+    const res = (await harness.invoke('mqtt:connect', req)) as Res
+    expect(res.success, res.error).toBe(true)
+    await harness.invoke('mqtt:disconnect', res.data!.connectionId)
+    const history = historyText()
+    expect(history).toContain('authorization')
+    expect(history).not.toContain(COMPOSER)
+    expect(history).not.toContain(SAVED)
   })
 
   it('a refused CONNECT: the History row and the Console line hold no value either', async () => {
