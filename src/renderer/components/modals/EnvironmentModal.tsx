@@ -85,6 +85,8 @@ export default function EnvironmentModal() {
         | { success: boolean; data?: { content: string } | null; error?: string }
         | undefined
       if (!fileResult?.success || !fileResult.data) {
+        // Main refuses a file it will not read here (a .zip: issue #276).
+        if (fileResult?.error) toast.error(`${t('env.importFailed')}: ${fileResult.error}`)
         return
       }
       const content = fileResult.data.content
