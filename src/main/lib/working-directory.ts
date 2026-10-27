@@ -15,13 +15,19 @@
  *   - a relative path with no working directory set fails with a message
  *     that names the setting (it used to fail with "cannot read" against the
  *     app's own current directory);
- *   - no "outside the working directory" restriction: absolute paths that
- *     existing requests hold keep working.
+ *   - an absolute path is NOT restricted: absolute paths that existing
+ *     requests hold keep working;
+ *   - a relative path must stay INSIDE the working directory (issue #290,
+ *     security): `../../etc/passwd`, or a symlink in the folder that points
+ *     out of it, is refused with a message naming the setting. A shared
+ *     project or an imported collection holds relative paths; without this,
+ *     it could make Send / Run upload any file the app can read.
  *
  * The setting is MACHINE-LOCAL (electron-store, not `shared_settings`): a
  * folder on one computer means nothing on another.
  */
-import { isAbsolute, resolve } from 'path'
+import { promises as fs } from 'fs'
+import { isAbsolute, relative, resolve, sep } from 'path'
 import { loadProjectSettings } from './project-settings'
 
 /** The body fields that name files on disk (http.engine `RequestBody`). */
@@ -77,7 +83,11 @@ export async function resolveBodyFilePaths<B extends FileBodyLike>(
       `Project Settings → Working directory must be an absolute folder path (it is "${dir}").`,
     )
   }
-  const resolveIn = (p: string): string => resolve(dir, p)
+  const resolved = new Map<string, string>()
+  for (const p of [...formFiles.map((i) => i.filePath as string), ...(binary ? [binary] : [])]) {
+    if (!resolved.has(p)) resolved.set(p, await resolveInside(dir, p))
+  }
+  const resolveIn = (p: string): string => resolved.get(p) as string
   return {
     ...body,
     ...(formFiles.length > 0
@@ -89,4 +99,45 @@ export async function resolveBodyFilePaths<B extends FileBodyLike>(
       : {}),
     ...(binary ? { binaryPath: resolveIn(binary) } : {}),
   }
+}
+
+/** Does `rel` (from `path.relative(base, x)`) leave `base`? */
+function escapes(rel: string): boolean {
+  return rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+}
+
+async function realpathOr(p: string): Promise<string> {
+  try {
+    return await fs.realpath(p)
+  } catch {
+    return p
+  }
+}
+
+/**
+ * `p` (relative) resolved in `dir`, or a user-facing error when it lands
+ * outside `dir` — lexically (`../`) or through a symlink (real path compared
+ * to real path, so a working directory that is itself under a symlink, like
+ * macOS `/var` → `/private/var`, still matches). A file that does not exist
+ * is checked lexically only; reading it fails later with the engine's own
+ * message.
+ */
+async function resolveInside(dir: string, p: string): Promise<string> {
+  const target = resolve(dir, p)
+  let outside = escapes(relative(resolve(dir), target))
+  if (!outside) {
+    let real: string | undefined
+    try {
+      real = await fs.realpath(target)
+    } catch {
+      real = undefined
+    }
+    if (real !== undefined) outside = escapes(relative(await realpathOr(dir), real))
+  }
+  if (outside) {
+    throw new Error(
+      `The file path "${p}" resolves outside Project Settings → Working directory ("${dir}"). Use a path inside that folder, or an absolute path.`,
+    )
+  }
+  return target
 }

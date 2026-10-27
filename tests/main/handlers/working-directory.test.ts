@@ -15,7 +15,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -218,5 +218,66 @@ describe('resolveBodyFilePaths', () => {
     await expect(resolveBodyFilePaths(formBody('a.txt'), projectId)).rejects.toThrow(
       /must be an absolute folder path/,
     )
+  })
+})
+
+/**
+ * Issue #290 (security) — a RELATIVE path may not leave the working directory.
+ * `../../etc/passwd` used to resolve against it and the file was uploaded: a
+ * shared project (or a Postman import) could make a teammate's Send / Run
+ * read any file the app can read. Absolute paths are unchanged (existing
+ * requests hold them; the user picked them).
+ */
+describe('a relative path that escapes the working directory is refused (issue #290)', () => {
+  const OUTSIDE = 'WD-OUTSIDE-SECRET-290'
+  const root = mkdtempSync(join(tmpdir(), 'testnizer-wd290-'))
+  const wd = join(root, 'wd')
+  mkdirSync(join(wd, 'data'), { recursive: true })
+  writeFileSync(join(root, 'secret.txt'), OUTSIDE)
+  writeFileSync(join(wd, 'data', 'in.txt'), CONTENT)
+  writeFileSync(join(wd, '..dotdot.txt'), CONTENT)
+  let linked = false
+  try {
+    symlinkSync(join(root, 'secret.txt'), join(wd, 'link.txt'))
+    linked = true
+  } catch {
+    /* no symlink permission (Windows without developer mode) */
+  }
+  const refused = /resolves outside Project Settings → Working directory/
+
+  it('Send: ../ escaping the folder is refused (form-data and binary); nothing is read', async () => {
+    setWorkingDirectory(wd)
+    const r = await send(formBody('../secret.txt'))
+    expect(r.status).toBeUndefined()
+    expect(r.error).toMatch(refused)
+    const b = await send({ type: 'binary', binaryPath: 'data/../../secret.txt' })
+    expect(b.error).toMatch(refused)
+    expect(received).toBe('')
+  })
+
+  it('Run: the same rule', async () => {
+    setWorkingDirectory(wd)
+    const r = await run(formBody('../secret.txt'))
+    expect(r.error).toMatch(refused)
+    expect(received).toBe('')
+  })
+
+  it.skipIf(!linked)('a symlink inside the folder that points outside it is refused', async () => {
+    setWorkingDirectory(wd)
+    const r = await send(formBody('link.txt'))
+    expect(r.error).toMatch(refused)
+    expect(received).toBe('')
+  })
+
+  it('paths that stay inside still work; an absolute path outside still works', async () => {
+    setWorkingDirectory(wd)
+    expect((await send(formBody('data/../data/in.txt'))).status).toBe(200)
+    expect(received).toContain(CONTENT)
+    received = ''
+    expect((await send(formBody('..dotdot.txt'))).status).toBe(200)
+    expect(received).toContain(CONTENT)
+    received = ''
+    expect((await send(formBody(join(root, 'secret.txt')))).status).toBe(200)
+    expect(received).toContain(OUTSIDE)
   })
 })
