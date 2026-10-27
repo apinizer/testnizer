@@ -27,6 +27,20 @@ export const V3_LIMITS = {
   maxNodeDepth: 64,
   /** Values visited in one document (aliases counted per use). */
   maxNodesPerDocument: 200_000,
+  // ── A .zip import (`../zip.ts`): checked while the archive is read in
+  // memory, before any entry reaches a reader. `maxEntries` above caps the
+  // entry count of an archive too; the v3 caps above still apply to a zipped
+  // v3 folder's files.
+  /** Bytes of the .zip file itself. */
+  maxArchiveBytes: 100 * 1024 * 1024,
+  /** Uncompressed bytes of one entry (a JSON data dump can be large). */
+  maxArchiveEntryBytes: 50 * 1024 * 1024,
+  /** Uncompressed bytes of all entries together. */
+  maxArchiveTotalBytes: 100 * 1024 * 1024,
+  /** Uncompressed : compressed ratio of one entry (zip bomb), checked above `ratioCheckFromBytes`. */
+  maxCompressionRatio: 100,
+  /** Entries smaller than this are not ratio-checked (a small, repetitive file compresses well). */
+  ratioCheckFromBytes: 1024 * 1024,
 } as const
 
 export class V3InputError extends Error {}

@@ -51,7 +51,9 @@ import {
   rememberPickedFolder,
   takePickedFolder,
 } from '../import/postman/v3/picked-folders'
-import { importV3FolderContent, readV3Folder, V3InputError } from '../import/postman/v3'
+import { readV3Folder, V3InputError } from '../import/postman/v3'
+import { importPickedPostman, readPostmanArchive } from '../import/postman/archive'
+import { isZipMagic } from '../../shared/postman-detect'
 import { authToPostmanParts } from '../export/postman-v3/auth'
 import { loadExamples } from '../export/postman-v3/rows'
 import {
@@ -287,8 +289,13 @@ export function registerImportExportHandlers(): void {
     }
   })
 
-  ipcMain.handle('import:openFile', async () => {
+  // `format` is the Import modal card. A .zip (decided by its bytes, not its
+  // name) is read only for the Postman / Apinizer cards, in main and in
+  // memory (issue #276 follow-up): the renderer gets a one-time handle and a
+  // summary — the same shape as a picked v3 folder — never the bytes.
+  ipcMain.handle('import:openFile', async (_event, options?: { format?: string }) => {
     try {
+      const postman = options?.format === 'postman' || options?.format === 'apinizer'
       const result = await dialog.showOpenDialog({
         properties: ['openFile'],
         filters: [
@@ -297,7 +304,16 @@ export function registerImportExportHandlers(): void {
           // to fall back to the URL-import path (v1.4.4 §6.1).
           {
             name: 'API Specs',
-            extensions: ['json', 'yaml', 'yml', 'raml', 'wsdl', 'xml', 'proto'],
+            extensions: [
+              'json',
+              'yaml',
+              'yml',
+              'raml',
+              'wsdl',
+              'xml',
+              'proto',
+              ...(postman ? ['zip'] : []),
+            ],
           },
           { name: 'All Files', extensions: ['*'] },
         ],
@@ -306,8 +322,33 @@ export function registerImportExportHandlers(): void {
         return { success: true, data: null }
       }
       const filePath = result.filePaths[0]
-      const content = readFileSync(filePath, 'utf-8')
-      return { success: true, data: { filePath, content } }
+      const bytes = readFileSync(filePath)
+      if (isZipMagic(bytes)) {
+        if (!postman) {
+          return {
+            success: false,
+            error:
+              'This file is a .zip archive. Only the Postman import reads .zip files; pick the file inside the archive instead.',
+          }
+        }
+        let content: Awaited<ReturnType<typeof readPostmanArchive>>
+        try {
+          content = await readPostmanArchive(bytes)
+        } catch (e) {
+          if (e instanceof V3InputError) return { success: false, error: e.message }
+          throw e
+        }
+        const handle = rememberPickedFolder(filePath, content)
+        return {
+          success: true,
+          data: {
+            filePath,
+            content: '',
+            archive: { handle, ...pickedFolderSummary(filePath, content, 'zip') },
+          },
+        }
+      }
+      return { success: true, data: { filePath, content: bytes.toString('utf-8') } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -433,7 +474,8 @@ export function registerImportExportHandlers(): void {
             data: { success: false, error: 'The picked folder expired; pick it again.' },
           }
         }
-        const result = importV3FolderContent(
+        // A picked v3 folder, or a .zip prepared by `import:openFile`.
+        const result = await importPickedPostman(
           payload.projectId,
           picked.content,
           payload.folderId ?? null,

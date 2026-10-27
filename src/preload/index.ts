@@ -262,7 +262,8 @@ const api = {
   // ─── Import/Export ───────────────────────────────────────
   importExport: {
     fetchUrl: (url: string): Promise<unknown> => ipcRenderer.invoke('import:fetchUrl', url),
-    openFile: (): Promise<unknown> => ipcRenderer.invoke('import:openFile'),
+    openFile: (options?: { format?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('import:openFile', options ?? {}),
     importOpenApi: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:openApi', payload),
     exportOpenApi: (projectId: string): Promise<unknown> =>

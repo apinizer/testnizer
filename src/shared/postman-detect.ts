@@ -173,6 +173,18 @@ export function classifyPostmanText(
   return { kind: 'v3-unknown', version: '3.0.0', v3Kind: kind }
 }
 
+/**
+ * A .zip archive (a local file header, `PK\x03\x04`) — decided by the bytes,
+ * not the file name. Takes raw bytes or text decoded as UTF-8 / Latin-1 (the
+ * four signature bytes are ASCII, so they survive either decoding). Main
+ * reads a zipped Postman folder, data dump or JSON set in memory
+ * (`src/main/import/postman/zip.ts`); a zip never travels to the renderer.
+ */
+export function isZipMagic(data: Uint8Array | string): boolean {
+  if (typeof data === 'string') return data.startsWith('PK\u0003\u0004')
+  return data.length >= 4 && data[0] === 0x50 && data[1] === 0x4b && data[2] === 3 && data[3] === 4
+}
+
 /** Environment-like artifacts: imported as project environments, never into a folder. */
 export function isPostmanVariablesKind(kind: PostmanArtifactKind | null | undefined): boolean {
   return kind === 'environment' || kind === 'globals'

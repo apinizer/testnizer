@@ -553,6 +553,8 @@ type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedIt
 interface PostmanFolderPick {
   handle: string
   folderName: string
+  /** A folder picked on disk, or a .zip file (issue #276 follow-up). */
+  source: 'folder' | 'zip'
   kind: 'workspace' | 'collection'
   collections: string[]
   requestCount: number
@@ -561,7 +563,14 @@ interface PostmanFolderPick {
 }
 
 interface ImportExportApi {
-  openFile(): Promise<IpcResult<{ filePath: string; content: string } | null>>
+  /**
+   * `format` is the Import modal card. For the Postman / Apinizer cards a
+   * .zip is read in main and comes back as `archive` (a one-time handle for
+   * `importPostmanFolder`) with an empty `content`; other cards refuse a zip.
+   */
+  openFile(options?: {
+    format?: string
+  }): Promise<IpcResult<{ filePath: string; content: string; archive?: PostmanFolderPick } | null>>
   importOpenApi(payload: {
     projectId: string
     content: string
