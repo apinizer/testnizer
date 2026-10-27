@@ -353,7 +353,12 @@ function v2Responses(
             : JSON.stringify(body.content),
       _postman_previewlanguage: str(body.type) ?? null,
     }
-    if (isRecord(ex.request)) r.originalRequest = v2Request(ex.request, label, [], false)
+    // The example's own request goes through the same URL check; a rewrite of
+    // its query is reported under the example's name, not the request's.
+    if (isRecord(ex.request)) {
+      const exLabel = `${label} (example ${r.name ?? '(unnamed)'})`
+      r.originalRequest = v2Request(ex.request, exLabel, warnings, false)
+    }
     out.push(r)
   }
   return out.length > 0 ? out : undefined
