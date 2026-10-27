@@ -14,10 +14,10 @@ export function isRequestNode(node: TreeNode): boolean {
  * selection modal (issue #102), so "which requests live under this folder"
  * has one answer everywhere.
  */
-export function collectRequestIds(node: TreeNode): string[] {
+export function collectRequestIds(node: TreeNode, keep?: (request: TreeNode) => boolean): string[] {
   const ids: string[] = []
   const walk = (n: TreeNode): void => {
-    if (isRequestNode(n)) ids.push(n.id)
+    if (isRequestNode(n) && (!keep || keep(n))) ids.push(n.id)
     if (n.children) for (const c of n.children) walk(c)
   }
   walk(node)

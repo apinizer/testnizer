@@ -592,6 +592,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.createMockServer': 'Create Mock Server from this folder',
     'tree.createMockServerFromProject': 'Create Mock Server from this project',
     'tree.createMockServerFromRequest': 'Create Mock Server from this request',
+    'tree.suiteUnsupportedProtocol':
+      "The Runner can't run {protocol} requests yet, so a test suite can't use this one.",
+    'tree.mockUnsupportedProtocol':
+      "A mock server serves HTTP; it can't stand in for a {protocol} request.",
     'tree.testSuiteCreated': 'Test suite "{name}" created with {count} endpoint(s)',
     'tree.mockServerCreated': 'Mock server "{name}" created with {count} endpoint(s)',
     'tree.suiteNamePrompt': 'Test suite name',
@@ -4858,6 +4862,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'tree.createMockServer': 'Bu klasörden Mock Sunucu oluştur',
     'tree.createMockServerFromProject': 'Bu projeden Mock Sunucu oluştur',
     'tree.createMockServerFromRequest': 'Bu istekten Mock Sunucu oluştur',
+    'tree.suiteUnsupportedProtocol':
+      'Çalıştırıcı henüz {protocol} isteklerini çalıştıramıyor; bu istekten test paketi oluşturulamaz.',
+    'tree.mockUnsupportedProtocol':
+      'Mock sunucu HTTP sunar; bir {protocol} isteğinin yerini tutamaz.',
     'tree.testSuiteCreated': '"{name}" test paketi {count} uç nokta ile oluşturuldu',
     'tree.mockServerCreated': '"{name}" mock sunucusu {count} uç nokta ile oluşturuldu',
     'tree.suiteNamePrompt': 'Test paketi adı',

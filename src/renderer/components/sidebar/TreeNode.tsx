@@ -8,6 +8,7 @@ import StatusBadge from '../shared/StatusBadge'
 import { useTranslation } from '../../lib/i18n'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { PROJECT_EXPORT_FORMATS, type ProjectExportFormat } from '../../lib/project-export'
+import { isHttpMockableProtocol, isRunnableProtocol } from '../../../shared/request-protocols'
 import {
   FileText,
   Box,
@@ -144,6 +145,8 @@ interface MenuItemDef {
   action?: () => void
   submenu?: MenuItemDef[]
   testId?: string
+  /** Shown greyed out with this reason as its tooltip; clicking does nothing. */
+  disabledReason?: string
 }
 
 const ChevronRightMini = (
@@ -249,8 +252,11 @@ function ContextMenu({
                 ref={(el) => {
                   itemRefs.current[i] = el
                 }}
+                aria-disabled={item.disabledReason ? true : undefined}
+                title={item.disabledReason}
                 onClick={(e) => {
                   e.stopPropagation()
+                  if (item.disabledReason) return
                   if (hasSubmenu) {
                     openSubmenu(i)
                   } else if (item.action) {
@@ -266,9 +272,15 @@ function ContextMenu({
                 onMouseLeave={(e) => {
                   ;(e.currentTarget as HTMLElement).style.background = 'transparent'
                 }}
-                className="flex w-full cursor-pointer items-center gap-2.5 px-3 py-[6px] text-left transition-colors"
+                className={`flex w-full items-center gap-2.5 px-3 py-[6px] text-left transition-colors ${
+                  item.disabledReason ? 'cursor-not-allowed' : 'cursor-pointer'
+                }`}
                 style={{
-                  color: item.danger ? 'var(--red)' : 'var(--text)',
+                  color: item.disabledReason
+                    ? 'var(--hint)'
+                    : item.danger
+                      ? 'var(--red)'
+                      : 'var(--text)',
                   background: 'transparent',
                   border: 'none',
                 }}
@@ -565,6 +577,10 @@ export default function TreeNodeComponent({
   /* Build context menu items based on node type */
   function getMenuItems(): MenuItemDef[] {
     const items: MenuItemDef[] = []
+    const protocolLabel = (p: string | undefined): string => {
+      const opt = PROTOCOL_OPTIONS.find((o) => o.key === p)
+      return opt ? t(opt.labelKey) : (p ?? '').toUpperCase()
+    }
 
     if (isFolder || node.type === 'module') {
       // Folder / collection — top-level actions
@@ -703,18 +719,30 @@ export default function TreeNodeComponent({
       // suite/mock name (per the v1.4.0 UX request — "tek bir api
       // olduğunda test suite ismini sistem otomatik atasın").
       // Examples get Rename / Delete only (Duplicate / Try are follow-ups).
+      // Offered greyed out, with the reason, for a protocol the Runner would
+      // only mark 'unsupported' / the HTTP mock cannot serve (issue #284 audit)
+      // — the shared rule `shared/request-protocols.ts`.
+      const protocolName = protocolLabel(node.protocol)
       if (onCreateTestSuite && !isExample) {
         items.push({
           label: t('tree.createTestSuiteFromRequest'),
           icon: TestSuiteIcon,
+          testId: 'tree-create-suite-from-request',
           action: () => onCreateTestSuite(node),
+          disabledReason: isRunnableProtocol(node.protocol)
+            ? undefined
+            : t('tree.suiteUnsupportedProtocol').replace('{protocol}', protocolName),
         })
       }
       if (onCreateMockServer && !isExample) {
         items.push({
           label: t('tree.createMockServerFromRequest'),
           icon: MockServerIcon,
+          testId: 'tree-create-mock-from-request',
           action: () => onCreateMockServer(node),
+          disabledReason: isHttpMockableProtocol(node.protocol)
+            ? undefined
+            : t('tree.mockUnsupportedProtocol').replace('{protocol}', protocolName),
         })
       }
       if (onDuplicate && !isExample) {

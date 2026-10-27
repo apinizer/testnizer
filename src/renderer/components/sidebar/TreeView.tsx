@@ -20,6 +20,7 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import FolderSettingsModal from '../modals/FolderSettingsModal'
 import CreateSuiteFromFolderModal from '../modals/CreateSuiteFromFolderModal'
 import { collectRequestIds } from '../../lib/folder-request-selection'
+import { isHttpMockableProtocol } from '../../../shared/request-protocols'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { DEFAULT_REQUEST_BY_PROTOCOL } from '../../lib/endpoint-name'
@@ -1142,7 +1143,9 @@ export default function TreeView() {
   const handleCreateMockServer = useCallback(
     async (folderNode: TreeNode) => {
       if (!activeProjectId) return
-      const ids = collectRequestIdsRecursive(folderNode)
+      // Only what an HTTP mock can stand in for: an MQTT / WebSocket / gRPC…
+      // request has no method + path to mirror (issue #284 audit).
+      const ids = collectRequestIds(folderNode, (n) => isHttpMockableProtocol(n.protocol))
       if (ids.length === 0) return
       try {
         // Pick the next free port above 8080 (project-scoped). Mock-server
@@ -1205,7 +1208,7 @@ export default function TreeView() {
         console.error('createMockServer from folder failed:', err)
       }
     },
-    [activeProjectId, collectRequestIdsRecursive],
+    [activeProjectId],
   )
 
   return (

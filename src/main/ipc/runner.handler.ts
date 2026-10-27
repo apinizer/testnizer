@@ -62,6 +62,7 @@ import {
 import type { PmRequestBodyInput } from '../../shared/script/pm-request'
 import type { NormalizedResponse, ScriptTestResult } from '../../shared/script'
 import { endpointDidPass, countsTowardRunVerdict } from '../../shared/runner-verdict'
+import { isRunnerHttpLike } from '../../shared/request-protocols'
 import { summarizeRun } from '../../shared/runner-summary'
 import type { RunPhase } from '../../shared/runner-verdict'
 // Runner IPC shapes live in one place now — see src/shared/runner-types.ts for
@@ -1504,8 +1505,8 @@ async function runEndpointStep(
   // MCP has its own step (issue #161): connect → call → disconnect, then the
   // same scripts / assertions / verdict as an HTTP row.
   if (proto === 'mcp') return runMcpStep(ctx, endpointId, entity, phase, iter)
-  const HTTP_LIKE = new Set(['http', 'https', 'rest', 'soap', 'graphql', ''])
-  if (!HTTP_LIKE.has(proto)) {
+  // One rule with the APIs tree's "Create test suite from request" (issue #284).
+  if (!isRunnerHttpLike(proto)) {
     const result: EndpointRunResult = {
       endpointId,
       endpointName: endpoint.name,
