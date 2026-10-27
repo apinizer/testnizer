@@ -208,7 +208,7 @@ Behavior of secret variables:
   **secret Globals**: `await pm.vault.set('apiKey', value)` creates or updates a
   secret Global, `await pm.vault.get('apiKey')` reads only secret ones, and
   `await pm.vault.unset('apiKey')` deletes a secret one. See
-  [Scripts](/docs/scripts#pm-vault-secret-globals).
+  [Scripts](/docs/scripts#pmvault-and-pmrequire).
 
 For guidance on creating and organizing environments, see
 [Environments & variables](/docs/environments).
