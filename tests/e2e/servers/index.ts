@@ -25,7 +25,8 @@ export interface RunningServers {
   mcp: McpServer
   llm: FakeLlmServer
   git: GitServer
-  mqtt: MqttServer
+  /** null when the broker could not start (see mqtt-server.ts). */
+  mqtt: MqttServer | null
 }
 
 export async function startAllTestServers(): Promise<RunningServers> {
@@ -84,7 +85,7 @@ export async function startAllTestServers(): Promise<RunningServers> {
           mcp: mcp.url,
           llm: llm.url.replace('/v1/chat/completions', ''),
           git: git.url,
-          mqtt: mqtt.url,
+          ...(mqtt ? { mqtt: mqtt.url } : {}),
         },
         // Credentials the local git server accepts (issue #127 e2e).
         git: { username: git.username, token: git.token },
@@ -114,7 +115,7 @@ export async function stopAllTestServers(servers: RunningServers): Promise<void>
     servers.mcp.close(),
     servers.llm.close(),
     servers.git.close(),
-    servers.mqtt.close(),
+    servers.mqtt?.close(),
   ])
   if (fs.existsSync(SERVERS_STATE_FILE)) {
     fs.unlinkSync(SERVERS_STATE_FILE)

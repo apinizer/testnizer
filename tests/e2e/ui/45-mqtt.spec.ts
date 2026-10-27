@@ -23,7 +23,7 @@ const uid = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 6
 async function openMqtt(window: Page): Promise<void> {
   const { mqtt } = getTestServerUrls()
   await openNewDropdownItem(window, /MQTT/)
-  await window.getByTestId('mqtt-url').fill(mqtt)
+  await window.getByTestId('mqtt-url').fill(mqtt ?? '')
   // Aedes speaks MQTT 3.1.1 only.
   await window.getByTestId('mqtt-version').selectOption('4')
 }
@@ -64,6 +64,8 @@ const systemRow = (window: Page, text: RegExp) =>
 
 uiTest.describe('MQTT (#284)', () => {
   uiTest.beforeEach(async ({ window }) => {
+    // The supervisor leaves the broker out when it cannot start (mqtt-server.ts).
+    uiTest.skip(!getTestServerUrls().mqtt, 'MQTT test broker is not running')
     await dismissOverlays(window)
     await navigateSidebar(window, 'apis')
   })
