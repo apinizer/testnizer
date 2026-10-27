@@ -44,6 +44,12 @@ export interface StoredProjectSettings {
    * HTTP timeout chain Send and Run share (`resolveHttpTimeout`, issue #185).
    */
   requestTimeout?: number
+  /**
+   * Machine-local folder relative form-data / binary file paths resolve
+   * against (`lib/working-directory.ts`, issue #276). Not shared: a folder on
+   * one computer means nothing on another.
+   */
+  workingDirectory?: string
 }
 
 interface MinimalStore {

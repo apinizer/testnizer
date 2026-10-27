@@ -1191,7 +1191,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.sslVerification': 'SSL certificate verification',
     'general.followRedirects': 'Automatically follow redirects',
     'general.workingDirectory': 'Working directory',
-    'general.workingDirectoryHint': 'Where binary and file bodies are read from.',
+    'general.workingDirectoryPlaceholder': '/path/to/request-files',
+    'general.workingDirectoryHint':
+      'Absolute folder path on this computer. Relative form-data and binary file paths (e.g. from a Postman import) are read from here; absolute paths are used as they are.',
     'general.headers': 'Headers',
     'general.requestBehavior': 'Request behavior',
     'general.editor': 'Editor',
@@ -5439,7 +5441,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.sslVerification': 'SSL sertifika doğrulaması',
     'general.followRedirects': 'Yönlendirmeleri otomatik takip et',
     'general.workingDirectory': 'Çalışma dizini',
-    'general.workingDirectoryHint': 'Binary ve dosya body’lerinin okunduğu dizin.',
+    'general.workingDirectoryPlaceholder': '/istek-dosyalarinin/yolu',
+    'general.workingDirectoryHint':
+      'Bu bilgisayardaki mutlak klasör yolu. Göreli form-data ve binary dosya yolları (ör. Postman içe aktarımından gelenler) buradan okunur; mutlak yollar olduğu gibi kullanılır.',
     'general.headers': 'Header’lar',
     'general.requestBehavior': 'İstek davranışı',
     'general.editor': 'Editör',

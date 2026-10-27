@@ -975,7 +975,7 @@ export function GeneralPane({
             <input
               value={settings.workingDirectory}
               onChange={(e) => onChange({ workingDirectory: e.target.value })}
-              placeholder={t('general.workingDirectoryHint')}
+              placeholder={t('general.workingDirectoryPlaceholder')}
               style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
             />
             <div className="mt-1" style={{ color: 'var(--hint)' }}>
