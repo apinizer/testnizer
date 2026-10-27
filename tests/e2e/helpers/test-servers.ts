@@ -12,6 +12,8 @@ export interface TestServerUrls {
   llm: string
   /** Local git smart-HTTP server with Basic auth (issue #127). */
   git: string
+  /** Aedes MQTT 3.1.1 broker, `mqtt://127.0.0.1:<port>` (issue #284). */
+  mqtt: string
 }
 
 export interface TestGitCredentials {
@@ -40,6 +42,7 @@ export function getTestServerUrls(): TestServerUrls {
       mcp: process.env.E2E_MCP_URL ?? `http://127.0.0.1:${process.env.E2E_MCP_PORT}/mcp`,
       llm: process.env.E2E_LLM_BASE ?? `http://127.0.0.1:${process.env.E2E_LLM_PORT}`,
       git: process.env.E2E_GIT_URL ?? `http://127.0.0.1:${process.env.E2E_GIT_PORT}`,
+      mqtt: process.env.E2E_MQTT_URL ?? `mqtt://127.0.0.1:${process.env.E2E_MQTT_PORT}`,
     }
     return cached
   }
