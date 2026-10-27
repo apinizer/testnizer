@@ -38,6 +38,8 @@ export function sendScriptScopes(writes: SendScriptWrites): {
   globalMap: Map<string, string>
   localVars: Record<string, string>
   vaultKeys: Set<string>
+  /** Whether an environment is selected — the Insomnia alias needs it (aliases.ts). */
+  environmentActive: boolean
 } {
   const state = useEnvironmentStore.getState()
   const envMap = new Map<string, string>()
@@ -58,7 +60,13 @@ export function sendScriptScopes(writes: SendScriptWrites): {
     if (v === null) vaultKeys.delete(k)
     else vaultKeys.add(k)
   }
-  return { envMap, globalMap, localVars: { ...writes.locals }, vaultKeys }
+  return {
+    envMap,
+    globalMap,
+    localVars: { ...writes.locals },
+    vaultKeys,
+    environmentActive: !!env,
+  }
 }
 
 /**

@@ -691,7 +691,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     for (const script of preScripts) {
       if (!script || !script.trim()) continue
       // Rebuild the scope maps each iteration so later scripts see earlier writes.
-      const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(scriptWrites)
+      const { envMap, globalMap, localVars, vaultKeys, environmentActive } =
+        sendScriptScopes(scriptWrites)
       // Pre-request scripts don't read response — supply an empty shell so the
       // pm API contract is satisfied.
       const emptyResp: ApiResponse = { requestId: makeId(), protocol: 'http', timing: { total: 0 } }
@@ -704,6 +705,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         location: scriptLocation,
         localVars,
         vaultKeys,
+        environmentActive,
         body,
         request: {
           method,
@@ -1026,7 +1028,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         // folder(s) → request). pm.test results from every level are merged.
         for (const script of postScripts) {
           if (!script || !script.trim()) continue
-          const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(scriptWrites)
+          const { envMap, globalMap, localVars, vaultKeys, environmentActive } =
+            sendScriptScopes(scriptWrites)
           const pmApi = createPmApi(apiResp, envMap, globalMap, {
             eventName: 'test',
             requestName: scriptRequestName,
@@ -1034,6 +1037,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
             location: scriptLocation,
             localVars,
             vaultKeys,
+            environmentActive,
             // `pm.request.body` is the body as defined — the same source Run uses.
             body,
             projectId: wsStore.activeProjectId || undefined,

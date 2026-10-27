@@ -44,7 +44,12 @@ export interface PmLike {
     requestName: string
     requestId: string
   }
-  environment: PmScope & { name?: string }
+  /**
+   * `active` is false when no environment is selected (non-enumerable host
+   * flag; undefined = active). Insomnia then treats the base environment —
+   * Testnizer's project variables — as the active one (aliases.ts).
+   */
+  environment: PmScope & { name?: string; active?: boolean }
   /**
    * Testnizer project variables (the "Globals" list). `collectionVariables`
    * is the SAME scope: a Testnizer project is the Postman collection, so a

@@ -158,7 +158,7 @@ const EMPTY_RESPONSE = (): ApiResponse => ({
 export async function runMcpPreScripts(ctx: McpScriptContext): Promise<McpPreOutcome> {
   let skipped = false
   for (const script of ctx.preScripts) {
-    const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(
+    const { envMap, globalMap, localVars, vaultKeys, environmentActive } = sendScriptScopes(
       (ctx.writes ??= emptyScriptWrites()),
     )
     const pmApi = createPmApi(EMPTY_RESPONSE(), envMap, globalMap, {
@@ -168,6 +168,7 @@ export async function runMcpPreScripts(ctx: McpScriptContext): Promise<McpPreOut
       location: [...(ctx.folderNames ?? []), ctx.requestName],
       localVars,
       vaultKeys,
+      environmentActive,
       request: { method: 'MCP', url: ctx.url, headers: ctx.headers },
       projectId: ctx.projectId,
     })
@@ -232,7 +233,7 @@ export async function runMcpPostChecks(
   const mcp = mcpScriptInfo(outcome) ?? undefined
   let scriptError: string | undefined
   for (const script of ctx.postScripts) {
-    const { envMap, globalMap, localVars, vaultKeys } = sendScriptScopes(
+    const { envMap, globalMap, localVars, vaultKeys, environmentActive } = sendScriptScopes(
       (ctx.writes ??= emptyScriptWrites()),
     )
     const pmApi = createPmApi(response, envMap, globalMap, {
@@ -242,6 +243,7 @@ export async function runMcpPostChecks(
       location: [...(ctx.folderNames ?? []), ctx.requestName],
       localVars,
       vaultKeys,
+      environmentActive,
       projectId: ctx.projectId,
     })
     const r = await runScript(script, pmApi, { mcp })

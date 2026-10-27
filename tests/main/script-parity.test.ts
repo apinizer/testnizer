@@ -212,9 +212,12 @@ describe('script parity — Run path (Collection Runner)', () => {
         c.requestName ?? c.name,
       )
 
+      if (c.noActiveEnvironment) {
+        testDb.prepare('UPDATE environments SET is_active = 0 WHERE id = ?').run(envId)
+      }
       const res = (await harness.invoke('runner:execute', {
         projectId,
-        environmentId: envId,
+        ...(c.noActiveEnvironment ? {} : { environmentId: envId }),
         endpointIds: [ep],
       })) as { success: boolean; data?: RunData; error?: string }
 

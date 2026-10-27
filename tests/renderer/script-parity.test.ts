@@ -93,6 +93,7 @@ describe('script parity — Send path', () => {
         {
           eventName: isPre ? 'prerequest' : 'test',
           vaultKeys: Object.keys(c.seedSecretGlobals ?? {}),
+          environmentActive: !c.noActiveEnvironment,
           requestName: c.requestName ?? c.name,
           ...(c.request
             ? {

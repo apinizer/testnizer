@@ -6,7 +6,7 @@
  * folder-level bearer auth, a cross-request derive flow (Setup sets a var that a
  * later request consumes), an out-of-array-order sortKey, and a bundled
  * environment — then RUNS the resulting suite and asserts the end-to-end
- * behaviour the whole PR is about: order preserved, env auto-active, derived
+ * behaviour the whole PR is about: order preserved, base environment in the project variables, derived
  * {{vars}} resolved, folder auth applied.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
@@ -87,11 +87,16 @@ describe('suite import → run end-to-end (synthetic APIOPS)', () => {
     ).map((f) => f.name)
     expect(folderNames).toEqual(['00 Setup', '01 Flow', '02 Teardown'])
 
-    // The bundled environment was imported AND activated (fresh project).
-    const activeEnv = testDb
-      .prepare('SELECT name FROM environments WHERE project_id = ? AND is_active = 1')
-      .get(projectId) as { name: string } | undefined
-    expect(activeEnv?.name).toBe('Base (demo)')
+    // The bundled BASE environment is the collection's variables: it went to
+    // the project variables (issue #281 follow-up — insomnia.baseEnvironment
+    // reads them), always active, not to an environment.
+    const projectVars = testDb
+      .prepare('SELECT key FROM global_variables WHERE project_id = ? ORDER BY key')
+      .all(projectId) as { key: string }[]
+    expect(projectVars.map((v) => v.key)).toEqual(['baseUrl', 'runId', 'token'])
+    expect(
+      testDb.prepare('SELECT COUNT(*) AS n FROM environments WHERE project_id = ?').get(projectId),
+    ).toEqual({ n: 0 })
 
     // ── Run ── items in sort order (Init → Use → Cleanup).
     const itemIds = (
@@ -103,8 +108,8 @@ describe('suite import → run end-to-end (synthetic APIOPS)', () => {
 
     const res = (await harness.invoke('runner:execute', {
       projectId,
-      // No environmentId on purpose — the runner must fall back to the active
-      // env (B-10), proving the imported {{vars}} resolve.
+      // No environmentId on purpose — the imported base-environment {{vars}}
+      // resolve from the project variables with no environment selected.
       endpointIds: itemIds,
     })) as { success: boolean }
     expect(res.success).toBe(true)

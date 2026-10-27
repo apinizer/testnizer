@@ -638,6 +638,12 @@ interface RunVarScopes {
   /** Keys of the project variables marked secret — `pm.vault` (issue #281). */
   vaultKeys: Set<string>
   /**
+   * Whether the run has an environment (the requested or the project's
+   * active one). Without one, Insomnia's `insomnia.environment` is the base
+   * environment — the project variables (aliases.ts, issue #289).
+   */
+  environmentActive: boolean
+  /**
    * `pm.variables.set` values. They live for the rest of the RUN (Postman
    * scopes local variables to a collection run too) but are never persisted.
    */
@@ -650,6 +656,8 @@ interface ScriptContext {
   environment: Record<string, string>
   locals: Record<string, string>
   vaultKeys: Set<string>
+  /** See `RunVarScopes.environmentActive`. */
+  environmentActive: boolean
   /** Active-environment writes (pm.environment.set). */
   envUpdates: Record<string, string>
   /** Project-variable writes (pm.globals.set / pm.collectionVariables.set). */
@@ -741,6 +749,7 @@ function newScriptContext(
     environment: { ...scopes.environment },
     locals: { ...scopes.locals },
     vaultKeys: new Set(scopes.vaultKeys),
+    environmentActive: scopes.environmentActive,
     envUpdates: {},
     globalUpdates: {},
     vaultUpdates: {},
@@ -919,6 +928,7 @@ async function runUserScript(
       environment: {
         values: recordStore(ctx.environment),
         updates: recordStore(ctx.envUpdates),
+        active: ctx.environmentActive,
       },
       vault: {
         secretKeys: ctx.vaultKeys,
@@ -2708,6 +2718,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     globals: loadedScopes.globals,
     environment: loadedScopes.environment,
     vaultKeys: new Set(loadedScopes.vaultKeys),
+    environmentActive: !!effectiveEnvId,
     locals: {},
   }
   const envVars = mergedRunVars(scopes)

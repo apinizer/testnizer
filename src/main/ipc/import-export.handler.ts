@@ -76,6 +76,11 @@ import type {
 } from '../import/postman/types'
 import { extractPath, genKvId } from '../import/postman/normalize'
 import {
+  insomniaEnvRows,
+  writeInsomniaBaseEnvironment,
+  writeInsomniaSubEnvironment,
+} from '../import/insomnia-environment'
+import {
   assertionsToXApinizer,
   bodyTypeToApinizerRowType,
   protocolToApinizerTypes,
@@ -3196,7 +3201,12 @@ interface InsomniaV5Doc {
   name?: string
   meta?: { id?: string; name?: string }
   collection?: InsomniaV5Item[]
-  environments?: { data?: Record<string, unknown>; name?: string }
+  /** The collection's BASE environment (`data`) and its switchable sub-environments. */
+  environments?: {
+    data?: Record<string, unknown>
+    name?: string
+    subEnvironments?: Array<{ name?: string; data?: Record<string, unknown> }>
+  }
   /** Collection-root authentication that every request inherits unless it
    *  carries (or a closer folder carries) its own block. */
   authentication?: InsomniaAuth
@@ -3537,11 +3547,11 @@ function importInsomniaV4(
     endpointCount++
   }
 
-  // Insomnia v4 environment resources used to be silently collected into
-  // `suggestedEnvVars` only — they never actually became real environments
-  // in the DB, so the EnvironmentModal showed a success toast but the
-  // import was invisible (v1.4.2 #3). Now we persist each one as a proper
-  // environment row, mirroring the v5 importer.
+  // Insomnia v4 environment resources (v1.4.2 #3: they used to land only in
+  // `suggestedEnvVars`). The BASE environment — parent is the workspace, not
+  // another environment — is the collection's variables and goes to the
+  // project variables (issue #281 follow-up: `insomnia.baseEnvironment` reads
+  // them); sub-environments stay project environments.
   const projectRow = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
     | { workspace_id: string }
     | undefined
@@ -3550,65 +3560,26 @@ function importInsomniaV4(
     if (!projectRow) return null
     const envResources = resources.filter(
       (r) => r && typeof r === 'object' && (r as InsomniaResource)._type === 'environment',
-    )
+    ) as Array<InsomniaResource & { name?: string; data?: unknown }>
+    const envIds = new Set(envResources.map((r) => r._id).filter(Boolean))
     let last: { id: string; name: string } | null = null
-    for (const resource of envResources) {
-      const r = resource as InsomniaResource & { name?: string; data?: unknown }
+    for (const r of envResources) {
       const rawName = (r.name || '').trim() || 'Imported Insomnia Environment'
-      // Reuse name if it already exists to avoid duplicate clutter on
-      // repeated imports — overwrite its variables.
-      const existing = db
-        .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-        .get(projectId, rawName) as { id: string } | undefined
-      let envId: string
-      if (existing) {
-        envId = existing.id
-        db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
+      for (const row of insomniaEnvRows(r.data)) suggestedEnvVars[row.key] = row.value
+      if (!r.parentId || !envIds.has(r.parentId)) {
+        writeInsomniaBaseEnvironment(projectId, projectRow.workspace_id, rawName, r.data, warnings)
       } else {
-        envId = randomUUID()
-        const hasActive = db
-          .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
-          .get(projectId) as { x: number } | undefined
-        db.prepare(
-          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).run(envId, projectRow.workspace_id, projectId, rawName, hasActive ? 0 : 1, now, now)
-      }
-      const insertVar = db.prepare(
-        `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      const data = r.data
-      let varCount = 0
-      const pushKv = (k: string, v: string): void => {
-        insertVar.run(randomUUID(), envId, k, v, null, 1, 0, v)
-        varCount++
-      }
-      if (Array.isArray(data)) {
-        for (const entry of data) {
-          if (entry && typeof entry === 'object' && (entry as { name?: string }).name) {
-            const e = entry as { name: string; value?: string }
-            pushKv(e.name, e.value ?? '')
-            suggestedEnvVars[e.name] = e.value ?? ''
-          }
-        }
-      } else if (data && typeof data === 'object') {
-        for (const [k, v] of Object.entries(data)) {
-          if (typeof v === 'string') {
-            pushKv(k, v)
-            suggestedEnvVars[k] = v
-          } else if (v != null) {
-            const s = JSON.stringify(v)
-            pushKv(k, s)
-            suggestedEnvVars[k] = s
-          }
-        }
-      }
-      if (varCount === 0) {
-        warnings.push(`Insomnia v4 environment "${rawName}" had no variables.`)
+        last = writeInsomniaSubEnvironment(
+          db,
+          projectId,
+          projectRow.workspace_id,
+          rawName,
+          r.data,
+          warnings,
+          now,
+        )
       }
       environmentCount++
-      last = { id: envId, name: rawName }
     }
     return last
   })()
@@ -3758,58 +3729,45 @@ function importInsomniaV5(
 
   walk(doc.collection ?? [], rootFolderId, doc.authentication)
 
-  // Create a REAL environment from the bundled `environments.data` block so the
-  // imported collection's {{vars}} have something to resolve against. The v5
-  // collection path used to drop these into `suggestedEnvVars` (a UI hint only,
-  // never persisted), so imported requests had no active environment — issue
-  // #11. The standalone v5-environment importer already does this DB insert.
-  if (doc.environments?.data && Object.keys(doc.environments.data).length > 0) {
-    const data = doc.environments.data
-    const envName =
+  // The bundled environments (issue #11: they used to land only in
+  // `suggestedEnvVars`). `environments.data` is the collection's BASE
+  // environment → the project variables, where `insomnia.baseEnvironment`
+  // reads them and which resolve whatever environment is active (issue #281
+  // follow-up). `subEnvironments` → project environments.
+  let lastEnv: { id: string; name: string } | undefined
+  const projectRow = doc.environments
+    ? (db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
+        | { workspace_id: string }
+        | undefined)
+    : undefined
+  if (doc.environments && projectRow) {
+    const baseName =
       doc.environments.name ||
       (doc.name ? `${doc.name} Environment` : 'Imported Insomnia Environment')
-    const existing = db
-      .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-      .get(projectId, envName) as { id: string } | undefined
-    let envId: string | undefined
-    if (existing) {
-      envId = existing.id
-      db.prepare('DELETE FROM environment_variables WHERE environment_id = ?').run(envId)
-    } else {
-      const projectRow = db
-        .prepare('SELECT workspace_id FROM projects WHERE id = ?')
-        .get(projectId) as { workspace_id: string } | undefined
-      if (projectRow) {
-        envId = randomUUID()
-        const hasActive = db
-          .prepare('SELECT 1 AS x FROM environments WHERE project_id = ? AND is_active = 1')
-          .get(projectId) as { x: number } | undefined
-        db.prepare(
-          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        ).run(envId, projectRow.workspace_id, projectId, envName, hasActive ? 0 : 1, now, now)
-        // When another environment is already active we deliberately don't steal
-        // the user's selection — but then the imported {{vars}} (AccessURL, token,
-        // …) won't resolve at run time until they switch. Surface that (B-10).
-        if (hasActive) {
-          warnings.push(
-            `Imported environment "${envName}" was added but not activated (another environment is currently active). ` +
-              `Select it in the footer environment switcher so {{variables}} resolve when you run the suite.`,
-          )
-        }
-      }
-    }
-    if (envId) {
-      const insertVar = db.prepare(
-        `INSERT INTO environment_variables (id, environment_id, key, value, description, enabled, secret, initial_value)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    for (const row of insomniaEnvRows(doc.environments.data)) suggestedEnvVars[row.key] = row.value
+    writeInsomniaBaseEnvironment(
+      projectId,
+      projectRow.workspace_id,
+      baseName,
+      doc.environments.data,
+      warnings,
+    )
+    const subs = Array.isArray(doc.environments.subEnvironments)
+      ? doc.environments.subEnvironments
+      : []
+    for (const sub of subs) {
+      if (!sub || typeof sub !== 'object') continue
+      const subName =
+        (typeof sub.name === 'string' && sub.name.trim()) || 'Imported Insomnia Environment'
+      lastEnv = writeInsomniaSubEnvironment(
+        db,
+        projectId,
+        projectRow.workspace_id,
+        subName,
+        sub.data,
+        warnings,
+        now,
       )
-      for (const [k, v] of Object.entries(data)) {
-        if (!k) continue
-        const stringValue = typeof v === 'string' ? v : v == null ? '' : JSON.stringify(v)
-        insertVar.run(randomUUID(), envId, k, stringValue, null, 1, 0, stringValue)
-        suggestedEnvVars[k] = stringValue // keep the UI hint too
-      }
     }
   }
 
@@ -3823,6 +3781,8 @@ function importInsomniaV5(
     endpointCount,
     folderCount,
     endpointIds,
+    environmentId: lastEnv?.id,
+    environmentName: lastEnv?.name,
     suggestedEnvVars: Object.keys(suggestedEnvVars).length > 0 ? suggestedEnvVars : undefined,
     warnings: warnings.length > 0 ? warnings : undefined,
   }

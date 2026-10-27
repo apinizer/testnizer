@@ -1,12 +1,20 @@
 /**
  * `insomnia` and `bru`/`req`/`res` alias layers, shared by Send and Run.
  *
- * Insomnia is mostly a drop-in for `pm`, with TWO documented semantic traps
- * (verified against Kong/Insomnia docs):
+ * Insomnia is mostly a drop-in for `pm`, with THREE documented semantic traps
+ * (verified against Kong/Insomnia docs and source):
  *   1. `insomnia.baseEnvironment` (and `insomnia.collectionVariables`) map to
  *      Postman COLLECTION variables — NOT globals (globals are unsupported).
+ *      In Testnizer those are the project variables (issue #281).
  *   2. `insomnia.response.status` is the NUMERIC code (inverted vs Postman,
  *      where `.status` is the reason text and `.code` is the number).
+ *   3. `insomnia.environment` is the ACTIVE environment, and with no
+ *      sub-environment selected the active one IS the base environment
+ *      (insomnia `network.ts`: `activeEnvironment || baseEnvironment`). So with
+ *      no Testnizer environment selected it is the project-variable scope — an
+ *      imported base-only collection's `insomnia.environment.get/set` read and
+ *      persist the project variables (issue #289). With one selected it is
+ *      `pm.environment`, as before.
  *
  * Bruno's `bru`/`req`/`res` are NOT a pm alias — they're getter-method based,
  * mapped function-by-function.
@@ -16,7 +24,7 @@ import type { ScriptHostContext, PmLike } from './pm-types'
 /** Build the `insomnia` object from a fully-assembled pm. */
 export function buildInsomnia(ctx: ScriptHostContext): object {
   const { pm, normalizedResponse: r } = ctx
-  // Inherit every pm member, then override the two Insomnia-specific ones.
+  // Inherit every pm member, then override the Insomnia-specific ones.
   const insomnia = Object.create(pm) as PmLike & {
     baseEnvironment: unknown
     response: unknown
@@ -24,7 +32,10 @@ export function buildInsomnia(ctx: ScriptHostContext): object {
   // Guard on `r` (the normalized response): in pre-request scope pm.response
   // does not exist (Postman), so only touch it when r exists.
   const insomniaResponse = r ? { ...(pm.response as object), status: r.code } : null
+  const activeEnvironment =
+    pm.environment.active === false ? pm.collectionVariables : pm.environment
   Object.defineProperties(insomnia, {
+    environment: { value: activeEnvironment, enumerable: true },
     baseEnvironment: { value: pm.collectionVariables, enumerable: true },
     collectionVariables: { value: pm.collectionVariables, enumerable: true },
     response: { value: insomniaResponse, enumerable: true },

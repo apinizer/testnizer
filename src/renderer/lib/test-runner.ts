@@ -440,6 +440,9 @@ export function createPmApi(
     localVars?: Record<string, string>
     /** Keys of the project variables marked secret — what `pm.vault` sees. */
     vaultKeys?: Iterable<string>
+    /** False when no environment is selected (Insomnia's active environment is
+     *  then the base one — the project variables; aliases.ts). Default true. */
+    environmentActive?: boolean
     /** Scopes pm.sendRequest to the active project's cookie jar so a script
      * login shares its session cookie with the main request (issue #104).
      * Engine-level `projectId` only — never `_projectId`, which would also
@@ -481,7 +484,7 @@ export function createPmApi(
     location: meta?.location,
     scopes: {
       globals: { values: globalVars, updates: globalUpdates },
-      environment: { values: envVars, updates: envUpdates },
+      environment: { values: envVars, updates: envUpdates, active: meta?.environmentActive },
       vault: { secretKeys: new Set(meta?.vaultKeys ?? []), updates: vaultUpdates },
       // Request-local, like Postman: folded into THIS send's resolution by the
       // caller, never persisted.

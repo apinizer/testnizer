@@ -44,6 +44,11 @@ export interface ParityCase {
   seedGlobals?: Record<string, string>
   /** Project variables marked SECRET (what `pm.vault` reads) — issue #281. */
   seedSecretGlobals?: Record<string, string>
+  /**
+   * No environment selected (Send: no active environment; Run: none requested
+   * and none active). Default: one is selected, seeded with `seedEnv`.
+   */
+  noActiveEnvironment?: boolean
   /** Project-variable writes (pm.globals / pm.collectionVariables), subset match. */
   expectGlobals?: Record<string, string>
   /**
@@ -818,6 +823,59 @@ export const parityCases: ParityCase[] = [
     expectEnv: { cv281: 'C,N,undefined,undefined,E,C,N' },
     expectGlobals: { cvNew: 'N' },
     expectNoEnv: ['cvNew'],
+    expectTests: [],
+  },
+
+  // ── issue #289: insomnia.environment is Insomnia's ACTIVE environment ──────
+  // With no sub-environment selected Insomnia's active environment IS the base
+  // environment (network.ts: `activeEnvironment || baseEnvironment`). The
+  // importer writes the base environment to the project variables, so with no
+  // Testnizer environment selected insomnia.environment reads and writes them.
+  {
+    name: 'insomnia.environment with no environment selected is the base environment (issue #289)',
+    noActiveEnvironment: true,
+    phase: 'prerequest',
+    seedGlobals: { AccessURL: 'http://base' },
+    script: `
+      insomnia.environment.set('token289', 'T-' + insomnia.environment.get('AccessURL'));
+      pm.globals.set('seen289', [
+        insomnia.environment.get('token289'),
+        insomnia.baseEnvironment.get('token289'),
+        typeof pm.environment.get('token289'),
+        String(insomnia.environment.has('AccessURL')),
+      ].join(','));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {},
+    expectGlobals: {
+      token289: 'T-http://base',
+      seen289: 'T-http://base,T-http://base,undefined,true',
+    },
+    expectNoEnv: ['token289', 'seen289'],
+    expectTests: [],
+  },
+  // A selected environment stays insomnia.environment — what a project
+  // imported before issue #289 has (its base environment became an ordinary,
+  // active environment); it behaves exactly as before.
+  {
+    name: 'insomnia.environment with an environment selected is that environment (issue #289)',
+    phase: 'prerequest',
+    seedEnv: { AccessURL: 'http://env' },
+    seedGlobals: { AccessURL: 'http://base' },
+    script: `
+      insomnia.environment.set('token289b', 'T-' + insomnia.environment.get('AccessURL'));
+      insomnia.environment.set('seen289b', [
+        insomnia.environment.get('token289b'),
+        typeof insomnia.baseEnvironment.get('token289b'),
+        insomnia.baseEnvironment.get('AccessURL'),
+        pm.environment.get('token289b'),
+      ].join(','));
+    `,
+    response: { status: 200, statusText: 'OK', headers: jsonHeaders, body: TOKEN_BODY },
+    expectEnv: {
+      token289b: 'T-http://env',
+      seen289b: 'T-http://env,undefined,http://base,T-http://env',
+    },
     expectTests: [],
   },
 

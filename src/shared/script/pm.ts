@@ -122,7 +122,12 @@ export interface CreatePmOptions {
      * (issue #281: a Testnizer project is the Postman collection).
      */
     globals: PmScopeBacking
-    environment: PmScopeBacking & { name?: string }
+    /**
+     * `active: false` = no environment is selected for this send / run (each
+     * host knows it: Send's active environment id, Run's effective one).
+     * Omitted = active. Only the Insomnia alias reads it (aliases.ts).
+     */
+    environment: PmScopeBacking & { name?: string; active?: boolean }
     /** Secret project variables (`pm.vault`). Omitted → `pm.vault` rejects. */
     vault?: PmVaultBacking
     locals: PmScopeBacking
@@ -257,6 +262,11 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
   const globals = makeScope(scopes.globals, (k) => vaultBack?.updates.delete(k))
   const environment = Object.assign(makeScope(scopes.environment), {
     name: scopes.environment.name,
+  })
+  // Not enumerable: a host flag for the alias layer, not Postman API.
+  Object.defineProperty(environment, 'active', {
+    value: scopes.environment.active !== false,
+    enumerable: false,
   })
   // ONE scope (issue #281): Postman collection variables are Testnizer project
   // variables. This used to fall back to the environment store.
