@@ -11,6 +11,7 @@ import { cLibcurl } from './langs/c-libcurl'
 import { csharpHttpClient } from './langs/csharp-httpclient'
 import { csharpRestsharp } from './langs/csharp-restsharp'
 import { curlBash, curlCmd, curlPowershell } from './langs/curl'
+import { dartDio } from './langs/dart-dio'
 import { dartHttp } from './langs/dart-http'
 import { goNetHttp } from './langs/go'
 import { httpRaw } from './langs/http-raw'
@@ -22,14 +23,18 @@ import { kotlinOkhttp } from './langs/kotlin-okhttp'
 import { nodeAxios } from './langs/node-axios'
 import { nodeNative } from './langs/node-native'
 import { nodeRequest } from './langs/node-request'
+import { nodeUnirest } from './langs/node-unirest'
 import { objcNsurlsession } from './langs/objc-nsurlsession'
 import { ocamlCohttp } from './langs/ocaml-cohttp'
 import { phpCurl } from './langs/php-curl'
 import { phpGuzzle } from './langs/php-guzzle'
+import { phpHttpRequest2 } from './langs/php-http-request2'
+import { phpPeclHttp } from './langs/php-pecl-http'
 import { powershellRestMethod } from './langs/powershell-restmethod'
 import { pythonHttpClient } from './langs/python-http-client'
 import { pythonRequests } from './langs/python-requests'
 import { rHttr } from './langs/r-httr'
+import { rRcurl } from './langs/r-rcurl'
 import { rubyNetHttp } from './langs/ruby'
 import { rustReqwest } from './langs/rust-reqwest'
 import { shellHttpie, shellWget } from './langs/shell'
@@ -39,19 +44,19 @@ export const CODEGEN_LANGUAGES: readonly CodegenLanguage[] = [
   { id: 'curl', label: 'cURL', variants: [curlBash, curlCmd, curlPowershell] },
   { id: 'c', label: 'C', variants: [cLibcurl] },
   { id: 'csharp', label: 'C#', variants: [csharpHttpClient, csharpRestsharp] },
-  { id: 'dart', label: 'Dart', variants: [dartHttp] },
+  { id: 'dart', label: 'Dart', variants: [dartHttp, dartDio] },
   { id: 'go', label: 'Go', variants: [goNetHttp] },
   { id: 'http', label: 'HTTP', variants: [httpRaw] },
   { id: 'java', label: 'Java', variants: [javaOkhttp, javaUnirest] },
   { id: 'javascript', label: 'JavaScript', variants: [jsFetch, jsXhr, jsJquery] },
   { id: 'kotlin', label: 'Kotlin', variants: [kotlinOkhttp] },
-  { id: 'nodejs', label: 'NodeJS', variants: [nodeAxios, nodeNative, nodeRequest] },
+  { id: 'nodejs', label: 'NodeJS', variants: [nodeAxios, nodeNative, nodeRequest, nodeUnirest] },
   { id: 'objective-c', label: 'Objective-C', variants: [objcNsurlsession] },
   { id: 'ocaml', label: 'OCaml', variants: [ocamlCohttp] },
-  { id: 'php', label: 'PHP', variants: [phpCurl, phpGuzzle] },
+  { id: 'php', label: 'PHP', variants: [phpCurl, phpGuzzle, phpHttpRequest2, phpPeclHttp] },
   { id: 'powershell', label: 'PowerShell', variants: [powershellRestMethod] },
   { id: 'python', label: 'Python', variants: [pythonRequests, pythonHttpClient] },
-  { id: 'r', label: 'R', variants: [rHttr] },
+  { id: 'r', label: 'R', variants: [rHttr, rRcurl] },
   { id: 'ruby', label: 'Ruby', variants: [rubyNetHttp] },
   { id: 'rust', label: 'Rust', variants: [rustReqwest] },
   { id: 'shell', label: 'Shell', variants: [shellWget, shellHttpie] },

@@ -1091,6 +1091,517 @@ exports[`curl / bash (Linux / macOS) (curl) > user-authorization-beats-auth-tab 
   -H 'Authorization: Custom abc'"
 `;
 
+exports[`dart / dio (dart-dio) > auth-apikey-header 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "X-API-Key": "key-1",
+  };
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/secure",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > auth-apikey-query 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = <String, String>{};
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/secure?api_key=key-1",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > auth-basic 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Authorization": "Basic YWRtaW46czNjcmV0",
+  };
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/secure",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > auth-bearer 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Authorization": "Bearer tok-123",
+  };
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/secure",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > auth-bearer-custom-prefix 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Authorization": "Token tok-123",
+  };
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/secure",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > basic-auth-secret-placeholder 1`] = `
+"import 'dart:convert';
+import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    'Authorization': 'Basic ' + base64Encode(utf8.encode("admin:{{pass}}")),
+  };
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/secure",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > get-query-headers 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Accept": "application/json",
+    "X-Trace": "abc",
+  };
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/users?active=true&limit=10&q=a%20b%26c",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > graphql-query 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "X-Client": "tn",
+    "Content-Type": "application/json",
+  };
+  var data = "{\\"query\\":\\"query User(\\$id: ID!) {\\\\n  user(id: \\$id) { name }\\\\n}\\",\\"variables\\":{\\"id\\":\\"7\\"}}";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/graphql",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > head-with-settings 1`] = `
+"import 'dart:io';
+import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
+
+void main() async {
+  var headers = <String, String>{};
+  var dio = Dio(BaseOptions(
+    connectTimeout: Duration(milliseconds: 2500),
+    receiveTimeout: Duration(milliseconds: 2500),
+  ));
+  dio.httpClientAdapter = IOHttpClientAdapter(
+    createHttpClient: () => HttpClient()..badCertificateCallback = (cert, host, port) => true,
+  );
+  var response = await dio.request(
+    "https://api.example.com/health",
+    options: Options(
+      method: "HEAD",
+      headers: headers,
+      followRedirects: false,
+      validateStatus: (status) => status != null && status < 400,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > json-body-multiline-lossless 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Content-Type": "application/json",
+  };
+  var data = "{\\n  \\"active\\": false,\\n  \\"note\\": null\\n}";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/users/1",
+    options: Options(
+      method: "PATCH",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > non-default options 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+   var headers = {
+      "X-Trace": "abc",
+      "Content-Type": "application/json",
+   };
+   var data = "{\\"a\\":1}";
+   var dio = Dio(BaseOptions(
+      connectTimeout: Duration(milliseconds: 3000),
+      receiveTimeout: Duration(milliseconds: 3000),
+   ));
+   var response = await dio.request(
+      "https://api.example.com/items",
+      options: Options(
+         method: "POST",
+         headers: headers,
+         followRedirects: false,
+         validateStatus: (status) => status != null && status < 400,
+      ),
+      data: data,
+   );
+
+   print(response.statusCode);
+   print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > placeholders-resolved-with-envvars 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "X-Env": "dev",
+    "Authorization": "Bearer {{token}}",
+    "Content-Type": "application/json",
+  };
+  var data = "{\\"id\\":\\"42\\"}";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/users/42?page=2",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > placeholders-unresolved 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "X-Env": "{{envName}}",
+    "Authorization": "Bearer {{token}}",
+    "Content-Type": "application/json",
+  };
+  var data = "{\\"id\\":\\"{{userId}}\\"}";
+  var dio = Dio();
+  var response = await dio.request(
+    "{{baseUrl}}/users/{{userId}}?token={{token}}&page={{page}}",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > post-form-data-text-and-file 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = <String, String>{};
+  var data = FormData();
+  data.fields.add(MapEntry("title", "My report"));
+  data.files.add(MapEntry("file", await MultipartFile.fromFile("/tmp/report.pdf", filename: "report.pdf")));
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/upload",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > post-json 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Content-Type": "application/json",
+  };
+  var data = "{\\"name\\":\\"Ada\\",\\"admin\\":true,\\"manager\\":null,\\"tags\\":[\\"a\\",\\"b\\"],\\"n\\":1.5}";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/users",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > post-urlencoded 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Content-Type": "application/x-www-form-urlencoded",
+  };
+  var data = "user=ada%20lovelace&pass=p%26ss%3D1";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/login",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > post-xml-no-content-type 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Content-Type": "application/xml",
+  };
+  var data = "<order id=\\"1\\"><item>A&amp;B</item></order>";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/orders",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > put-binary-file 1`] = `
+"import 'dart:io';
+import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Content-Type": "application/octet-stream",
+  };
+  var file = File("/tmp/photo.png");
+  headers[Headers.contentLengthHeader] = (await file.length()).toString();
+  var data = file.openRead();
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/files/photo.png",
+    options: Options(
+      method: "PUT",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > put-raw-text 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Content-Type": "text/plain",
+  };
+  var data = "hello world";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/notes/1",
+    options: Options(
+      method: "PUT",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > special-chars-and-quotes 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "X-Quote": "it's \\"mixed\\" \\\\ back",
+    "Content-Type": "text/plain",
+  };
+  var data = "He said \\"hello\\" and it's \\\\n done \\$HOME \\\${x}\\nline2 \`tick\`";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/search/%C3%BCn%C3%AF%20c%C3%B8d%C3%A9?q=it's%20%22quoted%22&x=a%20b&o'brien=say%20%22hi%22#frag",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > special-chars-json-body-quotes 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Content-Type": "application/json",
+  };
+  var data = "{\\"msg\\":\\"it's \\\\\\"quoted\\\\\\"\\",\\"path\\":\\"C:\\\\\\\\tmp\\"}";
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/echo",
+    options: Options(
+      method: "POST",
+      headers: headers,
+    ),
+    data: data,
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
+exports[`dart / dio (dart-dio) > user-authorization-beats-auth-tab 1`] = `
+"import 'package:dio/dio.dart';
+
+void main() async {
+  var headers = {
+    "Authorization": "Custom abc",
+  };
+  var dio = Dio();
+  var response = await dio.request(
+    "https://api.example.com/secure",
+    options: Options(
+      method: "GET",
+      headers: headers,
+    ),
+  );
+
+  print(response.statusCode);
+  print(response.data);
+}"
+`;
+
 exports[`dart / http (dart-http) > auth-apikey-header 1`] = `
 "import 'package:http/http.dart' as http;
 
@@ -4166,6 +4677,310 @@ request(options, (error, response) => {
 });"
 `;
 
+exports[`nodejs / Unirest (nodejs-unirest) > auth-apikey-header 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/secure')
+  .headers({
+    'X-API-Key': 'key-1'
+  })
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > auth-apikey-query 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/secure?api_key=key-1')
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > auth-basic 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/secure')
+  .auth('admin', 's3cret', true)
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > auth-bearer 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/secure')
+  .headers({
+    'Authorization': 'Bearer tok-123'
+  })
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > auth-bearer-custom-prefix 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/secure')
+  .headers({
+    'Authorization': 'Token tok-123'
+  })
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > basic-auth-secret-placeholder 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/secure')
+  .auth('admin', '{{pass}}', true)
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > get-query-headers 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/users?active=true&limit=10&q=a%20b%26c')
+  .headers({
+    'Accept': 'application/json',
+    'X-Trace': 'abc'
+  })
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > graphql-query 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/graphql')
+  .headers({
+    'X-Client': 'tn',
+    'Content-Type': 'application/json'
+  })
+  .send(JSON.stringify({"query":"query User($id: ID!) {\\n  user(id: $id) { name }\\n}","variables":{"id":"7"}}))
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > head-with-settings 1`] = `
+"const unirest = require('unirest');
+
+unirest('HEAD', 'https://api.example.com/health')
+  .followRedirect(false)
+  .timeout(2500)
+  .strictSSL(false)
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > json-body-multiline-lossless 1`] = `
+"const unirest = require('unirest');
+
+unirest('PATCH', 'https://api.example.com/users/1')
+  .headers({
+    'Content-Type': 'application/json'
+  })
+  .send(JSON.stringify({
+    "active": false,
+    "note": null
+  }))
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > non-default options 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/items')
+   .headers({
+      'X-Trace': 'abc',
+      'Content-Type': 'application/json'
+   })
+   .send(JSON.stringify({"a":1}))
+   .followRedirect(false)
+   .timeout(3000)
+   .end((res) => {
+      if (res.error) throw new Error(res.error);
+      console.log(res.raw_body);
+   });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > placeholders-resolved-with-envvars 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/users/42?page=2')
+  .headers({
+    'X-Env': 'dev',
+    'Authorization': 'Bearer {{token}}',
+    'Content-Type': 'application/json'
+  })
+  .send(JSON.stringify({"id":"42"}))
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > placeholders-unresolved 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', '{{baseUrl}}/users/{{userId}}?token={{token}}&page={{page}}')
+  .headers({
+    'X-Env': '{{envName}}',
+    'Authorization': 'Bearer {{token}}',
+    'Content-Type': 'application/json'
+  })
+  .send(JSON.stringify({"id":"{{userId}}"}))
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > post-form-data-text-and-file 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/upload')
+  .field('title', 'My report')
+  .attach('file', '/tmp/report.pdf')
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > post-json 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/users')
+  .headers({
+    'Content-Type': 'application/json'
+  })
+  .send(JSON.stringify({"name":"Ada","admin":true,"manager":null,"tags":["a","b"],"n":1.5}))
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > post-urlencoded 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/login')
+  .headers({
+    'Content-Type': 'application/x-www-form-urlencoded'
+  })
+  .send('user=ada%20lovelace&pass=p%26ss%3D1')
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > post-xml-no-content-type 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/orders')
+  .headers({
+    'Content-Type': 'application/xml'
+  })
+  .send('<order id="1"><item>A&amp;B</item></order>')
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > put-binary-file 1`] = `
+"const unirest = require('unirest');
+const fs = require('fs');
+
+unirest('PUT', 'https://api.example.com/files/photo.png')
+  .headers({
+    'Content-Type': 'application/octet-stream'
+  })
+  .send(fs.readFileSync('/tmp/photo.png'))
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > put-raw-text 1`] = `
+"const unirest = require('unirest');
+
+unirest('PUT', 'https://api.example.com/notes/1')
+  .headers({
+    'Content-Type': 'text/plain'
+  })
+  .send('hello world')
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > special-chars-and-quotes 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/search/%C3%BCn%C3%AF%20c%C3%B8d%C3%A9?q=it\\'s%20%22quoted%22&x=a%20b&o\\'brien=say%20%22hi%22#frag')
+  .headers({
+    'X-Quote': 'it\\'s "mixed" \\\\ back',
+    'Content-Type': 'text/plain'
+  })
+  .send('He said "hello" and it\\'s \\\\n done $HOME \${x}\\nline2 \`tick\`')
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > special-chars-json-body-quotes 1`] = `
+"const unirest = require('unirest');
+
+unirest('POST', 'https://api.example.com/echo')
+  .headers({
+    'Content-Type': 'application/json'
+  })
+  .send(JSON.stringify({"msg":"it's \\"quoted\\"","path":"C:\\\\tmp"}))
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
+exports[`nodejs / Unirest (nodejs-unirest) > user-authorization-beats-auth-tab 1`] = `
+"const unirest = require('unirest');
+
+unirest('GET', 'https://api.example.com/secure')
+  .headers({
+    'Authorization': 'Custom abc'
+  })
+  .end((res) => {
+    if (res.error) throw new Error(res.error);
+    console.log(res.raw_body);
+  });"
+`;
+
 exports[`objective-c / NSURLSession (objc-nsurlsession) > auth-apikey-header 1`] = `
 "#import <Foundation/Foundation.h>
 
@@ -5622,6 +6437,530 @@ $response = $client->request('GET', 'https://api.example.com/secure', [
 echo $response->getBody();"
 `;
 
+exports[`php / HTTP_Request2 (php-http-request2) > auth-apikey-header 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/secure');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'X-API-Key' => 'key-1'
+));
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > auth-apikey-query 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/secure?api_key=key-1');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > auth-basic 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/secure');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setAuth('admin', 's3cret', HTTP_Request2::AUTH_BASIC);
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > auth-bearer 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/secure');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Authorization' => 'Bearer tok-123'
+));
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > auth-bearer-custom-prefix 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/secure');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Authorization' => 'Token tok-123'
+));
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > basic-auth-secret-placeholder 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/secure');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setAuth('admin', '{{pass}}', HTTP_Request2::AUTH_BASIC);
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > get-query-headers 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/users?active=true&limit=10&q=a%20b%26c');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Accept' => 'application/json',
+  'X-Trace' => 'abc'
+));
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > graphql-query 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/graphql');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'X-Client' => 'tn',
+  'Content-Type' => 'application/json'
+));
+$request->setBody('{"query":"query User($id: ID!) {\\\\n  user(id: $id) { name }\\\\n}","variables":{"id":"7"}}');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > head-with-settings 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/health');
+$request->setMethod(HTTP_Request2::METHOD_HEAD);
+$request->setConfig(array(
+  'follow_redirects' => FALSE,
+  'timeout' => 3,
+  'ssl_verify_peer' => FALSE,
+  'ssl_verify_host' => FALSE
+));
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > json-body-multiline-lossless 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/users/1');
+$request->setMethod('PATCH');
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Content-Type' => 'application/json'
+));
+$request->setBody('{
+  "active": false,
+  "note": null
+}');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > non-default options 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/items');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+   'follow_redirects' => FALSE,
+   'timeout' => 3
+));
+$request->setHeader(array(
+   'X-Trace' => 'abc',
+   'Content-Type' => 'application/json'
+));
+$request->setBody('{"a":1}');
+
+try {
+   $response = $request->send();
+   echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+   echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+   echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > placeholders-resolved-with-envvars 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/users/42?page=2');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'X-Env' => 'dev',
+  'Authorization' => 'Bearer {{token}}',
+  'Content-Type' => 'application/json'
+));
+$request->setBody('{"id":"42"}');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > placeholders-unresolved 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('{{baseUrl}}/users/{{userId}}?token={{token}}&page={{page}}');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'X-Env' => '{{envName}}',
+  'Authorization' => 'Bearer {{token}}',
+  'Content-Type' => 'application/json'
+));
+$request->setBody('{"id":"{{userId}}"}');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > post-form-data-text-and-file 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/upload');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader('Content-Type', 'multipart/form-data');
+$request->addPostParameter('title', 'My report');
+$request->addUpload('file', '/tmp/report.pdf', 'report.pdf');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > post-json 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/users');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Content-Type' => 'application/json'
+));
+$request->setBody('{"name":"Ada","admin":true,"manager":null,"tags":["a","b"],"n":1.5}');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > post-urlencoded 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/login');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Content-Type' => 'application/x-www-form-urlencoded'
+));
+$request->setBody('user=ada%20lovelace&pass=p%26ss%3D1');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > post-xml-no-content-type 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/orders');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Content-Type' => 'application/xml'
+));
+$request->setBody('<order id="1"><item>A&amp;B</item></order>');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > put-binary-file 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/files/photo.png');
+$request->setMethod(HTTP_Request2::METHOD_PUT);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Content-Type' => 'application/octet-stream'
+));
+$request->setBody('/tmp/photo.png', true);
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > put-raw-text 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/notes/1');
+$request->setMethod(HTTP_Request2::METHOD_PUT);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Content-Type' => 'text/plain'
+));
+$request->setBody('hello world');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > special-chars-and-quotes 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/search/%C3%BCn%C3%AF%20c%C3%B8d%C3%A9?q=it\\'s%20%22quoted%22&x=a%20b&o\\'brien=say%20%22hi%22#frag');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'X-Quote' => 'it\\'s "mixed" \\\\ back',
+  'Content-Type' => 'text/plain'
+));
+$request->setBody('He said "hello" and it\\'s \\\\n done $HOME \${x}
+line2 \`tick\`');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > special-chars-json-body-quotes 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/echo');
+$request->setMethod(HTTP_Request2::METHOD_POST);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Content-Type' => 'application/json'
+));
+$request->setBody('{"msg":"it\\'s \\\\"quoted\\\\"","path":"C:\\\\\\\\tmp"}');
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
+exports[`php / HTTP_Request2 (php-http-request2) > user-authorization-beats-auth-tab 1`] = `
+"<?php
+require_once 'HTTP/Request2.php';
+
+$request = new HTTP_Request2();
+$request->setUrl('https://api.example.com/secure');
+$request->setMethod(HTTP_Request2::METHOD_GET);
+$request->setConfig(array(
+  'follow_redirects' => TRUE
+));
+$request->setHeader(array(
+  'Authorization' => 'Custom abc'
+));
+
+try {
+  $response = $request->send();
+  echo $response->getStatus() . ' ' . $response->getReasonPhrase() . PHP_EOL;
+  echo $response->getBody();
+} catch (HTTP_Request2_Exception $e) {
+  echo 'Error: ' . $e->getMessage();
+}"
+`;
+
 exports[`php / cURL (php) > basic-auth-secret-placeholder 1`] = `
 "<?php
 
@@ -5797,6 +7136,446 @@ $response = curl_exec($curl);
 curl_close($curl);
 
 echo $response;"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > auth-apikey-header 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/secure');
+$request->setRequestMethod('GET');
+$request->setHeaders(array(
+  'X-API-Key' => 'key-1'
+));
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > auth-apikey-query 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/secure?api_key=key-1');
+$request->setRequestMethod('GET');
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > auth-basic 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/secure');
+$request->setRequestMethod('GET');
+$request->setOptions(array(
+  'redirect' => 10,
+  'httpauth' => 'admin:s3cret',
+  'httpauthtype' => \\http\\Client\\Curl\\AUTH_BASIC
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > auth-bearer 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/secure');
+$request->setRequestMethod('GET');
+$request->setHeaders(array(
+  'Authorization' => 'Bearer tok-123'
+));
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > auth-bearer-custom-prefix 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/secure');
+$request->setRequestMethod('GET');
+$request->setHeaders(array(
+  'Authorization' => 'Token tok-123'
+));
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > basic-auth-secret-placeholder 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/secure');
+$request->setRequestMethod('GET');
+$request->setOptions(array(
+  'redirect' => 10,
+  'httpauth' => 'admin:{{pass}}',
+  'httpauthtype' => \\http\\Client\\Curl\\AUTH_BASIC
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > get-query-headers 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/users?active=true&limit=10&q=a%20b%26c');
+$request->setRequestMethod('GET');
+$request->setHeaders(array(
+  'Accept' => 'application/json',
+  'X-Trace' => 'abc'
+));
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > graphql-query 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/graphql');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'X-Client' => 'tn',
+  'Content-Type' => 'application/json'
+));
+$body = new http\\Message\\Body;
+$body->append('{"query":"query User($id: ID!) {\\\\n  user(id: $id) { name }\\\\n}","variables":{"id":"7"}}');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > head-with-settings 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/health');
+$request->setRequestMethod('HEAD');
+$request->setOptions(array(
+  'timeout' => 2.5
+));
+$request->setSslOptions(array('verifypeer' => false, 'verifyhost' => false));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > json-body-multiline-lossless 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/users/1');
+$request->setRequestMethod('PATCH');
+$request->setHeaders(array(
+  'Content-Type' => 'application/json'
+));
+$body = new http\\Message\\Body;
+$body->append('{
+  "active": false,
+  "note": null
+}');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > non-default options 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/items');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+   'X-Trace' => 'abc',
+   'Content-Type' => 'application/json'
+));
+$body = new http\\Message\\Body;
+$body->append('{"a":1}');
+$request->setBody($body);
+$request->setOptions(array(
+   'timeout' => 3
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > placeholders-resolved-with-envvars 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/users/42?page=2');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'X-Env' => 'dev',
+  'Authorization' => 'Bearer {{token}}',
+  'Content-Type' => 'application/json'
+));
+$body = new http\\Message\\Body;
+$body->append('{"id":"42"}');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > placeholders-unresolved 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('{{baseUrl}}/users/{{userId}}?token={{token}}&page={{page}}');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'X-Env' => '{{envName}}',
+  'Authorization' => 'Bearer {{token}}',
+  'Content-Type' => 'application/json'
+));
+$body = new http\\Message\\Body;
+$body->append('{"id":"{{userId}}"}');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > post-form-data-text-and-file 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/upload');
+$request->setRequestMethod('POST');
+$body = new http\\Message\\Body;
+$body->addForm(array(
+  'title' => 'My report'
+), array(
+  array('name' => 'file', 'type' => 'application/octet-stream', 'file' => '/tmp/report.pdf', 'data' => null)
+));
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > post-json 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/users');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'Content-Type' => 'application/json'
+));
+$body = new http\\Message\\Body;
+$body->append('{"name":"Ada","admin":true,"manager":null,"tags":["a","b"],"n":1.5}');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > post-urlencoded 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/login');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'Content-Type' => 'application/x-www-form-urlencoded'
+));
+$body = new http\\Message\\Body;
+$body->append('user=ada%20lovelace&pass=p%26ss%3D1');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > post-xml-no-content-type 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/orders');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'Content-Type' => 'application/xml'
+));
+$body = new http\\Message\\Body;
+$body->append('<order id="1"><item>A&amp;B</item></order>');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > put-binary-file 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/files/photo.png');
+$request->setRequestMethod('PUT');
+$request->setHeaders(array(
+  'Content-Type' => 'application/octet-stream'
+));
+$body = new http\\Message\\Body(fopen('/tmp/photo.png', 'r'));
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > put-raw-text 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/notes/1');
+$request->setRequestMethod('PUT');
+$request->setHeaders(array(
+  'Content-Type' => 'text/plain'
+));
+$body = new http\\Message\\Body;
+$body->append('hello world');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > special-chars-and-quotes 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/search/%C3%BCn%C3%AF%20c%C3%B8d%C3%A9?q=it\\'s%20%22quoted%22&x=a%20b&o\\'brien=say%20%22hi%22#frag');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'X-Quote' => 'it\\'s "mixed" \\\\ back',
+  'Content-Type' => 'text/plain'
+));
+$body = new http\\Message\\Body;
+$body->append('He said "hello" and it\\'s \\\\n done $HOME \${x}
+line2 \`tick\`');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > special-chars-json-body-quotes 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/echo');
+$request->setRequestMethod('POST');
+$request->setHeaders(array(
+  'Content-Type' => 'application/json'
+));
+$body = new http\\Message\\Body;
+$body->append('{"msg":"it\\'s \\\\"quoted\\\\"","path":"C:\\\\\\\\tmp"}');
+$request->setBody($body);
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
+`;
+
+exports[`php / pecl_http (php-pecl-http) > user-authorization-beats-auth-tab 1`] = `
+"<?php
+$client = new http\\Client;
+$request = new http\\Client\\Request;
+$request->setRequestUrl('https://api.example.com/secure');
+$request->setRequestMethod('GET');
+$request->setHeaders(array(
+  'Authorization' => 'Custom abc'
+));
+$request->setOptions(array(
+  'redirect' => 10
+));
+
+$client->enqueue($request)->send();
+$response = $client->getResponse();
+echo $response->getBody();"
 `;
 
 exports[`powershell / Invoke-RestMethod (powershell-restmethod) > auth-apikey-header 1`] = `
@@ -6411,6 +8190,403 @@ conn.request('GET', '/secure', '', headers)
 res = conn.getresponse()
 data = res.read()
 print(data.decode('utf-8'))"
+`;
+
+exports[`r / RCurl (r-rcurl) > auth-apikey-header 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "X-API-Key" = "key-1"
+)
+
+opts <- list(
+  httpheader = headers,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/secure", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > auth-apikey-query 1`] = `
+"library(RCurl)
+
+opts <- list(
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/secure?api_key=key-1", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > auth-basic 1`] = `
+"library(RCurl)
+
+opts <- list(
+  userpwd = "admin:s3cret",
+  httpauth = 1L,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/secure", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > auth-bearer 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Authorization" = "Bearer tok-123"
+)
+
+opts <- list(
+  httpheader = headers,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/secure", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > auth-bearer-custom-prefix 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Authorization" = "Token tok-123"
+)
+
+opts <- list(
+  httpheader = headers,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/secure", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > basic-auth-secret-placeholder 1`] = `
+"library(RCurl)
+
+opts <- list(
+  userpwd = "admin:{{pass}}",
+  httpauth = 1L,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/secure", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > get-query-headers 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Accept" = "application/json",
+  "X-Trace" = "abc"
+)
+
+opts <- list(
+  httpheader = headers,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/users?active=true&limit=10&q=a%20b%26c", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > graphql-query 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "X-Client" = "tn",
+  "Content-Type" = "application/json"
+)
+
+body <- "{\\"query\\":\\"query User($id: ID!) {\\\\n  user(id: $id) { name }\\\\n}\\",\\"variables\\":{\\"id\\":\\"7\\"}}"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/graphql", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > head-with-settings 1`] = `
+"library(RCurl)
+
+opts <- list(
+  nobody = TRUE,
+  timeout.ms = 2500,
+  ssl.verifypeer = FALSE,
+  ssl.verifyhost = FALSE
+)
+
+res <- getURL("https://api.example.com/health", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > json-body-multiline-lossless 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Content-Type" = "application/json"
+)
+
+body <- "{\\n  \\"active\\": false,\\n  \\"note\\": null\\n}"
+
+opts <- list(
+  customrequest = "PATCH",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/users/1", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > non-default options 1`] = `
+"library(RCurl)
+
+headers <- c(
+   "X-Trace" = "abc",
+   "Content-Type" = "application/json"
+)
+
+body <- "{\\"a\\":1}"
+
+opts <- list(
+   customrequest = "POST",
+   httpheader = headers,
+   postfields = body,
+   timeout.ms = 3000
+)
+
+res <- getURL("https://api.example.com/items", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > placeholders-resolved-with-envvars 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "X-Env" = "dev",
+  "Authorization" = "Bearer {{token}}",
+  "Content-Type" = "application/json"
+)
+
+body <- "{\\"id\\":\\"42\\"}"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/users/42?page=2", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > placeholders-unresolved 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "X-Env" = "{{envName}}",
+  "Authorization" = "Bearer {{token}}",
+  "Content-Type" = "application/json"
+)
+
+body <- "{\\"id\\":\\"{{userId}}\\"}"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("{{baseUrl}}/users/{{userId}}?token={{token}}&page={{page}}", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > post-form-data-text-and-file 1`] = `
+"library(RCurl)
+
+params <- list(
+  "title" = "My report",
+  "file" = fileUpload("/tmp/report.pdf")
+)
+
+opts <- list(
+  customrequest = "POST",
+  followlocation = TRUE
+)
+
+res <- postForm("https://api.example.com/upload", .params = params, .opts = opts, style = 'httppost')
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > post-json 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Content-Type" = "application/json"
+)
+
+body <- "{\\"name\\":\\"Ada\\",\\"admin\\":true,\\"manager\\":null,\\"tags\\":[\\"a\\",\\"b\\"],\\"n\\":1.5}"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/users", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > post-urlencoded 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Content-Type" = "application/x-www-form-urlencoded"
+)
+
+body <- "user=ada%20lovelace&pass=p%26ss%3D1"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/login", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > post-xml-no-content-type 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Content-Type" = "application/xml"
+)
+
+body <- "<order id=\\"1\\"><item>A&amp;B</item></order>"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/orders", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > put-binary-file 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Content-Type" = "application/octet-stream"
+)
+
+body <- readBin("/tmp/photo.png", what = 'raw', n = file.info("/tmp/photo.png")$size)
+
+opts <- list(
+  customrequest = "PUT",
+  httpheader = headers,
+  postfields = body,
+  postfieldsize = length(body),
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/files/photo.png", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > put-raw-text 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Content-Type" = "text/plain"
+)
+
+body <- "hello world"
+
+opts <- list(
+  customrequest = "PUT",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/notes/1", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > special-chars-and-quotes 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "X-Quote" = "it's \\"mixed\\" \\\\ back",
+  "Content-Type" = "text/plain"
+)
+
+body <- "He said \\"hello\\" and it's \\\\n done $HOME \${x}\\nline2 \`tick\`"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/search/%C3%BCn%C3%AF%20c%C3%B8d%C3%A9?q=it's%20%22quoted%22&x=a%20b&o'brien=say%20%22hi%22#frag", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > special-chars-json-body-quotes 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Content-Type" = "application/json"
+)
+
+body <- "{\\"msg\\":\\"it's \\\\\\"quoted\\\\\\"\\",\\"path\\":\\"C:\\\\\\\\tmp\\"}"
+
+opts <- list(
+  customrequest = "POST",
+  httpheader = headers,
+  postfields = body,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/echo", .opts = opts)
+cat(res)"
+`;
+
+exports[`r / RCurl (r-rcurl) > user-authorization-beats-auth-tab 1`] = `
+"library(RCurl)
+
+headers <- c(
+  "Authorization" = "Custom abc"
+)
+
+opts <- list(
+  httpheader = headers,
+  followlocation = TRUE
+)
+
+res <- getURL("https://api.example.com/secure", .opts = opts)
+cat(res)"
 `;
 
 exports[`r / httr (r-httr) > auth-apikey-header 1`] = `

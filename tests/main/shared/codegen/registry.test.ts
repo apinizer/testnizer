@@ -55,7 +55,7 @@ describe('codegen registry', () => {
       expect(lang.variants.length).toBeGreaterThan(0)
       for (const v of lang.variants) expect(v.language).toBe(lang.id)
     }
-    expect(ALL_VARIANTS.length).toBe(31)
+    expect(ALL_VARIANTS.length).toBe(36)
   })
 
   it('every variant has a label, a Monaco language and a well-formed options schema', () => {

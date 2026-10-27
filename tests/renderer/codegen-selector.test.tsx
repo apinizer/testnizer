@@ -88,6 +88,28 @@ describe('Generate Code modal — Language → Variant (issue #280)', () => {
     expect(useUIStore.getState().codegen.variantByLanguage.python).toBe('python-http-client')
   })
 
+  it('the Postman-parity variants (dio, Unirest, HTTP_Request2, pecl_http, RCurl) are selectable', () => {
+    render(<CodeGeneratorModal />)
+    const cases: Array<[string, string, string, string]> = [
+      ['dart', 'dart-dio', 'dio.request(', 'dart'],
+      ['nodejs', 'nodejs-unirest', "unirest('POST'", 'javascript'],
+      ['php', 'php-http-request2', 'new HTTP_Request2()', 'php'],
+      ['php', 'php-pecl-http', 'new http\\Client\\Request', 'php'],
+      ['r', 'r-rcurl', 'library(RCurl)', 'r'],
+    ]
+    for (const [lang, variant, marker, monaco] of cases) {
+      fireEvent.click(screen.getByTestId(`codegen-language-${lang}`))
+      fireEvent.click(screen.getByTestId(`codegen-variant-${variant}`))
+      expect(screen.getByTestId(`codegen-variant-${variant}`)).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      )
+      expect(code(), variant).toContain(marker)
+      expect(code(), variant).toContain('https://api.test/users')
+      expect(screen.getByTestId('monaco')).toHaveAttribute('data-language', monaco)
+    }
+  })
+
   it('options popover: renders the schema, changes the snippet, resets', () => {
     render(<CodeGeneratorModal />)
     fireEvent.click(screen.getByTestId('codegen-language-javascript'))
