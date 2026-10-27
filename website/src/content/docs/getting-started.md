@@ -63,9 +63,8 @@ OS's user-data directory:
 
 Inside that folder you'll find:
 
-- `testnizer.db` — workspaces, projects, environments, history, certificates
-- `secrets/` — OS-keychain-encrypted blobs for tokens and passphrases
-- `settings.json` — UI preferences, keyboard shortcuts, theme
+- `testnizer.db` — workspaces, projects, environments, history, certificates (secret-type variable values, mock tokens and certificate passphrases are stored in it encrypted with the OS keychain)
+- `settings.json` — UI preferences, keyboard shortcuts, theme (credential-named settings and AI Chat API keys are keychain-encrypted)
 - `backups/` — copies of the database taken before an update (see below)
 
 The database is portable. Copy `testnizer.db` to another machine running

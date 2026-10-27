@@ -61,9 +61,8 @@ altındaki tek bir SQLite veritabanında tutar:
 
 Bu klasörün içinde şunları bulacaksınız:
 
-- `testnizer.db` — çalışma alanları, projeler, ortamlar, geçmiş, sertifikalar
-- `secrets/` — token'lar ve parola ifadeleri için işletim sistemi anahtarlığıyla şifrelenmiş bloblar
-- `settings.json` — arayüz tercihleri, klavye kısayolları, tema
+- `testnizer.db` — çalışma alanları, projeler, ortamlar, geçmiş, sertifikalar (gizli (secret) türündeki değişken değerleri, mock token'ları ve sertifika parolaları içinde, işletim sistemi anahtarlığıyla şifrelenmiş olarak saklanır)
+- `settings.json` — arayüz tercihleri, klavye kısayolları, tema (kimlik bilgisi adı taşıyan ayarlar ve Yapay Zeka Sohbet API anahtarları anahtarlıkla şifrelenir)
 - `backups/` — güncellemeden önce alınan veritabanı kopyaları (aşağıya bakın)
 
 Veritabanı taşınabilirdir. `testnizer.db`'yi Testnizer çalışan başka bir makineye kopyalayın
