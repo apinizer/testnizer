@@ -62,28 +62,48 @@ export function sendScriptScopes(writes: SendScriptWrites): {
 }
 
 /**
+ * True when the script wrote a SECRET value: a `pm.vault` write, or a write to
+ * a variable whose row is secret in its scope — the active environment's for
+ * `pm.environment.set`, the project variables' for `pm.globals.set` /
+ * `pm.collectionVariables.set`.
+ */
+function writesSecret(r: ScriptRunResult): boolean {
+  if (Object.keys(r.vaultUpdates).length > 0) return true
+  const state = useEnvironmentStore.getState()
+  const env = state.environments.find((e) => e.id === state.activeEnvironmentId)
+  const envSecret = new Set((env?.variables ?? []).filter((v) => v.secret).map((v) => v.key))
+  if (Object.keys(r.envUpdates).some((k) => envSecret.has(k))) return true
+  const globalSecret = new Set(
+    (state.globalVariables || []).filter((v) => v.secret).map((v) => v.key),
+  )
+  return Object.keys(r.globalUpdates).some((k) => globalSecret.has(k))
+}
+
+/**
  * Persist one Send-path script's environment / project-variable / vault writes
  * (`environment.store.applyScriptUpdates`) — the one place the Send hosts
  * (HTTP and MCP) hand them over.
  *
  * Resolves at once, persisting in the background as before, EXCEPT when the
- * script wrote `pm.vault` (issue #281): then it resolves once the value is a
- * secret project variable in the DB, because History and the Console mask
- * from the DB's secrets — a vault token set by a pre-request script would
- * otherwise reach History in clear text before it was stored as a secret.
+ * script wrote a secret value (`pm.vault`, issue #281, or any write to a
+ * variable marked secret — security follow-up): then it resolves once the
+ * value is in the DB, because History and the Console mask from the DB's
+ * secrets — a token set by a pre-request script would otherwise reach History
+ * in clear text before it was stored.
  */
 export async function persistScriptWrites(r: ScriptRunResult): Promise<void> {
-  const hasVault = Object.keys(r.vaultUpdates).length > 0
   if (
-    !hasVault &&
+    Object.keys(r.vaultUpdates).length === 0 &&
     Object.keys(r.envUpdates).length === 0 &&
     Object.keys(r.globalUpdates).length === 0
   )
     return
+  // Decided BEFORE applying: the store's optimistic update changes the rows.
+  const secret = writesSecret(r)
   const done = useEnvironmentStore
     .getState()
     .applyScriptUpdates(r.envUpdates, r.globalUpdates, r.vaultUpdates)
-  if (hasVault) await done
+  if (secret) await done
   else void done
 }
 

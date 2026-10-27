@@ -83,13 +83,8 @@ import { mcpCallOnce, type McpOneShotCall, type McpTransport } from '../protocol
 import { isStdioServerTrusted, MCP_STDIO_UNTRUSTED_MESSAGE } from '../lib/mcp-stdio-trust'
 import { isCredentialHeaderName } from '../lib/credential-headers'
 import { MASKED_VALUE } from '../db/saved-response.repo'
-import {
-  authSecretValues,
-  loadSecretInventory,
-  maskRunResult,
-  scrubberFor,
-  type SecretDb,
-} from '../lib/sensitive-scrub'
+import { authSecretValues, maskRunResult, scrubberFor, type SecretDb } from '../lib/sensitive-scrub'
+import { cachedSecretInventory } from '../lib/secret-inventory-cache'
 import { mcpOutcomeToResponse, mcpScriptInfo, type McpScriptInfo } from '../../shared/mcp-response'
 import {
   INLINE_MASK,
@@ -847,9 +842,9 @@ function pushConsoleLog(
       message: text,
       tabId: ctx.consoleTag.tabId,
       meta: ctx.consoleTag.meta,
-      // The Console masks the DB's secrets itself; a `pm.vault.set` value of
-      // this run is not in the DB yet (issue #281).
-      secrets: [...ctx.vaultKeys].map((k) => ctx.globals[k]).filter(Boolean),
+      // The Console masks the DB's secrets itself; a value this run's scripts
+      // wrote to a secret variable (or a `pm.vault.set`) is not in the DB yet.
+      secrets: liveSecretValues(ctx),
     })
   }
 }
@@ -974,13 +969,7 @@ async function runUserScript(
           error: apiResp.error ? { message: apiResp.error } : undefined,
           tabId: ctx.consoleTag.tabId,
           meta: { ...ctx.consoleTag.meta, via: 'pm.sendRequest' },
-          secrets: [
-            ...authSecretValues(sendOptions.auth),
-            ...liveSecretValues(
-              { ...ctx.globals, ...ctx.environment, ...ctx.locals },
-              ctx.vaultKeys,
-            ),
-          ],
+          secrets: [...authSecretValues(sendOptions.auth), ...liveSecretValues(ctx)],
         })
       }
       return apiResp
@@ -1272,22 +1261,58 @@ function secretDb(): SecretDb | null {
   }
 }
 
+/** The variable layers a run (`RunVarScopes`) or one step (`ScriptContext`) holds. */
+interface SecretScopes {
+  globals: Record<string, string>
+  environment: Record<string, string>
+  locals: Record<string, string>
+  vaultKeys: Iterable<string>
+}
+
+/**
+ * The keys whose values a run masks: every variable marked secret in the DB
+ * (any scope, by name — the Console's and History's inventory) plus the run's
+ * `pm.vault` keys, which may not be in the DB yet (issue #281). One rule for
+ * every sink: the live Console, step results, History, the report.
+ */
+function runSecretKeys(vaultKeys: Iterable<string>): Set<string> {
+  const keys = new Set(cachedSecretInventory(secretDb()).keys)
+  for (const k of vaultKeys) keys.add(k)
+  return keys
+}
+
 /**
  * Current values of the variables marked secret, as the run holds them now.
- * A setup step's `pm.environment.set('token', …)` is only written back to the
- * DB when the run ends, so the DB alone would miss it (issue #195). The same
- * holds for a `pm.vault.set` of a NEW key (issue #281): `vaultKeys` names the
- * run's secret project variables, written to the DB only after the run.
+ * A script's `pm.environment.set('token', …)` / `pm.globals.set` /
+ * `pm.collectionVariables.set` on a secret variable is only written back to
+ * the DB when the run ends, so the DB alone would miss the new value (issue
+ * #195; security follow-up of issue #281). The same holds for a `pm.vault.set`
+ * of a NEW key. Each scope is read on its own: the merged view would drop a
+ * secret global shadowed by an environment variable of the same name.
  */
-function liveSecretValues(envVars: Record<string, string>, vaultKeys?: Iterable<string>): string[] {
+function liveSecretValues(s: SecretScopes): string[] {
   const out: string[] = []
-  const keys = new Set(loadSecretInventory(secretDb()).keys)
-  for (const k of vaultKeys ?? []) keys.add(k)
-  for (const k of keys) {
-    const v = envVars[k]
-    if (typeof v === 'string' && v) out.push(v)
+  for (const k of runSecretKeys(s.vaultKeys)) {
+    for (const layer of [s.globals, s.environment, s.locals]) {
+      const v = layer[k]
+      if (typeof v === 'string' && v) out.push(v)
+    }
   }
   return out
+}
+
+/**
+ * A run's variable deltas for the report the renderer keeps in sessionStorage:
+ * it only needs the KEYS (to refetch), so the value of every secret key is
+ * left empty — the `pm.vault` rule, generalised to any secret variable.
+ */
+function reportUpdates(
+  updates: Record<string, string>,
+  secretKeys: Set<string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(updates).map(([k, v]) => [k, secretKeys.has(k) ? '' : v]),
+  )
 }
 
 /**
@@ -1302,11 +1327,11 @@ function recordStep(
   rawResult: EndpointRunResult,
   secrets: unknown[] = [],
 ): StepOutcome {
-  // Vault values of THIS run (issue #281) are masked before they reach the DB.
-  const vaultValues = [...ctx.scopes.vaultKeys].map((k) => ctx.envVars[k])
+  // Secret values THIS run wrote (a script's set, pm.vault — issue #281) are
+  // masked before they reach the DB.
   const result = maskRunResult(
     rawResult,
-    scrubberFor(secretDb(), [...secrets, ...vaultValues], ctx.envVars),
+    scrubberFor(secretDb(), [...secrets, ...liveSecretValues(ctx.scopes)]),
   )
   ctx.results.push(result)
   const didPass = endpointDidPass(result)
@@ -1766,7 +1791,7 @@ async function runEndpointStep(
       error: response.error ? { message: response.error } : undefined,
       tabId: consoleTag.tabId,
       meta: consoleTag.meta,
-      secrets: [...authSecrets, ...liveSecretValues(envVars, ctx.scopes.vaultKeys)],
+      secrets: [...authSecrets, ...liveSecretValues(ctx.scopes)],
     })
 
     // Run post-response (test) scripts in cascade order (project →
@@ -1841,7 +1866,7 @@ async function runEndpointStep(
             auth: requestOptions.auth,
           },
         }),
-        extra_secrets: [...authSecrets, ...liveSecretValues(envVars, ctx.scopes.vaultKeys)],
+        extra_secrets: [...authSecrets, ...liveSecretValues(ctx.scopes)],
         response_snapshot: JSON.stringify({
           status: response.status,
           statusText: response.statusText,
@@ -1974,6 +1999,7 @@ async function runEndpointStep(
         error: { message: (e as Error).message },
         tabId: consoleTag.tabId,
         meta: consoleTag.meta,
+        secrets: liveSecretValues(ctx.scopes),
       })
     } catch {
       /* logger must never break the run */
@@ -2342,6 +2368,7 @@ async function runMcpStep(
         error: failure ? { message: failure } : undefined,
         tabId: consoleTag.tabId,
         meta: { ...consoleTag.meta, capability: call.capability, name: outcome.name },
+        secrets: liveSecretValues(ctx.scopes),
       })
     } catch {
       /* logger must never break the run */
@@ -2447,6 +2474,9 @@ function writeMcpRunHistory(
       duration_ms: res.durationMs,
       request_snapshot: JSON.stringify({ mcp: snapshot }),
       response_snapshot: responseSnapshot,
+      // A value a script of this run wrote to a secret variable is not in the
+      // DB yet — the inventory `addHistory` masks from would miss it.
+      extra_secrets: liveSecretValues(ctx.scopes),
     })
   } catch {
     // History save failure should not affect runner
@@ -2917,6 +2947,10 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
   // run), so counting them here would make every summary fail to add up.
   const primaryRowCount = results.filter(countsTowardRunVerdict).length
 
+  // Keys whose values the report must not carry (secret variables, the run's
+  // vault keys — deleted ones included).
+  const reportSecretKeys = runSecretKeys([...scopes.vaultKeys, ...Object.keys(runVaultUpdates)])
+
   const completedAt = Date.now()
   const durationMs = completedAt - startedAt
   const avgRespTime =
@@ -2975,12 +3009,11 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     passedAssertions,
     failedAssertions,
     results,
-    envUpdates: runEnvUpdates,
     // The renderer only needs the KEYS (to refetch) and keeps this report in
-    // sessionStorage: a pm.vault value never rides along (issue #281).
-    globalUpdates: Object.fromEntries(
-      Object.entries(runGlobalUpdates).map(([k, v]) => [k, k in runVaultUpdates ? '' : v]),
-    ),
+    // sessionStorage: the value of a secret variable never rides along — a
+    // pm.vault one (issue #281) or a plain set of a secret variable (security).
+    envUpdates: reportUpdates(runEnvUpdates, reportSecretKeys),
+    globalUpdates: reportUpdates(runGlobalUpdates, reportSecretKeys),
     teardownPassedEndpoints: totals.teardownPassedEndpoints,
     teardownFailedEndpoints: totals.teardownFailedEndpoints,
     teardownPassedAssertions: totals.teardownPassedAssertions,

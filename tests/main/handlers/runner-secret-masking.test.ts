@@ -302,3 +302,106 @@ describe('Runner canary — pm.vault values set during the run (issue #281)', ()
     expect(stored?.secret).toBe(1)
   })
 })
+
+/**
+ * Security — `pm.environment.set` / `pm.globals.set` /
+ * `pm.collectionVariables.set` of a variable whose row is marked SECRET, during
+ * a Run (issue #281 follow-up). The new value reaches the database only when
+ * the run ends, so the DB inventory holds the OLD value: every sink of the run
+ * must mask the value the script wrote — the live Console (script
+ * `console.log` included), the step results, `runner_history`, History and the
+ * report the renderer keeps in sessionStorage (its envUpdates / globalUpdates).
+ */
+describe('Runner canary — script writes to secret variables (security)', () => {
+  const ENV_CANARY = 'env-write-canary-Q7Z1'
+  const GLOBAL_CANARY = 'global-write-canary-K4W8'
+  const COLL_CANARY = 'collvar-write-canary-M2P5'
+  const CANARIES = [ENV_CANARY, GLOBAL_CANARY, COLL_CANARY]
+
+  function seedSecretGlobal(key: string, value: string): void {
+    testDb
+      .prepare(
+        `INSERT INTO global_variables (id, workspace_id, project_id, key, value, enabled, secret)
+         VALUES (?, ?, ?, ?, ?, 1, 1)`,
+      )
+      .run(crypto.randomUUID(), workspaceId, projectId, key, value)
+  }
+
+  function seedWriteEndpoint(): string {
+    const id = crypto.randomUUID()
+    const now = Date.now()
+    const schema = JSON.stringify({
+      method: 'POST',
+      url: `http://127.0.0.1:${port}/w?e={{secret}}&g={{gtok}}&c={{ctok}}`,
+      params: [],
+      headers: [{ id: 'h1', key: 'X-Note', value: '{{secret}}', enabled: true }],
+      body: { type: 'json', content: '{"e":"{{secret}}","g":"{{gtok}}","c":"{{ctok}}"}' },
+      auth: { type: 'none' },
+      assertions: [],
+      preScript: [
+        `pm.environment.set('secret', '${ENV_CANARY}')`,
+        `pm.globals.set('gtok', '${GLOBAL_CANARY}')`,
+        `pm.collectionVariables.set('ctok', '${COLL_CANARY}')`,
+        "console.log('pre ' + pm.environment.get('secret') + ' ' + pm.globals.get('gtok') + ' ' + pm.collectionVariables.get('ctok'))",
+      ].join('\n'),
+      postScript:
+        "console.log('post ' + pm.environment.get('secret') + ' ' + pm.globals.get('gtok') + ' ' + pm.collectionVariables.get('ctok'))",
+    })
+    testDb
+      .prepare(
+        `INSERT INTO endpoints
+          (id, project_id, folder_id, name, protocol, method, path, status,
+           request_schema, sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'Writes', 'http', 'POST', '/w', 'developing', ?, 0, ?, ?)`,
+      )
+      .run(id, projectId, schema, now, now)
+    return id
+  }
+
+  it('masks a value a script wrote to a secret variable in every sink of the run', async () => {
+    seedSecretGlobal('gtok', 'old-global-value')
+    seedSecretGlobal('ctok', 'old-coll-value')
+    const id = seedWriteEndpoint()
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      workspaceId,
+      endpointIds: [id],
+    })) as RunResult
+    expect(res.success).toBe(true)
+    // The writes resolved: the server received every canary.
+    expect(lastReceived.url).toContain(`e=${ENV_CANARY}`)
+    expect(lastReceived.url).toContain(`g=${GLOBAL_CANARY}`)
+    expect(lastReceived.url).toContain(`c=${COLL_CANARY}`)
+
+    // The report handed back to the renderer (kept in sessionStorage).
+    const report = JSON.stringify(res.data)
+    for (const c of CANARIES) expect.soft(report, `report carries ${c}`).not.toContain(c)
+    // The renderer still learns WHICH keys changed (to refetch them).
+    const data = res.data as unknown as {
+      envUpdates: Record<string, string>
+      globalUpdates: Record<string, string>
+    }
+    expect(data.envUpdates).toHaveProperty('secret')
+    expect(data.globalUpdates).toHaveProperty('gtok')
+    expect(data.globalUpdates).toHaveProperty('ctok')
+
+    const row = testDb.prepare('SELECT results_json FROM runner_history').get() as {
+      results_json: string
+    }
+    for (const c of CANARIES) expect.soft(row.results_json, `runner_history ${c}`).not.toContain(c)
+    const history = JSON.stringify(testDb.prepare('SELECT * FROM history').all())
+    for (const c of CANARIES) expect.soft(history, `history ${c}`).not.toContain(c)
+    const consoleEntries = sent.filter((s) => s.channel === 'console:log')
+    expect(consoleEntries.length).toBeGreaterThan(0)
+    const consoleText = JSON.stringify(consoleEntries)
+    for (const c of CANARIES) expect.soft(consoleText, `console ${c}`).not.toContain(c)
+    const progress = JSON.stringify(sent.filter((s) => s.channel === 'runner:progress'))
+    for (const c of CANARIES) expect.soft(progress, `progress ${c}`).not.toContain(c)
+
+    // Persisted after the run, and still secret.
+    const g = testDb
+      .prepare("SELECT secret FROM global_variables WHERE project_id = ? AND key = 'gtok'")
+      .get(projectId) as { secret: number }
+    expect(g.secret).toBe(1)
+  })
+})

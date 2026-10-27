@@ -174,3 +174,78 @@ describe('Send — pm.vault / pm.collectionVariables in scripts (issue #281)', (
     expect(calls).not.toContain('envVariable.create')
   })
 })
+
+/**
+ * Security (issue #281 follow-up): a pre-request `pm.environment.set` /
+ * `pm.globals.set` of a variable whose row is SECRET must reach the DB before
+ * the request goes out — main masks History and the Console from the DB's
+ * secrets, so a value still in flight would be written to History in clear
+ * text. The `pm.vault` rule, generalised to any secret variable.
+ */
+describe('Send — a script write to a secret variable is stored before the request (security)', () => {
+  function slowUpdates(): void {
+    const api = (
+      globalThis as unknown as {
+        window: { api: Record<string, Record<string, ReturnType<typeof vi.fn>>> }
+      }
+    ).window.api
+    api.envVariable.update.mockImplementation(async (id: string) => {
+      // A slow keychain write: the send must still wait for it.
+      await new Promise((r) => setTimeout(r, 20))
+      calls.push(`envVariable.update:${id}`)
+      return { success: true }
+    })
+    api.globalVariable.update.mockImplementation(async (id: string) => {
+      await new Promise((r) => setTimeout(r, 20))
+      calls.push(`globalVariable.update:${id}`)
+      return { success: true }
+    })
+  }
+
+  function sendWith(preScript: string): Promise<void> {
+    useRequestStore.setState({
+      ...useRequestStore.getState(),
+      method: 'GET',
+      url: 'https://example.test/x',
+      params: [],
+      headers: [],
+      preScript,
+      postScript: '',
+    })
+    return useRequestStore.getState().sendRequest()
+  }
+
+  it('pm.environment.set of a secret environment variable', async () => {
+    slowUpdates()
+    useEnvironmentStore.setState({
+      environments: [
+        {
+          ...structuredClone(env),
+          variables: [
+            { id: 'ev-tok', key: 'tok', value: 'OLD', enabled: true, secret: true },
+          ],
+        },
+      ],
+    })
+    await sendWith(`pm.environment.set('tok', 'NEW-SECRET')`)
+    expect(calls.indexOf('envVariable.update:ev-tok')).toBeGreaterThanOrEqual(0)
+    expect(calls.indexOf('envVariable.update:ev-tok')).toBeLessThan(calls.indexOf('request.send'))
+  })
+
+  it('pm.globals.set / pm.collectionVariables.set of a secret project variable', async () => {
+    slowUpdates()
+    await sendWith(`pm.collectionVariables.set('old', 'NEW-SECRET')`)
+    expect(calls.indexOf('globalVariable.update:g-old')).toBeGreaterThanOrEqual(0)
+    expect(calls.indexOf('globalVariable.update:g-old')).toBeLessThan(
+      calls.indexOf('request.send'),
+    )
+  })
+
+  it('a plain variable write does not hold the request back', async () => {
+    slowUpdates()
+    await sendWith(`pm.globals.set('plain', 'P2')`)
+    // Persisted in the background, after the request went out.
+    await vi.waitFor(() => expect(calls).toContain('globalVariable.update:g-plain'))
+    expect(calls.indexOf('request.send')).toBeLessThan(calls.indexOf('globalVariable.update:g-plain'))
+  })
+})
