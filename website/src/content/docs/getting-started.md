@@ -53,13 +53,28 @@ OS's user-data directory:
 
 Inside that folder you'll find:
 
-- `data.db` — workspaces, projects, environments, history, certificates
+- `testnizer.db` — workspaces, projects, environments, history, certificates
 - `secrets/` — OS-keychain-encrypted blobs for tokens and passphrases
 - `settings.json` — UI preferences, keyboard shortcuts, theme
+- `backups/` — copies of the database taken before an update (see below)
 
-The database is portable. Copy `data.db` to another machine running Testnizer
-and your collections come with it. (Encrypted secrets are tied to the OS
-keychain, so those need re-entering on a new machine.)
+The database is portable. Copy `testnizer.db` to another machine running
+Testnizer and your collections come with it. (Encrypted secrets are tied to the
+OS keychain, so those need re-entering on a new machine.)
+
+### Restoring a backup after an update
+
+The first time a new version starts, Testnizer copies the database to
+`backups/testnizer.db.<version>-<build>.<timestamp>` before updating it. The 3
+newest copies are kept. To go back to one:
+
+1. Quit Testnizer. If the new version itself is the problem, install the
+   previous version first; a newer version updates the restored copy again.
+2. In the data folder, move `testnizer.db`, `testnizer.db-wal` and
+   `testnizer.db-shm` (the last two may be missing) somewhere else. Do not leave
+   the `-wal` / `-shm` files next to the restored copy.
+3. Copy the backup you want into the data folder and rename it to
+   `testnizer.db`, then start Testnizer.
 
 ## What's next
 

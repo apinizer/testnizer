@@ -51,13 +51,28 @@ altındaki tek bir SQLite veritabanında tutar:
 
 Bu klasörün içinde şunları bulacaksınız:
 
-- `data.db` — çalışma alanları, projeler, ortamlar, geçmiş, sertifikalar
+- `testnizer.db` — çalışma alanları, projeler, ortamlar, geçmiş, sertifikalar
 - `secrets/` — token'lar ve parola ifadeleri için işletim sistemi anahtarlığıyla şifrelenmiş bloblar
 - `settings.json` — arayüz tercihleri, klavye kısayolları, tema
+- `backups/` — güncellemeden önce alınan veritabanı kopyaları (aşağıya bakın)
 
-Veritabanı taşınabilirdir. `data.db`'yi Testnizer çalışan başka bir makineye kopyalayın
+Veritabanı taşınabilirdir. `testnizer.db`'yi Testnizer çalışan başka bir makineye kopyalayın
 ve koleksiyonlarınız da gelir. (Şifrelenmiş sırlar işletim sistemi anahtarlığına bağlıdır,
 bu yüzden yeni bir makinede yeniden girilmeleri gerekir.)
+
+### Güncellemeden sonra bir yedeği geri yükleme
+
+Yeni bir sürüm ilk kez açıldığında Testnizer, veritabanını güncellemeden önce
+`backups/testnizer.db.<sürüm>-<derleme>.<zaman damgası>` olarak kopyalar. En yeni 3 kopya
+tutulur. Birine geri dönmek için:
+
+1. Testnizer'dan çıkın. Sorun yeni sürümün kendisindeyse önce önceki sürümü kurun; daha
+   yeni bir sürüm geri yüklenen kopyayı yeniden günceller.
+2. Veri klasöründeki `testnizer.db`, `testnizer.db-wal` ve `testnizer.db-shm` dosyalarını
+   (son ikisi olmayabilir) başka bir yere taşıyın. `-wal` / `-shm` dosyalarını geri yüklenen
+   kopyanın yanında bırakmayın.
+3. İstediğiniz yedeği veri klasörüne kopyalayıp adını `testnizer.db` yapın, ardından
+   Testnizer'ı başlatın.
 
 ## Sıradaki adımlar
 
