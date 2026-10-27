@@ -11,6 +11,9 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { createServer } from 'node:http'
+import { createServer as createHttpsServer } from 'node:https'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createServer as createTcpServer, type Server as TcpServer } from 'node:net'
 import { Server as SocketIOServer, type Socket } from 'socket.io'
 import type { AddressInfo } from 'node:net'
@@ -30,6 +33,9 @@ import { SIO_ACK_TIMEOUT_MESSAGE, sioTarget } from '../../src/main/protocols/soc
 let io: SocketIOServer
 let http: ReturnType<typeof createServer>
 let port: number
+let tlsIo: SocketIOServer
+let tls: ReturnType<typeof createHttpsServer>
+let tlsPort: number
 let silent: TcpServer
 let silentPort: number
 const silentConns: Array<{ destroy: () => void }> = []
@@ -59,6 +65,16 @@ beforeAll(async () => {
   await new Promise<void>((r) => http.listen(0, '127.0.0.1', r))
   port = (http.address() as AddressInfo).port
 
+  // A self-signed TLS server: certificate verification (strictSSL).
+  const certs = join(__dirname, '../fixtures/certs')
+  tls = createHttpsServer({
+    cert: readFileSync(join(certs, 'selfsigned.crt')),
+    key: readFileSync(join(certs, 'selfsigned.key')),
+  })
+  tlsIo = new SocketIOServer(tls, { allowEIO3: true })
+  await new Promise<void>((r) => tls.listen(0, '127.0.0.1', r))
+  tlsPort = (tls.address() as AddressInfo).port
+
   // Accepts TCP and never answers: a handshake that stays pending.
   silent = createTcpServer((c) => silentConns.push(c))
   await new Promise<void>((r) => silent.listen(0, '127.0.0.1', r))
@@ -70,6 +86,9 @@ afterAll(async () => {
   const done = new Promise<void>((r) => io.close(() => r()))
   http.closeAllConnections()
   await done
+  const tlsDone = new Promise<void>((r) => tlsIo.close(() => r()))
+  tls.closeAllConnections()
+  await tlsDone
   for (const c of silentConns) c.destroy()
   await new Promise<void>((r) => silent.close(() => r()))
 })
@@ -210,6 +229,32 @@ describe.each(['4', '2'] as const)('client v%s', (version) => {
     await waitFor(() => events.some((e) => e.event === 'reconnected'))
     expect(Date.now() - dropped).toBeLessThan(700)
     expect(events.find((e) => e.event === 'reconnect_attempt')?.data).toBe(1)
+  })
+})
+
+describe.each([
+  ['4', 'websocket'],
+  ['4', 'polling'],
+  ['2', 'websocket'],
+  ['2', 'polling'],
+] as const)('client v%s over %s: server certificate verification', (version, transport) => {
+  const tlsUrl = (): string => `https://127.0.0.1:${tlsPort}`
+
+  it('strictSSL refuses a self-signed server', async () => {
+    await expect(
+      socketIOConnect({
+        url: tlsUrl(),
+        settings: { version, transport, strictSSL: true, handshakeTimeout: 3000 },
+      }),
+    ).rejects.toThrow()
+  })
+
+  it('with strictSSL off it connects', async () => {
+    const info = await socketIOConnect({
+      url: tlsUrl(),
+      settings: { version, transport, strictSSL: false },
+    })
+    expect(info.connectionId).toMatch(/^sio-/)
   })
 })
 
