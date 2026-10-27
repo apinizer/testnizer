@@ -113,11 +113,11 @@ from the releases repo. You can disable it in Settings.
 ## Develop
 
 ```bash
-# Requirements: Node 20+, Git
+# Requirements: Node 24 (22.12+ works), Git — CI pins Node 24, the Node in Electron 44
 git clone https://github.com/apinizer/testnizer.git
 cd testnizer
 
-npm install              # postinstall renames Electron.app → Testnizer.app
+npm install              # postinstall downloads Electron, renames Electron.app → Testnizer.app
 npm run dev              # renderer @ http://localhost:5173, Electron app launches
 npm run typecheck        # tsc --noEmit (main + renderer)
 npm run lint             # ESLint flat config
