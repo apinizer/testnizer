@@ -226,8 +226,9 @@ function snapshot(pid: string): unknown {
       if (['id', 'project_id', 'workspace_id', 'created_at', 'updated_at'].includes(k)) continue
       if (typeof v === 'string' && label.has(v)) out[k] = label.get(v)
       else if (typeof v === 'string')
-        // Random row ids inside JSON columns (UUIDs, `genKvId`) differ per import.
-        out[k] = v.replace(UUID_RE, '<uuid>').replace(/"id":"[a-z0-9]{1,12}"/g, '"id":"<id>"')
+        // Random row ids inside JSON columns (UUIDs, `genKvId`, MQTT topic/message ids)
+        // differ per import; mask every `"id"` value whatever its shape or length.
+        out[k] = v.replace(UUID_RE, '<uuid>').replace(/"id":"[^"]*"/g, '"id":"<id>"')
       else out[k] = v
     }
     return out
