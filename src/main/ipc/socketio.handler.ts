@@ -12,6 +12,7 @@ import {
   type SocketIOClosedInfo,
   type SocketIOEvent,
 } from '../protocols/socketio.engine'
+import { sioDisplayTarget } from '../protocols/socketio-client'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
@@ -126,7 +127,8 @@ export function registerSocketIOHandlers(): void {
     ) => {
       const started = Date.now()
       const secrets = sioSecrets(options.auth)
-      const fullTarget = `${options.url}${options.namespace && options.namespace !== '/' ? options.namespace : ''}`
+      // What the client connects to (namespace on the path, query apart).
+      const fullTarget = sioDisplayTarget(options.url, options.namespace)
       try {
         const data = await socketIOConnect({
           url: options.url,

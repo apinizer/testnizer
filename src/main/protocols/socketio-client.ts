@@ -74,6 +74,15 @@ export function sioTarget(
   }
 }
 
+/**
+ * The target as History and the Console show it (issue #283): exactly what
+ * the client connects to — namespace on the path, then the query.
+ */
+export function sioDisplayTarget(url: string, namespace: string | undefined): string {
+  const t = sioTarget(url, namespace ?? '/')
+  return t.url + (t.search ? `?${t.search}` : '')
+}
+
 function transportsOf(s: SioSettings): Array<'websocket' | 'polling'> {
   if (s.transport === 'websocket') return ['websocket']
   if (s.transport === 'polling') return ['polling']
