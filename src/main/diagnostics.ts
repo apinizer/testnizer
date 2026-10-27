@@ -39,6 +39,9 @@ const archiver = require('archiver') as (
 
 let initialized = false
 
+/** The main-process file log (`userData/logs/main.log`) for startup events. */
+export const mainLog: Pick<typeof log, 'info' | 'warn' | 'error'> = log
+
 export function initLogging(): void {
   if (initialized) return
   initialized = true
