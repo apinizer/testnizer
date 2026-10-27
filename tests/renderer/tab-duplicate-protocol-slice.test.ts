@@ -174,6 +174,51 @@ describe('Duplicate Tab copies the protocol slice (issue #284 audit)', () => {
     })
   }
 
+  it('a dirty source makes the duplicate dirty, so a bound (preview) duplicate is not replaced by the next tree open', () => {
+    // The bound path: the duplicate is opened from its new row as the preview tab.
+    app.useTabsStore.setState({
+      tabs: [
+        {
+          id: 'src',
+          name: 'src',
+          protocol: 'mqtt',
+          method: 'GET',
+          url: '',
+          isDirty: true,
+          endpointId: 'ep-src',
+        } as Tab,
+      ],
+      activeTabId: 'src',
+    })
+    app.useTabsStore.getState().openPreviewTab({
+      id: 'tab-ep-dup',
+      name: 'src (copy)',
+      protocol: 'mqtt',
+      method: 'GET',
+      url: '',
+      endpointId: 'ep-dup',
+    })
+    app.cloneTabStores('src', 'tab-ep-dup', 'mqtt')
+    const dup = () => app.useTabsStore.getState().tabs.find((t) => t.id === 'tab-ep-dup')
+    expect(dup()?.isDirty).toBe(true)
+    // A single click on another request reuses the preview slot — not this one.
+    app.useTabsStore.getState().openPreviewTab({
+      id: 'tab-ep-other',
+      name: 'other',
+      protocol: 'http',
+      method: 'GET',
+      url: '',
+      endpointId: 'ep-other',
+    })
+    expect(dup()).toBeTruthy()
+  })
+
+  it('a clean source leaves the duplicate clean', () => {
+    openTabs(app, 'mqtt', ['src', 'dup'])
+    app.cloneTabStores('src', 'dup', 'mqtt')
+    expect(app.useTabsStore.getState().tabs.find((t) => t.id === 'dup')?.isDirty).toBe(false)
+  })
+
   it('the Workbench duplicates through cloneTabStores', () => {
     const src = readFileSync(
       resolve(__dirname, '../../src/renderer/components/layout/Workbench.tsx'),

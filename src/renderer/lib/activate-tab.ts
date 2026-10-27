@@ -106,6 +106,11 @@ export function cloneTabStores(srcTabId: string, dstTabId: string, protocol?: st
   useRequestStore.getState().cloneTabState(srcTabId, dstTabId)
   const store = protocol ? CLONEABLE_STORES[protocol] : undefined
   store?.getState().cloneTabState(srcTabId, dstTabId)
+  // The copied edits are unsaved on the copy too (a bound duplicate's row is
+  // a copy of what was SAVED). Dirty also keeps a bound duplicate — opened as
+  // a preview — from being replaced by the next tree click with them lost.
+  const tabs = useTabsStore.getState()
+  if (tabs.tabs.find((t) => t.id === srcTabId)?.isDirty) tabs.markDirty(dstTabId, true)
 }
 
 /**
