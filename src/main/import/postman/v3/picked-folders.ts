@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'crypto'
 import path from 'path'
-import type { PostmanPickedContent, PostmanDocumentSet } from '../archive'
+import { wrapsEachCollection, type PostmanPickedContent, type PostmanDocumentSet } from '../archive'
 
 interface Picked {
   folderPath: string
@@ -93,6 +93,12 @@ export interface PickedFolderSummary {
   requestCount: number
   environmentCount: number
   globalsCount: number
+  /**
+   * The import puts every collection in a folder of its own under the
+   * destination: the modal then names the destination after the folder /
+   * archive, not after a collection (which would nest "Shop/Shop/…").
+   */
+  eachInFolder: boolean
 }
 
 function documentSetSummary(
@@ -127,6 +133,7 @@ function documentSetSummary(
     requestCount,
     environmentCount,
     globalsCount,
+    eachInFolder: collections.length > 0 && wrapsEachCollection(set),
   }
 }
 
@@ -144,5 +151,7 @@ export function pickedFolderSummary(
     requestCount: content.collections.reduce((n, c) => n + countV3Requests(c.doc.items), 0),
     environmentCount: content.environments.length,
     globalsCount: content.globals.length,
+    // `importV3FolderContent` wraps only when there are several collections.
+    eachInFolder: content.collections.length > 1,
   }
 }

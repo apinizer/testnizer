@@ -329,6 +329,7 @@ describe('issue #276 follow-up — a Postman data export .zip', () => {
       collections: ['Baseline Parity Collection', 'Postman Echo (shamasified)'],
       environmentCount: 1,
       globalsCount: 1,
+      eachInFolder: true,
     })
     // The path of the file never reaches the renderer through the summary.
     expect(JSON.stringify(opened.data?.archive)).not.toContain(tmpDir)
@@ -358,8 +359,71 @@ describe('issue #276 follow-up — a Postman data export .zip', () => {
     expect(snapshot(pZip)).toEqual(snapshot(pDump))
   })
 
+  // dump.ts puts EVERY collection in its own folder; the summary must say so,
+  // or the modal names the destination after the one collection and the
+  // import nests "Shop/Shop/…".
+  it('one collection + its environment: the summary says each collection gets its own folder', async () => {
+    const zip = await archiverZip([
+      { name: 'Baseline.postman_collection.json', data: v21 },
+      {
+        name: 'Staging.postman_environment.json',
+        data: JSON.stringify({ ...envDoc, _postman_variable_scope: 'environment' }),
+      },
+    ])
+    const opened = await openZip(zip)
+    expect(opened.data?.archive).toMatchObject({
+      collections: ['Baseline Parity Collection'],
+      environmentCount: 1,
+      eachInFolder: true,
+    })
+    const pid = newProject()
+    const res = await importZip(pid, zip)
+    expect(res.success).toBe(true)
+    const top = getDb()
+      .prepare('SELECT name FROM folders WHERE project_id = ? AND parent_id IS NULL')
+      .all(pid) as Array<{ name: string }>
+    expect(top.map((f) => f.name)).toEqual(['Baseline Parity Collection'])
+  })
+
+  it('a zip of only Postman v3 JSON files is refused when picked, not at Import', async () => {
+    const v3 = fs.readFileSync(path.join(FIX, 'v3', 'all-kinds.v3.json'), 'utf8')
+    const two = await openZip(
+      await archiverZip([
+        { name: 'a.json', data: v3 },
+        { name: 'b.json', data: v3 },
+      ]),
+    )
+    expect(two.success).toBe(false)
+    expect(two.error).toMatch(/only Postman v3 JSON files that cannot be imported together/)
+    const part = await openZip(
+      await archiverZip([{ name: 'Ping.json', data: '{"$kind":"http-request","url":"x"}' }]),
+    )
+    expect(part.success).toBe(false)
+    expect(part.error).toMatch(/one file of a v3 collection folder/)
+    // One v3 JSON collection on its own is fine (the single-file import).
+    const one = await openZip(await archiverZip([{ name: 'a.json', data: v3 }]))
+    expect(one.success, one.error).toBe(true)
+    expect(one.data?.archive?.collections.length).toBe(1)
+  })
+
+  it('an archive over the size cap is refused from its size, before it is read', async () => {
+    const file = path.join(tmpDir, 'huge.zip')
+    fs.writeFileSync(file, Buffer.from('PK\u0003\u0004'))
+    fs.truncateSync(file, ZIP_LIMITS.maxArchiveBytes + 1) // sparse
+    dialogState.pick = file
+    const opened = (await ipcHandlers.get('import:openFile')!(
+      {},
+      { format: 'postman' },
+    )) as OpenResult
+    expect(opened.success).toBe(false)
+    expect(opened.error).toMatch(/refused: the file is larger than 100 MB/)
+    fs.rmSync(file, { force: true })
+  })
+
   it('one zipped collection JSON imports exactly like the file (into the chosen folder, no wrapper)', async () => {
     const zip = await archiverZip([{ name: 'Baseline.postman_collection.json', data: v21 }])
+    const opened = await openZip(zip)
+    expect(opened.data?.archive).toMatchObject({ eachInFolder: false })
     const pZip = newProject()
     const fromZip = await importZip(pZip, zip)
     const pFile = newProject()
@@ -430,6 +494,7 @@ describe('issue #276 follow-up — a zipped Postman v3 folder', () => {
         source: 'zip',
         kind: 'workspace',
         collections: ['Shop API', 'Status'],
+        eachInFolder: true,
       })
       const pZip = newProject()
       const fromZip = await importZip(pZip, zip)

@@ -109,8 +109,36 @@ export async function readPostmanArchive(
     if (found) set.documents.push(found)
     else set.ignored.push(f.rel)
   }
-  if (set.documents.length === 0) throw new V3InputError(NOT_POSTMAN_ZIP_MESSAGE)
+  // Refuse now what could only fail at Import: v3 JSON files cannot join the
+  // one dump transaction, and one file of a v3 folder needs its folder.
+  const single = set.documents.length === 1 ? set.documents[0].kind : null
+  const importable = single === 'v3-collection' || set.documents.some((d) => DUMP_KINDS.has(d.kind))
+  if (!importable) {
+    throw new V3InputError(
+      set.documents.length === 0
+        ? NOT_POSTMAN_ZIP_MESSAGE
+        : 'This .zip archive holds only Postman v3 JSON files that cannot be imported together (or one file of a v3 collection folder). Import a v3 JSON collection on its own, or zip the whole v3 folder.',
+    )
+  }
   return set
+}
+
+/** Kinds `dump.ts` takes; a v3 JSON file is imported on its own only. */
+const DUMP_KINDS = new Set<PostmanArtifactKind>([
+  'v1-collection',
+  'v2-collection',
+  'environment',
+  'globals',
+  'legacy-dump',
+])
+
+/**
+ * True when the set goes through `dump.ts`, which puts EVERY collection in a
+ * folder of its own (so the modal should not name the destination after the
+ * collection too: "Shop/Shop/…").
+ */
+export function wrapsEachCollection(set: PostmanDocumentSet): boolean {
+  return set.documents.length > 1 || set.documents[0]?.kind === 'legacy-dump'
 }
 
 function listOf(items: string[]): string {

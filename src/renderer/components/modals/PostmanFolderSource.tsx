@@ -7,6 +7,8 @@ export interface PostmanFolderPickInfo {
   folderName: string
   /** Absent from older callers: a folder. */
   source?: 'folder' | 'zip'
+  /** Main puts each collection in its own folder (absent: when there are several). */
+  eachInFolder?: boolean
   kind: 'workspace' | 'collection'
   collections: string[]
   requestCount: number
@@ -78,7 +80,7 @@ export function PostmanFolderSummary({ pick }: { pick: PostmanFolderPickInfo }) 
           {summary}
           {pick.globalsCount > 0 ? ` · ${t('import.postmanFolder.globals')}` : ''}
         </div>
-        {pick.collections.length > 1 && (
+        {(pick.eachInFolder ?? pick.collections.length > 1) && (
           <div className="truncate text-[var(--sub)]" title={pick.collections.join(', ')}>
             {t('import.postmanFolder.eachInFolder')}
           </div>

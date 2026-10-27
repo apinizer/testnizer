@@ -507,9 +507,15 @@ export default function ImportModal() {
     setPendingFileContent(null)
     setPendingFileName('')
     setPendingFilePath(null)
+    // When main puts each collection in its own folder, the destination is
+    // named after the folder / archive — naming it after the one collection
+    // would nest "Shop/Shop/…".
+    const wraps = pick.eachInFolder ?? pick.collections.length > 1
     const archiveName = pick.source === 'zip' ? pick.folderName.replace(/\.zip$/i, '') : ''
     goToFolderStep(
-      pick.collections.length === 1 ? pick.collections[0] : archiveName || pick.folderName,
+      !wraps && pick.collections.length === 1
+        ? pick.collections[0]
+        : archiveName || pick.folderName,
     )
   }
 

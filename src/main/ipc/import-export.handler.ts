@@ -1,5 +1,5 @@
 import { ipcMain, dialog } from 'electron'
-import { readFileSync } from 'fs'
+import { closeSync, openSync, readFileSync, readSync, statSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
 import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protocols/soap.engine'
@@ -53,6 +53,7 @@ import {
 } from '../import/postman/v3/picked-folders'
 import { readV3Folder, V3InputError } from '../import/postman/v3'
 import { importPickedPostman, readPostmanArchive } from '../import/postman/archive'
+import { checkArchiveSize } from '../import/postman/zip'
 import { isZipMagic } from '../../shared/postman-detect'
 import { authToPostmanParts } from '../export/postman-v3/auth'
 import { loadExamples } from '../export/postman-v3/rows'
@@ -322,8 +323,15 @@ export function registerImportExportHandlers(): void {
         return { success: true, data: null }
       }
       const filePath = result.filePaths[0]
-      const bytes = readFileSync(filePath)
-      if (isZipMagic(bytes)) {
+      // The first bytes decide; a zip's size is checked before it is read.
+      const head = Buffer.alloc(4)
+      const fd = openSync(filePath, 'r')
+      try {
+        readSync(fd, head, 0, 4, 0)
+      } finally {
+        closeSync(fd)
+      }
+      if (isZipMagic(head)) {
         if (!postman) {
           return {
             success: false,
@@ -333,7 +341,8 @@ export function registerImportExportHandlers(): void {
         }
         let content: Awaited<ReturnType<typeof readPostmanArchive>>
         try {
-          content = await readPostmanArchive(bytes)
+          checkArchiveSize(statSync(filePath).size)
+          content = await readPostmanArchive(readFileSync(filePath))
         } catch (e) {
           if (e instanceof V3InputError) return { success: false, error: e.message }
           throw e
@@ -348,7 +357,7 @@ export function registerImportExportHandlers(): void {
           },
         }
       }
-      return { success: true, data: { filePath, content: bytes.toString('utf-8') } }
+      return { success: true, data: { filePath, content: readFileSync(filePath, 'utf-8') } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

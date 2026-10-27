@@ -123,6 +123,13 @@ function isArchiveJunk(rel: string): boolean {
   return base === '.DS_Store' || base.startsWith('._')
 }
 
+/** The .zip file's own size; checked from `stat` before the file is read (and again on the buffer). */
+export function checkArchiveSize(bytes: number, limits: ZipLimits = ZIP_LIMITS): void {
+  if (bytes > limits.maxArchiveBytes) {
+    throw refused(`the file is larger than ${MB(limits.maxArchiveBytes)}.`)
+  }
+}
+
 const S_IFMT = 0o170000
 const S_IFLNK = 0o120000
 
@@ -135,9 +142,7 @@ export async function readZipEntries(
   buffer: Buffer,
   limits: ZipLimits = ZIP_LIMITS,
 ): Promise<ZipFileEntry[]> {
-  if (buffer.length > limits.maxArchiveBytes) {
-    throw refused(`the file is larger than ${MB(limits.maxArchiveBytes)}.`)
-  }
+  checkArchiveSize(buffer.length, limits)
   if (!isZipMagic(buffer)) throw new V3InputError('The file is not a .zip archive.')
   const zip = await new Promise<YauzlZipFile>((resolve, reject) => {
     yauzl().fromBuffer(

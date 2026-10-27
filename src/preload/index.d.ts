@@ -555,6 +555,8 @@ interface PostmanFolderPick {
   folderName: string
   /** A folder picked on disk, or a .zip file (issue #276 follow-up). */
   source: 'folder' | 'zip'
+  /** Every collection lands in a folder of its own under the destination. */
+  eachInFolder: boolean
   kind: 'workspace' | 'collection'
   collections: string[]
   requestCount: number

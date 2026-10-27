@@ -106,4 +106,40 @@ describe('issue #276 follow-up — a .zip through the Postman file button', () =
     expect(screen.queryByTestId('import-postman-folder-summary')).toBeNull()
     expect(screen.getByRole('button', { name: /Click to select a/i })).toBeInTheDocument()
   })
+
+  // One collection + its environment: main wraps the collection in its own
+  // folder, so the destination must not ALSO be named after it ("Shop/Shop/…").
+  it('one collection that main wraps → the destination is named after the archive', async () => {
+    setup({
+      success: true,
+      data: {
+        filePath: '/x/shop-export.zip',
+        content: '',
+        archive: {
+          ...ARCHIVE,
+          folderName: 'shop-export.zip',
+          collections: ['Shop'],
+          eachInFolder: true,
+        },
+      },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: /Click to select a/i }))
+    await screen.findByTestId('import-postman-folder-summary')
+    expect(screen.getByPlaceholderText('Folder name')).toHaveValue('shop-export')
+    expect(screen.getByText('Each collection is imported into its own folder.')).toBeInTheDocument()
+  })
+
+  it('one collection imported as is → the destination is named after it', async () => {
+    setup({
+      success: true,
+      data: {
+        filePath: '/x/shop.zip',
+        content: '',
+        archive: { ...ARCHIVE, folderName: 'shop.zip', collections: ['Shop'], eachInFolder: false },
+      },
+    })
+    fireEvent.click(await screen.findByRole('button', { name: /Click to select a/i }))
+    await screen.findByTestId('import-postman-folder-summary')
+    expect(screen.getByPlaceholderText('Folder name')).toHaveValue('Shop')
+  })
 })
