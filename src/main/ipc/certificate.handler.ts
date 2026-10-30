@@ -12,6 +12,7 @@ import {
   type CertificateSource,
 } from '../db/certificate.repo'
 import { encryptSecret } from '../lib/secure-storage'
+import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
 
 // Cap the file we're willing to ingest as certificate material (mirror the
 // request-time reader) so a mis-pick can't copy a multi-GB file into userData.
@@ -167,11 +168,21 @@ export function registerCertificateHandlers(): void {
         : kind === 'key'
           ? [{ name: 'Key', extensions: ['key', 'pem'] }]
           : [{ name: 'Certificate', extensions: ['crt', 'cer', 'pem'] }]
-    const result = await dialog.showOpenDialog({ properties: ['openFile'], filters })
+    const result = await dialog.showOpenDialog(
+      openFileDialogOptions({ properties: ['openFile'], filters }),
+    )
     if (result.canceled || result.filePaths.length === 0) {
       return { success: false as const, error: 'Cancelled' }
     }
     const src = result.filePaths[0]
+    try {
+      assertNotFolder(
+        src,
+        kind === 'pfx' ? 'PFX/P12 file' : kind === 'key' ? 'key file' : 'certificate file',
+      )
+    } catch (e) {
+      return { success: false as const, error: (e as Error).message }
+    }
     // Read the bytes NOW — while the user's explicit picker selection grants
     // access — and copy them into the app's own storage (userData is never a
     // macOS TCC-protected folder). Storing the ORIGINAL path and re-reading it

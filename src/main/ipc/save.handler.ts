@@ -51,6 +51,7 @@ import {
   gitClientOptions,
   gitProcessEnv,
   describeGitError,
+  pushWithRetry,
   getSettingsStore,
   getLegacyCredentialStore,
   legacyCredentialKey,
@@ -63,6 +64,7 @@ import { remapAiToolServerRefs, type ToolServerIdMap } from '../lib/ai-tool-serv
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
 import { withFkContext } from '../lib/fk-context'
+import { openFileDialogOptions } from '../lib/open-dialog'
 import {
   orderSuiteFolders,
   orderSuiteItems,
@@ -2630,11 +2632,14 @@ export function registerSaveHandlers(): void {
     async (_event, payload: { workspaceId: string; name?: string }) => {
       try {
         const win = BrowserWindow.getFocusedWindow()
-        const result = await dialog.showOpenDialog(win!, {
-          properties: ['openFile'],
-          title: 'Select project export file',
-          filters: [{ name: 'JSON Files', extensions: ['json'] }],
-        })
+        const result = await dialog.showOpenDialog(
+          win!,
+          openFileDialogOptions({
+            properties: ['openFile'],
+            title: 'Select project export file',
+            filters: [{ name: 'JSON Files', extensions: ['json'] }],
+          }),
+        )
         if (result.canceled || !result.filePaths[0]) {
           return { success: false, error: 'Cancelled' }
         }
@@ -2667,11 +2672,14 @@ export function registerSaveHandlers(): void {
         let content = payload.content
         if (!content) {
           const win = BrowserWindow.getFocusedWindow()
-          const result = await dialog.showOpenDialog(win!, {
-            properties: ['openFile'],
-            title: 'Select folder export file',
-            filters: [{ name: 'JSON Files', extensions: ['json'] }],
-          })
+          const result = await dialog.showOpenDialog(
+            win!,
+            openFileDialogOptions({
+              properties: ['openFile'],
+              title: 'Select folder export file',
+              filters: [{ name: 'JSON Files', extensions: ['json'] }],
+            }),
+          )
           if (result.canceled || !result.filePaths[0]) {
             return { success: false, error: 'Cancelled' }
           }
@@ -2700,19 +2708,22 @@ export function registerSaveHandlers(): void {
         let content = payload.content
         if (!content) {
           const win = BrowserWindow.getFocusedWindow()
-          const result = await dialog.showOpenDialog(win!, {
-            properties: ['openFile'],
-            title: 'Select test suite / collection file',
-            // Accept both JSON (Postman, Insomnia v4, Testnizer native) and
-            // YAML (Insomnia v5). Without yaml/yml here, the v5 export shape
-            // documented by Insomnia 8+ is invisible in the picker.
-            filters: [
-              { name: 'Collections', extensions: ['json', 'yaml', 'yml'] },
-              { name: 'JSON', extensions: ['json'] },
-              { name: 'YAML', extensions: ['yaml', 'yml'] },
-              { name: 'All Files', extensions: ['*'] },
-            ],
-          })
+          const result = await dialog.showOpenDialog(
+            win!,
+            openFileDialogOptions({
+              properties: ['openFile'],
+              title: 'Select test suite / collection file',
+              // Accept both JSON (Postman, Insomnia v4, Testnizer native) and
+              // YAML (Insomnia v5). Without yaml/yml here, the v5 export shape
+              // documented by Insomnia 8+ is invisible in the picker.
+              filters: [
+                { name: 'Collections', extensions: ['json', 'yaml', 'yml'] },
+                { name: 'JSON', extensions: ['json'] },
+                { name: 'YAML', extensions: ['yaml', 'yml'] },
+                { name: 'All Files', extensions: ['*'] },
+              ],
+            }),
+          )
           if (result.canceled || !result.filePaths[0]) {
             return { success: false, error: 'Cancelled' }
           }
@@ -2779,11 +2790,14 @@ export function registerSaveHandlers(): void {
   ipcMain.handle('save:selectFile', async () => {
     try {
       const win = BrowserWindow.getFocusedWindow()
-      const result = await dialog.showOpenDialog(win!, {
-        properties: ['openFile'],
-        title: 'Select project file',
-        filters: [{ name: 'JSON Files', extensions: ['json'] }],
-      })
+      const result = await dialog.showOpenDialog(
+        win!,
+        openFileDialogOptions({
+          properties: ['openFile'],
+          title: 'Select project file',
+          filters: [{ name: 'JSON Files', extensions: ['json'] }],
+        }),
+      )
       if (result.canceled || !result.filePaths[0]) {
         return { success: false, error: 'Cancelled' }
       }
@@ -2938,7 +2952,12 @@ export function registerSaveHandlers(): void {
         }
 
         await gitRepo.commit(payload.commitMessage || `Update ${projectName}`)
-        await gitRepo.push('origin', payload.branch, isEmptyRepo ? ['--set-upstream'] : [])
+        await pushWithRetry(
+          gitRepo,
+          'origin',
+          payload.branch,
+          isEmptyRepo ? ['--set-upstream'] : [],
+        )
 
         // Persist the remote config where EVERY git path reads it
         // (`settings.git.<projectId>`, token safeStorage-encrypted) so the
@@ -3055,7 +3074,7 @@ export function registerSaveHandlers(): void {
         const msg =
           payload.commitMessage || `Update ${projectName} — ${new Date().toLocaleString()}`
         await gitRepo.commit(msg)
-        await gitRepo.push('origin', config.branch, isEmptyRepo ? ['--set-upstream'] : [])
+        await pushWithRetry(gitRepo, 'origin', config.branch, isEmptyRepo ? ['--set-upstream'] : [])
 
         addSaveHistory({
           project_id: payload.projectId,

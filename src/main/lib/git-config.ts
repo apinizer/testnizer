@@ -354,6 +354,108 @@ export function isPushRejectedError(message: string): boolean {
   return /non-fast-forward|fetch first|\[rejected\]|Updates were rejected/i.test(message)
 }
 
+/**
+ * Push failed because the remote server had a temporary problem (GitHub
+ * answers `remote: Internal Server Error` / HTTP 5xx a few times a day; the
+ * next attempt works). True on every push path: `git:push` keeps the commit
+ * in the checkout and the next Push commits nothing new (`committed:false`);
+ * the Save dialog's temp-clone paths never reached the remote, so the next
+ * attempt lands exactly one commit.
+ */
+export const GIT_PUSH_TRANSIENT_ERROR =
+  'Uzak sunucu geçici bir hata döndürdü (HTTP 5xx) ve birkaç denemeye rağmen gönderim yapılamadı. Değişiklikleriniz kaybolmadı; yalnızca uzak depoya gönderim başarısız oldu. Birazdan Push’u tekrar deneyin — yeni (çift) bir commit oluşturulmaz.'
+
+/** Same server-side condition on a non-push operation (pull, fetch, clone). */
+export const GIT_REMOTE_TRANSIENT_ERROR =
+  'Uzak sunucu geçici bir hata döndürdü (HTTP 5xx). Birazdan tekrar deneyin.'
+
+/** Any explicit 4xx — a client-side problem a retry cannot fix (401/403/404/413…). */
+const HTTP_CLIENT_ERROR = /RPC failed; HTTP 4\d\d|returned error: 4\d\d|\bHTTP 4\d\d\b/i
+
+/**
+ * Server-side, short-lived failures worth retrying: 5xx in git/curl's
+ * wording, GitHub's `Internal Server Error` text, a dropped HTTP/2 stream
+ * (`RPC failed; curl 92`) and the connection the server closed mid-push.
+ * Deliberately NOT the bare `[remote rejected]` / `pre-receive hook declined`
+ * forms — GitHub branch protection (`GH006`) uses those and must not loop.
+ */
+const TRANSIENT_REMOTE =
+  /Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|returned error: 5\d\d|RPC failed; HTTP 5\d\d|RPC failed; curl (?:18|52|55|56|92)\b|the remote end hung up unexpectedly|unexpected disconnect while reading sideband packet/i
+
+/**
+ * True for a temporary server-side failure (see {@link TRANSIENT_REMOTE}).
+ * Never true for auth failures, non-fast-forward refusals or explicit 4xx —
+ * git prints "hung up unexpectedly" after a 413 too, so those win.
+ */
+export function isTransientRemoteError(message: string): boolean {
+  if (isGitAuthError(message)) return false
+  if (isPushRejectedError(message)) return false
+  if (HTTP_CLIENT_ERROR.test(message)) return false
+  return TRANSIENT_REMOTE.test(message)
+}
+
+/** The stderr line that names the transient failure — kept for support / request ids. */
+function transientDetail(message: string): string {
+  const lines = message
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(Boolean)
+  return lines.find((l) => TRANSIENT_REMOTE.test(l)) ?? lines[0] ?? ''
+}
+
+const DEFAULT_PUSH_RETRY_DELAYS_MS: readonly number[] = [1000, 3000]
+let pushRetryDelaysOverride: readonly number[] | null = null
+
+/** Test seam: real-git suites run child processes, so they cannot use fake timers. */
+export function _setPushRetryDelays(delays: readonly number[] | null): void {
+  pushRetryDelaysOverride = delays
+}
+
+/** Just the `push` simple-git exposes — a plain fake satisfies it in tests. */
+export interface PushCapable {
+  push(remote: string, branch: string, options?: string[]): PromiseLike<unknown>
+}
+
+export interface PushRetryOptions {
+  /** Wait before retry N (length = number of retries). Default 1 s, 3 s. */
+  delaysMs?: readonly number[]
+  sleep?: (ms: number) => Promise<void>
+}
+
+/**
+ * THE push used by every path that updates a remote ref (git:push,
+ * git:createBranch, save:git, save:gitPush). Retries ONLY transient
+ * server-side failures ({@link isTransientRemoteError}); auth errors and
+ * non-fast-forward refusals throw on the first attempt. Re-pushing is safe:
+ * a push is a ref update — if the server did apply the first one, the retry
+ * finds the ref already there. When every attempt fails transiently the
+ * error carries {@link GIT_PUSH_TRANSIENT_ERROR} so {@link describeGitError}
+ * shows it instead of the raw stderr.
+ */
+export async function pushWithRetry(
+  git: PushCapable,
+  remote: string,
+  branch: string,
+  options: string[] = [],
+  opts: PushRetryOptions = {},
+): Promise<void> {
+  const delays = opts.delaysMs ?? pushRetryDelaysOverride ?? DEFAULT_PUSH_RETRY_DELAYS_MS
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await git.push(remote, branch, options)
+      return
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!isTransientRemoteError(msg)) throw e
+      if (attempt >= delays.length) {
+        throw new Error(`${GIT_PUSH_TRANSIENT_ERROR} (${transientDetail(msg)})`, { cause: e })
+      }
+      await sleep(delays[attempt])
+    }
+  }
+}
+
 /** Remote could not be reached at all (DNS, proxy, offline, wrong host). */
 export function unreachableRemoteError(detail: string): string {
   return `Uzak depoya erişilemedi: ${detail.split('\n')[0]}`
@@ -397,7 +499,8 @@ export function sameRemote(a: string | undefined, b: string | undefined): boolea
 
 /**
  * ONE mapping from a git failure to the text the user sees: token redacted,
- * 401/403 → explicit auth message, "remote is ahead" → pull-first hint.
+ * 401/403 → explicit auth message, "remote is ahead" → pull-first hint,
+ * temporary server error (5xx) → "nothing lost, try again".
  * Every push/pull catch (git.handler AND save.handler) goes through here so
  * the two paths cannot drift again.
  */
@@ -405,7 +508,13 @@ export function describeGitError(e: unknown, token: string | undefined): string 
   const raw = e instanceof Error ? e.message : String(e)
   const msg = redactToken(raw, token)
   if (msg.startsWith(GIT_AUTH_FAILED_ERROR)) return msg
+  // Prefix checked on the RAW text: redaction must only touch git's detail,
+  // never our own sentence (a short token could match letters in it).
+  if (raw.startsWith(GIT_PUSH_TRANSIENT_ERROR)) {
+    return GIT_PUSH_TRANSIENT_ERROR + redactToken(raw.slice(GIT_PUSH_TRANSIENT_ERROR.length), token)
+  }
   if (isGitAuthError(msg)) return `${GIT_AUTH_FAILED_ERROR} (${msg.split('\n')[0]})`
   if (isPushRejectedError(msg)) return GIT_PUSH_REJECTED_ERROR
+  if (isTransientRemoteError(msg)) return `${GIT_REMOTE_TRANSIENT_ERROR} (${transientDetail(msg)})`
   return msg
 }

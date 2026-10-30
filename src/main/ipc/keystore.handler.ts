@@ -11,6 +11,7 @@ import {
   type GenerateSecretKeyOptions,
 } from '../lib/keystore'
 import { encryptSecret, decryptSecret, isEncryptionAvailable } from '../lib/secure-storage'
+import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
 import {
   listKeystores,
   getKeystore,
@@ -76,6 +77,7 @@ interface PickFileResult {
 
 /** Read + size-check a keystore file, returning its bytes (stays in main). */
 function readKeystoreFile(path: string): Buffer {
+  assertNotFolder(path, 'keystore file')
   const bytes = readFileSync(path)
   if (bytes.length === 0) {
     throw new Error('The selected file is empty.')
@@ -224,17 +226,20 @@ export function registerKeystoreHandlers(): void {
   // only at `keystore:open` time; the path (not secret) is safe to hand back.
   ipcMain.handle('keystore:pickFile', () =>
     wrap(async (): Promise<PickFileResult> => {
-      const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [
-          { name: 'Keystore', extensions: ['jks', 'p12', 'pfx', 'keystore'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      })
+      const result = await dialog.showOpenDialog(
+        openFileDialogOptions({
+          properties: ['openFile'],
+          filters: [
+            { name: 'Keystore', extensions: ['jks', 'p12', 'pfx', 'keystore'] },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        }),
+      )
       if (result.canceled || result.filePaths.length === 0) {
         throw new Error('Cancelled')
       }
       const path = result.filePaths[0]
+      assertNotFolder(path, 'keystore file')
       const fileName = basename(path)
       return { path, fileName, type: detectTypeFromName(fileName) }
     }),

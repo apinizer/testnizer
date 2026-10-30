@@ -18,6 +18,7 @@ import { logRequestResponse, logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import { createPendingRegistry } from '../lib/pending-cancellables'
+import { openFileDialogOptions } from '../lib/open-dialog'
 
 const pendingUnaryRequests = createPendingRegistry()
 
@@ -83,14 +84,16 @@ export function registerGrpcHandlers(): void {
   // ─── Load proto file (show file dialog) ─────────────────────
   ipcMain.handle('grpc:loadProto', async () => {
     try {
-      const result = await dialog.showOpenDialog({
-        title: 'Select Proto File',
-        filters: [
-          { name: 'Proto Files', extensions: ['proto'] },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-        properties: ['openFile'],
-      })
+      const result = await dialog.showOpenDialog(
+        openFileDialogOptions({
+          title: 'Select Proto File',
+          filters: [
+            { name: 'Proto Files', extensions: ['proto'] },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+          properties: ['openFile'],
+        }),
+      )
 
       if (result.canceled || result.filePaths.length === 0) {
         return { success: true, data: null }

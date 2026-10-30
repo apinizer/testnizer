@@ -5,6 +5,7 @@ import { getDb } from '../db/database'
 import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protocols/soap.engine'
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
+import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
 import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import {
@@ -302,32 +303,35 @@ export function registerImportExportHandlers(): void {
   ipcMain.handle('import:openFile', async (_event, options?: { format?: string }) => {
     try {
       const postman = options?.format === 'postman' || options?.format === 'apinizer'
-      const result = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [
-          // `raml` was missing here even though the importer handles RAML
-          // — the OS file dialog greyed out .raml files and forced users
-          // to fall back to the URL-import path (v1.4.4 §6.1).
-          {
-            name: 'API Specs',
-            extensions: [
-              'json',
-              'yaml',
-              'yml',
-              'raml',
-              'wsdl',
-              'xml',
-              'proto',
-              ...(postman ? ['zip'] : []),
-            ],
-          },
-          { name: 'All Files', extensions: ['*'] },
-        ],
-      })
+      const result = await dialog.showOpenDialog(
+        openFileDialogOptions({
+          properties: ['openFile'],
+          filters: [
+            // `raml` was missing here even though the importer handles RAML
+            // — the OS file dialog greyed out .raml files and forced users
+            // to fall back to the URL-import path (v1.4.4 §6.1).
+            {
+              name: 'API Specs',
+              extensions: [
+                'json',
+                'yaml',
+                'yml',
+                'raml',
+                'wsdl',
+                'xml',
+                'proto',
+                ...(postman ? ['zip'] : []),
+              ],
+            },
+            { name: 'All Files', extensions: ['*'] },
+          ],
+        }),
+      )
       if (result.canceled || result.filePaths.length === 0) {
         return { success: true, data: null }
       }
       const filePath = result.filePaths[0]
+      assertNotFolder(filePath)
       // The first bytes decide; a zip's size is checked before it is read.
       const head = Buffer.alloc(4)
       const fd = openSync(filePath, 'r')

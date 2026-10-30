@@ -34,6 +34,7 @@ import {
   isGitAuthError,
   redactToken,
   describeGitError,
+  pushWithRetry,
   sameRemote,
   foreignRepoError,
   unreachableRemoteError,
@@ -967,7 +968,7 @@ export function registerGitHandlers(): void {
         let remotePushed = false
         if (config.token) {
           try {
-            await git.push('origin', payload.branchName, ['--set-upstream'])
+            await pushWithRetry(git, 'origin', payload.branchName, ['--set-upstream'])
             remotePushed = true
           } catch {
             /* offline OK — will push later */
@@ -1269,7 +1270,7 @@ export function registerGitHandlers(): void {
       }
 
       // Push current branch
-      await git.push('origin', currentBranch, ['--set-upstream'])
+      await pushWithRetry(git, 'origin', currentBranch, ['--set-upstream'])
 
       // `committed: false` = nothing new since the last commit; the push
       // still ran (it may carry earlier unpushed commits).
