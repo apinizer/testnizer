@@ -307,6 +307,10 @@ describe('Project details: the success toast follows the writes (APP-4)', () => 
 describe('New project: a failed import is reported, not hidden (APP-2)', () => {
   const importLocal = vi.fn()
   const selectFile = vi.fn()
+  // Every wait in this wizard is on a condition; the budget is only a ceiling
+  // for a machine under load (testing-library's 1 s default is not — issue #292).
+  const WAIT = { timeout: 10_000 }
+  const CASE_TIMEOUT = 30_000
 
   function seedWizard() {
     ;(window as unknown as { api: Record<string, unknown> }).api = {
@@ -339,12 +343,12 @@ describe('New project: a failed import is reported, not hidden (APP-2)', () => {
 
   /** Drives the wizard from the source picker to the Create button. */
   async function reachCreateStep() {
-    fireEvent.click(await screen.findByText('Open Local'))
+    fireEvent.click(await screen.findByText('Open Local', {}, WAIT))
     fireEvent.click(screen.getByRole('button', { name: /Next/ }))
     // Step 2 arrives once the picker resolved and prefilled the name.
-    await waitFor(() => expect(selectFile).toHaveBeenCalled())
-    fireEvent.click(await screen.findByRole('button', { name: /Next/ }))
-    return screen.findByRole('button', { name: /Create/ })
+    await waitFor(() => expect(selectFile).toHaveBeenCalled(), WAIT)
+    fireEvent.click(await screen.findByRole('button', { name: /Next/ }, WAIT))
+    return screen.findByRole('button', { name: /Create/ }, WAIT)
   }
 
   it('warns when the import bridge reports failure', async () => {
@@ -355,12 +359,12 @@ describe('New project: a failed import is reported, not hidden (APP-2)', () => {
     render(<NewProjectModal />)
     fireEvent.click(await reachCreateStep())
 
-    await waitFor(() => expect(importLocal).toHaveBeenCalled())
+    await waitFor(() => expect(importLocal).toHaveBeenCalled(), WAIT)
     // Partial success: the project exists, so this is a warning rather than a
     // failed flow — but it must be SAID.
-    await waitFor(() => expect(toastWarning).toHaveBeenCalled())
+    await waitFor(() => expect(toastWarning).toHaveBeenCalled(), WAIT)
     expect(String(toastWarning.mock.calls[0][0])).toContain('Unsupported collection format')
-  })
+  }, CASE_TIMEOUT)
 
   it('says nothing when the import actually succeeded', async () => {
     importLocal.mockResolvedValue({ success: true, data: {} })
@@ -368,9 +372,15 @@ describe('New project: a failed import is reported, not hidden (APP-2)', () => {
     render(<NewProjectModal />)
     fireEvent.click(await reachCreateStep())
 
-    await waitFor(() => expect(importLocal).toHaveBeenCalled())
+    await waitFor(() => expect(importLocal).toHaveBeenCalled(), WAIT)
+    // Absence is only meaningful once the whole flow is over: the warning is
+    // raised AFTER the import call resolved and the git/branch steps ran, right
+    // before the wizard flips to its "done" screen. Wait for that positive
+    // signal (a slow machine just waits longer), then assert nothing was said.
+    expect(await screen.findByText('Project Created!', {}, WAIT)).toBeInTheDocument()
+    expect(importLocal).toHaveBeenCalledTimes(1)
     expect(toastWarning).not.toHaveBeenCalled()
-  })
+  }, CASE_TIMEOUT)
 })
 
 /* ── APP-9: "no folders" and "couldn't read them" are different ────────────── */

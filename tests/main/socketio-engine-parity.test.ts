@@ -12,7 +12,7 @@
  * (`socket.io-client-v2`, EIO=3). The servers accept both through
  * `allowEIO3` — the documented v2-client compatibility path of a v4 server.
  */
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest'
 import { createServer } from 'node:http'
 import { Server as SocketIOServer, type Socket } from 'socket.io'
 import type { AddressInfo } from 'node:net'
@@ -34,10 +34,23 @@ let port: number
 let portPath: number
 const sockets: Socket[] = []
 
-async function waitFor(pred: () => boolean, timeoutMs = 4000): Promise<void> {
+// Every case waits on a CONDITION (an event reaching the callback, a server
+// socket appearing) — never on a fixed delay — so the budget is only a safety
+// net for a machine under load (parallel agents, a build, Playwright; issue
+// #292). It must stay well below the per-test timeout, which a stalled
+// wait would otherwise trip first and hide the real reason.
+vi.setConfig({ testTimeout: 40_000 })
+
+async function waitFor(
+  pred: () => boolean,
+  timeoutMs = 20_000,
+  diagnose?: () => string,
+): Promise<void> {
   const start = Date.now()
   while (!pred()) {
-    if (Date.now() - start > timeoutMs) throw new Error('waitFor timed out')
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`waitFor timed out${diagnose ? `: ${diagnose()}` : ''}`)
+    }
     await new Promise((r) => setTimeout(r, 10))
   }
 }
@@ -244,14 +257,43 @@ describe.each(VERSIONS)('Socket.IO client v%s', (version) => {
     it('a server kick never reconnects, even with retries configured', async () => {
       const closed: SocketIOClosedInfo[] = []
       const marker = `kick-${version}-${++caseNo}`
-      await open({
+      // The callbacks are registered by `open` before the kick below, so the
+      // close report cannot be missed, whatever the scheduling.
+      const { id, events } = await open({
         extraHeaders: { 'X-Case': marker },
         settings: { retryCount: 3, retryDelay: 50 },
         onClose: (c) => closed.push(c),
       })
-      ;(await ownServerSocket(marker)).disconnect(true)
-      await waitFor(() => closed.length === 1)
-      expect(closed[0].reason).toBe('io server disconnect')
+      const serverSide = await ownServerSocket(marker)
+      const kicked = new Promise<string>((resolve) => serverSide.once('disconnect', resolve))
+      serverSide.disconnect(true)
+
+      await waitFor(
+        () => closed.length >= 1,
+        undefined,
+        () =>
+          `no close report after the kick (events: ${JSON.stringify(events.map((e) => e.event))})`,
+      )
+      // The server finished the kick too — nothing is still in flight.
+      await kicked
+      expect(closed.map((c) => c.reason)).toEqual(['io server disconnect'])
+
+      // "Never reconnects" is an absence, so it can only be shown by watching
+      // for a bounded while. The client's first retry fires 25-75 ms after the
+      // drop (retryDelay 50, randomisation 0.5); the window is ten times that.
+      // A slow machine only delays the retry's I/O, it never makes this fail
+      // — the load can hide a regression, not invent one — and the engine's
+      // own state below does not depend on the window at all.
+      await new Promise((r) => setTimeout(r, 500))
+      const reconnects = sockets.filter((s) => s.handshake.headers['x-case'] === marker)
+      expect(reconnects).toHaveLength(1) // only the kicked socket ever reached the server
+      expect(reconnects[0]).toBe(serverSide)
+      expect(closed).toHaveLength(1) // reported once, not once per attempt
+      expect(events.filter((e) => e.direction === 'system')).toEqual([]) // no reconnecting / attempt / reconnected row
+      // The entry is gone from the engine: nothing can be emitted on it.
+      expect(() => socketIOEmitWire(id, 'x', [{ content: '1', contentType: 'json' }])).toThrow(
+        'Not connected',
+      )
     })
   })
 })
