@@ -8,6 +8,7 @@ import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
 import type { SidebarPage } from '../../lib/sidebar-pages'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
+import type { RunOrigin } from '../../lib/reveal-run-result'
 
 interface PageWelcomeProps {
   page: SidebarPage
@@ -48,12 +49,14 @@ export default function PageWelcome({ page }: PageWelcomeProps) {
           report: RunnerReport,
           startedAt: number,
           sourceLabel?: string,
+          origin?: RunOrigin,
         ) =>
           openOrReuseRunnerTab({
             results,
             report,
             startedAt,
             sourceLabel,
+            origin,
           })
         }
       />

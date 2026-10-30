@@ -7,7 +7,12 @@ import EmptyState from '../shared/EmptyState'
 import NewRunButton from './NewRunButton'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
-import { displayRunSourceLabel } from '../../lib/runner-source-label'
+import {
+  displayRunSourceLabel,
+  historyRunOrigin,
+  suiteTaskIdsOf,
+} from '../../lib/runner-source-label'
+import type { RunOrigin } from '../../lib/reveal-run-result'
 
 interface RunHistoryRow {
   id: string
@@ -27,6 +32,7 @@ interface RunHistoryRow {
   avg_resp_time: number
   results_json: string | null
   started_at: number
+  scheduled_task_id?: string | null
 }
 
 type HistoryTab = 'Functional' | 'Scheduled'
@@ -41,6 +47,8 @@ interface RunnerHistoryProps {
     report: RunnerReport,
     startedAt: number,
     sourceLabel?: string,
+    /** Where the run started — routes reveal / open (issue #302). */
+    origin?: RunOrigin,
   ) => void
 }
 
@@ -56,6 +64,19 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
   const [page, setPage] = useState(0)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [suites, setSuites] = useState<Array<{ id: string; name: string }>>([])
+  // Scheduled tasks that run a suite: a `Scheduled: <task>` row names its task,
+  // not its scope, so its origin comes from the task (issue #302).
+  const [suiteTaskIds, setSuiteTaskIds] = useState<Set<string>>(() => new Set())
+  useEffect(() => {
+    if (!activeProjectId) return
+    window.api?.scheduler
+      ?.list(activeProjectId)
+      .then((result) => {
+        const res = result as { success?: boolean; data?: unknown } | null
+        if (res?.success) setSuiteTaskIds(suiteTaskIdsOf(res.data))
+      })
+      .catch(() => {})
+  }, [activeProjectId])
 
   // Test suites for the New Run picker. All Runs surface needs the same
   // picker as TestsHome / Scheduled Tasks so the three entry points have
@@ -189,7 +210,13 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
         results,
       }
       const sourceLabel = run.source_label || run.source || 'Runner'
-      onViewReport(results, report, run.started_at, sourceLabel)
+      onViewReport(
+        results,
+        report,
+        run.started_at,
+        sourceLabel,
+        historyRunOrigin(run, suiteTaskIds),
+      )
     } catch {
       // invalid JSON
     }

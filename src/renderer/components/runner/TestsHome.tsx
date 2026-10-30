@@ -5,6 +5,8 @@ import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import { useTranslation } from '../../lib/i18n'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
+import { historyRunOrigin, suiteTaskIdsOf } from '../../lib/runner-source-label'
+import type { RunOrigin } from '../../lib/reveal-run-result'
 
 interface RunHistoryRow {
   id: string
@@ -24,6 +26,7 @@ interface RunHistoryRow {
   avg_resp_time: number
   results_json: string | null
   started_at: number
+  scheduled_task_id?: string | null
 }
 
 interface HistoryStats {
@@ -38,6 +41,7 @@ interface ScheduledTaskRow {
   name: string
   enabled: number
   next_run_at: number | null
+  suite_id?: string | null
 }
 
 interface TestSuiteRow {
@@ -55,6 +59,8 @@ interface TestsHomeProps {
     report: RunnerReport,
     startedAt: number,
     sourceLabel?: string,
+    /** Where the run started — routes reveal / open (issue #302). */
+    origin?: RunOrigin,
   ) => void
 }
 
@@ -152,7 +158,13 @@ export default function TestsHome({
         failedAssertions: run.failed_tests,
         results,
       }
-      onViewReport(results, report, run.started_at, run.source_label || run.source || 'Runner')
+      onViewReport(
+        results,
+        report,
+        run.started_at,
+        run.source_label || run.source || 'Runner',
+        historyRunOrigin(run, suiteTaskIdsOf(tasks)),
+      )
     } catch {
       /* invalid */
     }

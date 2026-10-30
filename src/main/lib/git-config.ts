@@ -359,8 +359,10 @@ export function isPushRejectedError(message: string): boolean {
  * answers `remote: Internal Server Error` / HTTP 5xx a few times a day; the
  * next attempt works). True on every push path: `git:push` keeps the commit
  * in the checkout and the next Push commits nothing new (`committed:false`);
- * the Save dialog's temp-clone paths never reached the remote, so the next
- * attempt lands exactly one commit.
+ * the Save dialog's temp-clone paths re-export into a fresh clone and commit
+ * only if the content differs from it (`sameExport`, issue #301) — so the next
+ * attempt lands exactly one commit, and none when the remote had in fact
+ * taken the first push before its acknowledgment was lost.
  */
 export const GIT_PUSH_TRANSIENT_ERROR =
   'Uzak sunucu geçici bir hata döndürdü (HTTP 5xx) ve birkaç denemeye rağmen gönderim yapılamadı. Değişiklikleriniz kaybolmadı; yalnızca uzak depoya gönderim başarısız oldu. Birazdan Push’u tekrar deneyin — yeni (çift) bir commit oluşturulmaz.'

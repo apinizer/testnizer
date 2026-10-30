@@ -60,6 +60,7 @@ import {
   redactToken,
 } from '../lib/git-config'
 import { projectFileSlug, pickProjectFile } from '../lib/project-file'
+import { sameExport } from '../lib/same-export'
 import { remapAiToolServerRefs, type ToolServerIdMap } from '../lib/ai-tool-server-remap'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
 import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
@@ -2428,6 +2429,34 @@ export function importProjectAsNew(
   return { projectId: newProjectId }
 }
 
+/** Best-effort removal of a temp clone: a failure here never masks the result. */
+function removeTempClone(dir: string): void {
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch (e) {
+    console.warn('save: could not remove temp clone', dir, (e as Error).message)
+  }
+}
+
+/**
+ * Write the project export into a temp clone for `save:git` / `save:gitPush`,
+ * leaving the file alone when it already holds the same content (issue #301).
+ *
+ * Every export carries a fresh `exportedAt`, so an unchanged project still
+ * wrote a "changed" file and the save committed it. That bites after a lost
+ * push acknowledgment: the remote took the push, the client saw a failure,
+ * and the user's retry cloned a copy that already held the first commit —
+ * then committed and pushed a second, timestamp-only one. Compared with
+ * `sameExport`, the same rule `git:push` uses; the untouched file leaves
+ * nothing staged and the caller's no-change branch answers.
+ */
+function writeExportUnlessSame(dir: string, fileName: string, data: ProjectExport): void {
+  const target = join(dir, fileName)
+  const doc = data as unknown as Record<string, unknown>
+  if (existsSync(target) && sameExport(readFileSync(target, 'utf-8'), doc)) return
+  writeFileSync(target, JSON.stringify(data, null, 2), 'utf-8')
+}
+
 // ─── Register all handlers ───────────────────────────────────────
 export function registerSaveHandlers(): void {
   // ─── Generic: write JSON to file via save dialog ───────────
@@ -2881,6 +2910,9 @@ export function registerSaveHandlers(): void {
         commitMessage: string
       },
     ) => {
+      // Removed in `finally` — on EVERY exit, a throwing clone / push / import
+      // included (it used to leak one `testnizer-*` clone per failed attempt).
+      let tmpDir: string | null = null
       try {
         const { simpleGit } = await import('simple-git')
 
@@ -2895,7 +2927,7 @@ export function registerSaveHandlers(): void {
         const gitOpts = await gitClientOptions(auth)
         const gitEnv = gitProcessEnv(auth)
 
-        const tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
+        tmpDir = join(tmpdir(), `testnizer-git-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit(gitOpts).env(gitEnv)
@@ -2932,15 +2964,35 @@ export function registerSaveHandlers(): void {
 
         const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
 
-        // Write project JSON
+        // Persist the remote config where EVERY git path reads it
+        // (`settings.git.<projectId>`, token safeStorage-encrypted) so the
+        // toolbar Push/Pull work right after a manual "Save → Git". The old
+        // code wrote only the legacy `git-credentials` store, which carries
+        // the token but not the URL → "Git yapılandırması bulunamadı".
+        const persistGitConfig = async (): Promise<void> => {
+          const settings = await getSettingsStore()
+          const allGit = (settings.get('git') as Record<string, unknown> | undefined) ?? {}
+          allGit[payload.projectId] = {
+            repoUrl: payload.repoUrl,
+            username: payload.username,
+            branch: payload.branch,
+            token: encryptSecret(payload.token),
+          }
+          settings.set('git', allGit)
+        }
+
+        // Write project JSON — unless the clone already holds this content
+        // (issue #301, see `writeExportUnlessSame`).
         const fileName = `${projectName}.json`
-        writeFileSync(join(tmpDir, fileName), JSON.stringify(data, null, 2), 'utf-8')
+        writeExportUnlessSame(tmpDir, fileName, data)
 
         // Commit and push
         await gitRepo.add(fileName)
         const status = await gitRepo.status()
         if (status.staged.length === 0 && status.modified.length === 0 && !isEmptyRepo) {
-          rmSync(tmpDir, { recursive: true, force: true })
+          // Also the retry after a lost push acknowledgment (issue #301): the
+          // first click pushed, then failed before saving the config.
+          await persistGitConfig()
           return {
             success: true,
             data: {
@@ -2959,20 +3011,7 @@ export function registerSaveHandlers(): void {
           isEmptyRepo ? ['--set-upstream'] : [],
         )
 
-        // Persist the remote config where EVERY git path reads it
-        // (`settings.git.<projectId>`, token safeStorage-encrypted) so the
-        // toolbar Push/Pull work right after a manual "Save → Git". The old
-        // code wrote only the legacy `git-credentials` store, which carries
-        // the token but not the URL → "Git yapılandırması bulunamadı".
-        const settings = await getSettingsStore()
-        const allGit = (settings.get('git') as Record<string, unknown> | undefined) ?? {}
-        allGit[payload.projectId] = {
-          repoUrl: payload.repoUrl,
-          username: payload.username,
-          branch: payload.branch,
-          token: encryptSecret(payload.token),
-        }
-        settings.set('git', allGit)
+        await persistGitConfig()
 
         addSaveHistory({
           project_id: payload.projectId,
@@ -2981,11 +3020,11 @@ export function registerSaveHandlers(): void {
           message: payload.commitMessage || `Update ${projectName}`,
         })
 
-        rmSync(tmpDir, { recursive: true, force: true })
-
         return { success: true, data: { repoUrl: payload.repoUrl, branch: payload.branch } }
       } catch (e) {
         return { success: false, error: describeGitError(e, payload.token) }
+      } finally {
+        if (tmpDir) removeTempClone(tmpDir)
       }
     },
   )
@@ -3001,6 +3040,9 @@ export function registerSaveHandlers(): void {
       },
     ) => {
       let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
+      // Removed in `finally` — on EVERY exit, a throwing clone / push / import
+      // included (it used to leak one `testnizer-*` clone per failed attempt).
+      let tmpDir: string | null = null
       try {
         config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
@@ -3020,7 +3062,7 @@ export function registerSaveHandlers(): void {
         const gitOpts = await gitClientOptions(auth)
         const gitEnv = gitProcessEnv(auth)
 
-        const tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)
+        tmpDir = join(tmpdir(), `testnizer-push-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit(gitOpts).env(gitEnv)
@@ -3056,15 +3098,15 @@ export function registerSaveHandlers(): void {
 
         const gitRepo = simpleGit({ baseDir: tmpDir, ...gitOpts }).env(gitEnv)
 
-        // Write project JSON
+        // Write project JSON — unless the clone already holds this content
+        // (issue #301, see `writeExportUnlessSame`).
         const fileName = `${projectName}.json`
-        writeFileSync(join(tmpDir, fileName), JSON.stringify(data, null, 2), 'utf-8')
+        writeExportUnlessSame(tmpDir, fileName, data)
 
         // Check for changes
         await gitRepo.add(fileName)
         const status = await gitRepo.status()
         if (status.staged.length === 0 && !isEmptyRepo) {
-          rmSync(tmpDir, { recursive: true, force: true })
           return {
             success: true,
             data: { noChanges: true, message: 'Değişiklik yok — her şey güncel.' },
@@ -3083,14 +3125,14 @@ export function registerSaveHandlers(): void {
           message: msg,
         })
 
-        rmSync(tmpDir, { recursive: true, force: true })
-
         return {
           success: true,
           data: { repoUrl: config.repoUrl, branch: config.branch, message: msg },
         }
       } catch (e) {
         return { success: false, error: describeGitError(e, config?.token) }
+      } finally {
+        if (tmpDir) removeTempClone(tmpDir)
       }
     },
   )
@@ -3105,6 +3147,9 @@ export function registerSaveHandlers(): void {
       },
     ) => {
       let config: Awaited<ReturnType<typeof getProjectGitConfig>> = null
+      // Removed in `finally` — on EVERY exit, a throwing clone / push / import
+      // included (it used to leak one `testnizer-*` clone per failed attempt).
+      let tmpDir: string | null = null
       try {
         config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
@@ -3120,7 +3165,7 @@ export function registerSaveHandlers(): void {
         const gitOpts = await gitClientOptions(auth)
         const gitEnv = gitProcessEnv(auth)
 
-        const tmpDir = join(tmpdir(), `testnizer-pull-${randomUUID()}`)
+        tmpDir = join(tmpdir(), `testnizer-pull-${randomUUID()}`)
         mkdirSync(tmpDir, { recursive: true })
 
         const git = simpleGit(gitOpts).env(gitEnv)
@@ -3141,7 +3186,6 @@ export function registerSaveHandlers(): void {
             await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
           } catch {
             // Empty repo — nothing to pull
-            rmSync(tmpDir, { recursive: true, force: true })
             return { success: false, error: 'Git repository boş — henüz push yapılmamış.' }
           }
         }
@@ -3149,7 +3193,6 @@ export function registerSaveHandlers(): void {
         // Find JSON files
         const files = readdirSync(tmpDir).filter((f) => f.endsWith('.json') && !f.startsWith('.'))
         if (files.length === 0) {
-          rmSync(tmpDir, { recursive: true, force: true })
           return { success: false, error: "Git repository'de proje dosyası bulunamadı." }
         }
 
@@ -3163,7 +3206,6 @@ export function registerSaveHandlers(): void {
         const data = JSON.parse(content) as ProjectExport
 
         if (!data.version || !data.project) {
-          rmSync(tmpDir, { recursive: true, force: true })
           return { success: false, error: 'Geçersiz proje dosyası formatı.' }
         }
 
@@ -3176,8 +3218,6 @@ export function registerSaveHandlers(): void {
           path: `${config.repoUrl}@${config.branch}`,
           message: `Pull from ${config.branch}`,
         })
-
-        rmSync(tmpDir, { recursive: true, force: true })
 
         return {
           success: true,
@@ -3194,6 +3234,8 @@ export function registerSaveHandlers(): void {
         }
       } catch (e) {
         return { success: false, error: describeGitError(e, config?.token) }
+      } finally {
+        if (tmpDir) removeTempClone(tmpDir)
       }
     },
   )

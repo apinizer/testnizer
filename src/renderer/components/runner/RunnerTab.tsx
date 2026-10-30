@@ -28,7 +28,8 @@ import type { RunPhase } from '../../../shared/runner-verdict'
 import { readRequestSettingsJson } from '../../../shared/request-settings'
 import { lockDragStyles } from '../../lib/drag-lock'
 import { setRunnerBusy } from '../../lib/runner-activity'
-import { revealRunResult, revealTargetFor } from '../../lib/reveal-run-result'
+import { revealRunResult, revealTargetFor, type RunOrigin } from '../../lib/reveal-run-result'
+import { asRunOrigin, runOriginFromSourceLabel } from '../../lib/runner-source-label'
 
 /**
  * After a run, refresh the renderer env store from the DB so script-written
@@ -388,6 +389,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     results: EndpointRunResult[]
     report: RunnerReport | null
     startedAt: number | null
+    origin?: RunOrigin
   } | null => {
     if (!runDataStorageKey) return null
     try {
@@ -397,6 +399,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         results: EndpointRunResult[]
         report: RunnerReport | null
         startedAt: number | null
+        origin?: RunOrigin
       }
     } catch {
       return null
@@ -410,6 +413,18 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   )
   const [runStartedAt, setRunStartedAt] = useState<number | null>(
     () => readStoredRunData()?.startedAt ?? null,
+  )
+  // Where the results ON SCREEN came from — what reveal / open route by
+  // (issue #302). Not `runOrigin`: that is the tab's scope, the next Run's
+  // label, and a past run opened from All Runs may come from anywhere. A
+  // past suite run in a fresh Runner tab looked its suite-item ids up in the
+  // APIs tree ("request no longer exists"). Restored with the run snapshot;
+  // a snapshot without it falls back to the scope (applied on mount below).
+  const [storedResultsOrigin] = useState<RunOrigin | null>(() =>
+    asRunOrigin(readStoredRunData()?.origin),
+  )
+  const [resultsOrigin, setResultsOrigin] = useState<RunOrigin>(
+    () => storedResultsOrigin ?? (folderId ? 'apis' : 'runner'),
   )
   // Persist the currently inspected result so leaving + returning to the
   // tab (or switching between Overview / All Runs and back to a results
@@ -458,7 +473,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       try {
         sessionStorage.setItem(
           runDataStorageKey,
-          JSON.stringify({ results, report, startedAt: runStartedAt }),
+          JSON.stringify({ results, report, startedAt: runStartedAt, origin: resultsOrigin }),
         )
       } catch (err) {
         // QuotaExceededError on a huge run — drop the snapshot rather
@@ -469,7 +484,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     } else {
       sessionStorage.removeItem(runDataStorageKey)
     }
-  }, [isRunning, results, report, runStartedAt, runDataStorageKey])
+  }, [isRunning, results, report, runStartedAt, resultsOrigin, runDataStorageKey])
 
   // Origin tracking: 'apis' if opened via right-click Run on APIs tree, 'suite' if from Test Suite, 'runner' otherwise
   const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(
@@ -582,6 +597,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       results?: EndpointRunResult[]
       report?: RunnerReport
       startedAt?: number
+      sourceLabel?: string
+      origin?: string
     }
     try {
       data = JSON.parse(stored)
@@ -599,11 +616,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       // fetches everything from `suiteId`.
       if (data.folderName) setRunFolderName(data.folderName)
       setRunOrigin('suite')
+      if (!storedResultsOrigin) setResultsOrigin('suite')
       setSuiteFilterIds(Array.isArray(data.endpointIds) ? new Set(data.endpointIds) : null)
       setSuiteIdForRunner(data.suiteId ?? null)
     } else if (data.autoRun && data.endpointIds) {
       if (data.folderName) setRunFolderName(data.folderName)
-      if (data.sourceType === 'apis') setRunOrigin('apis')
+      if (data.sourceType === 'apis') {
+        setRunOrigin('apis')
+        if (!storedResultsOrigin) setResultsOrigin('apis')
+      }
       setSuiteFilterIds(null)
       setSuiteIdForRunner(null)
     }
@@ -653,12 +674,17 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         sourceType: data.sourceType as 'suite' | 'apis' | 'runner' | undefined,
       }
     } else if (isReport) {
+      // A past run opened from the Tests overview (PageWelcome → TestsHome):
+      // same rule as All Runs' `handleViewReport` (issue #302).
       setResults(data.results ?? [])
       setReport(data.report ?? null)
       setRunStartedAt(data.startedAt ?? 0)
+      setRunSourceLabel(data.sourceLabel || 'Runner')
+      setResultsOrigin(asRunOrigin(data.origin) ?? runOriginFromSourceLabel(data.sourceLabel))
       setView('results')
     }
-  }, [tabId, sessionKey])
+    // `storedResultsOrigin` is mount-time state and never changes.
+  }, [tabId, sessionKey, storedResultsOrigin])
 
   // Auto-run: once endpoints are loaded and we have pending autoRun, select & run
   useEffect(() => {
@@ -713,6 +739,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             : 'Runner'
       setRunSourceLabel(sourceLabel)
       setRunOrigin(origin)
+      setResultsOrigin(origin)
 
       window.api?.runner
         ?.execute(
@@ -1148,6 +1175,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           ? `APIs: ${runFolderName}`
           : 'Runner'
     setRunSourceLabel(sourceLabel)
+    setResultsOrigin(runOrigin)
 
     try {
       const result = await window.api?.runner?.execute(
@@ -1270,6 +1298,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setSuiteFilterIds(null)
     setSuiteIdForRunner(null)
     setRunOrigin('runner')
+    setResultsOrigin('runner')
     setRunFolderName('')
     // Scope cleared → forget which suite's saved run config was loaded, so
     // re-picking a suite (even the same one) reloads it from the DB.
@@ -1286,12 +1315,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       histReport: RunnerReport,
       startedAt: number,
       sourceLabel?: string,
+      origin?: RunOrigin,
     ) => {
       setResults(histResults)
       setReport(histReport)
       setRunStartedAt(startedAt)
       setSelectedResultId(null)
       setRunSourceLabel(sourceLabel || 'Runner')
+      // The run's own origin, not the tab's scope (issue #302).
+      setResultsOrigin(origin ?? runOriginFromSourceLabel(sourceLabel))
       setView('results')
     },
     [],
@@ -1536,13 +1568,15 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onSelectResult={setSelectedResultId}
             // Suite runs carry test-suite item ids → revealed in the Tests
             // sidebar; APIs / Runner runs → the APIs tree (issue #115).
-            onReveal={(id) => void revealRunResult(runOrigin, id)}
-            revealIn={revealTargetFor(runOrigin)}
+            // Routed by the results' own origin — a past run opened from All
+            // Runs need not match the tab's scope (issue #302).
+            onReveal={(id) => void revealRunResult(resultsOrigin, id)}
+            revealIn={revealTargetFor(resultsOrigin)}
             onOpenEndpoint={(itemId) => {
               // Suite runs carry test_suite_items ids — those open as suite
               // item tabs and the sidebar stays on Tests. APIs / Runner runs
               // carry endpoint ids and route to the APIs workbench instead.
-              if (runOrigin === 'suite') {
+              if (resultsOrigin === 'suite') {
                 void openSuiteItemTab(itemId)
               } else {
                 useUIStore.getState().setActiveSidebarPage('apis')
