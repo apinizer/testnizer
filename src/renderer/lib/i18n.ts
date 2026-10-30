@@ -402,6 +402,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'codeGen.includeSecretsHint':
       'Secret variables stay as {{name}} placeholders. Include them for a ready-to-run command — the copied text then holds the real values.',
     'codeGen.secretsHidden': 'Secret values not included:',
+    'codeGen.wsseNote':
+      'WS-Security is not in this snippet. Testnizer adds the wsse:Security header to the envelope at send time (nonce, timestamp and signature computed per send, as configured).',
     'codeGen.title': 'Generate Code',
     'codeGen.languages': 'Languages',
     'codeGen.copy': 'Copy',
@@ -4679,6 +4681,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'codeGen.copied': 'Kopyalandı!',
     'codeGen.curl.shell': 'Kabuk',
     'codeGen.curl.bash': 'bash',
+    'codeGen.wsseNote':
+      'WS-Security bu kod parçasında yok. Testnizer wsse:Security başlığını gönderim anında zarfa ekler (nonce, zaman damgası ve imza, yapılandırıldıysa, her gönderimde yeniden hesaplanır).',
     'codeGen.curl.cmd': 'CMD',
     'codeGen.curl.powershell': 'PowerShell',
     'codeGen.curl.bashHint': 'Linux / macOS terminali (bash, zsh)',

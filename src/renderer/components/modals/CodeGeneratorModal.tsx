@@ -10,6 +10,7 @@ import { useCodegenSelection } from '../shared/use-codegen-selection'
 import IncludeSecretsToggle from '../shared/IncludeSecretsToggle'
 import CodegenVariantRow from '../shared/CodegenVariantRow'
 import CodegenUnavailable from '../shared/CodegenUnavailable'
+import CodegenWsseNote from '../shared/CodegenWsseNote'
 
 /** Shell-like languages get the terminal icon, the rest the code icon. */
 const SHELL_LANGS = new Set(['curl', 'shell', 'http', 'powershell'])
@@ -23,7 +24,7 @@ export default function CodeGeneratorModal() {
 
   // Session-only opt-in: a secret variable stays `{{name}}` in the snippet.
   const [includeSecrets, setIncludeSecrets] = useState(false)
-  const { code, unavailableProtocol } = useGeneratedCode(
+  const { code, unavailableProtocol, wsSecurityNote } = useGeneratedCode(
     selection.variant.id,
     includeSecrets,
     selection.options,
@@ -120,6 +121,7 @@ export default function CodeGeneratorModal() {
                 <div className="shrink-0 border-b border-[var(--border)] px-3 py-1.5">
                   <CodegenVariantRow selection={selection} />
                 </div>
+                {wsSecurityNote && <CodegenWsseNote />}
                 <div className="flex-1 overflow-hidden">
                   <MonacoWrapper
                     value={code}

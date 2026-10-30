@@ -106,7 +106,17 @@ export function mqttMaskedSendError(req: {
   return maskedCredentialsGuard(req)
 }
 
-/** SOAP: endpoint URL + the envelope that goes on the wire. */
-export function soapMaskedSendError(req: { endpointUrl: string; envelope: string }): string | null {
-  return maskedCredentialsGuard(req)
+/** SOAP: endpoint URL + the envelope that goes on the wire + the Headers / Auth tabs. */
+export function soapMaskedSendError(req: {
+  endpointUrl: string
+  envelope: string
+  headers?: KeyValuePair[]
+  auth?: AuthConfig
+}): string | null {
+  return maskedCredentialsGuard({
+    endpointUrl: req.endpointUrl,
+    envelope: req.envelope,
+    headers: req.headers,
+    auth: activeAuth(req.auth),
+  })
 }

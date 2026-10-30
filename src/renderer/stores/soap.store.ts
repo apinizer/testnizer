@@ -22,13 +22,17 @@ import { urlCredentialText } from '../lib/credential-text'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
-import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
+import { resolveVariables, resolveKeyValuePairs, resolveAuth } from '../lib/variable-resolver'
 import { makeId } from '../lib/utils'
 import { soapMaskedSendError } from '../lib/masked-send-guard'
+import { resolveInheritance } from '../lib/auth-inheritance'
+// The SOAP editor's Auth tab is the shared request-store AuthTab (issue #298
+// follow-up) — its auth is sent like HTTP Send's.
+import { useRequestStore } from './request.store'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
-import { soapTransportHeaders } from '../../shared/soap-transport'
+import { withSoapTransportHeaders } from '../../shared/soap-transport'
 import { isWsSecurityEnabled, resolveWsSecurityVariables } from '../../shared/soap-wsse'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
@@ -492,15 +496,27 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   },
 
   sendSoap: async () => {
-    // Issue #247: a password still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    // Issue #247: a password still withheld after a restart is reloaded first —
+    // the WS-Security one (this store) and the Auth tab's (request store; its
+    // reload adapter covers every protocol, so one reload does both).
+    const req = useRequestStore.getState()
+    if (get().withheldCredentials.length > 0 || req.withheldCredentials.length > 0 || req.unloaded)
+      await reloadWithheldBeforeSend()
     const { rawXml, wsSecurity } = get()
+    // Read after the reload: the Auth and Headers tabs of this SOAP request
+    // (the editor renders the request store's tabs — issue #298 follow-up).
+    const { auth, headers: userHeaders } = useRequestStore.getState()
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
 
     // Issue #195: a History mask left in a credential field is never sent.
-    const masked = soapMaskedSendError({ endpointUrl: get().endpointUrl || '', envelope: rawXml })
+    const masked = soapMaskedSendError({
+      endpointUrl: get().endpointUrl || '',
+      envelope: rawXml,
+      headers: userHeaders,
+      auth,
+    })
     if (masked) {
       responseStore.setResponse(
         { requestId: makeId(), protocol: 'soap', error: masked, timing: { total: 0 } },
@@ -519,10 +535,12 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(endpointUrl, activeVars)
     const resolvedXml = resolveVariables(rawXml, activeVars)
-    const resolvedSoapAction = resolveVariables(action, activeVars)
-    // Transport headers come from the SHARED helper so Send and the Runner
-    // agree (src/shared/soap-transport.ts).
-    const headerPairs = soapTransportHeaders(effectiveVersion, resolvedSoapAction)
+    // Transport headers + the Headers tab, merged by the SHARED helper Run uses
+    // on `schema.headers` (`buildRequestFromEndpoint`): transport first unless
+    // the user typed an enabled Content-Type / SOAPAction, then the user's
+    // rows (disabled ones ride along; the engine skips them). Resolved once,
+    // after the merge — Run's order.
+    const headerPairs = withSoapTransportHeaders(userHeaders, effectiveVersion, action)
     const resolvedHeaders = resolveKeyValuePairs(headerPairs, activeVars)
     // WS-Security is applied in MAIN, to the resolved envelope, right before
     // the request goes out (src/main/lib/soap-wsse.ts) — the same applier and
@@ -531,6 +549,23 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const resolvedWsSecurity = isWsSecurityEnabled(wsSecurity)
       ? resolveWsSecurityVariables(wsSecurity, (v) => resolveVariables(v, activeVars))
       : undefined
+    // The Auth tab (issue #298 follow-up): Run has always sent the row's
+    // `request_schema.auth` through request → folder → project inheritance;
+    // Send sent none. Same resolver HTTP Send uses (suite items walk the
+    // suite's folders), so Send ≡ Run. `wsse` is the Auth tab's WS-Security
+    // choice — it stops inheritance on both paths and the engine adds no
+    // header for it (the envelope carries the credential).
+    const sendTab = tabsStore.tabs.find((t) => t.id === activeTabId)
+    const inheritance = await resolveInheritance({
+      projectId: useWorkspaceStore.getState().activeProjectId,
+      endpointId: sendTab?.endpointId,
+      savedRequestId: sendTab?.savedRequestId,
+      testSuiteItemId: sendTab?.testSuiteItemId,
+      requestAuth: auth,
+      requestPre: null,
+      requestPost: null,
+    })
+    const resolvedAuth = resolveAuth(inheritance.auth ?? undefined, activeVars)
 
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
@@ -541,6 +576,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         url: resolvedUrl,
         headers: resolvedHeaders,
         body: { type: 'xml', content: resolvedXml },
+        auth: resolvedAuth,
         _protocol: 'soap',
         _wsSecurity: resolvedWsSecurity,
         _requestId: requestId,

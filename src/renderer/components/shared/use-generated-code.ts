@@ -13,6 +13,11 @@ export interface GeneratedCode {
   unresolved: string[]
   /** Set when the active tab's protocol has no HTTP snippet (WebSocket, MCP…). */
   unavailableProtocol?: string
+  /**
+   * SOAP with WS-Security on: the snippet lacks the `wsse:Security` header
+   * Testnizer adds at send time — the UI shows a note (issue #298 follow-up).
+   */
+  wsSecurityNote: boolean
 }
 
 /**
@@ -29,13 +34,15 @@ export function useGeneratedCode(
   const source = useCodegenSource()
   const req = source.kind === 'request' ? source.req : undefined
   const unavailableProtocol = source.kind === 'unavailable' ? source.protocol : undefined
+  const wsSecurityNote = source.kind === 'request' && source.wsSecurityNote === true
   const getActiveVariables = useEnvironmentStore((s) => s.getActiveVariables)
   const activeEnvironmentId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const environments = useEnvironmentStore((s) => s.environments)
   const globalVariables = useEnvironmentStore((s) => s.globalVariables)
 
   return useMemo(() => {
-    if (!req) return { code: '', hiddenSecrets: [], unresolved: [], unavailableProtocol }
+    if (!req)
+      return { code: '', hiddenSecrets: [], unresolved: [], unavailableProtocol, wsSecurityNote }
     const secretNames = activeSecretVariableNames({
       globalVariables,
       environments,
@@ -52,10 +59,12 @@ export function useGeneratedCode(
       code,
       hiddenSecrets: left.filter((n) => secretNames.has(n)),
       unresolved: left.filter((n) => !secretNames.has(n)),
+      wsSecurityNote,
     }
   }, [
     req,
     unavailableProtocol,
+    wsSecurityNote,
     variantId,
     includeSecrets,
     variantOptions,

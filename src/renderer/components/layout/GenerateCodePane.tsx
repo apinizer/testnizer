@@ -7,6 +7,7 @@ import { useCodegenSelection } from '../shared/use-codegen-selection'
 import IncludeSecretsToggle from '../shared/IncludeSecretsToggle'
 import CodegenVariantRow from '../shared/CodegenVariantRow'
 import CodegenUnavailable from '../shared/CodegenUnavailable'
+import CodegenWsseNote from '../shared/CodegenWsseNote'
 import { useTranslation } from '../../lib/i18n'
 import { SELECT_CLS } from '../mock-mcp/ui'
 
@@ -32,6 +33,7 @@ export default function GenerateCodePane() {
     hiddenSecrets,
     unresolved: unresolvedVars,
     unavailableProtocol,
+    wsSecurityNote,
   } = useGeneratedCode(selection.variant.id, includeSecrets, selection.options)
 
   function handleCopy() {
@@ -78,6 +80,8 @@ export default function GenerateCodePane() {
       <div className="shrink-0 border-b border-[var(--border)] px-2.5 py-1.5">
         <CodegenVariantRow selection={selection} />
       </div>
+
+      {wsSecurityNote && <CodegenWsseNote />}
 
       {hiddenSecrets.length > 0 && (
         <div

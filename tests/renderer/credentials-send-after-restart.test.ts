@@ -73,19 +73,21 @@ function installApi() {
 
 async function launch() {
   vi.resetModules()
-  const [tabs, req, mcp, ws, sse, sio, gql, grpc, save, wsStore, activate] = await Promise.all([
-    import('../../src/renderer/stores/tabs.store'),
-    import('../../src/renderer/stores/request.store'),
-    import('../../src/renderer/stores/mcp.store'),
-    import('../../src/renderer/stores/websocket.store'),
-    import('../../src/renderer/stores/sse.store'),
-    import('../../src/renderer/stores/socketio.store'),
-    import('../../src/renderer/stores/graphql.store'),
-    import('../../src/renderer/stores/grpc.store'),
-    import('../../src/renderer/lib/save-active-request'),
-    import('../../src/renderer/stores/workspace.store'),
-    import('../../src/renderer/lib/activate-tab'),
-  ])
+  const [tabs, req, mcp, ws, sse, sio, gql, grpc, save, wsStore, activate, soap] =
+    await Promise.all([
+      import('../../src/renderer/stores/tabs.store'),
+      import('../../src/renderer/stores/request.store'),
+      import('../../src/renderer/stores/mcp.store'),
+      import('../../src/renderer/stores/websocket.store'),
+      import('../../src/renderer/stores/sse.store'),
+      import('../../src/renderer/stores/socketio.store'),
+      import('../../src/renderer/stores/graphql.store'),
+      import('../../src/renderer/stores/grpc.store'),
+      import('../../src/renderer/lib/save-active-request'),
+      import('../../src/renderer/stores/workspace.store'),
+      import('../../src/renderer/lib/activate-tab'),
+      import('../../src/renderer/stores/soap.store'),
+    ])
   wsStore.useWorkspaceStore.setState({ refreshTree: async () => {} } as never)
   return {
     useTabsStore: tabs.useTabsStore,
@@ -96,6 +98,7 @@ async function launch() {
     useSocketIOStore: sio.useSocketIOStore,
     useGraphQLStore: gql.useGraphQLStore,
     useGrpcStore: grpc.useGrpcStore,
+    useSoapStore: soap.useSoapStore,
     saveActiveRequestInPlace: save.saveActiveRequestInPlace,
     activateTabStores: activate.activateTabStores,
   }
@@ -220,6 +223,31 @@ const CASES: Array<{
       return app.useGrpcStore.getState().execute()
     },
     engine: 'grpc.',
+  },
+  {
+    // Issue #298 follow-up: the SOAP editor's Auth tab is the request store's,
+    // and SOAP Send now sends it — so it awaits the request store's reload too.
+    protocol: 'soap',
+    label: 'soap Auth tab',
+    setup: (app) => {
+      app.useSoapStore.setState({ mode: 'manual', endpointUrl: 'https://soap.test/svc' })
+      app.useSoapStore.getState().setRawXml('<soapenv:Envelope/>')
+      app.useRequestStore.getState().setAuth({ type: 'bearer', bearer: { token: SECRET } })
+    },
+    send: (app) => app.useSoapStore.getState().sendSoap(),
+    engine: 'request.send',
+  },
+  {
+    // …and its Headers tab (a withheld credential header row) is sent too.
+    protocol: 'soap',
+    label: 'soap Headers tab',
+    setup: (app) => {
+      app.useSoapStore.setState({ mode: 'manual', endpointUrl: 'https://soap.test/svc' })
+      app.useSoapStore.getState().setRawXml('<soapenv:Envelope/>')
+      app.useRequestStore.getState().setHeaders([kv('sh1', 'X-Api-Key', SECRET)])
+    },
+    send: (app) => app.useSoapStore.getState().sendSoap(),
+    engine: 'request.send',
   },
   {
     protocol: 'mcp',

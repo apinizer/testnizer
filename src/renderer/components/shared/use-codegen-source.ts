@@ -5,13 +5,19 @@ import { soapSendTarget, useSoapStore } from '../../stores/soap.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { resolveInheritance } from '../../lib/auth-inheritance'
-import { soapTransportHeaders } from '../../../shared/soap-transport'
+import { withSoapTransportHeaders } from '../../../shared/soap-transport'
+import { isWsSecurityEnabled } from '../../../shared/soap-wsse'
 import type { CodeGenRequest } from '../../lib/code-generator'
 import type { AuthConfig } from '../../types'
 
-/** What Generate Code renders: an HTTP-like request, or why it cannot. */
+/**
+ * What Generate Code renders: an HTTP-like request, or why it cannot.
+ * `wsSecurityNote`: the request is a SOAP one with WS-Security on — the
+ * snippet carries the envelope as Send hands it to main, without the
+ * `wsse:Security` header main adds per send (issue #298 follow-up).
+ */
 export type CodegenSource =
-  | { kind: 'request'; req: CodeGenRequest }
+  | { kind: 'request'; req: CodeGenRequest; wsSecurityNote?: boolean }
   | { kind: 'unavailable'; protocol: string }
 
 /** Protocols whose request is plain HTTP on the wire (issue #280). */
@@ -60,15 +66,14 @@ function useEffectiveAuth(auth: AuthConfig): AuthConfig | undefined {
   return inherited && inherited.key === key ? (inherited.auth ?? undefined) : undefined
 }
 
-/** The HTTP editor's request (`request.store`). */
-function useHttpRequest(): CodeGenRequest {
+/** The HTTP editor's request (`request.store`), with its effective auth. */
+function useHttpRequest(auth: AuthConfig | undefined): CodeGenRequest {
   const method = useRequestStore((s) => s.method)
   const url = useRequestStore((s) => s.url)
   const params = useRequestStore((s) => s.params)
   const pathVariables = useRequestStore((s) => s.pathVariables)
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
-  const auth = useEffectiveAuth(useRequestStore((s) => s.auth))
   const sslVerification = useRequestStore((s) => s.sslVerification)
   const followRedirects = useRequestStore((s) => s.followRedirects)
   const timeout = useRequestStore((s) => s.requestTimeout)
@@ -116,8 +121,16 @@ function useGraphqlRequest(): CodeGenRequest {
   )
 }
 
-/** A SOAP tab: the envelope, SOAPAction / SOAP 1.2 Content-Type, WS-Security as Basic (`sendSoap`). */
-function useSoapRequest(): CodeGenRequest {
+/**
+ * A SOAP tab, as `sendSoap` sends it: the envelope, SOAPAction / SOAP 1.2
+ * Content-Type merged with the Headers tab by the same shared helper
+ * (`withSoapTransportHeaders` — a user's enabled Content-Type / SOAPAction
+ * wins), and the Auth tab's effective auth (`auth`, inheritance resolved). WS-Security is NOT here: since issue #298 Send no longer turns
+ * the UsernameToken into Basic auth — main adds `wsse:Security` to the
+ * envelope per send (nonce, timestamp, signature), which a static snippet
+ * cannot reproduce. `useCodegenSource` flags it for a visible note instead.
+ */
+function useSoapRequest(auth: AuthConfig | undefined): CodeGenRequest {
   const mode = useSoapStore((s) => s.mode)
   const endpoint = useSoapStore((s) => s.endpointUrl)
   const parsedWsdl = useSoapStore((s) => s.parsedWsdl)
@@ -127,7 +140,8 @@ function useSoapRequest(): CodeGenRequest {
   const manualSoapAction = useSoapStore((s) => s.manualSoapAction)
   const manualSoapVersion = useSoapStore((s) => s.manualSoapVersion)
   const rawXml = useSoapStore((s) => s.rawXml)
-  const ws = useSoapStore((s) => s.wsSecurity)
+  // The SOAP editor's Headers tab is the request store's (issue #298 follow-up).
+  const userHeaders = useRequestStore((s) => s.headers)
   return useMemo(() => {
     // The getters read the selected service / port / operation from the store.
     const { getSelectedOperation, getSelectedPort } = useSoapStore.getState()
@@ -143,25 +157,22 @@ function useSoapRequest(): CodeGenRequest {
       getSelectedOperation,
       getSelectedPort,
     })
-    const headers = soapTransportHeaders(version, action).map((h, i) => ({ ...h, id: `soap-${i}` }))
-    const auth: AuthConfig | undefined = ws.enabled
-      ? {
-          type: 'basic',
-          basic: {
-            username: ws.usernameToken?.username || ws.username || '',
-            password: ws.usernameToken?.password || ws.password || '',
-          },
-        }
-      : undefined
+    const headers = withSoapTransportHeaders(userHeaders, version, action).map((h, i) => ({
+      id: `soap-${i}`,
+      ...h,
+    }))
     return {
       method: 'POST',
       url: endpointUrl,
       params: [],
       headers,
       body: { type: 'xml', content: rawXml },
-      auth,
+      // The Auth tab's `wsse` choice is WS-Security, not an HTTP header.
+      auth: auth?.type === 'wsse' ? undefined : auth,
     }
   }, [
+    auth,
+    userHeaders,
     mode,
     endpoint,
     parsedWsdl,
@@ -171,7 +182,6 @@ function useSoapRequest(): CodeGenRequest {
     manualSoapAction,
     manualSoapVersion,
     rawXml,
-    ws,
   ])
 }
 
@@ -183,10 +193,16 @@ function useSoapRequest(): CodeGenRequest {
  */
 export function useCodegenSource(): CodegenSource {
   const protocol = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId)?.protocol)
-  const http = useHttpRequest()
+  // One inheritance resolution for both editors that read the request store's
+  // Auth tab (HTTP and SOAP) — the same `resolveInheritance` their Send uses.
+  const auth = useEffectiveAuth(useRequestStore((s) => s.auth))
+  const http = useHttpRequest(auth)
   const graphql = useGraphqlRequest()
-  const soap = useSoapRequest()
+  const soap = useSoapRequest(auth)
+  // The same predicate `sendSoap` uses to hand WS-Security to main.
+  const wsSecurityOn = useSoapStore((s) => isWsSecurityEnabled(s.wsSecurity))
   const p = protocol ?? 'http'
   if (!HTTP_LIKE.has(p)) return { kind: 'unavailable', protocol: p }
-  return { kind: 'request', req: p === 'graphql' ? graphql : p === 'soap' ? soap : http }
+  if (p === 'soap') return { kind: 'request', req: soap, wsSecurityNote: wsSecurityOn }
+  return { kind: 'request', req: p === 'graphql' ? graphql : http }
 }
