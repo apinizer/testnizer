@@ -68,6 +68,31 @@ function useEffectiveAuth(auth: AuthConfig): AuthConfig | undefined {
   return inherited && inherited.key === key ? (inherited.auth ?? undefined) : undefined
 }
 
+/**
+ * SSL verification / redirects as Send resolves them (issue #287): the request
+ * store's own value → project → app (`useInheritedNetwork`). HTTP, SOAP and
+ * GraphQL Send all read the request store for it (`networkPayload`), so the
+ * three snippets share this one hook — an inherited "off" is an `-k` /
+ * no-follow too, not only the request's own.
+ */
+function useNetworkSettings(): { sslVerification: boolean; followRedirects: boolean } {
+  const ownSsl = useRequestStore((s) => s.sslVerification)
+  const ownFollow = useRequestStore((s) => s.followRedirects)
+  const net = useInheritedNetwork()
+  return {
+    sslVerification: resolveSslVerification(
+      ownSsl,
+      net?.project.sslVerification,
+      net?.appSslVerification,
+    ),
+    followRedirects: resolveFollowRedirects(
+      ownFollow,
+      net?.project.followRedirects,
+      net?.appFollowRedirects,
+    ),
+  }
+}
+
 /** The HTTP editor's request (`request.store`), with its effective auth. */
 function useHttpRequest(auth: AuthConfig | undefined): CodeGenRequest {
   const method = useRequestStore((s) => s.method)
@@ -76,22 +101,8 @@ function useHttpRequest(auth: AuthConfig | undefined): CodeGenRequest {
   const pathVariables = useRequestStore((s) => s.pathVariables)
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
-  const ownSsl = useRequestStore((s) => s.sslVerification)
-  const ownFollow = useRequestStore((s) => s.followRedirects)
   const timeout = useRequestStore((s) => s.requestTimeout)
-  // Issue #287: the snippet carries what Send does — an inherited "off"
-  // (project / app) is an `-k` / no-follow too, not only the request's own.
-  const net = useInheritedNetwork()
-  const sslVerification = resolveSslVerification(
-    ownSsl,
-    net?.project.sslVerification,
-    net?.appSslVerification,
-  )
-  const followRedirects = resolveFollowRedirects(
-    ownFollow,
-    net?.project.followRedirects,
-    net?.appFollowRedirects,
-  )
+  const { sslVerification, followRedirects } = useNetworkSettings()
   return useMemo(
     () => ({
       method,
@@ -124,6 +135,7 @@ function useGraphqlRequest(): CodeGenRequest {
   const query = useGraphQLStore((s) => s.query)
   const variables = useGraphQLStore((s) => s.variables)
   const headers = useGraphQLStore((s) => s.headers)
+  const { sslVerification, followRedirects } = useNetworkSettings()
   return useMemo(
     () => ({
       method: 'POST',
@@ -131,8 +143,9 @@ function useGraphqlRequest(): CodeGenRequest {
       params: [],
       headers,
       body: { type: 'graphql', graphql: { query, variables } },
+      settings: { sslVerification, followRedirects },
     }),
-    [url, query, variables, headers],
+    [url, query, variables, headers, sslVerification, followRedirects],
   )
 }
 
@@ -157,6 +170,7 @@ function useSoapRequest(auth: AuthConfig | undefined): CodeGenRequest {
   const rawXml = useSoapStore((s) => s.rawXml)
   // The SOAP editor's Headers tab is the request store's (issue #298 follow-up).
   const userHeaders = useRequestStore((s) => s.headers)
+  const { sslVerification, followRedirects } = useNetworkSettings()
   return useMemo(() => {
     // The getters read the selected service / port / operation from the store.
     const { getSelectedOperation, getSelectedPort } = useSoapStore.getState()
@@ -184,8 +198,11 @@ function useSoapRequest(auth: AuthConfig | undefined): CodeGenRequest {
       body: { type: 'xml', content: rawXml },
       // The Auth tab's `wsse` choice is WS-Security, not an HTTP header.
       auth: auth?.type === 'wsse' ? undefined : auth,
+      settings: { sslVerification, followRedirects },
     }
   }, [
+    sslVerification,
+    followRedirects,
     auth,
     userHeaders,
     mode,

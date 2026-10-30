@@ -1375,6 +1375,35 @@ const translations: Record<Locale, Record<string, string>> = {
     'updateTab.checkNow': 'Check for updates',
 
     // Modal footer
+    // Settings scope — App vs Project settings (issue #254)
+    'settingsScope.projectTitle': 'Project settings — {name}',
+    'settingsScope.appTitle': 'App settings (all projects)',
+    'settingsScope.overridesApp': 'Overrides the app setting.',
+    'settingsScope.useAppSetting': 'Use app setting',
+    'settingsScope.overrideNote': 'Projects can override this in Project settings.',
+    'settingsScope.appearanceScope': 'Theme, language and font apply to the whole app.',
+    'settingsScope.openProjectSettings': 'Open Project settings',
+    'settingsScope.openAppSettings': 'Open App settings',
+    'settingsScope.appearanceTitle': 'Appearance',
+    'settingsScope.appearanceSubtitle':
+      'Theme, language, font family and font size are the same for every project.',
+    'settingsScope.appearanceLinkText': 'Appearance is set in App settings.',
+    'settingsScope.accentHint': 'The project colour is set in Overview.',
+    'settingsScope.unsavedTitle': 'Unsaved changes',
+    'settingsScope.unsavedBody': 'Save your changes before you open {target}?',
+    'settingsScope.unsavedSave': 'Save and open',
+    'settingsScope.unsavedDiscard': 'Discard',
+    'settingsScope.unsavedCancel': 'Cancel',
+    'settingsScope.targetApp': 'App settings',
+    'settingsScope.targetProject': 'Project settings',
+    'settingsScope.proxyFollowApp': 'Follow app setting',
+    'settingsScope.proxyNone': 'no proxy',
+    'settingsScope.proxySystem': 'system proxy',
+    'settingsScope.updateScope':
+      'Set per project: automatic update checks follow the project that is open.',
+    'settingsScope.updatePerProject':
+      'Automatic update checks are set per project (Project settings → Update).',
+
     'modal.saveChanges': 'Save Changes',
     'modal.saving': 'Saving…',
     'modal.saved': 'Saved',
@@ -5729,6 +5758,35 @@ const translations: Record<Locale, Record<string, string>> = {
     'runner.exportFailed': 'Çalıştırma raporu dışarı aktarılamadı: {error}',
 
     // Empty states
+    // Ayar kapsamı — Uygulama ve Proje ayarları (issue #254)
+    'settingsScope.projectTitle': 'Proje ayarları — {name}',
+    'settingsScope.appTitle': 'Uygulama ayarları (tüm projeler)',
+    'settingsScope.overridesApp': 'Uygulama ayarının yerine geçer.',
+    'settingsScope.useAppSetting': 'Uygulama ayarını kullan',
+    'settingsScope.overrideNote': 'Projeler bunu Proje ayarlarında değiştirebilir.',
+    'settingsScope.appearanceScope': 'Tema, dil ve yazı tipi tüm uygulamaya uygulanır.',
+    'settingsScope.openProjectSettings': 'Proje ayarlarını aç',
+    'settingsScope.openAppSettings': 'Uygulama ayarlarını aç',
+    'settingsScope.appearanceTitle': 'Görünüm',
+    'settingsScope.appearanceSubtitle':
+      'Tema, dil, yazı tipi ve yazı boyutu her projede aynıdır.',
+    'settingsScope.appearanceLinkText': 'Görünüm, Uygulama ayarlarından ayarlanır.',
+    'settingsScope.accentHint': 'Proje rengi Genel Bakış bölümünde ayarlanır.',
+    'settingsScope.unsavedTitle': 'Kaydedilmemiş değişiklikler',
+    'settingsScope.unsavedBody': '{target} açılmadan önce değişiklikler kaydedilsin mi?',
+    'settingsScope.unsavedSave': 'Kaydet ve aç',
+    'settingsScope.unsavedDiscard': 'Değişiklikleri at',
+    'settingsScope.unsavedCancel': 'İptal',
+    'settingsScope.targetApp': 'Uygulama ayarları',
+    'settingsScope.targetProject': 'Proje ayarları',
+    'settingsScope.proxyFollowApp': 'Uygulama ayarını izle',
+    'settingsScope.proxyNone': 'proxy yok',
+    'settingsScope.proxySystem': 'sistem proxy',
+    'settingsScope.updateScope':
+      'Proje başına ayarlanır: otomatik güncelleme denetimi açık olan projeyi izler.',
+    'settingsScope.updatePerProject':
+      'Otomatik güncelleme denetimi proje başına ayarlanır (Proje ayarları → Güncelleme).',
+
     'empty.clickSend': 'Yanıt almak için Gönder butonuna tıklayın',
     'empty.noResponse': 'Henüz yanıt yok',
     'empty.enterUrl': 'Yanıtı burada görmek için bir URL girin ve Gönder butonuna tıklayın',

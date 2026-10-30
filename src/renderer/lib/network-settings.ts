@@ -2,7 +2,9 @@
  * The network settings BELOW a request's own on the Send path (issue #287):
  * the project's `project.<id>.settings` (Certificates pane: SSL verification +
  * TLS protocol / ciphers; General pane: follow redirects; Proxy pane) and the
- * app Settings' `sslVerification` / `followRedirects`.
+ * app Settings' `sslVerification` / `followRedirects` / `proxy` (issue #254:
+ * the app proxy is the fallback when the project configures none) /
+ * `defaultTimeout` (shown by the project dialog as the inherited value).
  *
  * ONE loader + ONE payload builder for every Send that goes out through
  * `request:send` — HTTP (`request.store.ts`), SOAP (`soap.store.ts`) and
@@ -10,19 +12,18 @@
  * uses (`src/shared/request-settings.ts`), so Send ≡ Run. The request
  * Settings tab reads the same loader to show the inherited value.
  */
-import { resolveFollowRedirects, resolveSslVerification } from '../../shared/request-settings'
+import {
+  resolveFollowRedirects,
+  resolveProxy,
+  resolveSslVerification,
+  type ProxySetting,
+} from '../../shared/request-settings'
 
 export interface ProjectNetSettings {
   requestTimeout?: number
   sslVerification?: boolean
   followRedirects?: boolean
-  proxy?: {
-    mode?: 'system' | 'none' | 'custom'
-    host?: string
-    port?: number
-    bypass?: string
-    auth?: { username: string; password: string }
-  }
+  proxy?: ProxySetting
   tls?: {
     minVersion?: string
     maxVersion?: string
@@ -38,6 +39,10 @@ export interface InheritedNetwork {
   appSslVerification?: boolean
   /** App Settings `followRedirects`. */
   appFollowRedirects?: boolean
+  /** App Settings `proxy` (password decrypted by `settings:get`), issue #254. */
+  appProxy?: ProxySetting
+  /** App Settings `defaultTimeout` (ms), issue #254 — display only; Send reads it itself. */
+  appTimeout?: number
 }
 
 type SettingsResult = { success?: boolean; data?: unknown } | undefined
@@ -57,10 +62,12 @@ const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : 
 export async function loadInheritedNetwork(
   projectId: string | null | undefined,
 ): Promise<InheritedNetwork> {
-  const [project, appSsl, appFollow] = await Promise.all([
+  const [project, appSsl, appFollow, appProxy, appTimeout] = await Promise.all([
     projectId ? readSetting(`project.${projectId}.settings`) : Promise.resolve(undefined),
     readSetting('sslVerification'),
     readSetting('followRedirects'),
+    readSetting('proxy'),
+    readSetting('defaultTimeout'),
   ])
   return {
     project:
@@ -69,7 +76,19 @@ export async function loadInheritedNetwork(
         : {},
     appSslVerification: bool(appSsl),
     appFollowRedirects: bool(appFollow),
+    appProxy: isObj(appProxy) ? (appProxy as ProxySetting) : undefined,
+    appTimeout:
+      typeof appTimeout === 'number' && Number.isFinite(appTimeout) && appTimeout >= 0
+        ? appTimeout
+        : undefined,
   }
+}
+
+const isObj = (v: unknown): boolean => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** The proxy Send uses: the project's own, else the app Settings proxy (issue #254). */
+export function effectiveProxy(net: InheritedNetwork): ProxySetting | undefined {
+  return resolveProxy(net.project.proxy, net.appProxy)
 }
 
 /** The value a request inherits when its own is `null` (Settings tab display). */
@@ -84,7 +103,8 @@ export function inheritedFollowRedirects(net: InheritedNetwork): boolean {
 /**
  * The network part of a `request:send` payload: SSL verification and redirects
  * through the shared request → project → app chain, plus the project's TLS
- * (the preset NAME — main resolves it, `resolveTlsPayload`) and proxy.
+ * (the preset NAME — main resolves it, `resolveTlsPayload`) and the proxy
+ * (`resolveProxy`: project → app, the rule Run uses too).
  */
 export function networkPayload(
   request: { sslVerification?: boolean | null; followRedirects?: boolean | null },
@@ -92,7 +112,7 @@ export function networkPayload(
 ): {
   sslVerification: boolean
   followRedirects: boolean
-  proxy?: ProjectNetSettings['proxy']
+  proxy?: ProxySetting
   tls?: {
     minVersion?: string
     maxVersion?: string
@@ -112,7 +132,7 @@ export function networkPayload(
       net.project.followRedirects,
       net.appFollowRedirects,
     ),
-    proxy: net.project.proxy,
+    proxy: effectiveProxy(net),
     tls: tls
       ? {
           minVersion: tls.minVersion || undefined,

@@ -2,7 +2,7 @@
  * MST-193 P1 Collection-level auth inheritance
  * MST-194 P1 Collection pre-request + test scripts
  * MST-195 P1 Project variables scope
- * MST-197 P1 Proxy direct/system/custom (UI persist only — no real proxy)
+ * MST-197 P1 App proxy: persists + is the fallback the project dialog shows (issue #254)
  * MST-198 P2 Updater check IPC
  * MST-199 P2 Diagnostics export/reveal/licenses   (skipped — no such UI in src)
  * MST-200 P2 SSL verify global toggle
@@ -11,8 +11,10 @@
  *  - project-level auth / scripts: the Project Detail modal (nav-settings) →
  *    `project-detail-tab-{authorization,preRequest,tests}`, persisted by
  *    "Save Changes" under settings key `project.<id>.settings`.
- *  - global SSL verification + proxy: the Settings modal (Cmd+,), persisted by
- *    "Save" via `settings:setAll` (`sslVerification`, `proxy`).
+ *  - global SSL verification + proxy: the App settings modal (Cmd+,), persisted
+ *    by "Save" via `settings:setAll` (`sslVerification`, `proxy`). Since issue
+ *    #254 the app proxy is a REAL fallback (Send + Run route through it when
+ *    the project sets no proxy of its own), so MST-197's restore is load-bearing.
  *
  * The ui project shares ONE Electron instance and these values are worker-global
  * (a leftover bearer/proxy/SSL-off would poison later specs), so every test
@@ -219,35 +221,70 @@ uiTest.describe('Tur1 — Settings Advanced [MST-193..200]', () => {
   })
 
   // -------------------------------------------------------------------------
-  // MST-197 — Proxy direct/system/custom (UI persist only)
+  // MST-197 — App proxy: persisted, and the fallback a project without its own
+  // proxy follows (issue #254 — the app proxy used to be read by nothing)
   // -------------------------------------------------------------------------
-  uiTest('MST-197 proxy mode selection persists (UI assert only)', async ({ window }) => {
+  uiTest('MST-197 app proxy persists and the project Proxy pane follows it', async ({ window }) => {
     const original = await getSetting(window, 'proxy')
+    const projectId = await getActiveProjectId(window)
+    const projectKey = `project.${projectId}.settings`
+    const originalProject = (await getSetting(window, projectKey)) as Record<string, unknown> | undefined
     try {
+      // The project hands its proxy back to the app ("Use app setting" = null).
+      await setSetting(window, projectKey, { ...(originalProject ?? {}), proxy: null })
+
       await pressModShortcut(window, ',')
       const modal = window.getByTestId('settings-modal')
       await expect(modal).toBeVisible({ timeout: 8_000 })
+      await expect(modal.getByTestId('app-settings-title')).toHaveText(
+        /App settings \(all projects\)|Uygulama ayarları \(tüm projeler\)/,
+      )
+      await expect(modal.getByTestId('app-setting-override-note-proxy')).toBeVisible()
 
       await modal.getByLabel(/Proxy Settings|Proxy Ayarları/i).selectOption('custom')
       await modal.getByLabel(/^Host$|^Sunucu$/i).fill('127.0.0.1')
       await modal.getByLabel(/^Port$/i).fill('8080')
+      await modal.getByTestId('app-proxy-username').fill('mst197')
+      await modal.getByTestId('app-proxy-password').fill('mst197-pw')
       await modal.getByRole('button', { name: /^Save$|^Kaydet$/i }).click()
       await expect(modal).toBeHidden({ timeout: 5_000 })
 
-      const saved = (await getSetting(window, 'proxy')) as { mode?: string; host?: string; port?: number }
+      const saved = (await getSetting(window, 'proxy')) as {
+        mode?: string
+        host?: string
+        port?: number
+        auth?: { username?: string; password?: string }
+      }
       expect(saved.mode).toBe('custom')
       expect(saved.host).toBe('127.0.0.1')
       expect(saved.port).toBe(8080)
+      // settings:get decrypts — the round trip proves the password was kept.
+      expect(saved.auth).toEqual({ username: 'mst197', password: 'mst197-pw' })
 
       // Reopen: the form reflects the persisted value.
       await pressModShortcut(window, ',')
       await expect(modal).toBeVisible({ timeout: 8_000 })
       await expect(modal.getByLabel(/Proxy Settings|Proxy Ayarları/i)).toHaveValue('custom')
       await expect(modal.getByLabel(/^Host$|^Sunucu$/i)).toHaveValue('127.0.0.1')
+
+      // Cross-link to the project dialog: its Proxy pane says it follows the
+      // app proxy just saved.
+      await modal.getByTestId('settings-open-project-settings').click()
+      const project = window.getByTestId('project-detail-modal')
+      await expect(project).toBeVisible({ timeout: 8_000 })
+      await expect(modal).toBeHidden({ timeout: 5_000 })
+      await project.getByTestId('project-detail-tab-proxy').click()
+      const scope = project.getByTestId('project-setting-scope-proxy')
+      await expect(scope).toHaveAttribute('data-scope', 'app')
+      await expect(scope).toContainText('127.0.0.1:8080')
+      await expect(project.getByTestId('project-setting-reset-proxy')).toHaveCount(0)
+      await window.keyboard.press('Escape')
+      await expect(project).toBeHidden({ timeout: 5_000 })
     } finally {
       await dismissOverlays(window)
-      // A leftover custom proxy would break every later spec's requests.
+      // A leftover custom proxy now REALLY routes every later spec's requests.
       await setSetting(window, 'proxy', original ?? { mode: 'system' })
+      await setSetting(window, projectKey, originalProject ?? {})
     }
   })
 

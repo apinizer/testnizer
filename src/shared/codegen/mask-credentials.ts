@@ -31,6 +31,16 @@
  * literal text and references is masked whole. Empty values and disabled rows
  * stay as they are.
  *
+ * Names are classified as they RESOLVE (review of issue #256): a header /
+ * Params / query / form row whose name is `{{header}}` = `Authorization` is
+ * credential-bearing. The caller passes its resolver (`resolveName`); a name
+ * that still holds a `{{…}}` after it (no scope, a secret variable kept as
+ * `{{name}}`) is treated as credential-bearing — it may be one. The
+ * literal-vs-reference decision for the VALUE is still made on what the user
+ * typed. The userinfo rule also accepts a templated scheme
+ * (`{{scheme}}://ada:pw@host`) and a leading `{{baseUrl}}` followed directly
+ * by userinfo.
+ *
  * Pure TS — returns a new request, never mutates the input.
  */
 import { isCredentialArgName, isCredentialHeaderName } from '../credential-headers'
@@ -101,16 +111,37 @@ function maskHeaderValue(name: string, value: string): string {
   return isLiteral(m[2]) ? `${m[1]}${CODEGEN_MASK}` : value
 }
 
+/** Resolves a typed NAME (`{{header}}` → `Authorization`) for classification only. */
+export type NameResolver = (name: string) => string
+
+const HAS_REFERENCE = /\{\{[^{}]+\}\}/
+
+/**
+ * The name a row / query pair is classified by: its resolved form, and a name
+ * still holding a `{{…}}` (unresolvable here) counts as credential-bearing.
+ * Returns `null` when the name is not credential-bearing.
+ */
+function credentialName(
+  raw: string,
+  isCredentialName: (name: string) => boolean,
+  resolveName: NameResolver | undefined,
+): string | null {
+  const name = resolveName ? resolveName(raw) : raw
+  if (HAS_REFERENCE.test(name)) return name
+  return name && isCredentialName(name) ? name : null
+}
+
 function maskRows<R extends MaskableKv>(
   rows: readonly R[],
   isCredentialName: (name: string) => boolean,
-  maskOne: (row: R) => string = (row) => maskValue(row.value),
+  resolveName: NameResolver | undefined,
+  maskOne: (row: R, name: string) => string = (row) => maskValue(row.value),
 ): R[] {
   return rows.map((row) => {
-    if (row.enabled === false || row.type === 'file' || !isCredentialName(row.key ?? '')) {
-      return row
-    }
-    const value = maskOne(row)
+    if (row.enabled === false || row.type === 'file') return row
+    const name = credentialName(row.key ?? '', isCredentialName, resolveName)
+    if (name === null) return row
+    const value = maskOne(row, name)
     return value === row.value ? row : { ...row, value }
   })
 }
@@ -123,10 +154,20 @@ function decodeName(raw: string): string {
   }
 }
 
-const URL_USERINFO = /^([a-z][a-z0-9+.-]*:\/\/)([^/\s@?#]*)@/i
+/** A `{{var}}` reference in a URL prefix. */
+const REF = '\\{\\{[^{}]+\\}\\}'
+/**
+ * `scheme://` — the scheme may be (partly) templated, `{{scheme}}://` — or a
+ * prefix made only of references (`{{baseUrl}}`) followed directly by the
+ * userinfo; then the userinfo and its `@`.
+ */
+const URL_USERINFO = new RegExp(
+  `^((?:(?:[a-z][a-z0-9+.-]*|${REF})+:\\/\\/|(?:${REF})+))([^/\\s@?#]*)@`,
+  'i',
+)
 
 /** The URL with its userinfo password and credential query values masked, as typed otherwise. */
-export function maskUrlCredentials(url: string): string {
+export function maskUrlCredentials(url: string, resolveName?: NameResolver): string {
   let out = url
   const ui = URL_USERINFO.exec(out)
   if (ui) {
@@ -147,8 +188,8 @@ export function maskUrlCredentials(url: string): string {
     .map((pair) => {
       const eq = pair.indexOf('=')
       if (eq < 0) return pair
-      const name = decodeName(pair.slice(0, eq))
-      if (!name || !isCredentialArgName(name)) return pair
+      const raw = decodeName(pair.slice(0, eq))
+      if (!raw || credentialName(raw, isCredentialArgName, resolveName) === null) return pair
       if (!isLiteral(decodeName(pair.slice(eq + 1)))) return pair
       return `${pair.slice(0, eq + 1)}${CODEGEN_MASK}`
     })
@@ -167,26 +208,31 @@ function maskAuth(auth: MaskableAuth): MaskableAuth {
   return a
 }
 
-function maskBody(body: MaskableBody): MaskableBody {
+function maskBody(body: MaskableBody, resolveName: NameResolver | undefined): MaskableBody {
   if (body.type === 'urlencoded' && body.urlEncoded)
-    return { ...body, urlEncoded: maskRows(body.urlEncoded, isCredentialArgName) }
+    return { ...body, urlEncoded: maskRows(body.urlEncoded, isCredentialArgName, resolveName) }
   if (body.type === 'form-data' && body.formData)
-    return { ...body, formData: maskRows(body.formData, isCredentialArgName) }
+    return { ...body, formData: maskRows(body.formData, isCredentialArgName, resolveName) }
   return body
 }
 
 /**
  * The request with its literal credentials replaced by `CODEGEN_MASK` (see
  * the module comment for the exact rule). A new object; `req` is untouched.
+ * `resolveName`: the caller's `{{var}}` resolver, used to CLASSIFY names only
+ * (the request keeps the names as typed).
  */
-export function maskCredentialLiterals<T extends MaskableRequest>(req: T): T {
-  const out: MaskableRequest = { ...req, url: maskUrlCredentials(req.url ?? '') }
+export function maskCredentialLiterals<T extends MaskableRequest>(
+  req: T,
+  resolveName?: NameResolver,
+): T {
+  const out: MaskableRequest = { ...req, url: maskUrlCredentials(req.url ?? '', resolveName) }
   if (req.headers)
-    out.headers = maskRows(req.headers, isCredentialHeaderName, (h) =>
-      maskHeaderValue(h.key, h.value),
+    out.headers = maskRows(req.headers, isCredentialHeaderName, resolveName, (h, name) =>
+      maskHeaderValue(name, h.value),
     )
-  if (req.params) out.params = maskRows(req.params, isCredentialArgName)
+  if (req.params) out.params = maskRows(req.params, isCredentialArgName, resolveName)
   if (req.auth) out.auth = maskAuth(req.auth)
-  if (req.body) out.body = maskBody(req.body)
+  if (req.body) out.body = maskBody(req.body, resolveName)
   return out as T
 }

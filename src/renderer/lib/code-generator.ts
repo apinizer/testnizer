@@ -147,7 +147,11 @@ function prepare(req: CodeGenRequest, options?: CodeGenOptions) {
     : req
   // Before resolution: only what the user typed is a literal; a variable is
   // handled by `snippetVariables` (secret → `{{name}}`, otherwise its value).
-  const typed = options?.includeSecrets === false ? maskCredentialLiterals(withPath) : withPath
+  // Names are classified as they resolve (`{{header}}` = Authorization).
+  const typed =
+    options?.includeSecrets === false
+      ? maskCredentialLiterals(withPath, vars ? (name) => resolveVariables(name, vars) : undefined)
+      : withPath
   const effective = vars ? resolveRequest(typed, vars) : typed
   return normalizeRequest({
     method: effective.method,

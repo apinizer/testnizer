@@ -127,7 +127,12 @@ uiTest.describe('Tur1 — Proxy HTTP CONNECT [MST-053]', () => {
     await expect(modal).toBeVisible({ timeout: 8_000 })
     await modal.getByTestId('project-detail-tab-proxy').click()
 
-    await expect(modal.getByRole('button', { name: /Use system proxy|Sistem proxy/i })).toBeVisible()
+    // Issue #254: the first mode is "Follow app setting" — the app proxy is
+    // the fallback (a project `system` proxy was never an override).
+    await expect(
+      modal.getByRole('button', { name: /^Follow app setting$|^Uygulama ayarını izle$/i }),
+    ).toBeVisible()
+    await expect(modal.getByTestId('project-setting-scope-proxy')).toBeVisible()
     await expect(modal.getByRole('button', { name: /^No proxy$|^Proxy yok$/i })).toBeVisible()
     await expect(modal.getByRole('button', { name: /Custom proxy|Özel proxy/i })).toBeVisible()
 

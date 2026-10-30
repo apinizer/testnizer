@@ -46,6 +46,7 @@ import {
   resolveFollowRedirects,
   resolveHttpTimeout,
   resolveMcpTimeout,
+  resolveProxy,
   resolveSslVerification,
 } from '../../shared/request-settings'
 import { resolveTlsPayload } from '../lib/tls-presets'
@@ -93,6 +94,7 @@ import { isCredentialHeaderName } from '../lib/credential-headers'
 import { MASKED_VALUE } from '../db/saved-response.repo'
 import {
   authSecretValues,
+  proxySecretValues,
   collectCredentialValues,
   maskBodyText,
   maskRunResult,
@@ -269,15 +271,22 @@ export interface InheritedNetwork {
 
 /**
  * The run's `InheritedNetwork` from the project settings (`loadProjectSettings`)
- * and the app Settings. The proxy password is stored encrypted (settings
- * handler `SENSITIVE_FIELDS`); Send gets it decrypted from `settings:get`, so
- * it is decrypted here too — never sent as ciphertext.
+ * and the app Settings. The proxy is resolved by the shared rule Send uses
+ * (`resolveProxy`, issue #254): the project's own proxy, else the app
+ * Settings proxy. Both store the password encrypted (settings handler
+ * `SENSITIVE_FIELDS`); Send gets it decrypted from `settings:get`, so it is
+ * decrypted here too — never sent as ciphertext. The resolved proxy (with its
+ * plaintext password) lives only in the returned object.
  */
 export function inheritedNetworkFor(
   project: StoredProjectSettings | undefined,
-  app: { sslVerification?: boolean; followRedirects?: boolean },
+  app: {
+    sslVerification?: boolean
+    followRedirects?: boolean
+    proxy?: StoredProjectSettings['proxy']
+  },
 ): InheritedNetwork {
-  const proxy = project?.proxy
+  const proxy = resolveProxy(project?.proxy, app.proxy)
   return {
     sslVerification: { project: project?.sslVerification, app: app.sslVerification },
     followRedirects: { project: project?.followRedirects, app: app.followRedirects },
@@ -1867,8 +1876,14 @@ async function runEndpointStep(
     }
     // The resolved auth's secrets — masked from the Console entry, the History
     // row and the step result wherever they appear (issue #195). The
-    // WS-Security password sits in the envelope, so it joins them.
-    const authSecrets = [...authSecretValues(resolvedOptions.auth), ...wsseSecrets]
+    // WS-Security password sits in the envelope, so it joins them; so does
+    // the proxy credential (plain + the base64 `Proxy-Authorization` form) a
+    // 407 proxy may echo back (review of issue #287).
+    const authSecrets = [
+      ...authSecretValues(resolvedOptions.auth),
+      ...wsseSecrets,
+      ...proxySecretValues(resolvedOptions.proxy),
+    ]
     // Scope the cookie jar to this project so session cookies (login →
     // protected call) behave the same in Run as they do in Send. Without
     // it the engine falls back to the shared "_default" jar (issue: Send
@@ -2179,7 +2194,7 @@ async function runEndpointStep(
         error: { message: (e as Error).message },
         tabId: consoleTag.tabId,
         meta: consoleTag.meta,
-        secrets: liveSecretValues(ctx.scopes),
+        secrets: [...proxySecretValues(requestOptions.proxy), ...liveSecretValues(ctx.scopes)],
       })
     } catch {
       /* logger must never break the run */
@@ -2203,7 +2218,7 @@ async function runEndpointStep(
       // usually the fastest clue to why this step blew up.
       consoleLogs: scriptCtx.consoleLogs.length > 0 ? scriptCtx.consoleLogs : undefined,
     }
-    return recordStep(ctx, result)
+    return recordStep(ctx, result, proxySecretValues(requestOptions.proxy))
   }
 }
 
@@ -2675,14 +2690,16 @@ async function runHookScript(
   phase: RunPhase,
   endpointId: string,
   label: string,
-  hook: { run?: PmRunBacking; signal?: AbortSignal } = {},
+  hook: { run?: (live: SecretScopes) => PmRunBacking; signal?: AbortSignal } = {},
 ): Promise<StepOutcome | null> {
   if (!script || !script.trim()) return null
   const startedAt = Date.now()
   const scriptCtx = newScriptContext(ctx.scopes, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
   scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
   scriptCtx.projectId = ctx.options.projectId
-  if (hook.run) scriptCtx.run = hook.run
+  // `pm.run` gets THIS script's live scopes: a secret it writes (pm.vault.set,
+  // a secret-marked env key) is only merged into the run after it returns.
+  if (hook.run) scriptCtx.run = hook.run(scriptCtx)
   if (hook.signal) scriptCtx.signal = hook.signal
   // A hook that THROWS at top level (a bad await, a failed token fetch) must be
   // visible: without this the exception escaped the run, no row was recorded,
@@ -2815,45 +2832,53 @@ const RUN_FAIL_SCRIPT_ID = '__run_fail_script__'
  * A hard stop ("Stop now" / Skip teardown) skips it like the rest of cleanup —
  * the user asked for nothing after the click, and the report is not a finished
  * artifact. Its row is a TEARDOWN row, so it can never move the verdict
- * counters or `stopReason`.
+ * counters; only a direct Stop during the hook moves `stopReason` (to
+ * `stoppedImmediately`, set by the caller from the return value).
  *
  * `pm.run` gets a snapshot of the results as they stood BEFORE the hook (no
  * own row) and exports through `buildRunReport` — the Export buttons' one
- * generator — with the run's live secret values in the mask context (a value a
- * script wrote to a secret variable is not in the DB yet).
+ * generator — with the run's AND the hook's own live secret values in the mask
+ * context (a value a script wrote to a secret variable is not in the DB yet).
  *
  * A direct Stop during the hook aborts its in-flight `pm.sendRequest` calls
  * (awaited or fire-and-forget) via `cancelInFlight`; a graceful Stop does not
  * (same promise as cleanup). Never throws — it runs from a `finally`.
+ * Returns true when a direct Stop arrived while the hook ran.
  */
 async function runFailHook(
   ctx: RunContext,
   script: string | undefined,
   startedAt: number,
   stopReason: RunStopReason | undefined,
-): Promise<void> {
+): Promise<boolean> {
   const runState = ctx.runState
   // A corrupt payload (non-string) must not throw out of the `finally`.
-  if (typeof script !== 'string' || !script.trim()) return
-  if (runState.abortTeardown || runState.directStop) return
+  if (typeof script !== 'string' || !script.trim()) return false
+  if (runState.abortTeardown || runState.directStop) return false
   const snapshot = ctx.results.slice()
   const summary = summarizeRun(snapshot)
-  if (summary.failed === 0) return
+  if (summary.failed === 0) return false
 
   const controller = new AbortController()
   runState.cancelInFlight = () => controller.abort()
   try {
-    const run: PmRunBacking = {
-      summary: {
-        passed: summary.passed,
-        failed: summary.failed,
-        skipped: summary.skipped,
-        errors: summary.errors,
-        duration: Date.now() - startedAt,
-        stopReason: stopReason ?? null,
-      },
-      exportJson: () => buildRunReport(snapshot, 'json', { secrets: liveSecretValues(ctx.scopes) }),
-      exportHtml: () => buildRunReport(snapshot, 'html', { secrets: liveSecretValues(ctx.scopes) }),
+    // The run's live secrets AND the hook script's own (a value the hook
+    // itself just wrote to a secret is merged into the run only after it
+    // returns) — read at export time, so a write right before the export counts.
+    const run = (live: SecretScopes): PmRunBacking => {
+      const secrets = (): string[] => [...liveSecretValues(ctx.scopes), ...liveSecretValues(live)]
+      return {
+        summary: {
+          passed: summary.passed,
+          failed: summary.failed,
+          skipped: summary.skipped,
+          errors: summary.errors,
+          duration: Date.now() - startedAt,
+          stopReason: stopReason ?? null,
+        },
+        exportJson: () => buildRunReport(snapshot, 'json', { secrets: secrets() }),
+        exportHtml: () => buildRunReport(snapshot, 'html', { secrets: secrets() }),
+      }
     }
     await runHookScript(ctx, script, 'teardown', RUN_FAIL_SCRIPT_ID, 'Run fail script', {
       run,
@@ -2864,6 +2889,9 @@ async function runFailHook(
   } finally {
     runState.cancelInFlight = null
   }
+  // `runner:stop` direct, once cleanup has started, sets `abortTeardown` (not
+  // `directStop`) — it was false when the hook began (checked above).
+  return runState.abortTeardown
 }
 
 /**
@@ -3202,7 +3230,13 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     // direct Stop can reach its pending sends. Not after an orchestration
     // error — the report is not a finished artifact then.
     if (!orchestrationError) {
-      await runFailHook(ctx, options.runFailScript, startedAt, stopReason)
+      // A direct Stop DURING the hook aborts its in-flight sends. The hook runs
+      // after cleanup, so this is `teardownAborted` ("cleanup was already
+      // running and the rest was abandoned"), not `stoppedImmediately` (which
+      // says cleanup never ran) and not the reason the run had before the hook.
+      if (await runFailHook(ctx, options.runFailScript, startedAt, stopReason)) {
+        stopReason = 'teardownAborted'
+      }
     }
     // Always release the run slot, even on exception — without this an
     // unhandled error would leave the run permanently registered and

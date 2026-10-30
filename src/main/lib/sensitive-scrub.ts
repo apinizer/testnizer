@@ -259,6 +259,22 @@ export function authSecretValues(auth: unknown): string[] {
 }
 
 /**
+ * The secret values a proxy config carries (review of issue #287): the
+ * password, and the base64 `user:password` the engine puts in
+ * `Proxy-Authorization: Basic …` — a 407 proxy may echo either into the
+ * status text, a header or the body. Takes whatever resolved proxy object
+ * reached the engine options (project or app proxy), so every sink that
+ * scrubs a request's auth secrets scrubs these too.
+ */
+export function proxySecretValues(proxy: unknown): string[] {
+  if (!isRecord(proxy) || !isRecord(proxy.auth)) return []
+  const password = proxy.auth.password
+  if (typeof password !== 'string' || !password) return []
+  const username = typeof proxy.auth.username === 'string' ? proxy.auth.username : ''
+  return [password, Buffer.from(`${username}:${password}`, 'utf-8').toString('base64')]
+}
+
+/**
  * Already masked upstream — `HISTORY_MASK`, or the MCP path's inline `***`
  * (`src/shared/mcp-call.ts`). Left as it is: MCP History restore and its
  * tests read those exact marks.
@@ -1131,6 +1147,9 @@ export function maskRunResult(result: EndpointRunResult, baseScrub: Scrubber): E
     })),
   }
   if (result.error !== undefined) out.error = scrub.text(result.error)
+  // The reason phrase is server text too: a 407 proxy may echo the credential
+  // it was given there (review of issue #287).
+  if (typeof result.statusText === 'string') out.statusText = scrub.text(result.statusText)
   if (result.requestHeaders) out.requestHeaders = maskHeaderRecord(result.requestHeaders, scrub)
   if (result.responseHeaders) out.responseHeaders = maskHeaderRecord(result.responseHeaders, scrub)
   if (typeof result.requestBody === 'string')

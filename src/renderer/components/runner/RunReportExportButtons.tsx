@@ -42,7 +42,7 @@ export default function RunReportExportButtons({
 
   const cls = compact
     ? 'flex cursor-pointer items-center gap-1 rounded-[4px] border border-[var(--border)] bg-[var(--white)] px-1.5 py-0.5 text-[11px] text-[var(--muted)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50'
-    : 'flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[13px] text-[var(--muted)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-50'
+    : 'flex cursor-pointer items-center gap-1.5 rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-sm text-[var(--muted)] hover:bg-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-50'
 
   const button = (format: RunReportFormat, label: string) => (
     <button

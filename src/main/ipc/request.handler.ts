@@ -16,7 +16,7 @@ import { decryptSecret } from '../lib/secure-storage'
 import { logRequestResponse } from '../lib/console-logger'
 import { resolveTlsPayload, type TlsPayload } from '../lib/tls-presets'
 import { resolveKeyMaterial } from '../lib/keystore-bridge'
-import { authSecretValues } from '../lib/sensitive-scrub'
+import { authSecretValues, proxySecretValues } from '../lib/sensitive-scrub'
 import { applySoapWsSecurityToBody, wsSecuritySecretValues } from '../lib/soap-wsse'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import type { CertificateRow } from '../db/certificate.repo'
@@ -356,7 +356,13 @@ export function registerRequestHandlers(): void {
         // The resolved auth's secrets (bearer token, basic password, API key
         // value, …) — scrubbed from the Console entry and the History row
         // wherever they appear, on top of the variables marked secret.
-        const requestSecrets = [...authSecretValues(options.auth), ...wsseSecrets]
+        // The proxy credential too (plain + base64 `Proxy-Authorization`): a
+        // 407 proxy may echo it back (review of issue #287).
+        const requestSecrets = [
+          ...authSecretValues(options.auth),
+          ...wsseSecrets,
+          ...proxySecretValues(options.proxy),
+        ]
 
         // SOAP WS-Security goes into the user's envelope LAST — after every
         // variable is resolved — so a signature covers the bytes on the wire.
@@ -458,7 +464,11 @@ export function registerRequestHandlers(): void {
             url: options.url,
             error: { message: (e as Error).message },
             tabId: options._tabId,
-            secrets: [...authSecretValues(options.auth), ...wsseSecrets],
+            secrets: [
+              ...authSecretValues(options.auth),
+              ...wsseSecrets,
+              ...proxySecretValues(options.proxy),
+            ],
           })
         } catch {
           /* logger must never break the request */

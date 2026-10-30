@@ -168,6 +168,46 @@ export function resolveFollowRedirects(
   return bool(request) ?? bool(project) ?? bool(app) ?? true
 }
 
+// ─── Proxy chain (issue #254) ───────────────────────────────────────────────
+
+/** A proxy setting as the project Proxy pane and the app Settings store it. */
+export interface ProxySetting {
+  mode?: 'system' | 'none' | 'custom'
+  host?: string
+  port?: number
+  bypass?: string
+  auth?: { username: string; password: string }
+}
+
+/**
+ * Does this proxy setting configure anything? Only "No proxy" and a custom
+ * proxy with a host do. `system` (and absent) is what the engine does without
+ * any setting — the OS / environment proxy — so it is NOT an override: every
+ * project saved before issue #254 holds a frozen `{mode:'system'}` (the old
+ * project dialog default), which would otherwise shadow the app proxy forever.
+ */
+export function isActiveProxy(p: ProxySetting | null | undefined): boolean {
+  if (!p || typeof p !== 'object') return false
+  return p.mode === 'none' || (p.mode === 'custom' && !!p.host)
+}
+
+/**
+ * The proxy a request goes out through — ONE rule for Send
+ * (`renderer/lib/network-settings.ts` `networkPayload`) and Run
+ * (`runner.handler.ts` `inheritedNetworkFor`): the project's own proxy when it
+ * configures one, else the app Settings proxy, else none (`undefined` = the
+ * engine default, i.e. the system proxy). Returns the chosen object as is, so
+ * the caller holds the resolved proxy (password included) in one place.
+ */
+export function resolveProxy<T extends ProxySetting>(
+  project: T | null | undefined,
+  app: T | null | undefined,
+): T | undefined {
+  if (project && isActiveProxy(project)) return project
+  if (app && isActiveProxy(app)) return app
+  return undefined
+}
+
 // ─── HTTP timeout chain ─────────────────────────────────────────────────────
 
 /** The HTTP engine's own default when nothing else is configured (`http.engine.ts`). */
