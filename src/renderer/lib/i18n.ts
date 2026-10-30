@@ -506,6 +506,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'settingsTab.followRedirectsHelp': 'Automatically follow HTTP 3xx redirects',
     'settingsTab.sslVerify': 'Enable SSL certificate verification',
     'settingsTab.sslVerifyHelp': 'Verify SSL certificates when sending requests',
+    'settingsTab.valueOn': 'on',
+    'settingsTab.valueOff': 'off',
+    'settingsTab.inheritedValue': 'Inherited from {source}: {value}',
+    'settingsTab.ownValue': 'Set for this request',
+    'settingsTab.useInherited': 'Use {source} ({value})',
+    'settingsTab.inheritedFrom.project': 'project settings',
+    'settingsTab.inheritedFrom.app': 'app Settings',
+    'settingsTab.inheritedFrom.default': 'the default',
     'settingsTab.timeout': 'Request timeout',
     'settingsTab.timeoutPlaceholder': 'inherit',
     'settingsTab.timeoutHelp': 'ms (empty = general default · 0 = no timeout)',
@@ -1198,6 +1206,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.retainHeaders': 'Retain headers when clicking on links',
     'general.sslVerification': 'SSL certificate verification',
     'general.followRedirects': 'Automatically follow redirects',
+    'general.inheritsAppValue': 'Not set for this project — follows the app Settings ({value}).',
     'general.workingDirectory': 'Working directory',
     'general.workingDirectoryPlaceholder': '/path/to/request-files',
     'general.workingDirectoryHint':
@@ -1381,6 +1390,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runner.stop': 'Stop',
     'runner.exportJson': 'Export JSON',
     'runner.exportHtml': 'Export HTML',
+    'runner.exportSaved': 'Report saved to {path}',
+    'runner.exportFailed': 'Could not export the run report: {error}',
 
     // Empty states
     'empty.clickSend': 'Click Send to get a response',
@@ -1757,6 +1768,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'runLifecycle.preScriptHint': 'Runs once before the setup requests.',
     'runLifecycle.postScriptHint':
       'Runs once after teardown — even if the run stopped early. Failures are reported but never change the run verdict.',
+    'runLifecycle.failScript': 'Run fail script',
+    'runLifecycle.failScriptHint':
+      'Runs once after teardown when the run verdict is failed. Does not run on a green run. Does not change the verdict.',
     'runLifecycle.teardownSection': 'Teardown',
     'runLifecycle.setupSection': 'Setup',
     'runLifecycle.teardownNote': 'Does not affect the run verdict',
@@ -4784,6 +4798,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'settingsTab.followRedirectsHelp': 'HTTP 3xx yönlendirmelerini otomatik izle',
     'settingsTab.sslVerify': 'SSL sertifika doğrulamasını etkinleştir',
     'settingsTab.sslVerifyHelp': 'İstek gönderirken SSL sertifikalarını doğrula',
+    'settingsTab.valueOn': 'açık',
+    'settingsTab.valueOff': 'kapalı',
+    'settingsTab.inheritedValue': '{source} ayarından devralındı: {value}',
+    'settingsTab.ownValue': 'Bu istek için ayarlandı',
+    'settingsTab.useInherited': '{source} ayarını kullan ({value})',
+    'settingsTab.inheritedFrom.project': 'Proje',
+    'settingsTab.inheritedFrom.app': 'Uygulama',
+    'settingsTab.inheritedFrom.default': 'Varsayılan',
     'settingsTab.timeout': 'İstek zaman aşımı',
     'settingsTab.timeoutPlaceholder': 'devral',
     'settingsTab.timeoutHelp': 'ms (boş = genel varsayılan · 0 = zaman aşımı yok)',
@@ -5476,6 +5498,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.retainHeaders': 'Link tıklamalarında header’ları koru',
     'general.sslVerification': 'SSL sertifika doğrulaması',
     'general.followRedirects': 'Yönlendirmeleri otomatik takip et',
+    'general.inheritsAppValue': 'Bu projede ayarlanmadı — uygulama ayarını izliyor ({value}).',
     'general.workingDirectory': 'Çalışma dizini',
     'general.workingDirectoryPlaceholder': '/istek-dosyalarinin/yolu',
     'general.workingDirectoryHint':
@@ -5659,6 +5682,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runner.stop': 'Durdur',
     'runner.exportJson': 'JSON Dışarı Aktar',
     'runner.exportHtml': 'HTML Dışarı Aktar',
+    'runner.exportSaved': 'Rapor kaydedildi: {path}',
+    'runner.exportFailed': 'Çalıştırma raporu dışarı aktarılamadı: {error}',
 
     // Empty states
     'empty.clickSend': 'Yanıt almak için Gönder butonuna tıklayın',
@@ -6039,6 +6064,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'runLifecycle.preScriptHint': 'Hazırlık isteklerinden önce bir kez çalışır.',
     'runLifecycle.postScriptHint':
       'Temizlikten sonra bir kez çalışır — çalıştırma erken durmuş olsa bile. Hataları raporlanır ama çalıştırma sonucunu değiştirmez.',
+    'runLifecycle.failScript': 'Çalıştırma hata betiği',
+    'runLifecycle.failScriptHint':
+      'Çalıştırma sonucu başarısız olduğunda temizlikten sonra bir kez çalışır. Başarılı bir çalıştırmada çalışmaz. Sonucu değiştirmez.',
     'runLifecycle.teardownSection': 'Temizlik',
     'runLifecycle.setupSection': 'Hazırlık',
     'runLifecycle.teardownNote': 'Çalıştırma sonucunu etkilemez',

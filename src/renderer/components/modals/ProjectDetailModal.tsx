@@ -47,7 +47,8 @@ import {
   UpdatePane,
   AboutPane,
 } from './project-settings-panes'
-import type { ProjectSettings, ProjectAuth } from './project-settings-panes'
+import type { AppNetworkDefaults, ProjectSettings, ProjectAuth } from './project-settings-panes'
+import { loadInheritedNetwork } from '../../lib/network-settings'
 
 type Tab =
   | 'overview'
@@ -82,8 +83,9 @@ const DEFAULT_SETTINGS: ProjectSettings = {
   sendNoCache: true,
   sendPostmanToken: true,
   retainHeaders: false,
-  sslVerification: true,
-  followRedirects: true,
+  // sslVerification / followRedirects: deliberately NOT defaulted (issue
+  // #287) — unset = follow the app Settings; a default here was written on
+  // the first Save and made the app value dead for the project.
   workingDirectory: '',
   // Proxy
   proxy: { mode: 'system' },
@@ -134,6 +136,8 @@ export default function ProjectDetailModal() {
   const [editIconMode, setEditIconMode] = useState<'auto' | 'emoji'>('auto')
 
   const [projSettings, setProjSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS)
+  // The app Settings values an unset project SSL / redirects toggle shows (#287).
+  const [appNet, setAppNet] = useState<AppNetworkDefaults>({})
 
   // App-level (shared state)
   const theme = useUIStore((s) => s.theme)
@@ -188,6 +192,9 @@ export default function ProjectDetailModal() {
   }
 
   async function loadProjectSettings(projectId: string) {
+    void loadInheritedNetwork(null).then((n) =>
+      setAppNet({ sslVerification: n.appSslVerification, followRedirects: n.appFollowRedirects }),
+    )
     try {
       const result = (await window.api?.settings?.get(`project.${projectId}.settings`)) as {
         success: boolean
@@ -513,7 +520,11 @@ export default function ProjectDetailModal() {
             )}
 
             {tab === 'general' && (
-              <GeneralPane settings={projSettings} onChange={updateProjSettings} />
+              <GeneralPane
+                settings={projSettings}
+                onChange={updateProjSettings}
+                appDefaults={appNet}
+              />
             )}
             {tab === 'themes' && (
               <ThemesPane
@@ -552,6 +563,7 @@ export default function ProjectDetailModal() {
                 projectId={activeProject.id}
                 settings={projSettings}
                 onChange={updateProjSettings}
+                appDefaults={appNet}
               />
             )}
             {tab === 'proxy' && <ProxyPane settings={projSettings} onChange={updateProjSettings} />}

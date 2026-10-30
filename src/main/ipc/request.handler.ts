@@ -14,40 +14,12 @@ import { resolve, extname } from 'path'
 import { realpathSync, statSync } from 'fs'
 import { decryptSecret } from '../lib/secure-storage'
 import { logRequestResponse } from '../lib/console-logger'
-import { getCipherPreset, normaliseTlsVersion } from '../lib/tls-presets'
+import { resolveTlsPayload, type TlsPayload } from '../lib/tls-presets'
 import { resolveKeyMaterial } from '../lib/keystore-bridge'
 import { authSecretValues } from '../lib/sensitive-scrub'
 import { applySoapWsSecurityToBody, wsSecuritySecretValues } from '../lib/soap-wsse'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import type { CertificateRow } from '../db/certificate.repo'
-
-/**
- * Renderer-side TLS payload. The renderer doesn't import the main-process
- * preset constants — it sends the preset name and we resolve to the cipher
- * string here. Custom presets are passed through verbatim.
- */
-interface TlsPayload {
-  minVersion?: string
-  maxVersion?: string
-  cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
-  ciphersCustom?: string
-}
-
-function resolveTlsPayload(payload: TlsPayload | undefined): HttpRequestOptions['tls'] {
-  if (!payload) return undefined
-  const min = normaliseTlsVersion(payload.minVersion)
-  const max = normaliseTlsVersion(payload.maxVersion)
-  let ciphers: string | undefined
-  if (payload.cipherPreset === 'custom') {
-    const c = (payload.ciphersCustom ?? '').trim()
-    if (c.length > 0) ciphers = c
-  } else if (payload.cipherPreset && payload.cipherPreset !== 'modern') {
-    // 'modern' is Node's default — only override for intermediate/legacy.
-    ciphers = getCipherPreset(payload.cipherPreset)
-  }
-  if (!min && !max && !ciphers) return undefined
-  return { minVersion: min, maxVersion: max, ciphers }
-}
 
 // Whitelist of extensions we are willing to read as certificate material.
 // Anything else is rejected outright — even if a malicious DB row points

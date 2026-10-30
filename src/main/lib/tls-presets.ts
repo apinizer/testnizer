@@ -132,3 +132,36 @@ export interface TlsOptions {
   /** OpenSSL cipher string. Resolved from a preset or supplied verbatim. */
   ciphers?: string
 }
+
+/**
+ * The project's TLS settings as the Certificates pane stores them
+ * (`project.<id>.settings.tls`) and the renderer forwards them: a preset
+ * NAME, not the cipher string.
+ */
+export interface TlsPayload {
+  minVersion?: string
+  maxVersion?: string
+  cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
+  ciphersCustom?: string
+}
+
+/**
+ * Stored TLS payload → engine `TlsOptions`. ONE resolver for Send
+ * (`request.handler.ts`) and Run (`runner.handler.ts`, issue #287): `modern`
+ * is Node's default, so only intermediate / legacy / a non-empty custom
+ * string override the ciphers. `undefined` when nothing is overridden.
+ */
+export function resolveTlsPayload(payload: TlsPayload | undefined | null): TlsOptions | undefined {
+  if (!payload) return undefined
+  const min = normaliseTlsVersion(payload.minVersion)
+  const max = normaliseTlsVersion(payload.maxVersion)
+  let ciphers: string | undefined
+  if (payload.cipherPreset === 'custom') {
+    const c = (payload.ciphersCustom ?? '').trim()
+    if (c.length > 0) ciphers = c
+  } else if (payload.cipherPreset && payload.cipherPreset !== 'modern') {
+    ciphers = getCipherPreset(payload.cipherPreset)
+  }
+  if (!min && !max && !ciphers) return undefined
+  return { minVersion: min, maxVersion: max, ciphers }
+}

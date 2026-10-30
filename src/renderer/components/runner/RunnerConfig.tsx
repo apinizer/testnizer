@@ -39,6 +39,12 @@ interface RunnerConfigProps {
   setRunPreScript: (v: string) => void
   runPostScript: string
   setRunPostScript: (v: string) => void
+  /**
+   * Run FAIL script (issue #267): once after teardown, only on a red run.
+   * Optional with a '' fallback so older call sites keep rendering.
+   */
+  runFailScript?: string
+  setRunFailScript?: (v: string) => void
   onRun: () => void
   onSchedule?: (payload: SchedulePayload) => void
   isRunning: boolean
@@ -83,6 +89,8 @@ export default function RunnerConfig({
   setRunPreScript,
   runPostScript,
   setRunPostScript,
+  runFailScript = '',
+  setRunFailScript,
   onRun,
   onSchedule,
   isRunning,
@@ -229,9 +237,13 @@ export default function RunnerConfig({
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden" style={{ fontSize: 13 }} lang={locale}>
-      {/* Content */}
-      <div className="flex-1 overflow-auto px-5 py-4">
+    <div
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      style={{ fontSize: 13 }}
+      lang={locale}
+    >
+      {/* Content — scrolls on its own; the action bar below never does (#255). */}
+      <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
         {/* Choose how to run. When the runner is sourced from APIs (not a
          *  Test Suite) the schedule path is intentionally unavailable —
          *  scheduled tasks live on suites, by design. */}
@@ -570,6 +582,13 @@ export default function RunnerConfig({
             onChange={setRunPostScript}
             testId="runner-post-script"
           />
+          <HookScript
+            label={t('runLifecycle.failScript')}
+            hint={t('runLifecycle.failScriptHint')}
+            value={runFailScript}
+            onChange={(v) => setRunFailScript?.(v)}
+            testId="runner-fail-script"
+          />
         </div>
 
         {/* Advanced Settings */}
@@ -593,46 +612,51 @@ export default function RunnerConfig({
             onChange={setKeepVariableValues}
           />
         </div>
+      </div>
 
-        {/* Start run / Schedule + Save configuration (suite-scoped only, #100) */}
-        <div style={{ marginTop: 24, display: 'flex', alignItems: 'center', gap: 10 }}>
+      {/* Start run / Schedule + Save configuration (suite-scoped only, #100).
+       *  A pinned bar OUTSIDE the scroller (issue #255): at 1400x900 the
+       *  primary action used to sit below the fold behind the footer. */}
+      <div
+        data-testid="runner-action-bar"
+        className="flex shrink-0 items-center gap-2.5 border-t border-[var(--border)] bg-[var(--white)] px-5 py-3"
+      >
+        <button
+          type="button"
+          data-testid="runner-start"
+          onClick={handleStart}
+          disabled={isRunning || selectedCount === 0}
+          className="flex cursor-pointer items-center gap-2 rounded-[6px] border-none px-5 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ background: '#e86826', fontSize: 13 }}
+        >
+          {runMode === 'schedule' ? t('runnerConfig.scheduleRun') : t('runnerConfig.startRun')}
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="white"
+            strokeWidth="2"
+          >
+            <path d="M12 3a9 9 0 0 1 9 9h-2" />
+            <path d="M12 21a9 9 0 0 1-9-9h2" />
+            <path d="M19 12l2-2 2 2" />
+            <path d="M5 12l-2 2-2-2" />
+          </svg>
+        </button>
+        {onSaveConfig && (
           <button
             type="button"
-            data-testid="runner-start"
-            onClick={handleStart}
-            disabled={isRunning || selectedCount === 0}
-            className="flex cursor-pointer items-center gap-2 rounded-[6px] border-none px-5 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: '#e86826', fontSize: 13 }}
+            data-testid="runner-save-config"
+            onClick={handleSaveConfig}
+            disabled={isSavingConfig}
+            title={t('runnerConfig.saveConfigHint')}
+            className="cursor-pointer rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-4 py-2 font-semibold text-[var(--text)] hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
+            style={{ fontSize: 13 }}
           >
-            {runMode === 'schedule' ? t('runnerConfig.scheduleRun') : t('runnerConfig.startRun')}
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="white"
-              strokeWidth="2"
-            >
-              <path d="M12 3a9 9 0 0 1 9 9h-2" />
-              <path d="M12 21a9 9 0 0 1-9-9h2" />
-              <path d="M19 12l2-2 2 2" />
-              <path d="M5 12l-2 2-2-2" />
-            </svg>
+            {t('runnerConfig.saveConfig')}
           </button>
-          {onSaveConfig && (
-            <button
-              type="button"
-              data-testid="runner-save-config"
-              onClick={handleSaveConfig}
-              disabled={isSavingConfig}
-              title={t('runnerConfig.saveConfigHint')}
-              className="cursor-pointer rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-4 py-2 font-semibold text-[var(--text)] hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
-              style={{ fontSize: 13 }}
-            >
-              {t('runnerConfig.saveConfig')}
-            </button>
-          )}
-        </div>
+        )}
       </div>
     </div>
   )

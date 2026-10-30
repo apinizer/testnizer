@@ -29,6 +29,7 @@ import { resolveInheritance } from '../lib/auth-inheritance'
 // The SOAP editor's Auth tab is the shared request-store AuthTab (issue #298
 // follow-up) — its auth is sent like HTTP Send's.
 import { useRequestStore } from './request.store'
+import { loadInheritedNetwork, networkPayload } from '../lib/network-settings'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -563,6 +564,15 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     })
     const resolvedAuth = resolveAuth(inheritance.auth ?? undefined, activeVars)
 
+    // SSL verification / redirects / TLS / proxy (issue #287): the project's
+    // Certificates pane and the app Settings through the shared resolvers —
+    // what Run applies to this row (`buildRequestFromEndpoint`). SOAP used to
+    // send none of them, so it always verified.
+    const network = networkPayload(
+      useRequestStore.getState(),
+      await loadInheritedNetwork(originProjectId),
+    )
+
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
     try {
@@ -572,6 +582,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         headers: resolvedHeaders,
         body: { type: 'xml', content: resolvedXml },
         auth: resolvedAuth,
+        ...network,
         _protocol: 'soap',
         _wsSecurity: resolvedWsSecurity,
         _requestId: requestId,

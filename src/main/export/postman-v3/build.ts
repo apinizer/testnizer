@@ -18,7 +18,7 @@
  * `stripLocalSecrets`; request-level auth travels like every other export
  * (Postman / Bruno norm; use `{{secretVar}}`).
  */
-import { readRequestSettings } from '../../../shared/request-settings'
+import { readRequestSettings, requestFollowRedirects } from '../../../shared/request-settings'
 import { readPathVariables } from '../../../shared/path-variables'
 import { withAssertionScript } from '../../../shared/assertions-to-script'
 import { readMqttMeta, readSioMeta, readWsMeta } from '../../../shared/realtime-meta'
@@ -147,7 +147,11 @@ function body(b: unknown): Json | undefined {
 function httpSettings(schema: Json): Json | undefined {
   const s = readRequestSettings(schema)
   const out: Json = {}
-  if (s.followRedirects !== undefined) out.followRedirects = s.followRedirects
+  // Issue #287: a legacy bare `true` is "inherit", not a choice to export
+  // (ssl's reader already drops it) — so an export → import round-trip does
+  // not turn it into an explicit override.
+  const follow = requestFollowRedirects(s)
+  if (follow !== undefined) out.followRedirects = follow
   if (s.maxRedirects !== undefined) out.maxRedirects = s.maxRedirects
   if (s.sslVerification !== undefined) out.strictSSL = s.sslVerification
   return Object.keys(out).length > 0 ? out : undefined

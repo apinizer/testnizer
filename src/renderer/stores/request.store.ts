@@ -51,6 +51,7 @@ import { makeId } from '../lib/utils'
 import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
 import { httpMaskedSendError } from '../lib/masked-send-guard'
 import { resolveHttpTimeout } from '../../shared/request-settings'
+import { loadInheritedNetwork, networkPayload } from '../lib/network-settings'
 import { applyPathVariables, syncPathVariables } from '../../shared/path-variables'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
 // is consistent across request types (issue #8). Aliased to keep the existing
@@ -98,9 +99,15 @@ interface TabRequestState extends WithheldState {
   // number, so the `?? project` fallback never fired and the engine read 0
   // as "no timeout"). Defaults mirror axios sanity: follow redirects up to
   // 5, verify SSL.
-  followRedirects: boolean
+  // `followRedirects` / `sslVerification` are TRI-STATE the same way (issue
+  // #287): `null` = inherit (project → app Settings → on, the shared
+  // `resolveSslVerification` / `resolveFollowRedirects`), `true`/`false` =
+  // the user's explicit choice. A plain `true` default made the project's
+  // "SSL certificate verification: off" dead on Send, and Ctrl+S wrote that
+  // `true` into every row so it was dead on Run too.
+  followRedirects: boolean | null
   maxRedirects: number
-  sslVerification: boolean
+  sslVerification: boolean | null
   requestTimeout: number | null
   /**
    * Issue #304: a Run stops when this request does not pass, whatever the
@@ -137,9 +144,9 @@ function emptyTabState(): TabRequestState {
     preScript: '',
     postScript: '',
     assertions: [],
-    followRedirects: true,
+    followRedirects: null,
     maxRedirects: 5,
-    sslVerification: true,
+    sslVerification: null,
     requestTimeout: null,
     critical: false,
     withheldCredentials: [],
@@ -215,9 +222,48 @@ export const HTTP_CREDENTIALS: CredentialSpec = {
   ],
 }
 
-/** On-disk view of a tab (issue #244); also applied on load. */
+/**
+ * Issue #287: the snapshot marks an explicit `true` for SSL verification /
+ * redirects. Builds before the fix wrote `true` for EVERY tab (the old store
+ * default) without a mark, so on load an unmarked `true` is read as inherit —
+ * otherwise a tab left open across the upgrade would keep shadowing the
+ * project's "off" and its next Ctrl+S would write it as an explicit choice.
+ */
+type NetMarks = { sslVerificationExplicit?: true; followRedirectsExplicit?: true }
+
+function markExplicitNetChoices(st: TabRequestState): TabRequestState {
+  const out: TabRequestState & NetMarks = { ...st }
+  delete out.sslVerificationExplicit
+  delete out.followRedirectsExplicit
+  if (st.sslVerification === true) out.sslVerificationExplicit = true
+  if (st.followRedirects === true) out.followRedirectsExplicit = true
+  return out
+}
+
+/** Load-only: an unmarked `true` from an older build's snapshot → inherit. */
+function migrateLegacyNetChoices(st: TabRequestState): TabRequestState {
+  const marks = st as TabRequestState & NetMarks
+  return {
+    ...st,
+    sslVerification:
+      st.sslVerification === true && !marks.sslVerificationExplicit
+        ? null
+        : (st.sslVerification ?? null),
+    followRedirects:
+      st.followRedirects === true && !marks.followRedirectsExplicit
+        ? null
+        : (st.followRedirects ?? null),
+  }
+}
+
+/** On-disk view of a tab (issue #244). */
 function persistableRequest(st: TabRequestState): TabRequestState {
-  return withholdCredentials(st, HTTP_CREDENTIALS)
+  return markExplicitNetChoices(withholdCredentials(st, HTTP_CREDENTIALS))
+}
+
+/** What a loaded snapshot becomes (issue #244 + the issue #287 migration). */
+function loadableRequest(st: TabRequestState): TabRequestState {
+  return persistableRequest(migrateLegacyNetChoices(st))
 }
 
 interface RequestStore extends TabRequestState {
@@ -258,9 +304,11 @@ interface RequestStore extends TabRequestState {
   setAssertions: (assertions: TestAssertion[]) => void
   addAssertion: () => void
   removeAssertion: (id: string) => void
-  setFollowRedirects: (v: boolean) => void
+  /** `null` = inherit the project / app setting (issue #287). */
+  setFollowRedirects: (v: boolean | null) => void
   setMaxRedirects: (v: number) => void
-  setSslVerification: (v: boolean) => void
+  /** `null` = inherit the project / app setting (issue #287). */
+  setSslVerification: (v: boolean | null) => void
   setRequestTimeout: (v: number | null) => void
   setCritical: (v: boolean) => void
   sendRequest: () => Promise<void>
@@ -279,9 +327,9 @@ interface RequestStore extends TabRequestState {
       preScript?: string
       postScript?: string
       assertions?: TestAssertion[]
-      followRedirects?: boolean
+      followRedirects?: boolean | null
       maxRedirects?: number
-      sslVerification?: boolean
+      sslVerification?: boolean | null
       requestTimeout?: number | null
       critical?: boolean
     },
@@ -337,7 +385,7 @@ function extractState(s: RequestStore): TabRequestState {
 
 // ─── Persistence ──────────────────────────────────────────────
 const STORAGE_KEY = 'testnizer-request'
-const persisted = loadTabbedState<TabRequestState>(STORAGE_KEY, emptyTabState, persistableRequest)
+const persisted = loadTabbedState<TabRequestState>(STORAGE_KEY, emptyTabState, loadableRequest)
 
 /**
  * The per-tab cache keeps at most this many states. Only an idle tab bound to
@@ -388,9 +436,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   ...persisted.current,
   // Backfill the per-request settings for states persisted before these
   // fields existed (would otherwise spread in as `undefined`).
-  followRedirects: persisted.current.followRedirects ?? true,
+  followRedirects: persisted.current.followRedirects ?? null,
   maxRedirects: persisted.current.maxRedirects ?? 5,
-  sslVerification: persisted.current.sslVerification ?? true,
+  sslVerification: persisted.current.sslVerification ?? null,
   requestTimeout: persisted.current.requestTimeout ?? null,
   critical: persisted.current.critical ?? false,
   pathVariables: persisted.current.pathVariables ?? [],
@@ -523,7 +571,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
 
   setFollowRedirects: (v) => {
-    set({ followRedirects: v })
+    set({ followRedirects: typeof v === 'boolean' ? v : null })
     markActiveDirty()
   },
   setMaxRedirects: (v) => {
@@ -531,7 +579,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     markActiveDirty()
   },
   setSslVerification: (v) => {
-    set({ sslVerification: v })
+    set({ sslVerification: typeof v === 'boolean' ? v : null })
     markActiveDirty()
   },
   setRequestTimeout: (v) => {
@@ -890,37 +938,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       tabsStore.markLoading(activeTabId, true)
     }
 
-    // Pull project-level request settings (timeout/ssl/proxy/tls) if available.
-    // These are persisted by ProjectDetailModal under project.<id>.settings.
-    interface ProjectNetSettings {
-      requestTimeout?: number
-      sslVerification?: boolean
-      followRedirects?: boolean
-      proxy?: {
-        mode?: 'system' | 'none' | 'custom'
-        host?: string
-        port?: number
-        bypass?: string
-        auth?: { username: string; password: string }
-      }
-      tls?: {
-        minVersion?: string
-        maxVersion?: string
-        cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
-        ciphersCustom?: string
-      }
-    }
-    let netSettings: ProjectNetSettings = {}
-    if (wsStore.activeProjectId) {
-      try {
-        const res = (await window.api?.settings?.get(
-          `project.${wsStore.activeProjectId}.settings`,
-        )) as { success: boolean; data?: ProjectNetSettings } | undefined
-        if (res?.success && res.data) netSettings = res.data
-      } catch {
-        /* ignore */
-      }
-    }
+    // Project-level request settings (timeout / ssl / redirects / proxy / tls,
+    // persisted by ProjectDetailModal under project.<id>.settings) and the app
+    // Settings' ssl / redirects — one loader for HTTP, SOAP and GraphQL Send
+    // (issue #287).
+    const inheritedNet = await loadInheritedNetwork(wsStore.activeProjectId)
+    const netSettings = inheritedNet.project
 
     // App-wide "general" timeout (Settings modal → `defaultTimeout`). This is
     // the last fallback before the engine's own 30s default. Without reading
@@ -934,18 +957,6 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     } catch {
       /* ignore */
     }
-
-    // Forward TLS settings as-is — the main process (request handler) resolves
-    // the cipher preset via `getCipherPreset` so the renderer never has to
-    // import the main-process TLS preset constants.
-    const tlsForEngine = netSettings.tls
-      ? {
-          minVersion: netSettings.tls.minVersion || undefined,
-          maxVersion: netSettings.tls.maxVersion || undefined,
-          cipherPreset: netSettings.tls.cipherPreset,
-          ciphersCustom: netSettings.tls.ciphersCustom,
-        }
-      : undefined
 
     // Generate a per-call requestId so the user can hit Cancel during a slow
     // network round-trip. The main process tracks this id in its
@@ -984,10 +995,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         auth: resolvedAuth,
         timeout: resolvedTimeout,
         maxRedirects: reqCfg.maxRedirects,
-        sslVerification: reqCfg.sslVerification ?? netSettings.sslVerification,
-        followRedirects: reqCfg.followRedirects ?? netSettings.followRedirects,
-        proxy: netSettings.proxy,
-        tls: tlsForEngine,
+        // SSL verification + redirects: request → project → app → on, the
+        // shared resolvers Run uses (issue #287); TLS preset name + proxy as
+        // the project stores them (main resolves the preset).
+        ...networkPayload(reqCfg, inheritedNet),
         // History metadata
         _workspaceId: wsStore.activeWorkspaceId || undefined,
         _projectId: wsStore.activeProjectId || undefined,
@@ -1187,9 +1198,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       preScript: data.preScript ?? '',
       postScript: data.postScript ?? '',
       assertions: data.assertions ?? [],
-      followRedirects: data.followRedirects ?? true,
+      // Absent = inherit (issue #287) — never a `true` that shadows the project.
+      followRedirects: data.followRedirects ?? null,
       maxRedirects: data.maxRedirects ?? 5,
-      sslVerification: data.sslVerification ?? true,
+      sslVerification: data.sslVerification ?? null,
       requestTimeout: data.requestTimeout ?? null,
       // Absent = not critical: a reopened row must not inherit the previous
       // tab's flag (issue #304).

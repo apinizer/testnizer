@@ -295,6 +295,8 @@ function openProductionSchemaDb(tmpDir: string): Database.Database {
     db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_pre_script TEXT`)
   if (!stCols.includes('run_post_script'))
     db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_post_script TEXT`)
+  if (!stCols.includes('run_fail_script'))
+    db.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_fail_script TEXT`)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (

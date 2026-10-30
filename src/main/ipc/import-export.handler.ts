@@ -6,7 +6,12 @@ import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protoc
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
 import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
-import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
+import {
+  encodeFollowRedirects,
+  readRequestSettings,
+  readRequestSettingsJson,
+  requestFollowRedirects,
+} from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import {
   applyPathVariables,
@@ -2255,7 +2260,11 @@ function collectPostmanVariables(projectId: string): PostmanVariable[] | undefin
 function ppbFromSettings(schema: UiRequestSchema): Record<string, unknown> | undefined {
   const s = readRequestSettings(schema)
   const out: Record<string, unknown> = {}
-  if (s.followRedirects !== undefined) out.followRedirects = s.followRedirects
+  // Issue #287: a legacy bare `true` is "inherit", not a choice to export
+  // (ssl's reader already drops it) — so an export → import round-trip does
+  // not turn it into an explicit override.
+  const follow = requestFollowRedirects(s)
+  if (follow !== undefined) out.followRedirects = follow
   if (s.maxRedirects !== undefined) out.maxRedirects = s.maxRedirects
   if (s.sslVerification !== undefined) out.strictSSL = s.sslVerification
   return Object.keys(out).length > 0 ? out : undefined
@@ -2768,7 +2777,9 @@ function importCurl(
   if (req.headers.length > 0) requestSchema.headers = req.headers
   if (req.body.type !== 'none') requestSchema.body = req.body
   if (req.auth) requestSchema.auth = req.auth
-  Object.assign(requestSchema, req.settings)
+  // A curl flag is an explicit choice: `-L` keeps its issue #287 marker (a
+  // bare stored `true` reads as "inherit").
+  Object.assign(requestSchema, req.settings, encodeFollowRedirects(req.settings.followRedirects))
 
   db.prepare(
     `

@@ -39,7 +39,7 @@ import {
   type PmSendTransport,
 } from './send-request'
 import { resolveTemplate } from '../dynamic-variables'
-import type { PmLike, PmScope } from './pm-types'
+import type { PmLike, PmRunLike, PmRunSummary, PmScope } from './pm-types'
 import type { NormalizedResponse, ScriptTestResult } from './types'
 
 export type PmEventName = 'prerequest' | 'test'
@@ -108,6 +108,19 @@ export function isSkipRequestSignal(e: unknown): boolean {
   )
 }
 
+/**
+ * What a host supplies for `pm.run` (issue #267). Only the Runner's fail hook
+ * does: the summary is copied and frozen here, and the exports are called
+ * lazily — the shared module builds no report of its own (main's
+ * `buildRunReport` is the one generator; shared code must not import main).
+ */
+export interface PmRunBacking {
+  /** Snapshot of the finished run, taken by the host BEFORE the hook. */
+  summary: PmRunSummary
+  exportJson(): string
+  exportHtml(): string
+}
+
 export interface CreatePmOptions {
   eventName: PmEventName
   iteration?: number
@@ -154,6 +167,8 @@ export interface CreatePmOptions {
   results?: ScriptTestResult[]
   pendingTests?: Promise<void>[]
   pendingSends?: Promise<unknown>[]
+  /** `pm.run` — the run fail script only (issue #267). Omitted → no `pm.run`. */
+  run?: PmRunBacking
 }
 
 export interface PmRuntimeState {
@@ -453,6 +468,10 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
     require: pmRequire,
   }
 
+  // `pm.run` exists ONLY when the host supplies it (the run fail script): every
+  // other script keeps `'run' in pm === false`.
+  if (opts.run) pm.run = buildPmRun(opts.run)
+
   // Pre-request: there is no response yet, and `pm.response` does not exist —
   // exactly like postman-sandbox (execution.js only builds a response for the
   // 'test' target; pmapi.js `_assignDefinedReadonly` skips undefined values),
@@ -470,6 +489,24 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
     state,
     drain: () => drainPending(pendingSends, pendingTests),
   }
+}
+
+/** A frozen COPY of exactly the six summary keys + lazy export wrappers. */
+function buildPmRun(back: PmRunBacking): PmRunLike {
+  const src = back.summary
+  const summary: Readonly<PmRunSummary> = Object.freeze({
+    passed: src.passed,
+    failed: src.failed,
+    skipped: src.skipped,
+    errors: src.errors,
+    duration: src.duration,
+    stopReason: src.stopReason ?? null,
+  })
+  return Object.freeze({
+    summary,
+    exportJson: (): string => back.exportJson(),
+    exportHtml: (): string => back.exportHtml(),
+  })
 }
 
 export { HeaderCollection }

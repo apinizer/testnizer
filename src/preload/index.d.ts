@@ -938,6 +938,8 @@ interface SchedulerCreatePayload {
   teardownEndpointIds?: string[]
   runPreScript?: string
   runPostScript?: string
+  /** Run fail script (issue #267) — once after teardown when the run is red. */
+  runFailScript?: string
   /**
    * "Stop run if an error occurs", carried from the run the schedule was created
    * from. Omitted ⇒ ON, matching the interactive runner's default.

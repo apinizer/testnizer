@@ -32,14 +32,24 @@ import { isRunnableInProject } from '../lib/ownership'
 import { resolveVariables } from '../lib/variable-resolver'
 import { loadEnvVarScopes } from '../lib/env-vars'
 import { evaluateJsonPath } from '../lib/json-path'
-import { loadAppDefaultTimeout, loadProjectSettings } from '../lib/project-settings'
+import {
+  loadAppDefaultTimeout,
+  loadAppNetworkDefaults,
+  loadProjectSettings,
+} from '../lib/project-settings'
 import {
   HTTP_ENGINE_DEFAULT_TIMEOUT_MS,
   readRequestSettings,
   readRequestSettingsJson,
+  requestFollowRedirects,
+  requestSslVerification,
+  resolveFollowRedirects,
   resolveHttpTimeout,
   resolveMcpTimeout,
+  resolveSslVerification,
 } from '../../shared/request-settings'
+import { resolveTlsPayload } from '../lib/tls-presets'
+import { decryptSecret } from '../lib/secure-storage'
 import { soapTransportForRow, withSoapTransportHeaders } from '../../shared/soap-transport'
 import {
   projectAuthToAuthConfig,
@@ -54,15 +64,11 @@ import {
   isSkipRequestSignal,
   recordStore,
   type PmEventName,
+  type PmRunBacking,
 } from '../../shared/script/pm'
 import type { PmRequestBodyInput } from '../../shared/script/pm-request'
 import type { NormalizedResponse, ScriptTestResult } from '../../shared/script'
-import {
-  endpointDidPass,
-  countsTowardRunVerdict,
-  criticalStopOf,
-  isSkippedStep,
-} from '../../shared/runner-verdict'
+import { endpointDidPass, countsTowardRunVerdict, isSkippedStep } from '../../shared/runner-verdict'
 import { isRunnerHttpLike } from '../../shared/request-protocols'
 import { summarizeRun } from '../../shared/runner-summary'
 import type { RunPhase } from '../../shared/runner-verdict'
@@ -96,6 +102,7 @@ import {
 import { applySoapWsSecurityToBody, wsSecuritySecretValues } from '../lib/soap-wsse'
 import { isWsSecurityEnabled, resolveWsSecurityVariables } from '../../shared/soap-wsse'
 import { cachedSecretInventory } from '../lib/secret-inventory-cache'
+import { buildRunReport } from '../lib/run-report'
 import { mcpOutcomeToResponse, mcpScriptInfo, type McpScriptInfo } from '../../shared/mcp-response'
 import {
   INLINE_MASK,
@@ -246,9 +253,56 @@ export interface InheritedTimeouts {
   app?: number
 }
 
+/**
+ * The network settings below a request's own (issue #287), loaded once per
+ * run — what Send reads from `project.<id>.settings` (Certificates / General /
+ * Proxy panes) and the app Settings: SSL verification and redirects (project
+ * → app tiers of the shared resolvers), the project's TLS protocol / cipher
+ * choice and its (machine-local) proxy.
+ */
+export interface InheritedNetwork {
+  sslVerification?: { project?: boolean; app?: boolean }
+  followRedirects?: { project?: boolean; app?: boolean }
+  tls?: HttpRequestOptions['tls']
+  proxy?: HttpRequestOptions['proxy']
+}
+
+/**
+ * The run's `InheritedNetwork` from the project settings (`loadProjectSettings`)
+ * and the app Settings. The proxy password is stored encrypted (settings
+ * handler `SENSITIVE_FIELDS`); Send gets it decrypted from `settings:get`, so
+ * it is decrypted here too — never sent as ciphertext.
+ */
+export function inheritedNetworkFor(
+  project: StoredProjectSettings | undefined,
+  app: { sslVerification?: boolean; followRedirects?: boolean },
+): InheritedNetwork {
+  const proxy = project?.proxy
+  return {
+    sslVerification: { project: project?.sslVerification, app: app.sslVerification },
+    followRedirects: { project: project?.followRedirects, app: app.followRedirects },
+    tls: resolveTlsPayload(project?.tls),
+    proxy:
+      proxy && proxy.mode
+        ? {
+            mode: proxy.mode,
+            host: proxy.host,
+            port: proxy.port,
+            auth: proxy.auth
+              ? {
+                  username: proxy.auth.username,
+                  password: decryptSecret(proxy.auth.password) ?? '',
+                }
+              : undefined,
+          }
+        : undefined,
+  }
+}
+
 export function buildRequestFromEndpoint(
   endpoint: endpointRepo.EndpointRow,
   inherited: InheritedTimeouts = {},
+  net: InheritedNetwork = {},
 ): HttpRequestOptions | null {
   const schema = parseJsonSafe<{
     method?: string
@@ -295,9 +349,21 @@ export function buildRequestFromEndpoint(
     timeout:
       resolveHttpTimeout(settings.timeout, inherited.project, inherited.app) ??
       HTTP_ENGINE_DEFAULT_TIMEOUT_MS,
-    followRedirects: settings.followRedirects ?? true,
+    // Issue #287: request → project → app → on — Send's chain, one resolver.
+    // A legacy bare `true` on the row (every pre-fix save) is NOT an override.
+    followRedirects: resolveFollowRedirects(
+      requestFollowRedirects(settings),
+      net.followRedirects?.project,
+      net.followRedirects?.app,
+    ),
     maxRedirects: settings.maxRedirects,
-    sslVerification: settings.sslVerification ?? true,
+    sslVerification: resolveSslVerification(
+      requestSslVerification(settings),
+      net.sslVerification?.project,
+      net.sslVerification?.app,
+    ),
+    ...(net.tls ? { tls: net.tls } : {}),
+    ...(net.proxy ? { proxy: net.proxy } : {}),
   }
 }
 
@@ -740,6 +806,13 @@ interface ScriptContext {
    * never fetched its token must not report green (issue #72).
    */
   scriptError?: string
+  /**
+   * Aborts this script's in-flight `pm.sendRequest` calls (the run fail
+   * script, issue #267): a direct Stop must not wait out a hanging webhook.
+   */
+  signal?: AbortSignal
+  /** `pm.run` backing — set ONLY for the run fail script (issue #267). */
+  run?: PmRunBacking
 }
 
 /**
@@ -962,6 +1035,7 @@ async function runUserScript(
     results: ctx.testResults,
     pendingTests: ctx.pendingTests,
     pendingSends: ctx.pendingSends,
+    ...(ctx.run ? { run: ctx.run } : {}),
     log: (level, message) => pushConsoleLog(ctx, level, message),
     // pm.sendRequest transport — the same engine the runner uses.
     //
@@ -971,7 +1045,11 @@ async function runUserScript(
     // the engine-level `projectId` IS passed so a script login lands in the
     // same per-project cookie jar as the main request; it never loads certs.
     send: async (opts) => {
-      const sendOptions = { ...opts, projectId: ctx.projectId } as HttpRequestOptions
+      const sendOptions = {
+        ...opts,
+        projectId: ctx.projectId,
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+      } as HttpRequestOptions
       const apiResp = await executeHttpRequest(sendOptions)
       // Send's `pm.sendRequest` goes out through `request:send`, which logs
       // it. Skipping it here would leave a scripted call visible on one path
@@ -1237,6 +1315,8 @@ interface RunContext {
   projectSettings: StoredProjectSettings | undefined
   /** Project + app-wide timeouts below a request's own — Send's chain (issue #185). */
   inheritedTimeouts: InheritedTimeouts
+  /** SSL / redirects / TLS / proxy below a request's own — Send's chain (issue #287). */
+  inheritedNetwork: InheritedNetwork
   projectAuth: AuthConfigLike | null
   iterationData: Record<string, string>[]
   iterations: number
@@ -1571,7 +1651,11 @@ async function runEndpointStep(
     return recordStep(ctx, result)
   }
 
-  const requestOptions = buildRequestFromEndpoint(endpoint, ctx.inheritedTimeouts)
+  const requestOptions = buildRequestFromEndpoint(
+    endpoint,
+    ctx.inheritedTimeouts,
+    ctx.inheritedNetwork,
+  )
 
   if (!requestOptions) {
     const result: EndpointRunResult = {
@@ -2591,12 +2675,15 @@ async function runHookScript(
   phase: RunPhase,
   endpointId: string,
   label: string,
+  hook: { run?: PmRunBacking; signal?: AbortSignal } = {},
 ): Promise<StepOutcome | null> {
   if (!script || !script.trim()) return null
   const startedAt = Date.now()
   const scriptCtx = newScriptContext(ctx.scopes, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
   scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
   scriptCtx.projectId = ctx.options.projectId
+  if (hook.run) scriptCtx.run = hook.run
+  if (hook.signal) scriptCtx.signal = hook.signal
   // A hook that THROWS at top level (a bad await, a failed token fetch) must be
   // visible: without this the exception escaped the run, no row was recorded,
   // and a "Run setup script" that never fetched its token looked like nothing
@@ -2717,6 +2804,67 @@ async function runTeardownPhase(
 /** Synthetic ids for the run-level hook rows (never collide with a real id). */
 const RUN_PRE_SCRIPT_ID = '__run_pre_script__'
 const RUN_POST_SCRIPT_ID = '__run_post_script__'
+const RUN_FAIL_SCRIPT_ID = '__run_fail_script__'
+
+/**
+ * The run FAIL script (issue #267) — once per run, after the teardown requests
+ * and the run teardown script, only when the run reads as FAILED.
+ *
+ * "Failed" is the in-app verdict (`summarizeRun` → `endpointDidPass`, setup +
+ * main rows): a teardown-only failure leaves a run green and never fires it.
+ * A hard stop ("Stop now" / Skip teardown) skips it like the rest of cleanup —
+ * the user asked for nothing after the click, and the report is not a finished
+ * artifact. Its row is a TEARDOWN row, so it can never move the verdict
+ * counters or `stopReason`.
+ *
+ * `pm.run` gets a snapshot of the results as they stood BEFORE the hook (no
+ * own row) and exports through `buildRunReport` — the Export buttons' one
+ * generator — with the run's live secret values in the mask context (a value a
+ * script wrote to a secret variable is not in the DB yet).
+ *
+ * A direct Stop during the hook aborts its in-flight `pm.sendRequest` calls
+ * (awaited or fire-and-forget) via `cancelInFlight`; a graceful Stop does not
+ * (same promise as cleanup). Never throws — it runs from a `finally`.
+ */
+async function runFailHook(
+  ctx: RunContext,
+  script: string | undefined,
+  startedAt: number,
+  stopReason: RunStopReason | undefined,
+): Promise<void> {
+  const runState = ctx.runState
+  // A corrupt payload (non-string) must not throw out of the `finally`.
+  if (typeof script !== 'string' || !script.trim()) return
+  if (runState.abortTeardown || runState.directStop) return
+  const snapshot = ctx.results.slice()
+  const summary = summarizeRun(snapshot)
+  if (summary.failed === 0) return
+
+  const controller = new AbortController()
+  runState.cancelInFlight = () => controller.abort()
+  try {
+    const run: PmRunBacking = {
+      summary: {
+        passed: summary.passed,
+        failed: summary.failed,
+        skipped: summary.skipped,
+        errors: summary.errors,
+        duration: Date.now() - startedAt,
+        stopReason: stopReason ?? null,
+      },
+      exportJson: () => buildRunReport(snapshot, 'json', { secrets: liveSecretValues(ctx.scopes) }),
+      exportHtml: () => buildRunReport(snapshot, 'html', { secrets: liveSecretValues(ctx.scopes) }),
+    }
+    await runHookScript(ctx, script, 'teardown', RUN_FAIL_SCRIPT_ID, 'Run fail script', {
+      run,
+      signal: controller.signal,
+    })
+  } catch (e) {
+    console.error('[runner] run fail script failed:', (e as Error).message)
+  } finally {
+    runState.cancelInFlight = null
+  }
+}
 
 /**
  * Suite item ids in the suite's execution order (`listItemsBySuite`). The
@@ -2838,6 +2986,9 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     project: projectSettings?.requestTimeout,
     app: await loadAppDefaultTimeout(),
   }
+  // SSL verification / redirects / TLS / proxy below a request's own (issue
+  // #287) — Run used to hard-code `?? true` and never read the project or app.
+  const inheritedNetwork = inheritedNetworkFor(projectSettings, await loadAppNetworkDefaults())
 
   // Run-level accumulators for every variable a script writes. `envVars` is
   // mutated in place so updates flow to *later requests within this run*; these
@@ -2867,6 +3018,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     scopes,
     projectSettings,
     inheritedTimeouts,
+    inheritedNetwork,
     projectAuth,
     iterationData,
     iterations,
@@ -3045,6 +3197,13 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     // and reporting that as "cleanup was abandoned" describes a consequence as
     // though it were the cause.
     if (runState.directStop) stopReason = 'stoppedImmediately'
+    // The run FAIL script (issue #267): after teardown + the teardown script,
+    // with the FINAL stop reason, while the run is still registered so a
+    // direct Stop can reach its pending sends. Not after an orchestration
+    // error — the report is not a finished artifact then.
+    if (!orchestrationError) {
+      await runFailHook(ctx, options.runFailScript, startedAt, stopReason)
+    }
     // Always release the run slot, even on exception — without this an
     // unhandled error would leave the run permanently registered and
     // any "is this run still going?" check would forever say yes.
@@ -3270,145 +3429,6 @@ function persistRunVariableUpdates(
   }
 }
 
-// ─── Export Helpers ───────────────────────────────────────────────
-
-function exportAsJson(results: EndpointRunResult[]): string {
-  return JSON.stringify(results, null, 2)
-}
-
-function exportAsHtml(results: EndpointRunResult[]): string {
-  const totalPassed = results.reduce((sum, r) => sum + r.passed, 0)
-  const totalFailed = results.reduce((sum, r) => sum + r.failed, 0)
-  const totalDuration = results.reduce((sum, r) => sum + r.duration, 0)
-  // Headline counters from the SHARED summary, so the exported report agrees with
-  // both in-app results views. The local arithmetic it replaces derived failures
-  // as `primary.length - passed`, which buckets a row that never RAN as a
-  // failure (shared/runner-summary explains the whole class).
-  const summary = summarizeRun(results)
-  const primary = results.filter(countsTowardRunVerdict)
-  const teardown = results.filter((r) => !countsTowardRunVerdict(r))
-  const endpointsPassed = summary.passed
-  const endpointsFailed = summary.failed
-  const endpointsSkipped = summary.skipped
-  const teardownFailed = summary.teardownFailed
-
-  const escapeHtml = (str: string): string =>
-    str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-  // Why the run stopped (issue #304) — from the rows, the only thing an export
-  // (or a history row) has.
-  const criticalStop = criticalStopOf(results)
-  const stopLine = criticalStop
-    ? `<p data-testid="report-stop-reason" style="margin:8px 0 0;font-size:13px;color:#cc2200;font-weight:600">${escapeHtml(
-        `Stopped: critical request "${criticalStop.endpointName}" failed`,
-      )}</p>`
-    : ''
-  const criticalBadge =
-    '<span data-critical="true" style="padding:2px 6px;border-radius:4px;border:1px solid #cc2200;color:#cc2200;font-size:11px;font-weight:600">Critical</span>'
-
-  const renderRows = (list: EndpointRunResult[]): string =>
-    list
-      .map((r) => {
-        const didPass = endpointDidPass(r)
-        // A row that never ran (NOT_RUN after a stop, SKIPPED, UNSUPPORTED,
-        // CANCELLED) is neither passed nor failed — `endpointDidPass` scores
-        // its null status as passed, which painted every row a stop skipped
-        // green under a "Stopped: …" line (issue #304 made that visible).
-        const neutral = isSkippedStep(r)
-        const statusColor = neutral
-          ? '#888888'
-          : r.error
-            ? '#cc2200'
-            : !didPass
-              ? '#b35a00'
-              : '#1a7a4a'
-        const statusBg = neutral
-          ? '#f5f5f7'
-          : r.error
-            ? '#fff0f0'
-            : !didPass
-              ? '#fff4e0'
-              : '#e8f9f1'
-        const statusText = neutral
-          ? escapeHtml((r.statusText || 'SKIPPED').replace('_', ' '))
-          : r.error
-            ? 'Error'
-            : !didPass
-              ? 'Failed'
-              : 'Passed'
-
-        const assertionRows = r.assertions
-          .map((a) => {
-            const aColor = a.passed ? '#1a7a4a' : '#cc2200'
-            const aIcon = a.passed ? '&#10003;' : '&#10007;'
-            return `<tr><td style="padding:4px 12px;color:${aColor}">${aIcon} ${escapeHtml(a.name)}</td><td style="padding:4px 12px">${a.actual !== undefined ? escapeHtml(String(a.actual)) : ''}</td><td style="padding:4px 12px;color:${aColor}">${a.error ? escapeHtml(a.error) : ''}</td></tr>`
-          })
-          .join('')
-
-        return `
-      <div style="margin-bottom:16px;border:1px solid #e8e8ed;border-radius:8px;overflow:hidden">
-        <div style="display:flex;align-items:center;padding:12px 16px;background:${statusBg};gap:12px">
-          <span style="font-weight:600;color:${statusColor};min-width:60px">${escapeHtml(r.method)}</span>
-          <span style="flex:1;font-family:monospace;font-size:13px">${escapeHtml(r.url)}</span>
-          ${r.critical ? criticalBadge : ''}
-          <span style="font-size:13px;color:#888">${r.duration}ms</span>
-          <span style="padding:2px 8px;border-radius:4px;background:${statusColor};color:white;font-size:12px;font-weight:600">${r.status ?? '-'} ${statusText}</span>
-        </div>
-        ${r.assertions.length > 0 ? `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#fafafa;border-top:1px solid #e8e8ed"><th style="padding:6px 12px;text-align:left">Assertion</th><th style="padding:6px 12px;text-align:left">Actual</th><th style="padding:6px 12px;text-align:left">Error</th></tr></thead><tbody>${assertionRows}</tbody></table>` : ''}
-        ${r.error ? `<div style="padding:8px 16px;color:#cc2200;font-size:13px;border-top:1px solid #e8e8ed">${escapeHtml(r.error)}</div>` : ''}
-      </div>`
-      })
-      .join('')
-
-  const rows = renderRows(primary)
-  // Teardown gets its own titled section so a reader can tell cleanup apart
-  // from the run under test at a glance.
-  const teardownSection =
-    teardown.length > 0
-      ? `<h3 style="margin:28px 0 12px;font-size:15px;font-weight:600">Teardown${
-          teardownFailed > 0
-            ? ` <span style="font-weight:500;font-size:13px;color:#b35a00">(${teardownFailed} failed — does not affect the run verdict)</span>`
-            : ''
-        }</h3>${renderRows(teardown)}`
-      : ''
-
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Testnizer - Collection Run Report</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 960px; margin: 40px auto; padding: 0 20px; color: #1a1a2e; background: #f5f5f7; }
-    .header { background: white; border-radius: 12px; padding: 24px 32px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-    .stats { display: flex; gap: 24px; margin-top: 16px; }
-    .stat { text-align: center; }
-    .stat-value { font-size: 28px; font-weight: 700; }
-    .stat-label { font-size: 12px; color: #888; margin-top: 4px; }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1 style="margin:0;font-size:20px;color:#2D5FA0">Testnizer</h1>
-    <h2 style="margin:8px 0 0;font-size:16px;font-weight:500">Collection Run Report</h2>
-    <p style="margin:8px 0 0;font-size:13px;color:#888">Generated: ${new Date().toISOString()}</p>
-    ${stopLine}
-    <div class="stats">
-      <div class="stat"><div class="stat-value" style="color:#1a7a4a">${endpointsPassed}</div><div class="stat-label">Passed</div></div>
-      <div class="stat"><div class="stat-value" style="color:#cc2200">${endpointsFailed}</div><div class="stat-label">Failed</div></div>
-      ${endpointsSkipped > 0 ? `<div class="stat"><div class="stat-value" style="color:#888">${endpointsSkipped}</div><div class="stat-label">Skipped</div></div>` : ''}
-      <div class="stat"><div class="stat-value">${primary.length}</div><div class="stat-label">Total</div></div>
-      ${teardown.length > 0 ? `<div class="stat"><div class="stat-value" style="color:${teardownFailed > 0 ? '#b35a00' : '#1a7a4a'}">${teardown.length}</div><div class="stat-label">Teardown</div></div>` : ''}
-      <div class="stat"><div class="stat-value" style="color:#0066cc">${totalDuration}ms</div><div class="stat-label">Duration</div></div>
-      <div class="stat"><div class="stat-value" style="color:#1a7a4a">${totalPassed}</div><div class="stat-label">Assertions Passed</div></div>
-      <div class="stat"><div class="stat-value" style="color:#cc2200">${totalFailed}</div><div class="stat-label">Assertions Failed</div></div>
-    </div>
-  </div>
-  ${rows}
-  ${teardownSection}
-</body>
-</html>`
-}
-
 // ─── Public API for scheduler ─────────────────────────────────────
 
 export async function executeCollectionForScheduler(
@@ -3506,18 +3526,12 @@ export function registerRunnerHandlers(): void {
 
   ipcMain.handle('runner:export', async (_event, options: RunnerExportOptions) => {
     try {
-      // Masked again on the way out (issue #195): live results are already
-      // masked in `recordStep`, but results handed back from an older
-      // session's report — or a run recorded before masking existed — are not.
-      const scrub = scrubberFor(secretDb())
-      const results = (options.results ?? []).map((r) => maskRunResult(r, scrub))
-      let content: string
-      if (options.format === 'html') {
-        content = exportAsHtml(results)
-      } else {
-        content = exportAsJson(results)
-      }
-      return { success: true, data: content }
+      // ONE generator (issue #266): masked again on the way out (issue #195) —
+      // live results are already masked in `recordStep`, but results handed
+      // back from an older session's report, or a History row recorded before
+      // masking existed, are not. `pm.run.export*` (issue #267) uses the same.
+      const format = options?.format === 'html' ? 'html' : 'json'
+      return { success: true, data: buildRunReport(options?.results ?? [], format) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

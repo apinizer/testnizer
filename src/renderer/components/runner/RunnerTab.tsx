@@ -334,6 +334,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // deliberately not persisted, see the run-lifecycle notes.
   const [runPreScript, setRunPreScript] = useState('')
   const [runPostScript, setRunPostScript] = useState('')
+  // Run FAIL script (issue #267) — once after teardown, only on a red run.
+  const [runFailScript, setRunFailScript] = useState('')
   const [runFolderName, setRunFolderName] = useState('')
   // Default radio selection for the RunnerConfig "Choose how to run" block.
   // We bump configRunModeKey whenever a fresh "New Run" lands on the config
@@ -908,6 +910,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           setEnvironmentId(config.environmentId ?? '')
           setRunPreScript(config.runPreScript ?? '')
           setRunPostScript(config.runPostScript ?? '')
+          setRunFailScript(config.runFailScript ?? '')
         }
       }
       const savedConfig = config
@@ -1187,6 +1190,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
             runPreScript: runPreScript.trim() || undefined,
             runPostScript: runPostScript.trim() || undefined,
+            runFailScript: runFailScript.trim() || undefined,
             environmentId: environmentId || undefined,
             workspaceId: activeWorkspaceId || undefined,
             iterationData: iterationData.length > 0 ? iterationData : undefined,
@@ -1232,6 +1236,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     persistResponses,
     runPreScript,
     runPostScript,
+    runFailScript,
     splitByPhase,
   ])
 
@@ -1353,6 +1358,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
           runPreScript: runPreScript.trim() || undefined,
           runPostScript: runPostScript.trim() || undefined,
+          runFailScript: runFailScript.trim() || undefined,
           // Carry the run settings the user configured, so the schedule grades
           // the way the run they just set up would.
           stopOnError,
@@ -1386,6 +1392,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       suiteIdForRunner,
       runPreScript,
       runPostScript,
+      runFailScript,
       t,
     ],
   )
@@ -1410,6 +1417,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       environmentId,
       runPreScript,
       runPostScript,
+      runFailScript,
     })
     try {
       const res = await window.api?.testSuite?.saveRunConfig?.(
@@ -1437,6 +1445,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     environmentId,
     runPreScript,
     runPostScript,
+    runFailScript,
   ])
 
   const handleSequenceResize = useCallback((dx: number) => {
@@ -1532,6 +1541,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 setRunPreScript={setRunPreScript}
                 runPostScript={runPostScript}
                 setRunPostScript={setRunPostScript}
+                runFailScript={runFailScript}
+                setRunFailScript={setRunFailScript}
                 onRun={handleRun}
                 onSchedule={handleSchedule}
                 isRunning={isRunning}

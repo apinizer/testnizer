@@ -18,6 +18,7 @@ import ProtocolChip from '../shared/ProtocolChip'
 import { protocolChipLabel } from '../../lib/protocol-chip'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
+import RunReportExportButtons from './RunReportExportButtons'
 import { useTranslation } from '../../lib/i18n'
 
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
@@ -54,6 +55,8 @@ interface ScheduledTaskHistoryRow {
   passed_tests: number
   failed_tests: number
   started_at: number
+  /** Stored rows of the run — enables re-export (issue #266). */
+  results_json?: string | null
 }
 
 interface ScheduledTaskEndpointRow {
@@ -694,13 +697,14 @@ function TaskRow({
                     <th style={{ padding: '4px 8px', fontWeight: 600 }}>
                       {t('scheduledTasks.colDuration')}
                     </th>
+                    <th style={{ padding: '4px 8px' }} />
                   </tr>
                 </thead>
                 <tbody>
                   {history.slice(0, 10).map((row) => {
                     const failed = row.failed_endpoints > 0 || row.failed_tests > 0
                     return (
-                      <tr key={row.id}>
+                      <tr key={row.id} data-testid="scheduled-history-row" data-run-id={row.id}>
                         <td style={{ padding: '4px 8px', color: 'var(--text)' }}>
                           {formatDate(row.started_at)}
                         </td>
@@ -721,6 +725,12 @@ function TaskRow({
                         </td>
                         <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>
                           {formatDuration(row.duration_ms)}
+                        </td>
+                        <td style={{ padding: '4px 8px' }}>
+                          {/* Re-export without re-running (issue #266). */}
+                          {row.results_json ? (
+                            <RunReportExportButtons resultsJson={row.results_json} compact />
+                          ) : null}
                         </td>
                       </tr>
                     )

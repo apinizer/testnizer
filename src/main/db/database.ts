@@ -568,6 +568,10 @@ function runMigrations(database: Database.Database): void {
   if (!stColNames.includes('run_post_script')) {
     database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_post_script TEXT`)
   }
+  // Run FAIL script (issue #267) — scheduled runs are its main consumer.
+  if (!stColNames.includes('run_fail_script')) {
+    database.exec(`ALTER TABLE scheduled_tasks ADD COLUMN run_fail_script TEXT`)
+  }
   // Same parity rule as the phase columns above: a scheduled run must grade the
   // way the interactive run it was created from does. Without this the "Stop run
   // if an error occurs" choice was dropped on the way to the schedule, so an

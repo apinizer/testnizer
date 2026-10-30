@@ -7,6 +7,8 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { resolveInheritance } from '../../lib/auth-inheritance'
 import { withSoapTransportHeaders } from '../../../shared/soap-transport'
 import { isWsSecurityEnabled } from '../../../shared/soap-wsse'
+import { resolveFollowRedirects, resolveSslVerification } from '../../../shared/request-settings'
+import { useInheritedNetwork } from '../../lib/use-inherited-network'
 import type { CodeGenRequest } from '../../lib/code-generator'
 import type { AuthConfig } from '../../types'
 
@@ -74,9 +76,22 @@ function useHttpRequest(auth: AuthConfig | undefined): CodeGenRequest {
   const pathVariables = useRequestStore((s) => s.pathVariables)
   const headers = useRequestStore((s) => s.headers)
   const body = useRequestStore((s) => s.body)
-  const sslVerification = useRequestStore((s) => s.sslVerification)
-  const followRedirects = useRequestStore((s) => s.followRedirects)
+  const ownSsl = useRequestStore((s) => s.sslVerification)
+  const ownFollow = useRequestStore((s) => s.followRedirects)
   const timeout = useRequestStore((s) => s.requestTimeout)
+  // Issue #287: the snippet carries what Send does — an inherited "off"
+  // (project / app) is an `-k` / no-follow too, not only the request's own.
+  const net = useInheritedNetwork()
+  const sslVerification = resolveSslVerification(
+    ownSsl,
+    net?.project.sslVerification,
+    net?.appSslVerification,
+  )
+  const followRedirects = resolveFollowRedirects(
+    ownFollow,
+    net?.project.followRedirects,
+    net?.appFollowRedirects,
+  )
   return useMemo(
     () => ({
       method,

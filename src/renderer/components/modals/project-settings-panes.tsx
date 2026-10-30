@@ -63,8 +63,13 @@ export interface ProjectSettings {
   sendNoCache: boolean
   sendPostmanToken: boolean
   retainHeaders: boolean
-  sslVerification: boolean
-  followRedirects: boolean
+  /**
+   * Issue #287: absent = the project does not set it and follows the app
+   * Settings value. Never defaulted, so a first Save does not freeze the app
+   * value into the project (which made the app toggle dead).
+   */
+  sslVerification?: boolean
+  followRedirects?: boolean
   workingDirectory: string
   // TLS protocol / cipher overrides — surfaced in Certificates pane
   tls?: ProjectTls
@@ -875,14 +880,43 @@ export function BranchesPane({
 // General (Postman-style)
 // ════════════════════════════════════════════════════════════════
 
+/**
+ * The app Settings values a project inherits when it does not set its own
+ * SSL verification / redirects (issue #287) — what the toggles show then.
+ */
+export interface AppNetworkDefaults {
+  sslVerification?: boolean
+  followRedirects?: boolean
+}
+
+/** Hint for an inheritable project toggle: says so when the app value applies. */
+function inheritHint(
+  t: (k: string) => string,
+  own: boolean | undefined,
+  effective: boolean,
+  base?: string,
+): string | undefined {
+  if (typeof own === 'boolean') return base
+  const line = t('general.inheritsAppValue').replace(
+    '{value}',
+    t(effective ? 'settingsTab.valueOn' : 'settingsTab.valueOff'),
+  )
+  return base ? `${base} ${line}` : line
+}
+
 export function GeneralPane({
   settings,
   onChange,
+  appDefaults = {},
 }: {
   settings: ProjectSettings
   onChange: (patch: Partial<ProjectSettings>) => void
+  appDefaults?: AppNetworkDefaults
 }) {
   const { t } = useTranslation()
+  // Issue #287: an unset project value shows (and is) the app Settings value.
+  const sslOn = settings.sslVerification ?? appDefaults.sslVerification ?? true
+  const followOn = settings.followRedirects ?? appDefaults.followRedirects ?? true
   return (
     <div className="p-6">
       <PaneHeader title={t('general.title')} subtitle={t('general.subtitle')} />
@@ -940,12 +974,14 @@ export function GeneralPane({
             />
             <Toggle
               label={t('general.sslVerification')}
-              checked={settings.sslVerification}
+              hint={inheritHint(t, settings.sslVerification, sslOn)}
+              checked={sslOn}
               onChange={(v) => onChange({ sslVerification: v })}
             />
             <Toggle
               label={t('general.followRedirects')}
-              checked={settings.followRedirects}
+              hint={inheritHint(t, settings.followRedirects, followOn)}
+              checked={followOn}
               onChange={(v) => onChange({ followRedirects: v })}
             />
           </div>
@@ -1376,12 +1412,15 @@ export function CertificatesPane({
   projectId,
   settings,
   onChange,
+  appDefaults = {},
 }: {
   projectId: string
   settings: ProjectSettings
   onChange: (patch: Partial<ProjectSettings>) => void
+  appDefaults?: AppNetworkDefaults
 }) {
   const { t } = useTranslation()
+  const sslOn = settings.sslVerification ?? appDefaults.sslVerification ?? true
   const [certs, setCerts] = useState<CertRow[]>([])
   const [loading, setLoading] = useState(false)
   const tls: ProjectTls = settings.tls ?? {}
@@ -1595,8 +1634,8 @@ export function CertificatesPane({
 
           <Toggle
             label={t('general.sslVerification')}
-            hint={t('tls.verifyHint')}
-            checked={settings.sslVerification}
+            hint={inheritHint(t, settings.sslVerification, sslOn, t('tls.verifyHint'))}
+            checked={sslOn}
             onChange={(v) => onChange({ sslVerification: v })}
           />
 

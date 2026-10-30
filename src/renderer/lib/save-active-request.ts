@@ -44,7 +44,13 @@ import {
 import { mergeParamsFromUrl } from './url-query-sync'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
-import type { RequestSettings } from '../../shared/request-settings'
+import {
+  encodeFollowRedirects,
+  encodeSslVerification,
+  requestFollowRedirects,
+  requestSslVerification,
+  type RequestSettings,
+} from '../../shared/request-settings'
 import { isRunnableProtocol } from '../../shared/request-protocols'
 import { pathVariablesField, type PathVariableLike } from '../../shared/path-variables'
 
@@ -313,9 +319,11 @@ export function requestSettingsFor(tab: Tab): RequestSettings {
   const req = useRequestStore.getState()
   return {
     ...(req.requestTimeout != null ? { timeout: req.requestTimeout } : {}),
-    followRedirects: req.followRedirects,
+    // Issue #287: `null` (inherit) writes no key — an untouched request used to
+    // store the store default `true`, which shadowed the project's "off".
+    ...encodeFollowRedirects(req.followRedirects),
     maxRedirects: req.maxRedirects,
-    sslVerification: req.sslVerification,
+    ...encodeSslVerification(req.sslVerification),
     ...critical,
   }
 }
@@ -352,16 +360,17 @@ export function savedRequestMetadata(
  */
 export function requestStoreSettings(s: RequestSettings): {
   requestTimeout: number | null
-  followRedirects?: boolean
+  followRedirects: boolean | null
   maxRedirects?: number
-  sslVerification?: boolean
+  sslVerification: boolean | null
   critical: boolean
 } {
   return {
     requestTimeout: s.timeout ?? null,
-    followRedirects: s.followRedirects,
+    // Tri-state (issue #287): a legacy bare `true` opens as inherit (`null`).
+    followRedirects: requestFollowRedirects(s) ?? null,
     maxRedirects: s.maxRedirects,
-    sslVerification: s.sslVerification,
+    sslVerification: requestSslVerification(s) ?? null,
     critical: s.critical === true,
   }
 }

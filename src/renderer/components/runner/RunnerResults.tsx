@@ -18,6 +18,7 @@ import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
 import { displayRunSourceLabel } from '../../lib/runner-source-label'
 import CriticalBadge from './CriticalBadge'
+import RunReportExportButtons from './RunReportExportButtons'
 import {
   filterRunResults,
   runResultMethods,
@@ -440,6 +441,9 @@ export default function RunnerResults({
                 {t('runResults.title')}
               </span>
               <div className="flex items-center gap-2">
+                {/* One generator in main (issue #266) — the same report a run
+                    fail script's pm.run.exportHtml() sends (issue #267). */}
+                <RunReportExportButtons results={results} />
                 <button
                   type="button"
                   onClick={onRunAgain}

@@ -1444,6 +1444,8 @@ export interface SuiteRunConfig {
   environmentId?: string
   runPreScript?: string
   runPostScript?: string
+  /** Run fail script (issue #267) — once after teardown when the run is red. */
+  runFailScript?: string
 }
 
 export type MockServerStatus = 'stopped' | 'starting' | 'running' | 'error'
