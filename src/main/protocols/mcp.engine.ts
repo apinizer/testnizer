@@ -1559,14 +1559,27 @@ export async function mcpConnect(options: {
     }
     // Not connection failures, kept verbatim (credentials still scrubbed): a
     // user cancel, and an answer the server gave in MCP terms — a JSON-RPC
-    // error (also inside an HTTP 4xx body) or a failed era negotiation.
-    const kind = classifyTransportError(decorated, ctx).kind
-    const e = decorated as { name?: unknown; code?: unknown; message?: unknown }
-    const answered =
-      (kind === 'unknown' || kind === 'http-status') &&
-      (e.name === 'ProtocolError' ||
-        e.code === 'ERA_NEGOTIATION_FAILED' ||
-        (typeof e.message === 'string' && /^HTTP \d{3}: MCP error /.test(e.message)))
+    // error (also inside an HTTP 4xx body) or a failed era negotiation. A
+    // JSON-RPC answer is recognised from its SHAPE before any text rule: a
+    // server message such as "Invalid URL in server configuration" must not
+    // turn into the `invalid-url` connection failure. Only an HTTP status the
+    // classifier maps to its own kind (401 / 403 / 404 — the handler offers
+    // OAuth on 401) still wins over the answer.
+    const e = decorated as { name?: unknown; code?: unknown; message?: unknown; cause?: unknown }
+    const rpcAnswer =
+      e.name === 'ProtocolError' ||
+      (typeof e.message === 'string' && /^HTTP \d{3}: MCP error /.test(e.message))
+    let answered = false
+    if (rpcAnswer) {
+      const info = classifyTransportError(decorated, ctx)
+      answered = info.httpStatus === undefined || info.kind === 'http-status'
+    } else if (e.code === 'ERA_NEGOTIATION_FAILED') {
+      // The SDK wraps a network failure of the probe (refused, closed, …) as
+      // an era-negotiation error with the transport error as `cause`: judge
+      // what it wraps, not the SDK sentence around a server's reply.
+      const kind = classifyTransportError(e.cause ?? decorated, ctx).kind
+      answered = kind === 'unknown' || kind === 'http-status'
+    }
     if (cancelled || answered) {
       if (decorated instanceof Error) {
         try {

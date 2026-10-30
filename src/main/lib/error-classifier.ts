@@ -24,7 +24,7 @@ import {
   type ConnectionErrorInfo,
   type ConnectionErrorKind,
 } from '../../shared/connection-error'
-import { isCredentialHeaderName } from '../../shared/credential-headers'
+import { isCredentialArgName, isCredentialHeaderName } from '../../shared/credential-headers'
 
 export type { ConnectionErrorInfo, ConnectionErrorKind } from '../../shared/connection-error'
 
@@ -315,7 +315,11 @@ export function scrubConnectionText(text: string, ctxUrl: string | undefined): s
     try {
       const u = new URL(ctxUrl)
       const queryCredentials = [...u.searchParams.entries()]
-        .filter(([name]) => isCredentialHeaderName(name))
+        // Query names are ARGUMENTS: the shared argument rule (whole words —
+        // `sig`, `api_key`, `access_token`) is the one History / Console use
+        // for query fields. The broader header rule stays as a superset so no
+        // value this scrub already removed can start leaking.
+        .filter(([name]) => isCredentialArgName(name) || isCredentialHeaderName(name))
         .map(([, value]) => value)
       const secrets = [u.username, u.password, ...queryCredentials]
         .flatMap((v) => {
@@ -465,6 +469,8 @@ function classifyKind(
   if (ctx?.protocol === 'mqtt') {
     const hit = mqttKind(err, f)
     if (hit) return hit
+    // MQTT.js: TCP accepted but no CONNACK within `connectTimeout`.
+    if (/^connack timeout$/i.test(f.messages[0] ?? '')) return { kind: 'timeout' }
   }
   const command = spawnCommand(f)
   if (command) return { kind: 'spawn-failed', detail: command }

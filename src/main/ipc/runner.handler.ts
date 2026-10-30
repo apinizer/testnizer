@@ -794,6 +794,15 @@ interface ScriptContext {
    * because script output only ever landed in the run report.
    */
   consoleTag?: { tabId?: string; meta: Record<string, string | number | boolean> }
+  /**
+   * This step's request secrets (resolved auth, WS-Security password, proxy
+   * credential incl. its base64 `Proxy-Authorization` form) — the same list
+   * the step's other sinks (Console request entry, History, `recordStep`)
+   * mask. The script `console.*` mirror masks them too: a post-response
+   * script printing a 407 proxy's echo must not put the password in the app
+   * Console (review W2 of issue #254).
+   */
+  requestSecrets?: string[]
   /** Scopes `pm.sendRequest` to the run's per-project cookie jar so a script
    *  login shares its session cookie with the main request (issue #104).
    *  Cookie-jar scope ONLY — cert scope stays none for scripted sends (R5). */
@@ -948,7 +957,7 @@ function pushConsoleLog(
       meta: ctx.consoleTag.meta,
       // The Console masks the DB's secrets itself; a value this run's scripts
       // wrote to a secret variable (or a `pm.vault.set`) is not in the DB yet.
-      secrets: liveSecretValues(ctx),
+      secrets: [...(ctx.requestSecrets ?? []), ...liveSecretValues(ctx)],
     })
   }
 }
@@ -1698,6 +1707,8 @@ async function runEndpointStep(
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
   scriptCtx.projectId = ctx.options.projectId
+  // Known before any script runs; the resolved auth joins below.
+  scriptCtx.requestSecrets = proxySecretValues(requestOptions.proxy)
 
   try {
     // Resolve inherited auth + cascade scripts up the folder/project chain.
@@ -1884,6 +1895,7 @@ async function runEndpointStep(
       ...wsseSecrets,
       ...proxySecretValues(resolvedOptions.proxy),
     ]
+    scriptCtx.requestSecrets = authSecrets
     // Scope the cookie jar to this project so session cookies (login →
     // protected call) behave the same in Run as they do in Send. Without
     // it the engine falls back to the shared "_default" jar (issue: Send

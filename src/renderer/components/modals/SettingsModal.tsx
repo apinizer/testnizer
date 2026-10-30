@@ -162,7 +162,10 @@ export default function SettingsModal() {
             mode: settings.proxyMode,
             ...(settings.proxyHost ? { host: settings.proxyHost } : {}),
             ...(settings.proxyPort ? { port: Number(settings.proxyPort) } : {}),
-            ...(settings.proxyUser
+            // A password-only proxy credential (empty username) is valid — the
+            // project dialog, the engine and `proxySecretValues` accept it — so
+            // either field keeps `auth` (dropping it lost the password on Save).
+            ...(settings.proxyUser || settings.proxyPassword
               ? { auth: { username: settings.proxyUser, password: settings.proxyPassword } }
               : {}),
           },
