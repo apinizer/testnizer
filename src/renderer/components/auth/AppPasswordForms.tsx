@@ -129,6 +129,7 @@ export function ChangePasswordForm({
             value={newPw}
             onChange={(e) => setNewPw(e.target.value)}
             placeholder={t('profile.newPasswordPlaceholder')}
+            title={t('profile.newPasswordPlaceholder')}
             className={INPUT_CLS}
             style={inputStyle()}
           />

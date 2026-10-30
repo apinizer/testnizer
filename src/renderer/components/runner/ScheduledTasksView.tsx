@@ -20,6 +20,7 @@ import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
 import RunReportExportButtons from './RunReportExportButtons'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate, formatTime } from '../../lib/format-datetime'
 
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
 
@@ -206,23 +207,12 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
     loadTasks()
   }, [deleteTarget, loadTasks])
 
-  const formatDate = (ts: number) => {
+  const formatStamp = (ts: number) => {
     const d = new Date(ts)
     const now = new Date()
     const isToday = d.toDateString() === now.toDateString()
-    if (isToday)
-      return t('scheduledTasks.today').replace(
-        '{time}',
-        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      )
-    return (
-      d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US', {
-        month: 'short',
-        day: 'numeric',
-      }) +
-      ', ' +
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    )
+    if (isToday) return t('scheduledTasks.today').replace('{time}', formatTime(ts, locale))
+    return `${formatDate(ts, locale, { year: false })}, ${formatTime(ts, locale)}`
   }
 
   return (
@@ -328,7 +318,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
                 <TaskRow
                   key={task.id}
                   task={task}
-                  formatDate={formatDate}
+                  formatDate={formatStamp}
                   onToggle={() => toggleTask(task.id)}
                   onDelete={() => setDeleteTarget(task)}
                 />

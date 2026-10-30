@@ -388,7 +388,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'shell.dragToResize': 'Drag to resize',
     'shell.loading': 'Loading...',
     'header.closeProjectTab': 'Close project tab',
-    'header.saveProjectHint': 'Save Project (Cmd+S)',
+    'header.saveProjectHint': 'Save Project',
     'urlBar.sendAndDownload': 'Send and Download',
     'rightPanel.variables': 'Variables',
     'rightPanel.code': 'Code',
@@ -803,6 +803,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'urlBar.sending': 'Sending...',
     'urlBar.cancel': 'Cancel',
     'urlBar.save': 'Save',
+    'urlBar.more': 'More actions',
     'urlBar.import': 'Import',
     'urlBar.enterUrl': 'Enter URL...',
 
@@ -1374,7 +1375,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'updateTab.autoInstall': 'Automatically download updates',
     'updateTab.checkNow': 'Check for updates',
 
-    // Modal footer
     // Settings scope — App vs Project settings (issue #254)
     'settingsScope.projectTitle': 'Project settings — {name}',
     'settingsScope.appTitle': 'App settings (all projects)',
@@ -1404,6 +1404,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'settingsScope.updatePerProject':
       'Automatic update checks are set per project (Project settings → Update).',
 
+    // Modal footer
     'modal.saveChanges': 'Save Changes',
     'modal.saving': 'Saving…',
     'modal.saved': 'Saved',
@@ -2766,6 +2767,23 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.regex.highlighted': 'Highlighted matches',
     'tools.regex.matchTable': 'Match table',
     'tools.regex.preset': 'Insert preset…',
+    // ── issue #258 / issue #261: Tools leftovers + small polish ──
+    'tools.regex.flag.g': 'global — find all matches',
+    'tools.regex.flag.i': 'case-insensitive',
+    'tools.regex.flag.m': 'multiline — ^/$ match per line',
+    'tools.regex.flag.s': 'dotAll — . matches newlines',
+    'tools.regex.flag.u': 'unicode — full Unicode support',
+    'tools.regex.flag.y': 'sticky — match from lastIndex',
+    'tools.regex.sampleInput':
+      'Sample input text:\nContact us at help@example.com or sales@example.org\nVisit https://testnizer.example/docs or http://localhost:8080/health\nServer IPs: 192.168.1.10, 10.0.0.1\nTrace ID: 550e8400-e29b-41d4-a716-446655440000\nDate: 2026-05-09T22:00:00Z',
+    'tools.uuid.namespaceCustomPlaceholder': 'custom namespace UUID',
+    'tools.uuid.namespaceCustomLabel': 'Custom namespace UUID',
+    'tools.uuid.validatePlaceholder': 'paste a UUID to inspect',
+    'tools.hmac.secretPlaceholder': 'secret key',
+    'tools.base.sample': 'Hello',
+    'tools.base.multiByte': '— (multi-byte)',
+    'tools.base.utf8Multi': '— (UTF-8)',
+    'protocolChip.name.sse': 'Server-Sent Events',
     // ── YAML ↔ JSON ──
     'tools.yamlJson.title': 'YAML ↔ JSON',
     'tools.yamlJson.yamlToJson': 'YAML → JSON',
@@ -3769,6 +3787,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.name': 'Name',
     'mockNew.port': 'Port',
     'mockNew.portTaken': 'Another mock server in this project already uses port {port}.',
+    'mockNew.portPrivileged': 'Ports below 1024 may need elevated permissions on this computer.',
     'mockNew.addHttp': 'New HTTP mock server',
     'mockNew.httpEmpty': 'No HTTP mock servers yet',
     'mockNew.httpItemType': 'HTTP mock server',
@@ -4753,7 +4772,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'shell.dragToResize': 'Boyutlandırmak için sürükleyin',
     'shell.loading': 'Yükleniyor...',
     'header.closeProjectTab': 'Proje sekmesini kapat',
-    'header.saveProjectHint': 'Projeyi Kaydet (Cmd+S)',
+    'header.saveProjectHint': 'Projeyi Kaydet',
     'urlBar.sendAndDownload': 'Gönder ve İndir',
     'rightPanel.variables': 'Değişkenler',
     'rightPanel.code': 'Kod',
@@ -5167,6 +5186,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'urlBar.sending': 'Gönderiliyor...',
     'urlBar.cancel': 'İptal',
     'urlBar.save': 'Kaydet',
+    'urlBar.more': 'Diğer işlemler',
     'urlBar.import': 'İçeri Aktar',
     'urlBar.enterUrl': 'URL girin...',
 
@@ -5738,6 +5758,34 @@ const translations: Record<Locale, Record<string, string>> = {
     'updateTab.autoInstall': 'Güncellemeleri otomatik indir',
     'updateTab.checkNow': 'Güncellemeleri kontrol et',
 
+    // Ayar kapsamı — Uygulama ve Proje ayarları (issue #254)
+    'settingsScope.projectTitle': 'Proje ayarları — {name}',
+    'settingsScope.appTitle': 'Uygulama ayarları (tüm projeler)',
+    'settingsScope.overridesApp': 'Uygulama ayarının yerine geçer.',
+    'settingsScope.useAppSetting': 'Uygulama ayarını kullan',
+    'settingsScope.overrideNote': 'Projeler bunu Proje ayarlarında değiştirebilir.',
+    'settingsScope.appearanceScope': 'Tema, dil ve yazı tipi tüm uygulamaya uygulanır.',
+    'settingsScope.openProjectSettings': 'Proje ayarlarını aç',
+    'settingsScope.openAppSettings': 'Uygulama ayarlarını aç',
+    'settingsScope.appearanceTitle': 'Görünüm',
+    'settingsScope.appearanceSubtitle': 'Tema, dil, yazı tipi ve yazı boyutu her projede aynıdır.',
+    'settingsScope.appearanceLinkText': 'Görünüm, Uygulama ayarlarından ayarlanır.',
+    'settingsScope.accentHint': 'Proje rengi Genel Bakış bölümünde ayarlanır.',
+    'settingsScope.unsavedTitle': 'Kaydedilmemiş değişiklikler',
+    'settingsScope.unsavedBody': '{target} açılmadan önce değişiklikler kaydedilsin mi?',
+    'settingsScope.unsavedSave': 'Kaydet ve aç',
+    'settingsScope.unsavedDiscard': 'Değişiklikleri at',
+    'settingsScope.unsavedCancel': 'İptal',
+    'settingsScope.targetApp': 'Uygulama ayarları',
+    'settingsScope.targetProject': 'Proje ayarları',
+    'settingsScope.proxyFollowApp': 'Uygulama ayarını izle',
+    'settingsScope.proxyNone': 'proxy yok',
+    'settingsScope.proxySystem': 'sistem proxy',
+    'settingsScope.updateScope':
+      'Proje başına ayarlanır: otomatik güncelleme denetimi açık olan projeyi izler.',
+    'settingsScope.updatePerProject':
+      'Otomatik güncelleme denetimi proje başına ayarlanır (Proje ayarları → Güncelleme).',
+
     // Modal footer
     'modal.saveChanges': 'Değişiklikleri Kaydet',
     'modal.saving': 'Kaydediliyor…',
@@ -5758,35 +5806,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'runner.exportFailed': 'Çalıştırma raporu dışarı aktarılamadı: {error}',
 
     // Empty states
-    // Ayar kapsamı — Uygulama ve Proje ayarları (issue #254)
-    'settingsScope.projectTitle': 'Proje ayarları — {name}',
-    'settingsScope.appTitle': 'Uygulama ayarları (tüm projeler)',
-    'settingsScope.overridesApp': 'Uygulama ayarının yerine geçer.',
-    'settingsScope.useAppSetting': 'Uygulama ayarını kullan',
-    'settingsScope.overrideNote': 'Projeler bunu Proje ayarlarında değiştirebilir.',
-    'settingsScope.appearanceScope': 'Tema, dil ve yazı tipi tüm uygulamaya uygulanır.',
-    'settingsScope.openProjectSettings': 'Proje ayarlarını aç',
-    'settingsScope.openAppSettings': 'Uygulama ayarlarını aç',
-    'settingsScope.appearanceTitle': 'Görünüm',
-    'settingsScope.appearanceSubtitle':
-      'Tema, dil, yazı tipi ve yazı boyutu her projede aynıdır.',
-    'settingsScope.appearanceLinkText': 'Görünüm, Uygulama ayarlarından ayarlanır.',
-    'settingsScope.accentHint': 'Proje rengi Genel Bakış bölümünde ayarlanır.',
-    'settingsScope.unsavedTitle': 'Kaydedilmemiş değişiklikler',
-    'settingsScope.unsavedBody': '{target} açılmadan önce değişiklikler kaydedilsin mi?',
-    'settingsScope.unsavedSave': 'Kaydet ve aç',
-    'settingsScope.unsavedDiscard': 'Değişiklikleri at',
-    'settingsScope.unsavedCancel': 'İptal',
-    'settingsScope.targetApp': 'Uygulama ayarları',
-    'settingsScope.targetProject': 'Proje ayarları',
-    'settingsScope.proxyFollowApp': 'Uygulama ayarını izle',
-    'settingsScope.proxyNone': 'proxy yok',
-    'settingsScope.proxySystem': 'sistem proxy',
-    'settingsScope.updateScope':
-      'Proje başına ayarlanır: otomatik güncelleme denetimi açık olan projeyi izler.',
-    'settingsScope.updatePerProject':
-      'Otomatik güncelleme denetimi proje başına ayarlanır (Proje ayarları → Güncelleme).',
-
     'empty.clickSend': 'Yanıt almak için Gönder butonuna tıklayın',
     'empty.noResponse': 'Henüz yanıt yok',
     'empty.enterUrl': 'Yanıtı burada görmek için bir URL girin ve Gönder butonuna tıklayın',
@@ -7140,6 +7159,23 @@ const translations: Record<Locale, Record<string, string>> = {
     'tools.regex.highlighted': 'Vurgulanan eşleşmeler',
     'tools.regex.matchTable': 'Eşleşme tablosu',
     'tools.regex.preset': 'Hazır desen ekle…',
+    // ── issue #258 / issue #261: Tools leftovers + small polish ──
+    'tools.regex.flag.g': 'genel — tüm eşleşmeleri bul',
+    'tools.regex.flag.i': 'büyük/küçük harfe duyarsız',
+    'tools.regex.flag.m': 'çok satırlı — ^/$ her satırda eşleşir',
+    'tools.regex.flag.s': 'dotAll — . satır sonlarıyla da eşleşir',
+    'tools.regex.flag.u': 'Unicode — tam Unicode desteği',
+    'tools.regex.flag.y': 'yapışkan — lastIndex konumundan eşleştirir',
+    'tools.regex.sampleInput':
+      'Örnek girdi metni:\nBize destek@example.com ya da satis@example.org adresinden ulaşın\nBelgeler: https://testnizer.example/docs ya da http://localhost:8080/health\nSunucu IP adresleri: 192.168.1.10, 10.0.0.1\nİz kimliği: 550e8400-e29b-41d4-a716-446655440000\nTarih: 2026-05-09T22:00:00Z',
+    'tools.uuid.namespaceCustomPlaceholder': 'özel namespace UUID',
+    'tools.uuid.namespaceCustomLabel': 'Özel namespace UUID',
+    'tools.uuid.validatePlaceholder': 'incelemek için bir UUID yapıştırın',
+    'tools.hmac.secretPlaceholder': 'gizli anahtar',
+    'tools.base.sample': 'Merhaba',
+    'tools.base.multiByte': '— (çok baytlı)',
+    'tools.base.utf8Multi': '— (UTF-8)',
+    'protocolChip.name.sse': 'Sunucu Gönderimli Olaylar',
     // ── YAML ↔ JSON ──
     'tools.yamlJson.title': 'YAML ↔ JSON',
     'tools.yamlJson.yamlToJson': 'YAML → JSON',
@@ -8147,6 +8183,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.name': 'Ad',
     'mockNew.port': 'Port',
     'mockNew.portTaken': 'Bu projedeki başka bir mock sunucu {port} portunu zaten kullanıyor.',
+    'mockNew.portPrivileged':
+      '1024 altındaki portlar bu bilgisayarda yönetici izni gerektirebilir.',
     'mockNew.addHttp': 'Yeni HTTP mock sunucusu',
     'mockNew.httpEmpty': 'Henüz HTTP mock sunucusu yok',
     'mockNew.httpItemType': 'HTTP mock sunucusu',

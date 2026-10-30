@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, Trash2, RefreshCw } from 'lucide-react'
 import { useMockStore } from '../../stores/mock.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatClock } from '../../lib/format-datetime'
 import { useNumberDraft } from '../../lib/number-draft'
 import { toast } from '../../lib/toast'
 import type {
@@ -1589,7 +1590,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 // ─── Logs tab ────────────────────────────────────────────────────
 
 function LogsTab({ serverId }: { serverId: string }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const logs = useMockStore((s) => s.logsByServer[serverId]) ?? EMPTY_LOGS
   const loadLogs = useMockStore((s) => s.loadLogs)
   const clearLogs = useMockStore((s) => s.clearLogs)
@@ -1698,7 +1699,7 @@ function LogsTab({ serverId }: { serverId: string }) {
                         className="border-b px-2 py-1"
                         style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                       >
-                        {new Date(log.ts).toLocaleTimeString()}
+                        {formatClock(log.ts, locale)}
                       </td>
                       <td
                         className="border-b px-2 py-1 font-mono"

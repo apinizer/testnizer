@@ -7,6 +7,7 @@ import { useUIStore } from '../stores/ui.store'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
+import { defaultRequestTabName } from './endpoint-name'
 import { isRequestLikeTab } from './mark-dirty'
 import { saveActiveRequestInPlace } from './save-active-request'
 import { runActiveRequest } from './run-active-request'
@@ -199,7 +200,7 @@ export function useKeyboardShortcuts(): void {
             const id = makeTabId()
             useTabsStore.getState().openTab({
               id,
-              name: 'New Request',
+              name: defaultRequestTabName(),
               protocol: 'http',
               method: 'GET',
               url: '',

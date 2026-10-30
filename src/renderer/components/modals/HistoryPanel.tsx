@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, Search, Trash2, Clock } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
+import { formatDateTime, formatTime, type DateTimeLocale } from '../../lib/format-datetime'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -26,6 +27,7 @@ import type {
  */
 export default function HistoryPanel() {
   const show = useUIStore((s) => s.showHistoryPanel)
+  const locale = useUIStore((s) => s.locale)
   const setShow = useUIStore((s) => s.setShowHistoryPanel)
 
   const entries = useHistoryStore((s) => s.entries)
@@ -65,7 +67,7 @@ export default function HistoryPanel() {
   }, [entries, searchTerm])
 
   // Group by date bucket
-  const groups = useMemo(() => groupByDate(filtered), [filtered])
+  const groups = useMemo(() => groupByDate(filtered, locale), [filtered, locale])
 
   const selected = useMemo(
     () => filtered.find((e) => e.id === selectedId) || null,
@@ -248,7 +250,7 @@ export default function HistoryPanel() {
                         </span>
                       )}
                       <span className="shrink-0" style={{ color: 'var(--muted)' }}>
-                        {formatTime(entry.executed_at)}
+                        {formatTime(entry.executed_at, locale)}
                       </span>
                       <button
                         type="button"
@@ -297,6 +299,7 @@ export default function HistoryPanel() {
 // ────────────────────────────────────────────────────────────────
 
 function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => void }) {
+  const locale = useUIStore((s) => s.locale)
   const resp = entry.response_snapshot
   return (
     <div className="p-4">
@@ -332,7 +335,7 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
             </span>
           </span>
         )}
-        <span>{new Date(entry.executed_at).toLocaleString()}</span>
+        <span>{formatDateTime(entry.executed_at, locale)}</span>
       </div>
 
       {resp?.headers && Object.keys(resp.headers).length > 0 && (
@@ -387,7 +390,10 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
 // Helpers
 // ────────────────────────────────────────────────────────────────
 
-function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: HistoryEntry[] }> {
+function groupByDate(
+  entries: HistoryEntry[],
+  locale: DateTimeLocale,
+): Array<{ label: string; items: HistoryEntry[] }> {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
   const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000
@@ -403,7 +409,7 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
       yesterday.push(e)
     } else {
       const d = new Date(e.executed_at)
-      const key = d.toLocaleDateString(undefined, {
+      const key = d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : undefined, {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -420,10 +426,6 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
     out.push({ label, items })
   }
   return out
-}
-
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
 function shortUrl(url: string): string {

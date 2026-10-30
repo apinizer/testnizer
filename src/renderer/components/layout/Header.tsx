@@ -10,6 +10,7 @@ import PushCommitModal, { type PushChoice } from '../modals/PushCommitModal'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
 import { emptySecretsMessage } from '../../lib/pull-messages'
 import { toast } from '../../lib/toast'
+import { formatShortcut } from '../../lib/shortcut-format'
 import { T } from '../../styles/tokens'
 
 // SVG icons for git operations
@@ -453,7 +454,7 @@ export default function Header() {
             fontSize: 13,
             transition: 'all 0.2s',
           }}
-          title={t('header.saveProjectHint')}
+          title={`${t('header.saveProjectHint')} (${formatShortcut(['Mod', 'Shift', 'S'])})`}
           onMouseEnter={(e) => {
             if (saveStatus === 'idle') {
               ;(e.currentTarget as HTMLElement).style.color = T.accent

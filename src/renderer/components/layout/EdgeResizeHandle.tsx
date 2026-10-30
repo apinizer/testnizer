@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { useUIStore } from '../../stores/ui.store'
+import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import { lockDragStyles } from '../../lib/drag-lock'
 import { useTranslation } from '../../lib/i18n'
 
@@ -29,7 +29,7 @@ const BOUNDS = {
  */
 export default function EdgeResizeHandle({ target }: Props) {
   const { t } = useTranslation()
-  const collapsed = useUIStore((s) => (target === 'right' ? s.rightPanelCollapsed : false))
+  const collapsed = useUIStore((s) => (target === 'right' ? selectRightPanelCollapsed(s) : false))
   const width = useUIStore((s) => (target === 'left' ? s.leftPanelWidth : s.rightPanelWidth))
   const setLeft = useUIStore((s) => s.setLeftPanelWidth)
   const setRight = useUIStore((s) => s.setRightPanelWidth)

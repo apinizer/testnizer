@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { BarChart2, Clock, FolderOpen, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate, formatTime } from '../../lib/format-datetime'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
 import { historyRunOrigin, suiteTaskIdsOf } from '../../lib/runner-source-label'
@@ -72,7 +73,7 @@ export default function TestsHome({
   onNewRun,
   onViewReport,
 }: TestsHomeProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const [runs, setRuns] = useState<RunHistoryRow[]>([])
   const [stats, setStats] = useState<HistoryStats>({
@@ -170,21 +171,12 @@ export default function TestsHome({
     }
   }
 
-  const formatDate = (ts: number) => {
+  const formatStamp = (ts: number) => {
     const d = new Date(ts)
     const now = new Date()
     const isToday = d.toDateString() === now.toDateString()
-    if (isToday)
-      return (
-        t('testsHome.today') +
-        ', ' +
-        d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      )
-    return (
-      d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
-      ', ' +
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    )
+    if (isToday) return `${t('testsHome.today')}, ${formatTime(ts, locale)}`
+    return `${formatDate(ts, locale, { year: false })}, ${formatTime(ts, locale)}`
   }
 
   const formatDuration = (ms: number) => {
@@ -321,7 +313,7 @@ export default function TestsHome({
                           )}
                           <div className="flex-1 truncate">
                             <div style={{ color: 'var(--text)', fontWeight: 500 }}>
-                              {formatDate(run.started_at)}
+                              {formatStamp(run.started_at)}
                             </div>
                             <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                               {run.source_label || run.source} • {run.total_endpoints}{' '}
@@ -374,7 +366,7 @@ export default function TestsHome({
                         <div className="flex-1 truncate">
                           <div style={{ color: 'var(--text)', fontWeight: 500 }}>{suite.name}</div>
                           <div style={{ color: 'var(--muted)', fontSize: 13 }}>
-                            {t('testsHome.createdOn')} {formatDate(suite.created_at)}
+                            {t('testsHome.createdOn')} {formatStamp(suite.created_at)}
                           </div>
                         </div>
                       </div>
@@ -430,7 +422,7 @@ export default function TestsHome({
                           <div style={{ color: 'var(--text)', fontWeight: 500 }}>{task.name}</div>
                           <div style={{ color: 'var(--muted)', fontSize: 13 }}>
                             {task.enabled && task.next_run_at
-                              ? `${t('testsHome.next')}: ${formatDate(task.next_run_at)}`
+                              ? `${t('testsHome.next')}: ${formatStamp(task.next_run_at)}`
                               : t('testsHome.paused')}
                           </div>
                         </div>

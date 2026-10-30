@@ -140,11 +140,11 @@ export default function UuidTool() {
                 </select>
                 <input
                   id={namespaceCustomId}
-                  aria-label="Custom namespace UUID"
+                  aria-label={t('tools.uuid.namespaceCustomLabel')}
                   type="text"
                   value={namespace}
                   onChange={(e) => setNamespace(e.target.value)}
-                  placeholder="custom namespace UUID"
+                  placeholder={t('tools.uuid.namespaceCustomPlaceholder')}
                   className="mt-1 w-full rounded border px-2 py-1 text-xs font-mono"
                   style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
                 />
@@ -217,7 +217,7 @@ export default function UuidTool() {
               type="text"
               value={validatorInput}
               onChange={(e) => setValidatorInput(e.target.value)}
-              placeholder="paste a UUID to inspect"
+              placeholder={t('tools.uuid.validatePlaceholder')}
               className="w-full rounded border px-2 py-1 text-xs font-mono"
               style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
             />

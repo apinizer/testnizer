@@ -30,12 +30,7 @@
  */
 import fs from 'node:fs'
 import path from 'node:path'
-import {
-  expect,
-  type ConsoleMessage,
-  type ElectronApplication,
-  type Page,
-} from '@playwright/test'
+import { expect, type ConsoleMessage, type ElectronApplication, type Page } from '@playwright/test'
 import { uiTest } from '../_setup'
 import {
   E2E_PROJECT_NAME,
@@ -65,9 +60,16 @@ import { fillMonaco } from '../../helpers/ui/monaco'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
 import { withClipboardText } from '../../helpers/ui/clipboard'
 import { openConsolePanel } from '../../helpers/ui/console-flow'
+import { setRightPanelOpen } from '../../helpers/ui/layout-extra'
 import { disconnectIfConnected } from '../../helpers/ui/protocol-extra'
 import { openTool } from '../../helpers/ui/tools-flow'
-import { switchEnvironment, openEnvModal, selectEnvironmentInModal, openGlobalsPane, addVariable } from '../../helpers/ui/env'
+import {
+  switchEnvironment,
+  openEnvModal,
+  selectEnvironmentInModal,
+  openGlobalsPane,
+  addVariable,
+} from '../../helpers/ui/env'
 import {
   addMockEndpoint,
   addMockResponse,
@@ -191,7 +193,9 @@ const tourTest = uiTest.extend<{ errorGuard: void }>({
 async function settle(w: Page): Promise<void> {
   await w.evaluate(() => document.fonts.ready.then(() => undefined)).catch(() => {})
   await expect(
-    w.locator('[data-testid="response-loading"]:visible, .animate-spin:visible, [role="progressbar"]:visible'),
+    w.locator(
+      '[data-testid="response-loading"]:visible, .animate-spin:visible, [role="progressbar"]:visible',
+    ),
   )
     .toHaveCount(0, { timeout: 4_000 })
     .catch(() => {})
@@ -210,7 +214,11 @@ async function shot(w: Page, spec: ShotSpec, setup?: () => Promise<void>): Promi
   try {
     if (setup) await setup()
     await settle(w)
-    await w.screenshot({ path: path.join(dir, `${name}.png`), animations: 'disabled', caret: 'hide' })
+    await w.screenshot({
+      path: path.join(dir, `${name}.png`),
+      animations: 'disabled',
+      caret: 'hide',
+    })
     T.shots++
     return true
   } catch (e) {
@@ -246,7 +254,9 @@ async function attempt(label: string, fn: () => Promise<void>): Promise<boolean>
 async function readSetting(w: Page, key: string): Promise<unknown> {
   return w.evaluate(async (k) => {
     const api = (
-      window as unknown as { api?: { settings?: { get: (k: string) => Promise<{ data?: unknown }> } } }
+      window as unknown as {
+        api?: { settings?: { get: (k: string) => Promise<{ data?: unknown }> } }
+      }
     ).api
     return (await api?.settings?.get(k))?.data
   }, key)
@@ -275,7 +285,10 @@ async function setLocale(w: Page, locale: 'en' | 'tr'): Promise<void> {
   await openCommandPalette(w)
   await w
     .getByRole('option', {
-      name: locale === 'tr' ? /Change language: Türkçe|Dil: Türkçe/ : /Change language: English|Dil: English/,
+      name:
+        locale === 'tr'
+          ? /Change language: Türkçe|Dil: Türkçe/
+          : /Change language: English|Dil: English/,
     })
     .click()
   await expect.poll(() => persistedLocale(w), { timeout: 5_000 }).toBe(locale)
@@ -474,7 +487,8 @@ async function purgeMocks(w: Page, projectId: string): Promise<void> {
       stop: (id: string) => Promise<unknown>
       delete: (id: string) => Promise<unknown>
     }
-    const api = (window as unknown as { api: { mock: { server: Srv }; mockMcp: { server: Srv } } }).api
+    const api = (window as unknown as { api: { mock: { server: Srv }; mockMcp: { server: Srv } } })
+      .api
     for (const srv of [api.mock.server, api.mockMcp.server]) {
       const rows = (await srv.list(pid).catch(() => ({ data: [] }))).data ?? []
       for (const s of rows) {
@@ -547,7 +561,8 @@ async function seedScratch(w: Page): Promise<void> {
     auth: bearer,
   })
   await updateSavedRequestIpc(w, createOrder, {
-    pre_script: "pm.environment.set('orderRef', 'ORD-' + Date.now());\nconsole.log('creating', pm.environment.get('orderRef'));",
+    pre_script:
+      "pm.environment.set('orderRef', 'ORD-' + Date.now());\nconsole.log('creating', pm.environment.get('orderRef'));",
     post_script: [
       "pm.test('status is 200', () => pm.response.to.have.status(200));",
       "pm.test('echoes the customer', () => pm.expect(pm.response.json().json.customerId).to.eql('c-1042'));",
@@ -555,7 +570,13 @@ async function seedScratch(w: Page): Promise<void> {
     ].join('\n'),
     assertions: JSON.stringify([
       { id: 'a1', name: 'Status is 200', type: 'status_equals', enabled: true, expected: 200 },
-      { id: 'a2', name: 'Fast response', type: 'response_time_under', enabled: true, expected: 1500 },
+      {
+        id: 'a2',
+        name: 'Fast response',
+        type: 'response_time_under',
+        enabled: true,
+        expected: 1500,
+      },
     ]),
   })
   await createSavedRequestIpc(w, {
@@ -604,8 +625,22 @@ async function seedScratch(w: Page): Promise<void> {
   const env = await createEnvironmentIpc(w, ws, pid, 'Staging')
   await createEnvVariableIpc(w, env, 'baseUrl', http, http, false)
   await createEnvVariableIpc(w, env, 'apiVersion', 'v2', 'v2', false)
-  await createEnvVariableIpc(w, env, 'token', 'tok_live_9d8c7b6a5f4e3d2c', 'tok_live_9d8c7b6a5f4e3d2c', true)
-  await createEnvVariableIpc(w, env, 'password', 'correct-horse-battery', 'correct-horse-battery', true)
+  await createEnvVariableIpc(
+    w,
+    env,
+    'token',
+    'tok_live_9d8c7b6a5f4e3d2c',
+    'tok_live_9d8c7b6a5f4e3d2c',
+    true,
+  )
+  await createEnvVariableIpc(
+    w,
+    env,
+    'password',
+    'correct-horse-battery',
+    'correct-horse-battery',
+    true,
+  )
 
   await refreshWorkspaceTree(w)
   await attempt('activate Staging', () => switchEnvironment(w, 'Staging'))
@@ -622,43 +657,57 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
   )
 
   // 0xx ─ Home + empty states (scratch project, nothing seeded yet) ───────────
-  group('00 home, new-project modal, scratch project, empty states', async (c) => {
-    const { w } = c
+  group(
+    '00 home, new-project modal, scratch project, empty states',
+    async (c) => {
+      const { w } = c
 
-    await shot(w, { id: 1, area: 'shell', screen: 'project-home' }, async () => {
-      await goToProjectHome(w)
-    })
-    await shot(w, { id: 2, area: 'shell', screen: 'new-project-modal' }, async () => {
-      await w.getByTestId('home-new-project').click()
-      await expect(w.getByTestId('new-project-modal')).toBeVisible()
-    })
-    await dismissOverlays(w)
+      await shot(w, { id: 1, area: 'shell', screen: 'project-home' }, async () => {
+        await goToProjectHome(w)
+      })
+      await shot(w, { id: 2, area: 'shell', screen: 'new-project-modal' }, async () => {
+        await w.getByTestId('home-new-project').click()
+        await expect(w.getByTestId('new-project-modal')).toBeVisible()
+      })
+      await dismissOverlays(w)
 
-    // Scratch project — everything below lives (and dies) in it.
-    const created = await attempt('create scratch project', () => createScratch(w))
-    if (!created) return
+      // Scratch project — everything below lives (and dies) in it.
+      const created = await attempt('create scratch project', () => createScratch(w))
+      if (!created) return
 
-    await shot(w, { id: 3, area: 'apis', screen: 'tree', state: 'empty' }, async () => {
-      await navigateSidebar(w, 'apis')
-    })
-    await shot(w, { id: 4, area: 'mocks', screen: 'list', state: 'empty' }, async () => {
-      await navigateSidebar(w, 'mocks')
-    })
-    await shot(w, { id: 5, area: 'history', screen: 'list', state: 'empty' }, async () => {
-      await navigateSidebar(w, 'history')
-    })
-    await shot(w, { id: 6, area: 'tests', screen: 'overview', state: 'empty' }, async () => {
-      await navigateSidebar(w, 'tests')
-      await w.getByTestId('left-panel').getByRole('button', { name: /^Overview$/i }).click()
-    })
-    await shot(w, { id: 7, area: 'tests', screen: 'all-runs', state: 'empty' }, async () => {
-      await navigateSidebar(w, 'tests')
-      await w.getByTestId('left-panel').getByRole('button', { name: /^All Runs$/i }).click()
-    })
-    await shot(w, { id: 8, area: 'tests', screen: 'scheduled-tasks', state: 'empty' }, async () => {
-      await openScheduledTasksView(w)
-    })
-  }, { scratch: false })
+      await shot(w, { id: 3, area: 'apis', screen: 'tree', state: 'empty' }, async () => {
+        await navigateSidebar(w, 'apis')
+      })
+      await shot(w, { id: 4, area: 'mocks', screen: 'list', state: 'empty' }, async () => {
+        await navigateSidebar(w, 'mocks')
+      })
+      await shot(w, { id: 5, area: 'history', screen: 'list', state: 'empty' }, async () => {
+        await navigateSidebar(w, 'history')
+      })
+      await shot(w, { id: 6, area: 'tests', screen: 'overview', state: 'empty' }, async () => {
+        await navigateSidebar(w, 'tests')
+        await w
+          .getByTestId('left-panel')
+          .getByRole('button', { name: /^Overview$/i })
+          .click()
+      })
+      await shot(w, { id: 7, area: 'tests', screen: 'all-runs', state: 'empty' }, async () => {
+        await navigateSidebar(w, 'tests')
+        await w
+          .getByTestId('left-panel')
+          .getByRole('button', { name: /^All Runs$/i })
+          .click()
+      })
+      await shot(
+        w,
+        { id: 8, area: 'tests', screen: 'scheduled-tasks', state: 'empty' },
+        async () => {
+          await openScheduledTasksView(w)
+        },
+      )
+    },
+    { scratch: false },
+  )
 
   // 0xx ─ Seed (no screenshot) ─────────────────────────────────────────────────
   group('01 seed project content', async (c) => {
@@ -686,7 +735,11 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
 
     await shot(w, { id: 35, area: 'apis', screen: 'tree-context-menu' }, async () => {
       await treeOpen()
-      await w.getByTestId('tree-node').filter({ hasText: 'Orders' }).first().click({ button: 'right' })
+      await w
+        .getByTestId('tree-node')
+        .filter({ hasText: 'Orders' })
+        .first()
+        .click({ button: 'right' })
       await w.waitForTimeout(300)
     })
     await dismissOverlays(w)
@@ -703,7 +756,12 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     }
     if (await shot(w, { id: 11, area: 'shell', screen: 'command-palette' }, openPalette)) {
       await dismissOverlays(w)
-      await variants(c, { id: 11, area: 'shell', screen: 'command-palette' }, ['dark', 'tr'], openPalette)
+      await variants(
+        c,
+        { id: 11, area: 'shell', screen: 'command-palette' },
+        ['dark', 'tr'],
+        openPalette,
+      )
     }
     await dismissOverlays(w)
 
@@ -714,7 +772,12 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     }
     if (await shot(w, { id: 12, area: 'shell', screen: 'settings-modal' }, openSettings)) {
       await dismissOverlays(w)
-      await variants(c, { id: 12, area: 'shell', screen: 'settings-modal' }, ['dark', 'tr', 'narrow'], openSettings)
+      await variants(
+        c,
+        { id: 12, area: 'shell', screen: 'settings-modal' },
+        ['dark', 'tr', 'narrow'],
+        openSettings,
+      )
     }
     await dismissOverlays(w)
 
@@ -751,7 +814,10 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     })
     await dismissOverlays(w)
     await shot(w, { id: 43, area: 'shell', screen: 'user-menu' }, async () => {
-      await w.getByTitle(/^Session$|^Oturum$/).first().click()
+      await w
+        .getByTitle(/^Session$|^Oturum$/)
+        .first()
+        .click()
       await w.waitForTimeout(300)
     })
     await dismissOverlays(w)
@@ -803,9 +869,13 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
       await w.waitForTimeout(400)
     })
     await tabShot(107, 'tests', 'editor-tests')
-    await shot(w, { id: 108, area: 'http', screen: 'editor-settings-critical', state: 'filled' }, async () => {
-      await setCritical(w, true)
-    })
+    await shot(
+      w,
+      { id: 108, area: 'http', screen: 'editor-settings-critical', state: 'filled' },
+      async () => {
+        await setCritical(w, true)
+      },
+    )
     await setCritical(w, false).catch(() => {})
 
     // Send → response pane.
@@ -816,7 +886,11 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     })
     if (sent) {
       if (await shot(w, { id: 110, area: 'http', screen: 'response-body' })) {
-        await variants(c, { id: 110, area: 'http', screen: 'response-body' }, ['dark', 'tr', 'narrow'])
+        await variants(c, { id: 110, area: 'http', screen: 'response-body' }, [
+          'dark',
+          'tr',
+          'narrow',
+        ])
       }
       await shot(w, { id: 111, area: 'http', screen: 'response-headers' }, async () => {
         await w.getByTestId('res-tab-headers').click()
@@ -832,14 +906,30 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
         await w.getByTestId('res-tab-body').click()
       })
 
-      // Right panel + Generate Code.
+      // Right panel + Generate Code. The panel starts collapsed since issue
+      // #257, so the tour opens it explicitly and puts it back afterwards
+      // (the preference persists in the shared Electron instance).
+      const rightPanelWasOpen = await w
+        .getByTestId('right-panel')
+        .isVisible()
+        .catch(() => false)
       await shot(w, { id: 120, area: 'http', screen: 'right-panel-variables' }, async () => {
-        await w.getByTitle(/^Variables$|^Değişkenler$/).first().click()
+        await setRightPanelOpen(w, true)
+        await w
+          .getByTestId('right-panel')
+          .getByTitle(/^Variables$|^Değişkenler$/)
+          .click()
         await w.waitForTimeout(300)
       })
       await shot(w, { id: 121, area: 'http', screen: 'generate-code-pane' }, async () => {
-        await w.getByTitle(/^Code$|^Kod$/).first().click()
+        await w
+          .getByTestId('right-panel')
+          .getByTitle(/^Code$|^Kod$/)
+          .click()
         await expect(w.getByTestId('codegen-language-select')).toBeVisible()
+      })
+      await attempt('restore right panel', async () => {
+        await setRightPanelOpen(w, rightPanelWasOpen)
       })
       await shot(w, { id: 122, area: 'http', screen: 'generate-code-modal' }, async () => {
         await w.getByTestId('response-code-btn').click()
@@ -865,7 +955,12 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
       await openConsolePanel(w)
     })
     await attempt('close console', async () => {
-      if (await w.getByTestId('console-panel').isVisible().catch(() => false)) {
+      if (
+        await w
+          .getByTestId('console-panel')
+          .isVisible()
+          .catch(() => false)
+      ) {
         await w.getByTestId('footer-console').click()
       }
     })
@@ -873,29 +968,37 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
 
   group('04 http: error state, save-as, cURL paste', async (c) => {
     const { w, app } = c
-    await shot(w, { id: 114, area: 'http', screen: 'response-unreachable', state: 'error' }, async () => {
-      await openHttpRequestTab(w)
-      await w.getByTestId('url-input').fill('http://127.0.0.1:9/unreachable')
-      await clickSend(w)
-      await expect(w.getByTestId('response-error')).toBeVisible({ timeout: 30_000 })
-    })
+    await shot(
+      w,
+      { id: 114, area: 'http', screen: 'response-unreachable', state: 'error' },
+      async () => {
+        await openHttpRequestTab(w)
+        await w.getByTestId('url-input').fill('http://127.0.0.1:9/unreachable')
+        await clickSend(w)
+        await expect(w.getByTestId('response-error')).toBeVisible({ timeout: 30_000 })
+      },
+    )
     await closeAllTabs(w)
 
-    await shot(w, { id: 123, area: 'http', screen: 'curl-paste-result', state: 'filled' }, async () => {
-      await openHttpRequestTab(w)
-      const curl = [
-        `curl '${T.http}/post?src=paste' \\`,
-        `  -X POST \\`,
-        `  -H 'Content-Type: application/json' \\`,
-        `  -H 'X-Trace: tour-1' \\`,
-        `  -d '{"hello":"world"}'`,
-      ].join('\n')
-      await withClipboardText(app, curl, async () => {
-        await w.getByTestId('url-input').click()
-        await pressModShortcut(w, 'v')
-      })
-      await expect(w.getByTestId('curl-paste-toast')).toBeVisible({ timeout: 8_000 })
-    })
+    await shot(
+      w,
+      { id: 123, area: 'http', screen: 'curl-paste-result', state: 'filled' },
+      async () => {
+        await openHttpRequestTab(w)
+        const curl = [
+          `curl '${T.http}/post?src=paste' \\`,
+          `  -X POST \\`,
+          `  -H 'Content-Type: application/json' \\`,
+          `  -H 'X-Trace: tour-1' \\`,
+          `  -d '{"hello":"world"}'`,
+        ].join('\n')
+        await withClipboardText(app, curl, async () => {
+          await w.getByTestId('url-input').click()
+          await pressModShortcut(w, 'v')
+        })
+        await expect(w.getByTestId('curl-paste-toast')).toBeVisible({ timeout: 8_000 })
+      },
+    )
     await attempt('close curl toast', async () => {
       const close = w.getByTestId('curl-paste-close')
       if (await close.isVisible().catch(() => false)) await close.click()
@@ -980,12 +1083,16 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     await disconnectIfConnected(w)
     await closeAllTabs(w)
 
-    await shot(w, { id: 221, area: 'websocket', screen: 'connect-failed', state: 'error' }, async () => {
-      await openNewDropdownItem(w, /WebSocket/i)
-      await w.getByTestId('ws-url').fill('ws://127.0.0.1:9')
-      await w.getByTestId('ws-connect').click()
-      await expect(w.getByTestId('ws-error')).toBeVisible({ timeout: 15_000 })
-    })
+    await shot(
+      w,
+      { id: 221, area: 'websocket', screen: 'connect-failed', state: 'error' },
+      async () => {
+        await openNewDropdownItem(w, /WebSocket/i)
+        await w.getByTestId('ws-url').fill('ws://127.0.0.1:9')
+        await w.getByTestId('ws-connect').click()
+        await expect(w.getByTestId('ws-error')).toBeVisible({ timeout: 15_000 })
+      },
+    )
     await closeAllTabs(w)
 
     // Socket.IO.
@@ -1122,7 +1229,10 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     await shot(w, { id: 303, area: 'tests', screen: 'all-runs' }, async () => {
       await closeAllTabs(w)
       await navigateSidebar(w, 'tests')
-      await w.getByTestId('left-panel').getByRole('button', { name: /^All Runs$/i }).click()
+      await w
+        .getByTestId('left-panel')
+        .getByRole('button', { name: /^All Runs$/i })
+        .click()
       await w.waitForTimeout(500)
     })
     await attempt('create scheduled task', async () => {
@@ -1187,7 +1297,11 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
         await w.getByText('Orders mock').first().click()
         await w.getByTestId('mock-tab-endpoints').click()
       }
-      if (await shot(w, spec, async () => { await w.getByTestId('mock-tab-endpoints').click() })) {
+      if (
+        await shot(w, spec, async () => {
+          await w.getByTestId('mock-tab-endpoints').click()
+        })
+      ) {
         await variants(c, spec, ['dark', 'tr', 'narrow'], reopenEditor)
       }
       await shot(w, { id: 402, area: 'mocks', screen: 'http-editor-settings' }, async () => {
@@ -1215,7 +1329,9 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
       })
     }
     // SSE mock (Ticker preset).
-    if (await attempt('create mock sse', () => createMockViaDialog(w, 'sse', 'ticker', 'Ticker SSE'))) {
+    if (
+      await attempt('create mock sse', () => createMockViaDialog(w, 'sse', 'ticker', 'Ticker SSE'))
+    ) {
       await shot(w, { id: 420, area: 'mocks', screen: 'sse-editor' }, async () => {
         await expect(w.getByTestId('mock-open-in-sse')).toBeVisible({ timeout: 10_000 })
       })
@@ -1274,7 +1390,10 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     await shot(w, { id: 521, area: 'import', screen: 'import-result' }, async () => {
       const fixture = path.resolve(__dirname, '../../../fixtures/import-export/oracle-postman.json')
       await w.getByRole('button', { name: /Import API Data|API Verisi İçe Aktar/i }).click()
-      await w.getByRole('button', { name: /Postman/i }).first().click()
+      await w
+        .getByRole('button', { name: /Postman/i })
+        .first()
+        .click()
       const modal = w.getByTestId('import-modal')
       await expect(modal).toBeVisible()
       const chooser = w.waitForEvent('filechooser', { timeout: 15_000 })
@@ -1363,7 +1482,12 @@ async function finalCleanup(c: Ctx): Promise<void> {
   await closeAllTabs(w).catch(() => {})
   if (T.origContent) await setContentSize(app, T.origContent).catch(() => {})
   await setLocale(w, 'en').catch((e) => note('cleanup: locale', e))
-  if ((await w.locator('html').getAttribute('data-theme').catch(() => null)) !== T.origTheme) {
+  if (
+    (await w
+      .locator('html')
+      .getAttribute('data-theme')
+      .catch(() => null)) !== T.origTheme
+  ) {
     await setTheme(w, T.origTheme).catch((e) => note('cleanup: theme', e))
   }
   const pid = T.projectId

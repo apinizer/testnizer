@@ -16,6 +16,7 @@ import { useConsoleStore } from './console.store'
 import { loadJson, saveJson } from '../lib/persist-helpers'
 import { scrubTabCredentials } from '../lib/credential-text'
 import { readRequestSettingsJson } from '../../shared/request-settings'
+import { orderTreeLevel } from '../../shared/tree-order'
 
 /**
  * Did a write actually land?
@@ -405,8 +406,10 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
       return children && children.length > 0 ? { ...node, children } : node
     }
 
-    // Build folder map (id → TreeNode) with direct children (endpoints + saved requests)
+    // Build folder map (id → TreeNode); its own requests are kept aside and
+    // ordered together with its sub-folders below.
     const folderMap = new Map<string, TreeNode>()
+    const folderRequests = new Map<string, { endpoints: TreeNode[]; savedRequests: TreeNode[] }>()
     for (const f of folders) {
       const folderEndpoints: TreeNode[] = endpoints
         .filter((e) => e.folder_id === f.id)
@@ -447,23 +450,29 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
         type: 'folder' as const,
         label: f.name,
         icon: 'folder',
-        children: [...folderEndpoints, ...folderSaved],
+        children: [],
       })
+      folderRequests.set(f.id, { endpoints: folderEndpoints, savedRequests: folderSaved })
     }
 
     // Nest child folders under their parents
     const rootFolderNodes: TreeNode[] = []
+    const subfolders = new Map<string, TreeNode[]>()
     for (const f of folders) {
       const node = folderMap.get(f.id)!
       if (f.parent_id && folderMap.has(f.parent_id)) {
-        // Add as child of parent folder
-        const parent = folderMap.get(f.parent_id)!
-        if (!parent.children) parent.children = []
-        parent.children.push(node)
+        // Child of its parent folder
+        subfolders.set(f.parent_id, [...(subfolders.get(f.parent_id) ?? []), node])
       } else {
         // Root-level folder (no parent or parent not found)
         rootFolderNodes.push(node)
       }
+    }
+    // Each folder's children in tree order — the same rule the Postman
+    // exports follow (`src/shared/tree-order.ts`, issue #257).
+    for (const [id, node] of folderMap) {
+      const own = folderRequests.get(id)!
+      node.children = orderTreeLevel({ ...own, folders: subfolders.get(id) ?? [] }, false)
     }
 
     // Root-level endpoints (no folder)
@@ -508,7 +517,10 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
       type: 'module',
       label: projectName,
       icon: 'collection',
-      children: [...rootFolderNodes, ...rootEndpoints, ...rootSaved],
+      children: orderTreeLevel(
+        { folders: rootFolderNodes, endpoints: rootEndpoints, savedRequests: rootSaved },
+        true,
+      ),
     }
 
     return [projectNode]

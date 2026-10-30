@@ -4,9 +4,14 @@
  * section, even in the Turkish UI. The header now matches its SSE sibling:
  * translated `mcp.status.connected` badge on theme tokens.
  * Fail-before: TR shows "Connected" / "Custom Headers", the badge carries hex.
+ *
+ * Issue #257 update: the header badge was a DUPLICATE of the connection bar's
+ * `ws-status` pill and is gone (see ws-status-once-257.test.tsx). The
+ * translated, token-styled "Connected" text now lives on the pill, so this
+ * file asserts it there; the header row keeps only the "WebSocket" label.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, screen } from '@testing-library/react'
 import React from 'react'
 
 vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
@@ -21,9 +26,9 @@ const HEX = /#[0-9a-fA-F]{3,8}\b/
 
 function show(): HTMLElement {
   useWebSocketStore.setState({ url: 'ws://127.0.0.1:3100', connectionState: 'connected' })
-  const { container } = render(React.createElement(WebSocketEditor))
-  // The header row is the editor's first child.
-  return container.firstElementChild!.firstElementChild as HTMLElement
+  render(React.createElement(WebSocketEditor))
+  // The connection-state indicator is the bar's pill (issue #257).
+  return screen.getByTestId('ws-status')
 }
 
 beforeEach(() => useUIStore.getState().setLocale('en'))
@@ -40,11 +45,8 @@ describe('WebSocketEditor header (issue #248)', () => {
     expect(document.body.textContent).not.toMatch(/\bConnected\b|Custom Headers|\bHeaders\b/)
     // Issue #282: the request tab strip (the HTTP editor's labels).
     expect(document.body.textContent).toContain('Başlıklar')
-    const badge = Array.from(header.querySelectorAll('span')).find(
-      (s) => s.textContent === 'Bağlı',
-    )!
-    expect(badge.className).toContain('bg-[var(--green-bg)]')
-    expect(badge.getAttribute('style') ?? '').not.toMatch(HEX)
+    expect(header.className).toContain('var(--green')
+    expect(header.getAttribute('style') ?? '').not.toMatch(HEX)
   })
 
   it('EN text unchanged', () => {

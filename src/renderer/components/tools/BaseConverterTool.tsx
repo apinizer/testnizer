@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
 import { useTranslation } from '../../lib/i18n'
 import {
@@ -22,6 +22,12 @@ import {
 export default function BaseConverterTool() {
   const { t } = useTranslation()
   const [fields, setFields] = useState<Fields>(EMPTY)
+  // The placeholder row is one word in the UI language, encoded with the
+  // converter's own functions so the five fields always agree (issue #258).
+  const sample = useMemo(() => {
+    const word = t('tools.base.sample')
+    return { ...bytesToAll(parseToBytes('ascii', word)), ascii: word }
+  }, [t])
   const [error, setError] = useState<string | null>(null)
 
   function recompute(source: Source, raw: string): void {
@@ -69,35 +75,35 @@ export default function BaseConverterTool() {
             sublabel={t('tools.base.asciiSub')}
             value={fields.ascii}
             mono={false}
-            placeholder="Hello"
+            placeholder={sample.ascii}
             onChange={(v) => recompute('ascii', v)}
           />
           <Field
             label={t('tools.base.binary')}
             sublabel={t('tools.base.binarySub')}
             value={fields.bin}
-            placeholder="01001000 01100101 01101100 01101100 01101111"
+            placeholder={sample.bin}
             onChange={(v) => recompute('bin', v)}
           />
           <Field
             label={t('tools.base.octal')}
             sublabel={t('tools.base.octalSub')}
             value={fields.oct}
-            placeholder="110 145 154 154 157"
+            placeholder={sample.oct}
             onChange={(v) => recompute('oct', v)}
           />
           <Field
             label={t('tools.base.decimal')}
             sublabel={t('tools.base.decimalSub')}
             value={fields.dec}
-            placeholder="72 101 108 108 111"
+            placeholder={sample.dec}
             onChange={(v) => recompute('dec', v)}
           />
           <Field
             label={t('tools.base.hex')}
             sublabel={t('tools.base.hexSub')}
             value={fields.hex}
-            placeholder="48 65 6c 6c 6f"
+            placeholder={sample.hex}
             onChange={(v) => recompute('hex', v)}
           />
           {error ? (
@@ -158,7 +164,7 @@ export default function BaseConverterTool() {
                 ['A', '01000001', '65', '41'],
                 ['0', '00110000', '48', '30'],
                 [' ', '00100000', '32', '20'],
-                ['€', '— (multi-byte)', '— (UTF-8)', 'e2 82 ac'],
+                ['€', t('tools.base.multiByte'), t('tools.base.utf8Multi'), 'e2 82 ac'],
               ].map((r) => (
                 <tr key={r[0]}>
                   <td className="border-b px-2 py-1" style={{ borderColor: 'var(--border)' }}>

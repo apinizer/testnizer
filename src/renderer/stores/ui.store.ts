@@ -116,7 +116,18 @@ interface UIStore {
   statusMessage: string | null
   addEndpointsSuiteId: string | null
   addEndpointsSuiteName: string | null
+  /**
+   * The USER's preference for the Variables/Code panel, persisted as
+   * `ui.rightPanelCollapsed` (issue #257). Starts collapsed: a user with no
+   * saved preference never sees the panel flash open and closed.
+   */
   rightPanelCollapsed: boolean
+  /**
+   * Transient auto-collapse while the request editor is too narrow (issue
+   * #251, `lib/use-narrow-layout.ts`). Never persisted. Read the panel's
+   * visibility through `selectRightPanelCollapsed`, not either flag alone.
+   */
+  rightPanelNarrowCollapsed: boolean
   rightPanelTab: RightPanelTab
 
   setTheme: (theme: Theme) => void
@@ -177,8 +188,21 @@ interface UIStore {
   setStatusMessage: (text: string | null, ttlMs?: number) => void
   setAddEndpointsSuite: (suiteId: string | null, suiteName?: string | null) => void
   setRightPanelCollapsed: (collapsed: boolean) => void
+  /** Auto-collapse flag only — never touches the preference, never persists. */
+  setRightPanelNarrowCollapsed: (collapsed: boolean) => void
   toggleRightPanel: () => void
   setRightPanelTab: (tab: RightPanelTab) => void
+}
+
+/**
+ * Whether the right panel is collapsed as the user SEES it: their own
+ * preference OR the narrow-editor auto-collapse (issue #251). Every reader of
+ * the panel's visibility goes through this selector.
+ */
+export function selectRightPanelCollapsed(
+  s: Pick<UIStore, 'rightPanelCollapsed' | 'rightPanelNarrowCollapsed'>,
+): boolean {
+  return s.rightPanelCollapsed || s.rightPanelNarrowCollapsed
 }
 
 function applyTheme(theme: Theme): void {
@@ -260,7 +284,8 @@ export const useUIStore = create<UIStore>((set, get) => ({
   statusMessage: null,
   addEndpointsSuiteId: null,
   addEndpointsSuiteName: null,
-  rightPanelCollapsed: false,
+  rightPanelCollapsed: true,
+  rightPanelNarrowCollapsed: false,
   rightPanelTab: 'variables',
 
   setTheme: (theme) => {
@@ -309,6 +334,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         'ui.responseHeaderKeyWidth',
         'ui.requestKeyColWidth',
         'ui.leftPanelCollapsed',
+        'ui.rightPanelCollapsed',
       ] as const
       const results = await Promise.all(keys.map((k) => api.get!(k)))
       const [
@@ -322,6 +348,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
         hdrKeyWRes,
         reqKeyWRes,
         leftCollapsedRes,
+        rightCollapsedRes,
       ] = results
       const patch: Partial<UIStore> = {}
       const themeVal = themeRes?.data as Theme | undefined
@@ -368,6 +395,9 @@ export const useUIStore = create<UIStore>((set, get) => ({
         patch.requestKeyColWidth = reqKeyW
       const leftCollapsed = leftCollapsedRes?.data
       if (typeof leftCollapsed === 'boolean') patch.isLeftPanelCollapsed = leftCollapsed
+      // Issue #257: nothing saved (or garbage) = collapsed, the new default.
+      const rightCollapsed = rightCollapsedRes?.data
+      patch.rightPanelCollapsed = typeof rightCollapsed === 'boolean' ? rightCollapsed : true
       set(patch)
     } catch {
       /* noop */
@@ -496,9 +526,23 @@ export const useUIStore = create<UIStore>((set, get) => ({
   },
   setAddEndpointsSuite: (suiteId, suiteName) =>
     set({ addEndpointsSuiteId: suiteId, addEndpointsSuiteName: suiteName ?? null }),
-  setRightPanelCollapsed: (collapsed) => set({ rightPanelCollapsed: collapsed }),
-  toggleRightPanel: () => set((s) => ({ rightPanelCollapsed: !s.rightPanelCollapsed })),
-  setRightPanelTab: (tab) => set({ rightPanelTab: tab, rightPanelCollapsed: false }),
+  // The preference persists (issue #257). Opening by hand also clears the
+  // narrow auto-collapse: the user wins over it (issue #251).
+  setRightPanelCollapsed: (collapsed) => {
+    set(
+      collapsed
+        ? { rightPanelCollapsed: true }
+        : { rightPanelCollapsed: false, rightPanelNarrowCollapsed: false },
+    )
+    void persistSetting('ui.rightPanelCollapsed', collapsed)
+  },
+  setRightPanelNarrowCollapsed: (collapsed) => set({ rightPanelNarrowCollapsed: collapsed }),
+  // Acts on what the user sees: an auto-collapsed panel opens.
+  toggleRightPanel: () => get().setRightPanelCollapsed(!selectRightPanelCollapsed(get())),
+  setRightPanelTab: (tab) => {
+    set({ rightPanelTab: tab })
+    get().setRightPanelCollapsed(false)
+  },
 }))
 
 // Apply initial theme + font defaults. Real values are loaded via hydrateFromSettings()

@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useLayoutEffect, type ComponentType } from 'react'
 import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
-import { isMac } from '../../lib/platform'
+import { formatShortcut } from '../../lib/shortcut-format'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
+import { defaultRequestTabName } from '../../lib/endpoint-name'
 import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import { activateTabStores, cloneTabStores, switchActiveTab } from '../../lib/activate-tab'
@@ -55,8 +56,7 @@ import JwkTool from '../tools/JwkTool'
 import SamlTool from '../tools/SamlTool'
 import MockServerEditor from '../mock/MockServerEditor'
 import MockMcpServerEditor from '../mock-mcp/MockMcpServerEditor'
-import RightPanel from './RightPanel'
-import EdgeResizeHandle from './EdgeResizeHandle'
+import WorkbenchMainRow from './WorkbenchMainRow'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
@@ -576,7 +576,7 @@ export function EndpointTabBar() {
 
   function handleNewRequestTab() {
     const id = makeTabId()
-    openTab({ id, name: 'New Request', protocol: 'http', method: 'GET', url: '' })
+    openTab({ id, name: defaultRequestTabName(), protocol: 'http', method: 'GET', url: '' })
     // Reset every protocol store to its empty baseline for the new tab so the
     // editor doesn't keep showing the previous endpoint's URL / params /
     // headers / scripts. v1.3.1 M1: "+ New" used to clone the last request
@@ -595,279 +595,280 @@ export function EndpointTabBar() {
   // now stays put with the "+" alone in it, and PageWelcome fills the space
   // below exactly as before.
 
+  // Issue #252: the "+" and the environment selector used to sit INSIDE the
+  // scroller and scrolled off screen with many tabs (x≈5800 with 63). The
+  // bar is now [scrolling tabs | fixed actions]: `tab-strip` scrolls (min-w-0
+  // lets it shrink below its content), `tab-actions` never shrinks.
   return (
-    <div
-      ref={stripRef}
-      data-testid="tab-strip"
-      className="scroll-strip"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        background: T.white,
-        borderBottom: `1px solid ${T.border}`,
-        flexShrink: 0,
-        height: 32,
-      }}
-    >
-      {tabs.map((tab) => {
-        const isActive = tab.id === activeTabId
-        const isPreview = tab.isPreview
-        const isDropTarget = dropBeforeId === tab.id
-        return (
-          <div
-            key={tab.id}
-            data-testid="endpoint-tab"
-            data-tab-name={tab.name}
-            data-preview={isPreview ? 'true' : 'false'}
-            data-dirty={tab.isDirty ? 'true' : 'false'}
-            data-active={isActive ? 'true' : 'false'}
-            className="group"
-            draggable={renamingTabId !== tab.id}
-            onDragStart={(e) => {
-              e.dataTransfer.setData(TAB_DND_MIME, tab.id)
-              e.dataTransfer.effectAllowed = 'move'
-            }}
-            onDragOver={(e) => {
-              if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
-              e.preventDefault()
-              e.dataTransfer.dropEffect = 'move'
-              // Left half of the tab → insert before this tab; right half →
-              // insert before the NEXT tab. We just toggle the marker; the
-              // store call happens on drop.
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-              const before = e.clientX - rect.left < rect.width / 2
-              const targetId = before ? tab.id : null /* placeholder, replaced below */
-              if (!before) {
-                const idx = tabs.findIndex((t) => t.id === tab.id)
-                const next = tabs[idx + 1]
-                setDropBeforeId(next ? next.id : null)
-              } else {
-                setDropBeforeId(targetId)
-              }
-            }}
-            onDragLeave={() => {
-              // Defer so we don't flicker when the cursor crosses into an
-              // adjacent tab's onDragOver. Cleared on drop anyway.
-            }}
-            onDrop={(e) => {
-              if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
-              e.preventDefault()
-              const draggedId = readDraggedTabId(e)
-              setDropBeforeId(undefined)
-              if (!draggedId || draggedId === tab.id) return
-              moveTab(draggedId, dropBeforeId === undefined ? tab.id : dropBeforeId)
-            }}
-            onClick={() => handleSwitchTab(tab.id)}
-            onDoubleClick={() => {
-              // Double-click pins preview tab (Postman behavior)
-              if (isPreview) pinTab(tab.id)
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault()
-              e.stopPropagation()
-              const x = e.clientX
-              const y = e.clientY
-              const id = tab.id
-              // Defer state update so the current contextmenu event finishes
-              // bubbling before the global dismiss listener attaches.
-              setTimeout(() => setContextMenu({ tabId: id, x, y }), 0)
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 5,
-              padding: '0 10px',
-              height: '100%',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: isActive ? 500 : 400,
-              fontStyle: isPreview ? 'italic' : 'normal',
-              borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
-              // Left-edge marker for drop-before-this-tab.
-              boxShadow: isDropTarget ? `inset 2px 0 0 0 ${T.accent}` : undefined,
-              color: isActive ? T.text : T.muted,
-              whiteSpace: 'nowrap',
-              flexShrink: 0,
-              // Without this, mousedown on the tab label can start a text
-              // selection that pre-empts the drag gesture — Chrome's drag
-              // policy prefers an in-progress selection over a draggable
-              // ancestor. `none` keeps the drag the only thing that can fire.
-              userSelect: 'none',
-            }}
-          >
-            {tab.protocol === 'runner' && (
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="2"
-                style={{ flexShrink: 0 }}
-              >
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 3v18" />
-                <path d="M3 9h6" />
-                <path d="M3 15h6" />
-              </svg>
-            )}
-            {/* Subtle flask icon marks tabs sourced from a Test Suite — APIs
-                tree tabs don't get one. Muted stroke, no fill, no extra
-                colour: the discriminator is the shape, not the palette. */}
-            {tab.testSuiteItemId && (
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--muted)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ flexShrink: 0 }}
-                aria-label={t('tabStrip.suiteItem')}
-              >
-                <path d="M9 3h6" />
-                <path d="M10 3v6.5L5.5 19a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9.5V3" />
-              </svg>
-            )}
-            {tab.protocol === 'example' && (
-              <svg
-                width="11"
-                height="11"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                style={{ flexShrink: 0 }}
-                aria-label={t('tabStrip.savedExample')}
-              >
-                <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
-              </svg>
-            )}
-            {tab.method && (tab.protocol === 'http' || tab.protocol === 'soap') && (
-              <MethodBadge method={tab.method} small />
-            )}
-            {/* MCP / WS / SSE / SIO / GQL / gRPC: protocol chip, same as the tree (issue #173) —
-                left out when the title already is that label ("MCP MCP"). */}
-            <ProtocolChip protocol={tab.protocol} title={tab.name} />
-            {renamingTabId === tab.id ? (
-              <input
-                ref={renameInputRef}
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleConfirmRename(tab.id)
-                  if (e.key === 'Escape') setRenamingTabId(null)
-                }}
-                onBlur={() => handleConfirmRename(tab.id)}
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  background: T.surface,
-                  border: `1px solid ${T.accent}`,
-                  borderRadius: 3,
-                  padding: '0 4px',
-                  fontSize: 13,
-                  color: T.text,
-                  outline: 'none',
-                  width: 120,
-                  fontStyle: 'normal',
-                }}
-              />
-            ) : (
-              // `draggable={false}` here is critical: an inner span carrying
-              // text is treated by Chrome as a "selection-drag" source, which
-              // races against the parent's draggable=true and can swallow the
-              // tab-drag gesture entirely (the SOAP tab in particular sees
-              // the user mouse-down on this label). Forcing the span out of
-              // the drag-source set lets the gesture bubble to the parent.
-              <span
-                draggable={false}
-                onDoubleClick={(e) => {
-                  e.stopPropagation()
-                  if (isPreview) {
-                    pinTab(tab.id)
-                  } else {
-                    handleStartRename(tab.id, tab.name)
-                  }
-                }}
-              >
-                {tab.name}
-              </span>
-            )}
-            {tab.isDirty && (
-              <span
-                data-testid="tab-dirty"
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  background: T.accent,
-                  flexShrink: 0,
-                }}
-              />
-            )}
-            <span
-              data-testid="tab-close"
-              className="hidden cursor-pointer group-hover:inline"
-              style={{ color: T.ghost, fontSize: 13 }}
-              onClick={(e) => handleCloseTab(tab.id, e)}
-            >
-              ×
-            </span>
-          </div>
-        )
-      })}
-
-      {/* + new tab — a real button so it carries a name for the keyboard and
-          for screen readers. What it opens depends on the module (handleNewTab). */}
-      <button
-        type="button"
-        onClick={handleNewTab}
-        title={t('tabStrip.newTab')}
-        aria-label={t('tabStrip.newTab')}
-        data-testid="tab-new"
+    <div data-testid="tab-bar" className="flex shrink-0" style={{ background: T.white }}>
+      <div
+        ref={stripRef}
+        data-testid="tab-strip"
+        className="scroll-strip min-w-0 flex-1"
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          padding: '0 10px',
-          height: '100%',
-          cursor: 'pointer',
-          color: T.ghost,
-          fontSize: 16,
-          flexShrink: 0,
-          background: 'transparent',
-          border: 'none',
+          background: T.white,
+          borderBottom: `1px solid ${T.border}`,
+          height: 32,
         }}
       >
-        +
-      </button>
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeTabId
+          const isPreview = tab.isPreview
+          const isDropTarget = dropBeforeId === tab.id
+          return (
+            <div
+              key={tab.id}
+              data-testid="endpoint-tab"
+              data-tab-name={tab.name}
+              data-preview={isPreview ? 'true' : 'false'}
+              data-dirty={tab.isDirty ? 'true' : 'false'}
+              data-active={isActive ? 'true' : 'false'}
+              className="group"
+              draggable={renamingTabId !== tab.id}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(TAB_DND_MIME, tab.id)
+                e.dataTransfer.effectAllowed = 'move'
+              }}
+              onDragOver={(e) => {
+                if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+                // Left half of the tab → insert before this tab; right half →
+                // insert before the NEXT tab. We just toggle the marker; the
+                // store call happens on drop.
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                const before = e.clientX - rect.left < rect.width / 2
+                const targetId = before ? tab.id : null /* placeholder, replaced below */
+                if (!before) {
+                  const idx = tabs.findIndex((t) => t.id === tab.id)
+                  const next = tabs[idx + 1]
+                  setDropBeforeId(next ? next.id : null)
+                } else {
+                  setDropBeforeId(targetId)
+                }
+              }}
+              onDragLeave={() => {
+                // Defer so we don't flicker when the cursor crosses into an
+                // adjacent tab's onDragOver. Cleared on drop anyway.
+              }}
+              onDrop={(e) => {
+                if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+                e.preventDefault()
+                const draggedId = readDraggedTabId(e)
+                setDropBeforeId(undefined)
+                if (!draggedId || draggedId === tab.id) return
+                moveTab(draggedId, dropBeforeId === undefined ? tab.id : dropBeforeId)
+              }}
+              onClick={() => handleSwitchTab(tab.id)}
+              onDoubleClick={() => {
+                // Double-click pins preview tab (Postman behavior)
+                if (isPreview) pinTab(tab.id)
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                const x = e.clientX
+                const y = e.clientY
+                const id = tab.id
+                // Defer state update so the current contextmenu event finishes
+                // bubbling before the global dismiss listener attaches.
+                setTimeout(() => setContextMenu({ tabId: id, x, y }), 0)
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '0 10px',
+                height: '100%',
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: isActive ? 500 : 400,
+                fontStyle: isPreview ? 'italic' : 'normal',
+                borderBottom: isActive ? `2px solid ${T.accent}` : '2px solid transparent',
+                // Left-edge marker for drop-before-this-tab.
+                boxShadow: isDropTarget ? `inset 2px 0 0 0 ${T.accent}` : undefined,
+                color: isActive ? T.text : T.muted,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                // Without this, mousedown on the tab label can start a text
+                // selection that pre-empts the drag gesture — Chrome's drag
+                // policy prefers an in-progress selection over a draggable
+                // ancestor. `none` keeps the drag the only thing that can fire.
+                userSelect: 'none',
+              }}
+            >
+              {tab.protocol === 'runner' && (
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="2"
+                  style={{ flexShrink: 0 }}
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 3v18" />
+                  <path d="M3 9h6" />
+                  <path d="M3 15h6" />
+                </svg>
+              )}
+              {/* Subtle flask icon marks tabs sourced from a Test Suite — APIs
+                tree tabs don't get one. Muted stroke, no fill, no extra
+                colour: the discriminator is the shape, not the palette. */}
+              {tab.testSuiteItemId && (
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--muted)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ flexShrink: 0 }}
+                  aria-label={t('tabStrip.suiteItem')}
+                >
+                  <path d="M9 3h6" />
+                  <path d="M10 3v6.5L5.5 19a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9.5V3" />
+                </svg>
+              )}
+              {tab.protocol === 'example' && (
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ flexShrink: 0 }}
+                  aria-label={t('tabStrip.savedExample')}
+                >
+                  <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z" />
+                </svg>
+              )}
+              {tab.method && (tab.protocol === 'http' || tab.protocol === 'soap') && (
+                <MethodBadge method={tab.method} small />
+              )}
+              {/* MCP / WS / SSE / SIO / GQL / gRPC: protocol chip, same as the tree (issue #173) —
+                left out when the title already is that label ("MCP MCP"). */}
+              <ProtocolChip protocol={tab.protocol} title={tab.name} />
+              {renamingTabId === tab.id ? (
+                <input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleConfirmRename(tab.id)
+                    if (e.key === 'Escape') setRenamingTabId(null)
+                  }}
+                  onBlur={() => handleConfirmRename(tab.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    background: T.surface,
+                    border: `1px solid ${T.accent}`,
+                    borderRadius: 3,
+                    padding: '0 4px',
+                    fontSize: 13,
+                    color: T.text,
+                    outline: 'none',
+                    width: 120,
+                    fontStyle: 'normal',
+                  }}
+                />
+              ) : (
+                // `draggable={false}` here is critical: an inner span carrying
+                // text is treated by Chrome as a "selection-drag" source, which
+                // races against the parent's draggable=true and can swallow the
+                // tab-drag gesture entirely (the SOAP tab in particular sees
+                // the user mouse-down on this label). Forcing the span out of
+                // the drag-source set lets the gesture bubble to the parent.
+                <span
+                  draggable={false}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation()
+                    if (isPreview) {
+                      pinTab(tab.id)
+                    } else {
+                      handleStartRename(tab.id, tab.name)
+                    }
+                  }}
+                >
+                  {tab.name}
+                </span>
+              )}
+              {tab.isDirty && (
+                <span
+                  data-testid="tab-dirty"
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: '50%',
+                    background: T.accent,
+                    flexShrink: 0,
+                  }}
+                />
+              )}
+              <span
+                data-testid="tab-close"
+                className="hidden cursor-pointer group-hover:inline"
+                style={{ color: T.ghost, fontSize: 13 }}
+                onClick={(e) => handleCloseTab(tab.id, e)}
+              >
+                ×
+              </span>
+            </div>
+          )
+        })}
 
-      {/* Drop zone for "move tab to end" — covers the empty space to the
-          right of the + button so users can drop past every existing tab. */}
+        {/* Drop zone for "move tab to end" — the empty space after the last
+          tab. A minimum width keeps it reachable once the tabs overflow. */}
+        <div
+          data-testid="tab-strip-drop-end"
+          onDragOver={(e) => {
+            if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            if (dropBeforeId !== null) setDropBeforeId(null)
+          }}
+          onDrop={(e) => {
+            if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
+            e.preventDefault()
+            const draggedId = readDraggedTabId(e)
+            setDropBeforeId(undefined)
+            if (draggedId) moveTab(draggedId, null)
+          }}
+          className="h-full min-w-[24px] flex-1"
+        />
+      </div>
+
+      {/* Fixed action group at the right edge (issue #252, Postman parity):
+        never scrolls with the tabs. */}
       <div
-        onDragOver={(e) => {
-          if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
-          e.preventDefault()
-          e.dataTransfer.dropEffect = 'move'
-          if (dropBeforeId !== null) setDropBeforeId(null)
-        }}
-        onDrop={(e) => {
-          if (!e.dataTransfer.types.includes(TAB_DND_MIME)) return
-          e.preventDefault()
-          const draggedId = readDraggedTabId(e)
-          setDropBeforeId(undefined)
-          if (draggedId) moveTab(draggedId, null)
-        }}
-        style={{ flex: 1, height: '100%' }}
-      />
+        data-testid="tab-actions"
+        className="flex h-[32px] shrink-0 items-center border-b border-[var(--border)] bg-[var(--white)]"
+      >
+        {/* + new tab — a real button so it carries a name for the keyboard and
+          for screen readers. What it opens depends on the module (handleNewTab). */}
+        <button
+          type="button"
+          onClick={handleNewTab}
+          title={t('tabStrip.newTab')}
+          aria-label={t('tabStrip.newTab')}
+          data-testid="tab-new"
+          className="flex h-full shrink-0 cursor-pointer items-center justify-center border-none bg-transparent px-2.5 text-[16px] text-[var(--hint)]"
+        >
+          +
+        </button>
 
-      {/* Environment selector (Postman parity — right end of tab bar) */}
-      <div className="flex shrink-0 items-center" style={{ paddingRight: 10, paddingLeft: 8 }}>
-        <EnvironmentSelector />
+        {/* Environment selector (Postman parity — right end of tab bar) */}
+        <div data-testid="env-selector" className="flex shrink-0 items-center pl-2 pr-2.5">
+          <EnvironmentSelector />
+        </div>
       </div>
 
       {contextMenu &&
@@ -875,7 +876,7 @@ export function EndpointTabBar() {
           <TabContextMenuShell x={contextMenu.x} y={contextMenu.y}>
             <ContextMenuItem
               label={t('tabStrip.newRequest')}
-              shortcut={cmdOrCtrl('T')}
+              shortcut={formatShortcut(['Mod', 'T'])}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'newRequest')}
             />
             <ContextMenuItem
@@ -885,12 +886,12 @@ export function EndpointTabBar() {
             <div style={{ height: 1, background: 'var(--border-split)', margin: '4px 0' }} />
             <ContextMenuItem
               label={t('tabStrip.close')}
-              shortcut={cmdOrCtrl('W')}
+              shortcut={formatShortcut(['Mod', 'W'])}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'close')}
             />
             <ContextMenuItem
               label={t('tabStrip.forceClose')}
-              shortcut={altCmdOrCtrl('W')}
+              shortcut={formatShortcut(['Mod', 'Alt', 'W'])}
               onClick={() => handleTabContextAction(contextMenu.tabId, 'closeForce')}
             />
             <ContextMenuItem
@@ -928,13 +929,6 @@ export function EndpointTabBar() {
       />
     </div>
   )
-}
-
-function cmdOrCtrl(key: string): string {
-  return isMac() ? `⌘${key}` : `Ctrl+${key}`
-}
-function altCmdOrCtrl(key: string): string {
-  return isMac() ? `⌥⌘${key}` : `Ctrl+Alt+${key}`
 }
 
 /* Tab context menu chrome. Positioned from the measured size instead of the
@@ -1067,7 +1061,7 @@ export default function Workbench() {
         const id = makeTabId()
         useTabsStore.getState().openTab({
           id,
-          name: 'New Request',
+          name: defaultRequestTabName(),
           protocol: 'http',
           method: 'GET',
           url: '',
@@ -1348,52 +1342,44 @@ export default function Workbench() {
       )
     }
 
+    // The row owns the narrow-editor auto-collapse of the right panel (issue #251).
     return (
-      <div className="flex flex-1 overflow-hidden" style={{ background: 'var(--white)' }}>
-        {/* Main content */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Endpoint tab bar */}
-          <EndpointTabBar />
-          <HistoryHiddenNote />
+      <WorkbenchMainRow>
+        {/* Endpoint tab bar */}
+        <EndpointTabBar />
+        <HistoryHiddenNote />
 
-          {/* URL Bar */}
-          <UrlBar />
+        {/* URL Bar */}
+        <UrlBar />
 
-          {/* URL Preview — shows resolved variables (Postman-style) */}
-          <UrlPreview />
+        {/* URL Preview — shows resolved variables (Postman-style) */}
+        <UrlPreview />
 
-          {/* Split pane: Request (top) | Response (bottom).
-           *
-           * `key={activeTab.id}` is intentional — it forces RequestEditor and
-           * ResponsePane to remount on every tab switch. Without this, the
-           * Monaco editor inside RequestEditor and any local component state
-           * (`useState` in BodyTab, ResultRow, ResponsePane sub-tabs) would
-           * survive across tabs and could leak the previous request's content
-           * into the next one when the user switches quickly. The Zustand
-           * stores are already tab-aware, but the React component instances
-           * are not — this is the simplest atomic fix. */}
-          <PanelGroup direction="vertical" className="flex-1">
-            <Panel defaultSize={65} minSize={25} maxSize={85}>
-              <RequestEditor key={activeTab.id} />
-            </Panel>
+        {/* Split pane: Request (top) | Response (bottom).
+         *
+         * `key={activeTab.id}` is intentional — it forces RequestEditor and
+         * ResponsePane to remount on every tab switch. Without this, the
+         * Monaco editor inside RequestEditor and any local component state
+         * (`useState` in BodyTab, ResultRow, ResponsePane sub-tabs) would
+         * survive across tabs and could leak the previous request's content
+         * into the next one when the user switches quickly. The Zustand
+         * stores are already tab-aware, but the React component instances
+         * are not — this is the simplest atomic fix. */}
+        <PanelGroup direction="vertical" className="flex-1">
+          <Panel defaultSize={65} minSize={25} maxSize={85}>
+            <RequestEditor key={activeTab.id} />
+          </Panel>
 
-            <PanelResizeHandle
-              className="shrink-0 transition-colors hover:bg-[var(--accent)]"
-              style={{ height: 4, background: 'var(--border)', cursor: 'row-resize' }}
-            />
+          <PanelResizeHandle
+            className="shrink-0 transition-colors hover:bg-[var(--accent)]"
+            style={{ height: 4, background: 'var(--border)', cursor: 'row-resize' }}
+          />
 
-            <Panel defaultSize={35} minSize={15} maxSize={75}>
-              <ResponsePane key={activeTab.id} />
-            </Panel>
-          </PanelGroup>
-        </div>
-
-        {/* Drag divider between the workbench and the Variables pane (issue #15) */}
-        <EdgeResizeHandle target="right" />
-
-        {/* Right: Postman-style tabbed panel (Variables / Code / ...) */}
-        <RightPanel />
-      </div>
+          <Panel defaultSize={35} minSize={15} maxSize={75}>
+            <ResponsePane key={activeTab.id} />
+          </Panel>
+        </PanelGroup>
+      </WorkbenchMainRow>
     )
   })()
 

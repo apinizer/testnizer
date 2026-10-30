@@ -111,7 +111,9 @@ interface WebSocketStore extends TabWsState {
 function emptyTabState(): TabWsState {
   return {
     withheldCredentials: [],
-    url: 'wss://echo.websocket.org',
+    // Empty like Socket.IO / MCP (issue #257): no third-party host the user
+    // did not type. The field shows an example placeholder instead.
+    url: '',
     customHeaders: [defaultKv()],
     params: [],
     settings: { ...DEFAULT_WS_SETTINGS },

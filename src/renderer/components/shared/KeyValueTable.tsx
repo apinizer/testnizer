@@ -401,6 +401,7 @@ export default function KeyValueTable({
         >
           {/* Header */}
           <div
+            data-testid="kv-header"
             className="grid text-[var(--hint)]"
             style={{
               gridTemplateColumns: gridCols,
@@ -409,7 +410,9 @@ export default function KeyValueTable({
             }}
           >
             <div />
-            <div className="relative px-2.5 py-1">
+            {/* Labels never wrap (issue #251): a narrow editor scrolls, it does not
+                double the header height. */}
+            <div className="relative whitespace-nowrap px-2.5 py-1">
               {t('kv.key')}
               {resizeActive && (
                 <span
@@ -429,11 +432,11 @@ export default function KeyValueTable({
                 />
               )}
             </div>
-            {enableFileType && <div className="px-2.5 py-1">{t('kv.type')}</div>}
-            <div className="px-2.5 py-1">{t('kv.value')}</div>
+            {enableFileType && <div className="whitespace-nowrap px-2.5 py-1">{t('kv.type')}</div>}
+            <div className="whitespace-nowrap px-2.5 py-1">{t('kv.value')}</div>
             {/* Description header doubles as the Bulk Edit toggle anchor (#22). */}
-            <div className="flex items-center justify-between px-2.5 py-1">
-              <span>{t('kv.description')}</span>
+            <div className="flex items-center justify-between whitespace-nowrap px-2.5 py-1">
+              <span className="min-w-0 truncate">{t('kv.description')}</span>
               {bulkToggle}
             </div>
             <div />

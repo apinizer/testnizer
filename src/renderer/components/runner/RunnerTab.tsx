@@ -17,7 +17,7 @@ import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { runnerKey } from '../../lib/runner-storage'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
-import { useUIStore } from '../../stores/ui.store'
+import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
@@ -249,7 +249,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   // Share the right-panel collapse flag with the API workbench so the
   // "All variables" toggle behaves identically across screens.
-  const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed)
+  // Same effective value as the APIs page's RightPanel (issues #251 / #257).
+  const rightPanelCollapsed = useUIStore(selectRightPanelCollapsed)
   const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed)
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
@@ -1609,6 +1610,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         >
           <button
             type="button"
+            data-testid="runner-variables-expand"
             onClick={() => setRightPanelCollapsed(false)}
             title={t('runnerTab.showVariables')}
             aria-label={t('runnerTab.showVariablesPanel')}
@@ -1632,6 +1634,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           {/* Collapse button — top-right of the variables panel */}
           <button
             type="button"
+            data-testid="runner-variables-collapse"
             onClick={() => setRightPanelCollapsed(true)}
             title={t('runnerTab.collapsePanel')}
             aria-label={t('runnerTab.collapseVariablesPanel')}

@@ -93,6 +93,7 @@ export default function SocketIOConnectionBar() {
           aria-label={t('socketio.tokenPlaceholder')}
           aria-describedby="socketio-token-hint"
           placeholder={t('socketio.tokenPlaceholder')}
+          title={t('socketio.tokenPlaceholder')}
           className={`w-[16rem] max-w-full ${CB_INPUT}`}
         />
       </div>

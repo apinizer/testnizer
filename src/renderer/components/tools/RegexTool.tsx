@@ -3,27 +3,11 @@ import ToolShell from './ToolShell'
 import { REGEX_FLAGS, REGEX_PRESETS, runRegex, type RegexFlag } from '../../lib/tools/regex'
 import { useTranslation } from '../../lib/i18n'
 
-const FLAG_DESCRIPTIONS: Record<RegexFlag, string> = {
-  g: 'global — find all matches',
-  i: 'case-insensitive',
-  m: 'multiline — ^/$ match per line',
-  s: 'dotAll — . matches newlines',
-  u: 'unicode — full Unicode support',
-  y: 'sticky — match from lastIndex',
-}
-
-const DEFAULT_INPUT = `Sample input text:
-Contact us at help@example.com or sales@example.org
-Visit https://testnizer.example/docs or http://localhost:8080/health
-Server IPs: 192.168.1.10, 10.0.0.1
-Trace ID: 550e8400-e29b-41d4-a716-446655440000
-Date: 2026-05-09T22:00:00Z`
-
 export default function RegexTool() {
   const { t } = useTranslation()
   const [pattern, setPattern] = useState('[\\w.+-]+@[\\w-]+\\.[\\w.-]+')
   const [flags, setFlags] = useState<Set<RegexFlag>>(new Set<RegexFlag>(['g']))
-  const [input, setInput] = useState(DEFAULT_INPUT)
+  const [input, setInput] = useState(() => t('tools.regex.sampleInput'))
   const [replacement, setReplacement] = useState('')
   const [showReplace, setShowReplace] = useState(false)
   const patternId = useId()
@@ -141,7 +125,7 @@ export default function RegexTool() {
                   <button
                     key={f}
                     onClick={() => toggleFlag(f)}
-                    title={FLAG_DESCRIPTIONS[f]}
+                    title={t(`tools.regex.flag.${f}`)}
                     className="rounded px-2 py-1 text-xs font-mono font-semibold"
                     style={{
                       background: active ? 'var(--accent-light)' : 'var(--white)',
@@ -163,7 +147,9 @@ export default function RegexTool() {
               className="mb-1 flex items-center justify-between text-[11px] uppercase tracking-wide"
               style={{ color: 'var(--muted)' }}
             >
-              {t('tools.regex.input')}
+              {/* The space keeps the label's accessible name "Input 2 matches",
+                  not "Input2 matches"; flex layout drops it visually. */}
+              {t('tools.regex.input')}{' '}
               <span style={{ textTransform: 'none' }}>
                 {result.ok ? `${result.matches.length} ${t('tools.regex.matches')}` : ''}
               </span>

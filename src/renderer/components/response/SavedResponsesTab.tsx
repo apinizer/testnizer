@@ -3,6 +3,7 @@ import { Bookmark, Trash2, ExternalLink, Pencil } from 'lucide-react'
 import { useSavedResponseStore, savedResponseOwnerForTab } from '../../stores/saved-response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDateTime } from '../../lib/format-datetime'
 import StatusBadge from '../shared/StatusBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
@@ -14,7 +15,7 @@ import type { SavedResponse } from '../../types'
  * without re-sending; Delete removes it.
  */
 export default function SavedResponsesTab() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const items = useSavedResponseStore((s) => s.items)
   const open = useSavedResponseStore((s) => s.open)
   const remove = useSavedResponseStore((s) => s.remove)
@@ -109,7 +110,7 @@ export default function SavedResponsesTab() {
               {item.method ? `${item.method} ` : ''}
               {item.url || ''}
               {' · '}
-              {new Date(item.created_at).toLocaleString()}
+              {formatDateTime(item.created_at, locale)}
             </div>
           </div>
           <button

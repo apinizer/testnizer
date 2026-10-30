@@ -1,12 +1,12 @@
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
-import { modKeyLabel } from '../../lib/platform'
+import { formatShortcut } from '../../lib/shortcut-format'
 import { isLeftPanelCollapsible } from '../../lib/sidebar-pages'
 
-/** "Cmd+B" on macOS, "Ctrl+B" elsewhere — same format as the command palette. */
+/** Same notation as the command palette (issue #257: one formatter). */
 function toggleShortcut(): string {
-  return `${modKeyLabel()}+B`
+  return formatShortcut(['Mod', 'B'])
 }
 
 /**

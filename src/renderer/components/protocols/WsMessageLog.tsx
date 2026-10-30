@@ -4,7 +4,7 @@ import { useWebSocketStore } from '../../stores/websocket.store'
 import EmptyState from '../shared/EmptyState'
 import type { WsMessage } from '../../types'
 import { useTranslation } from '../../lib/i18n'
-import { defaultViewMode, messageSize } from '../../lib/realtime-format'
+import { defaultViewMode, messageFormatLabel, messageSize } from '../../lib/realtime-format'
 import RealtimeLogToolbar from './realtime/RealtimeLogToolbar'
 import RealtimeLogRow from './realtime/RealtimeLogRow'
 import MessageView from './realtime/MessageView'
@@ -90,10 +90,10 @@ export default function WsMessageLog() {
                 }
                 tone={system && msg.event === 'error' ? 'error' : undefined}
                 preview={msg.content.replace(/\n/g, ' ').slice(0, 200)}
-                badge={system ? undefined : msg.contentType}
+                badge={system ? undefined : messageFormatLabel(msg.contentType, t)}
                 timestamp={msg.timestamp}
                 sizeBytes={system ? undefined : messageSize(msg.content, binary)}
-                typeLabel={system ? undefined : msg.contentType}
+                typeLabel={system ? undefined : messageFormatLabel(msg.contentType, t)}
                 copyText={msg.content}
                 onSave={
                   system

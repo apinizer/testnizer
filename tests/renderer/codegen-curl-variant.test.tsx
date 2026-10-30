@@ -36,6 +36,9 @@ beforeEach(() => {
     // The language choice lives in ui.store since issue #280 (it was modal state).
     codegen: { language: 'curl', variantByLanguage: {}, optionsByVariant: {} },
     rightPanelTab: 'code',
+    // The panel starts collapsed since issue #257; this file renders it open.
+    rightPanelCollapsed: false,
+    rightPanelNarrowCollapsed: false,
   })
   useRequestStore.setState({
     method: 'POST',

@@ -4,6 +4,7 @@ import { useTabsStore } from '../../stores/tabs.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { LogOut } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
+import { defaultRequestTabName } from '../../lib/endpoint-name'
 
 /**
  * Guest-mode shell. Previously this rendered an HTTP-only editor with no way
@@ -23,7 +24,7 @@ export default function QuickTestShell() {
     if (tabs.length === 0) {
       openTab({
         id: 'quick-test-' + Math.random().toString(36).slice(2, 10),
-        name: 'New Request',
+        name: defaultRequestTabName(),
         protocol: 'http',
         method: 'GET',
         url: '',

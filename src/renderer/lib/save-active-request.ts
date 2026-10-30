@@ -10,7 +10,8 @@
 // handler and EndpointSaveModal's update branch.
 
 import { useTabsStore } from '../stores/tabs.store'
-import { useRequestStore } from '../stores/request.store'
+import { HTTP_CREDENTIALS, useRequestStore } from '../stores/request.store'
+import { recordStoredAuth } from './stored-auth-credentials'
 import { useSoapStore } from '../stores/soap.store'
 import { isManualSoapMeta } from '../../shared/soap-transport'
 import { useWebSocketStore } from '../stores/websocket.store'
@@ -758,6 +759,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       })) as UpdateEnvelope
       if (result?.notFound) return orphaned(activeTab.id)
       if (result?.success) {
+        // What the row now stores — the Auth restart hint compares with it (#261).
+        recordStoredAuth(activeTab, req.auth, HTTP_CREDENTIALS)
         tabs.markDirty(activeTab.id, false)
         // Sync the tab badge with the post-save method + URL — symmetric
         // with the saved_request branch below. Without this the tab chip
@@ -803,6 +806,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       )) as UpdateEnvelope
       if (result?.notFound) return orphaned(activeTab.id)
       if (result?.success) {
+        // What the row now stores — the Auth restart hint compares with it (#261).
+        recordStoredAuth(activeTab, req.auth, HTTP_CREDENTIALS)
         tabs.markDirty(activeTab.id, false)
         tabs.updateTab(activeTab.id, {
           method: effectiveMethod,
@@ -849,6 +854,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       })) as UpdateEnvelope
       if (result?.notFound) return orphaned(activeTab.id)
       if (result?.success) {
+        // What the row now stores — the Auth restart hint compares with it (#261).
+        recordStoredAuth(activeTab, req.auth, HTTP_CREDENTIALS)
         tabs.markDirty(activeTab.id, false)
         tabs.updateTab(activeTab.id, {
           method: effectiveMethod,

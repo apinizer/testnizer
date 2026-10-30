@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
-import { HTTP_STATUS_CODES, type HttpStatus } from '../../lib/tools/http-status'
+import { HTTP_STATUS_CODES, foldSearchText, type HttpStatus } from '../../lib/tools/http-status'
+import { HTTP_STATUS_TR } from '../../lib/tools/http-status-tr'
 import { useTranslation } from '../../lib/i18n'
 
 const CATEGORIES: { id: HttpStatus['category']; color: string }[] = [
@@ -12,22 +13,25 @@ const CATEGORIES: { id: HttpStatus['category']; color: string }[] = [
 ]
 
 export default function HttpStatusTool() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState<HttpStatus['category'] | 'all'>('all')
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = foldSearchText(query.trim())
     return HTTP_STATUS_CODES.filter((s) => {
       if (activeCategory !== 'all' && s.category !== activeCategory) return false
       if (!q) return true
+      // Search what the row shows: the English phrase always, the Turkish
+      // name + description in the Turkish UI, the English description in EN.
+      const local = locale === 'tr' ? HTTP_STATUS_TR[s.code] : undefined
+      const haystack = [s.name, local?.name, local ? local.description : s.description]
       return (
         String(s.code).includes(q) ||
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q)
+        haystack.some((text) => text !== undefined && foldSearchText(text).includes(q))
       )
     })
-  }, [query, activeCategory])
+  }, [query, activeCategory, locale])
 
   const groups = useMemo(() => {
     const map = new Map<HttpStatus['category'], HttpStatus[]>()
@@ -108,7 +112,12 @@ export default function HttpStatusTool() {
                 </div>
                 <div>
                   {g.items.map((s) => (
-                    <CodeRow key={s.code} status={s} color={g.color} />
+                    <CodeRow
+                      key={s.code}
+                      status={s}
+                      color={g.color}
+                      local={locale === 'tr' ? HTTP_STATUS_TR[s.code] : undefined}
+                    />
                   ))}
                 </div>
               </div>
@@ -159,9 +168,22 @@ function labelForCategory(c: HttpStatus['category'], t: (k: string) => string): 
   }
 }
 
-function CodeRow({ status, color }: { status: HttpStatus; color: string }) {
+function CodeRow({
+  status,
+  color,
+  local,
+}: {
+  status: HttpStatus
+  color: string
+  /** Turkish name + description (TR UI only); the English phrase stays. */
+  local?: { name: string; description: string }
+}) {
   return (
-    <div className="flex gap-3 border-b px-4 py-2" style={{ borderColor: 'var(--border)' }}>
+    <div
+      className="flex gap-3 border-b px-4 py-2"
+      style={{ borderColor: 'var(--border)' }}
+      data-testid={`http-status-row-${status.code}`}
+    >
       <span
         className="shrink-0 rounded px-2 py-0.5 font-mono text-sm font-semibold"
         style={{
@@ -176,10 +198,20 @@ function CodeRow({ status, color }: { status: HttpStatus; color: string }) {
       </span>
       <div className="min-w-0">
         <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          {status.name}
+          <span data-testid={`http-status-name-${status.code}`}>{status.name}</span>
+          {local && (
+            <>
+              <span className="font-normal text-[var(--muted)]"> — </span>
+              <span data-testid={`http-status-local-name-${status.code}`}>{local.name}</span>
+            </>
+          )}
         </div>
-        <div className="text-xs" style={{ color: 'var(--muted)' }}>
-          {status.description}
+        <div
+          className="text-xs"
+          style={{ color: 'var(--muted)' }}
+          data-testid={`http-status-desc-${status.code}`}
+        >
+          {local ? local.description : status.description}
         </div>
       </div>
     </div>

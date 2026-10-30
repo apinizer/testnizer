@@ -86,7 +86,7 @@ export default function RequestEditor() {
       <div
         ref={tabStripRef}
         data-testid="req-tab-strip"
-        className="scroll-strip flex shrink-0 items-center"
+        className="scroll-strip flex min-w-0 shrink-0 items-center"
         style={{
           borderBottom: '1px solid var(--border)',
           background: 'var(--white)',
@@ -103,7 +103,7 @@ export default function RequestEditor() {
               data-testid={`req-tab-${tab.key}`}
               data-active={isActive}
               onClick={() => setActiveTab(tab.key)}
-              className="flex cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 transition-colors"
+              className="flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap px-2.5 transition-colors"
               style={{
                 height: 30,
                 background: 'transparent',

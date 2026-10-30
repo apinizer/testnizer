@@ -4,6 +4,7 @@ import { useEnvironmentStore } from '../../stores/environment.store'
 import { useConsoleStore } from '../../stores/console.store'
 import { T } from '../../styles/tokens'
 import { useTranslation } from '../../lib/i18n'
+import { formatShortcut } from '../../lib/shortcut-format'
 
 export default function Footer() {
   const environments = useEnvironmentStore((s) => s.environments)
@@ -109,7 +110,7 @@ export default function Footer() {
         type="button"
         data-testid="footer-console"
         onClick={toggleConsolePanel}
-        title={`${t('footer.console')} (Alt+Ctrl+C)`}
+        title={`${t('footer.console')} (${formatShortcut(['Mod', 'Alt', 'C'])})`}
         style={{
           display: 'inline-flex',
           alignItems: 'center',

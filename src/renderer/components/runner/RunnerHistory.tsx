@@ -8,6 +8,7 @@ import NewRunButton from './NewRunButton'
 import RunReportExportButtons from './RunReportExportButtons'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate, formatTime } from '../../lib/format-datetime'
 import {
   displayRunSourceLabel,
   historyRunOrigin,
@@ -505,18 +506,8 @@ function HistoryRow({
   const [hovered, setHovered] = useState(false)
   const hasFailed = run.failed_endpoints > 0 || run.failed_tests > 0
 
-  const formatDate = (ts: number) => {
-    const d = new Date(ts)
-    return (
-      d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      }) +
-      ' ' +
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    )
-  }
+  const formatStamp = (ts: number) =>
+    `${formatDate(ts, locale)} ${formatTime(ts, locale, { seconds: true })}`
 
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`
@@ -560,7 +551,7 @@ function HistoryRow({
             className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
             style={{ background: hasFailed ? '#cc2200' : '#1a7a4a' }}
           />
-          {formatDate(run.started_at)}
+          {formatStamp(run.started_at)}
         </div>
       </td>
       <td className="py-2.5 pr-4 text-[var(--text)]">

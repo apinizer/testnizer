@@ -1,6 +1,6 @@
 import { CodeXml } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
-import { protocolChip } from '../../lib/protocol-chip'
+import { protocolChipName } from '../../lib/protocol-chip'
 import EmptyState from './EmptyState'
 
 /**
@@ -11,7 +11,7 @@ import EmptyState from './EmptyState'
 export default function CodegenUnavailable({ protocol }: { protocol: string }) {
   const { t } = useTranslation()
   // A request protocol is named; a tool / runner / mock tab is just "this tab".
-  const name = protocolChip(protocol)?.name
+  const name = protocolChipName(protocol)
   return (
     <div data-testid="codegen-unavailable" data-protocol={protocol} className="flex flex-1">
       <EmptyState

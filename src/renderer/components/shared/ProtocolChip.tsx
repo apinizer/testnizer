@@ -1,4 +1,5 @@
 import { protocolChip, tabProtocolChip } from '../../lib/protocol-chip'
+import { useTranslation } from '../../lib/i18n'
 
 /**
  * Short protocol chip (MCP, WS, SSE, SIO, GQL, gRPC) shown on tree rows and
@@ -13,6 +14,8 @@ export default function ProtocolChip({
   /** A tab's title: the chip is left out when the title is the chip's own label ("MCP MCP"). */
   title?: string
 }) {
+  // Subscribes to the locale: the tooltip name is localized (SSE, issue #261).
+  useTranslation()
   const chip = title === undefined ? protocolChip(protocol) : tabProtocolChip(protocol, title)
   if (!chip) return null
   return (

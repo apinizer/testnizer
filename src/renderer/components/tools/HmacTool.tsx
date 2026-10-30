@@ -79,7 +79,7 @@ export default function HmacTool() {
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder="secret key"
+              placeholder={t('tools.hmac.secretPlaceholder')}
               className="w-full rounded border px-2 py-1 font-mono text-xs"
               style={{
                 background: 'var(--white)',

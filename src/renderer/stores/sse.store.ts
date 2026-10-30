@@ -109,7 +109,9 @@ interface SseStore extends TabSseState {
 function emptyTabState(): TabSseState {
   return {
     withheldCredentials: [],
-    url: 'https://stream.wikimedia.org/v2/stream/recentchange',
+    // Empty like Socket.IO / MCP (issue #257): no third-party host the user
+    // did not type. The field shows an example placeholder instead.
+    url: '',
     method: 'GET',
     body: '',
     bodyType: 'json',

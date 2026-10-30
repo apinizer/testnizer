@@ -37,8 +37,9 @@ import { useUIStore } from '../stores/ui.store'
 import { openOrReuseRunnerTab } from './open-runner-tab'
 import { runActiveRequest } from './run-active-request'
 import { useEnvironmentStore } from '../stores/environment.store'
-import { isMac } from './platform'
+import { formatShortcut } from './shortcut-format'
 import { makeTabId } from './utils'
+import { defaultRequestTabName } from './endpoint-name'
 import type { ToolProtocol } from '../types'
 
 export const GROUP_LABEL_KEY = {
@@ -63,13 +64,13 @@ export interface CommandAction {
   run: () => void | Promise<void>
 }
 
-/** Pretty shortcut hint shown in the palette (e.g. "Cmd+K" on macOS, "Ctrl+K" elsewhere). */
+/**
+ * Shortcut hint shown in the palette and the cheatsheet ("⌘K" on macOS,
+ * "Ctrl+K" elsewhere) — through the one formatter, like every other surface
+ * (issue #257).
+ */
 export function shortcutLabel(key: string, opts?: { shift?: boolean }): string {
-  const mod = isMac() ? 'Cmd' : 'Ctrl'
-  const parts: string[] = [mod]
-  if (opts?.shift) parts.push('Shift')
-  parts.push(key)
-  return parts.join('+')
+  return formatShortcut(['Mod', ...(opts?.shift ? ['Shift'] : []), key])
 }
 
 /**
@@ -96,7 +97,7 @@ export function useCommandActions(): CommandAction[] {
       run: () => {
         tabs.openTab({
           id: makeTabId(),
-          name: 'New Request',
+          name: defaultRequestTabName(),
           protocol: 'http',
           method: 'GET',
           url: '',

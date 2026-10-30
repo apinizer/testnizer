@@ -1,5 +1,5 @@
 import { Code2, Variable, ChevronRight } from 'lucide-react'
-import { useUIStore } from '../../stores/ui.store'
+import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import RunnerVariables from '../runner/RunnerVariables'
 import GenerateCodePane from './GenerateCodePane'
 import { useTranslation } from '../../lib/i18n'
@@ -23,7 +23,8 @@ const TABS: RightPanelTabIcon[] = [
  */
 export default function RightPanel() {
   const { t } = useTranslation()
-  const collapsed = useUIStore((s) => s.rightPanelCollapsed)
+  // Preference OR the narrow-editor auto-collapse (issues #251 / #257).
+  const collapsed = useUIStore(selectRightPanelCollapsed)
   const activeTab = useUIStore((s) => s.rightPanelTab)
   const setTab = useUIStore((s) => s.setRightPanelTab)
   const toggleCollapsed = useUIStore((s) => s.toggleRightPanel)
@@ -33,6 +34,7 @@ export default function RightPanel() {
   if (collapsed) {
     return (
       <div
+        data-testid="right-panel-rail"
         className="flex shrink-0 flex-col items-center gap-1 border-l border-[var(--border)] bg-[var(--bg)] py-2"
         style={{ width: 40 }}
       >
@@ -40,10 +42,12 @@ export default function RightPanel() {
           <button
             key={tab.id}
             type="button"
+            data-testid={`right-panel-rail-${tab.id}`}
             onClick={() => {
               setTab(tab.id)
             }}
             title={t(tab.labelKey)}
+            aria-label={t(tab.labelKey)}
             className="flex cursor-pointer items-center justify-center rounded p-1.5 text-[var(--muted)] transition-colors hover:bg-[var(--surface)] hover:text-[var(--accent)]"
             style={{ background: 'transparent', border: 'none' }}
           >
@@ -56,6 +60,7 @@ export default function RightPanel() {
 
   return (
     <div
+      data-testid="right-panel"
       className="flex shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--white)]"
       style={{ width }}
     >
@@ -95,8 +100,10 @@ export default function RightPanel() {
         {/* Collapse button */}
         <button
           type="button"
+          data-testid="right-panel-collapse"
           onClick={toggleCollapsed}
           title={t('rightPanel.collapse')}
+          aria-label={t('rightPanel.collapse')}
           className="flex cursor-pointer items-center justify-center rounded p-1 text-[var(--muted)] transition-colors hover:text-[var(--text)]"
           style={{ background: 'transparent', border: 'none' }}
         >

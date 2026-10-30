@@ -22,6 +22,12 @@
 // the row). Such a tab is treated as fully withheld; see "Not-loaded tabs".
 
 import { useRequestStore } from '../stores/request.store'
+import {
+  bindingKey,
+  forgetStoredAuth,
+  recordStoredAuth,
+  storedAuthVersion,
+} from './stored-auth-credentials'
 import { useMcpStore } from '../stores/mcp.store'
 import { useWebSocketStore, WS_CREDENTIALS } from '../stores/websocket.store'
 import { useSseStore, SSE_CREDENTIALS } from '../stores/sse.store'
@@ -493,6 +499,8 @@ export function ensureWithheldCredentialsLoaded(tab: BoundTab): Promise<Withheld
       }
     }
     for (const a of waiting) a.restore(tab, row)
+    // The row was read: its auth is what the restart hint compares with (#261).
+    if (row) recordStoredAuth(tab, row.request.auth, HTTP_CREDENTIALS)
     // A not-loaded tab is reloaded only while it is the live one; the user
     // switched away during the read — the next activation retries.
     if (isTabUnloaded(tab.id)) return { ok: false, error: NOT_LOADED_ERROR }
@@ -500,4 +508,20 @@ export function ensureWithheldCredentialsLoaded(tab: BoundTab): Promise<Withheld
   })().finally(() => inflight.delete(tab.id))
   inflight.set(tab.id, run)
   return run
+}
+
+/**
+ * Read what `tab`'s bound row stores for its auth (issue #261 restart hint).
+ * Runs whenever the Auth tab shows a tab / binding, so a row changed elsewhere
+ * (git pull, another tab) replaces an old record. A record made while the read
+ * was in flight (a save) is newer and wins. A missing or unreadable row
+ * forgets the record: nothing is known to be stored, the hint stays.
+ */
+export async function loadStoredAuthFromRow(tab: BoundTab): Promise<void> {
+  if (!bindingKey(tab)) return
+  const started = storedAuthVersion(tab.id)
+  const row = await readBoundRowState(tab)
+  if (storedAuthVersion(tab.id) !== started) return
+  if (row && row !== ROW_MISSING) recordStoredAuth(tab, row.request.auth, HTTP_CREDENTIALS)
+  else forgetStoredAuth(tab.id)
 }

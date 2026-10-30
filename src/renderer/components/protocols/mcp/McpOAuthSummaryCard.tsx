@@ -1,6 +1,7 @@
 import { KeyRound, Plug, Trash2 } from 'lucide-react'
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
+import { formatDateTime } from '../../../lib/format-datetime'
 import type { McpOAuthSummary } from '../../../types/mcp'
 import { GhostButton, PrimaryButton } from './ui'
 
@@ -21,13 +22,13 @@ function Row({ label, value, testId }: { label: string; value: string; testId?: 
  * at this token session and (re)connects.
  */
 export default function McpOAuthSummaryCard({ summary }: { summary: McpOAuthSummary }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const inUse = useMcpStore((s) => !!s.oauthFlowId && s.oauthSessionId === s.oauthFlowId)
   const connected = useMcpStore((s) => s.connectionState === 'connected')
   const connectWithOAuth = useMcpStore((s) => s.connectWithOAuth)
   const forgetOAuth = useMcpStore((s) => s.forgetOAuth)
   const expires = summary.expiresAt
-    ? new Date(summary.expiresAt).toLocaleString()
+    ? formatDateTime(summary.expiresAt, locale)
     : t('mcp.oauth.summary.never')
 
   return (
