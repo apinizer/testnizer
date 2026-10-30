@@ -640,7 +640,6 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // New Dropdown
     'newDropdown.httpEndpoint': 'HTTP',
-    'newDropdown.quickRequest': 'Quick Request',
     'newDropdown.websocket': 'WebSocket',
     'newDropdown.soap': 'SOAP',
     'newDropdown.soapMethod': 'SOAP',
@@ -656,7 +655,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'newDropdown.folder': 'Folder',
     'newDropdown.module': 'Module',
     'newDropdown.import': 'Import',
-    'newDropdown.importCurl': 'Import cURL',
     'newDropdown.more': 'More...',
     'newDropdown.other': 'Other',
 
@@ -4909,7 +4907,6 @@ const translations: Record<Locale, Record<string, string>> = {
 
     // New Dropdown
     'newDropdown.httpEndpoint': 'HTTP',
-    'newDropdown.quickRequest': 'Hızlı İstek',
     'newDropdown.websocket': 'WebSocket',
     'newDropdown.soap': 'SOAP',
     'newDropdown.soapMethod': 'SOAP',
@@ -4925,7 +4922,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'newDropdown.folder': 'Klasör',
     'newDropdown.module': 'Modül',
     'newDropdown.import': 'İçeri Aktar',
-    'newDropdown.importCurl': 'cURL İçeri Aktar',
     'newDropdown.more': 'Daha fazla...',
     'newDropdown.other': 'Diğer',
 

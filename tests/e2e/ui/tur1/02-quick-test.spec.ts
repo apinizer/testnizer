@@ -1,5 +1,6 @@
 /**
- * MST-028 — Quick Request flow
+ * MST-028 — Quick Request flow (the New menu's HTTP entry; the separate
+ * "Quick Request" entry was a duplicate of it and was removed)
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
@@ -15,14 +16,14 @@ uiTest.describe('Tur1 — Quick Request [MST-028]', () => {
     await navigateSidebar(window, 'apis')
   })
 
-  uiTest('MST-028 Quick Request sends without persisting to tree', async ({ window }) => {
+  uiTest('MST-028 a new HTTP request sends without persisting to tree', async ({ window }) => {
     const before = await window.getByTestId('tree-node').count()
     await window.getByTestId('new-dropdown-btn').click()
-    await window.getByTestId('new-dropdown-menu').getByText(/Quick Request/i).click()
+    await window.getByTestId('new-dropdown-menu').getByRole('button', { name: /^HTTP$/i }).click()
     await expect(window.getByTestId('url-input')).toBeVisible({ timeout: 8_000 })
     await fillUrl(window, `${http()}/get?quick=1`)
     await sendAndWaitResponse(window)
-    // Unsaved quick tab — tree count unchanged.
+    // Unsaved tab — tree count unchanged.
     await expect(window.getByTestId('tree-node')).toHaveCount(before)
   })
 })

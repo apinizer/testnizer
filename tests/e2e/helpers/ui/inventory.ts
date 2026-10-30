@@ -265,7 +265,6 @@ export const RESPONSE_TABS = ['body', 'cookies', 'headers', 'testResults'] as co
 
 export const NEW_DROPDOWN_PROTOCOLS = [
   /^HTTP$/i,
-  /Quick Request/i,
   /SOAP/i,
   /WebSocket/i,
   /GraphQL/i,
@@ -275,7 +274,6 @@ export const NEW_DROPDOWN_PROTOCOLS = [
   /MCP/i,
   /Socket\.IO/i,
   /^Import$/i,
-  /^Import cURL$/i,
 ] as const
 
 export const ALL_INVENTORY: InventoryItem[] = [

@@ -49,7 +49,6 @@ uiTest.describe('UI inventory sweep', () => {
     await expect(menu).toBeVisible()
     const labels = [
       'HTTP',
-      'Quick Request',
       'SOAP',
       'WebSocket',
       'GraphQL',
@@ -61,6 +60,9 @@ uiTest.describe('UI inventory sweep', () => {
     for (const label of labels) {
       await expect(menu.getByRole('button', { name: new RegExp(label, 'i') })).toBeVisible()
     }
+    // Quick Request duplicated HTTP; cURL import is a card in the Import modal.
+    await expect(menu.getByRole('button', { name: /Quick Request/i })).toHaveCount(0)
+    await expect(menu.getByRole('button', { name: /^Import cURL$/i })).toHaveCount(0)
   })
 })
 

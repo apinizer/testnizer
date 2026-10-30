@@ -86,13 +86,6 @@ export default function NewDropdown() {
       action: () => createProtocolTab('http', t('welcome.newEndpointName'), 'GET'),
     },
     {
-      icon: <Zap size={16} strokeWidth={1.75} />,
-      iconColor: '#7c52d4',
-      label: t('newDropdown.quickRequest'),
-      bg: '#eeecfe',
-      action: () => createProtocolTab('http', t('welcome.quickRequest'), 'GET'),
-    },
-    {
       icon: <FileCode2 size={16} strokeWidth={1.75} />,
       iconColor: '#E65100',
       label: t('newDropdown.soapMethod'),
@@ -155,8 +148,9 @@ export default function NewDropdown() {
       bg: '#E0F2F1',
       action: () => createProtocolTab('mqtt', t('welcome.mqtt')),
     },
-    // Import entries: listed here too (issue #5) in addition to the dedicated
-    // Import dropdown, since users expect them under the New (+) menu.
+    // Import: listed here too (issue #5) in addition to the dedicated Import
+    // dropdown, since users expect it under the New (+) menu. cURL is a card
+    // inside that modal, so it has no entry of its own here.
     {
       icon: <Plus size={16} strokeWidth={1.75} />,
       iconColor: '#5b52d4',
@@ -164,16 +158,6 @@ export default function NewDropdown() {
       bg: '#eeecfe',
       action: () => {
         useUIStore.getState().setShowImportModal(true)
-        setOpen(false)
-      },
-    },
-    {
-      icon: <FileCode2 size={16} strokeWidth={1.75} />,
-      iconColor: '#1565c0',
-      label: t('newDropdown.importCurl'),
-      bg: '#e8f4ff',
-      action: () => {
-        useUIStore.getState().setShowImportModal(true, 'curl')
         setOpen(false)
       },
     },
