@@ -29,6 +29,7 @@ import { soapMaskedSendError } from '../lib/masked-send-guard'
 // the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
 import { soapTransportHeaders } from '../../shared/soap-transport'
+import { isWsSecurityEnabled, resolveWsSecurityVariables } from '../../shared/soap-wsse'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
 interface SoapEndpointMeta {
@@ -523,14 +524,13 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     // agree (src/shared/soap-transport.ts).
     const headerPairs = soapTransportHeaders(effectiveVersion, resolvedSoapAction)
     const resolvedHeaders = resolveKeyValuePairs(headerPairs, activeVars)
-    const resolvedWsseUsername = resolveVariables(
-      wsSecurity.usernameToken?.username || wsSecurity.username || '',
-      activeVars,
-    )
-    const resolvedWssePassword = resolveVariables(
-      wsSecurity.usernameToken?.password || wsSecurity.password || '',
-      activeVars,
-    )
+    // WS-Security is applied in MAIN, to the resolved envelope, right before
+    // the request goes out (src/main/lib/soap-wsse.ts) — the same applier and
+    // the same `{{var}}` rule as Run. Key material stays in main; the config
+    // carries only pasted PEM or an opaque key source.
+    const resolvedWsSecurity = isWsSecurityEnabled(wsSecurity)
+      ? resolveWsSecurityVariables(wsSecurity, (v) => resolveVariables(v, activeVars))
+      : undefined
 
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
@@ -541,16 +541,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         url: resolvedUrl,
         headers: resolvedHeaders,
         body: { type: 'xml', content: resolvedXml },
-        auth: wsSecurity.enabled
-          ? {
-              type: 'basic',
-              basic: {
-                username: resolvedWsseUsername,
-                password: resolvedWssePassword,
-              },
-            }
-          : undefined,
         _protocol: 'soap',
+        _wsSecurity: resolvedWsSecurity,
         _requestId: requestId,
         _workspaceId: ws.activeWorkspaceId || undefined,
         _projectId: ws.activeProjectId || undefined,

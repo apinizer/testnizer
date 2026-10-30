@@ -17,6 +17,7 @@ import { logRequestResponse } from '../lib/console-logger'
 import { getCipherPreset, normaliseTlsVersion } from '../lib/tls-presets'
 import { resolveKeyMaterial } from '../lib/keystore-bridge'
 import { authSecretValues } from '../lib/sensitive-scrub'
+import { applySoapWsSecurityToBody, wsSecuritySecretValues } from '../lib/soap-wsse'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import type { CertificateRow } from '../db/certificate.repo'
 
@@ -302,12 +303,28 @@ export function registerRequestHandlers(): void {
          * row resolves the variables again; never sent to the engine.
          */
         _configured?: HistoryConfigured
+        /**
+         * SOAP editor WS-Security config, `{{var}}` already resolved (tester
+         * report 2026-10-30). Applied to the envelope here, in main — key
+         * material never leaves this process — and never sent to the engine.
+         */
+        _wsSecurity?: unknown
         /** Renderer-side TLS payload — resolved into engine-shaped `tls` here. */
         tls?: TlsPayload | HttpRequestOptions['tls']
       },
     ) => {
       const requestId = options._requestId
       let controller: AbortController | undefined
+      // WS-Security rides along for main only; its password lands in the
+      // envelope, so it joins the auth secrets every sink scrubs — also on the
+      // error path below.
+      const wsSecurity = options._protocol === 'soap' ? options._wsSecurity : undefined
+      const wsseSecrets = wsSecuritySecretValues(wsSecurity)
+      if ('_wsSecurity' in options) {
+        const { _wsSecurity: _omitWsse, ...rest } = options
+        void _omitWsse
+        options = rest
+      }
       try {
         // If a project is known and no certificates were explicitly provided,
         // attempt to pull matching CA / client certs from the project config.
@@ -367,7 +384,21 @@ export function registerRequestHandlers(): void {
         // The resolved auth's secrets (bearer token, basic password, API key
         // value, …) — scrubbed from the Console entry and the History row
         // wherever they appear, on top of the variables marked secret.
-        const requestSecrets = authSecretValues(options.auth)
+        const requestSecrets = [...authSecretValues(options.auth), ...wsseSecrets]
+
+        // SOAP WS-Security goes into the user's envelope LAST — after every
+        // variable is resolved — so a signature covers the bytes on the wire.
+        // History below records this secured body (masked), like any other
+        // body that was sent.
+        if (wsSecurity !== undefined) {
+          options = {
+            ...options,
+            body: (await applySoapWsSecurityToBody(
+              options.body,
+              wsSecurity,
+            )) as HttpRequestOptions['body'],
+          }
+        }
 
         const result = await executeHttpRequest(options)
 
@@ -455,7 +486,7 @@ export function registerRequestHandlers(): void {
             url: options.url,
             error: { message: (e as Error).message },
             tabId: options._tabId,
-            secrets: authSecretValues(options.auth),
+            secrets: [...authSecretValues(options.auth), ...wsseSecrets],
           })
         } catch {
           /* logger must never break the request */

@@ -466,6 +466,11 @@ interface RequestApi {
     _tabId?: string
     /** The request as configured (`{{var}}` kept) for History re-send (issue #195). */
     _configured?: HistoryConfigured
+    /**
+     * SOAP editor WS-Security, `{{var}}` resolved; applied to the envelope in
+     * main (`src/main/lib/soap-wsse.ts`). Only honoured with `_protocol: 'soap'`.
+     */
+    _wsSecurity?: WsSecurityConfig
   }): Promise<IpcResult<ApiResponse>>
   cancel(requestId: string): Promise<IpcResult<boolean>>
 }

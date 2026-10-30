@@ -84,7 +84,15 @@ import { mcpCallOnce, type McpOneShotCall, type McpTransport } from '../protocol
 import { isStdioServerTrusted, MCP_STDIO_UNTRUSTED_MESSAGE } from '../lib/mcp-stdio-trust'
 import { isCredentialHeaderName } from '../lib/credential-headers'
 import { MASKED_VALUE } from '../db/saved-response.repo'
-import { authSecretValues, maskRunResult, scrubberFor, type SecretDb } from '../lib/sensitive-scrub'
+import {
+  authSecretValues,
+  maskBodyText,
+  maskRunResult,
+  scrubberFor,
+  type SecretDb,
+} from '../lib/sensitive-scrub'
+import { applySoapWsSecurityToBody, wsSecuritySecretValues } from '../lib/soap-wsse'
+import { isWsSecurityEnabled, resolveWsSecurityVariables } from '../../shared/soap-wsse'
 import { cachedSecretInventory } from '../lib/secret-inventory-cache'
 import { mcpOutcomeToResponse, mcpScriptInfo, type McpScriptInfo } from '../../shared/mcp-response'
 import {
@@ -1712,11 +1720,34 @@ async function runEndpointStep(
       requestOptions.url,
       readPathVariables(parseJsonSafe<unknown>(endpoint.request_schema, {})),
     )
-    // Resolve environment variables in request
-    const resolvedOptions = resolveRequestOptions(requestOptions, envVars)
+    // Resolve environment variables in request. A copy: with no variables the
+    // resolver hands back `requestOptions` itself, and the History row's
+    // `configured` snapshot must keep the unsecured template.
+    const resolvedOptions = { ...resolveRequestOptions(requestOptions, envVars) }
+    // SOAP WS-Security from the saved row (`metadata.soap.wsSecurity`) — the
+    // same applier and the same `{{var}}` rule Send uses, applied last so a
+    // signature covers the final bytes (tester report 2026-10-30).
+    let wsseSecrets: string[] = []
+    if (endpoint.protocol === 'soap') {
+      const saved = parseJsonSafe<{ metadata?: { soap?: { wsSecurity?: unknown } } }>(
+        endpoint.request_schema,
+        {},
+      ).metadata?.soap?.wsSecurity
+      if (isWsSecurityEnabled(saved)) {
+        const wsSecurity = resolveWsSecurityVariables(saved, (v) =>
+          resolveRunnerVariables(v, envVars),
+        )
+        wsseSecrets = wsSecuritySecretValues(wsSecurity)
+        resolvedOptions.body = (await applySoapWsSecurityToBody(
+          resolvedOptions.body as RequestBody | undefined,
+          wsSecurity,
+        )) as HttpRequestOptions['body']
+      }
+    }
     // The resolved auth's secrets — masked from the Console entry, the History
-    // row and the step result wherever they appear (issue #195).
-    const authSecrets = authSecretValues(resolvedOptions.auth)
+    // row and the step result wherever they appear (issue #195). The
+    // WS-Security password sits in the envelope, so it joins them.
+    const authSecrets = [...authSecretValues(resolvedOptions.auth), ...wsseSecrets]
     // Scope the cookie jar to this project so session cookies (login →
     // protected call) behave the same in Run as they do in Send. Without
     // it the engine falls back to the shared "_default" jar (issue: Send
@@ -1857,10 +1888,16 @@ async function runEndpointStep(
           url: sanitizedRunnerUrl,
           headers: resolvedOptions.headers ?? [],
           params: resolvedOptions.params ?? [],
+          // Mask BEFORE clipping: a clip that lands inside a credential
+          // (`<wsse:Password>…`, a JSON `"password"`) leaves a fragment the
+          // name rule cannot see and the value scan cannot match.
           body: resolvedOptions.body
             ? {
                 type: (resolvedOptions.body as RequestBody).type,
-                content: ((resolvedOptions.body as RequestBody).content ?? '').slice(0, 4096),
+                content: maskBodyText(
+                  (resolvedOptions.body as RequestBody).content ?? '',
+                  scrubberFor(secretDb(), [...authSecrets, ...liveSecretValues(ctx.scopes)]),
+                ).slice(0, 4096),
               }
             : undefined,
           auth: resolvedOptions.auth

@@ -289,6 +289,35 @@ describe('listByProject / get / request_json (examples in the APIs tree)', () =>
     expect(row.request_json).not.toContain('real-secret')
   })
 
+  it('masks a WS-Security password in the SENT envelope body (tester report 2026-10-30)', async () => {
+    // A SOAP Send now carries the UsernameToken in the envelope itself; the
+    // example's `sent.body` is the engine's actualRequest.body.
+    const created = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'wsse',
+      response_json: snapshot,
+      request_json: JSON.stringify({
+        configured: { method: 'POST', url: '{{base}}', headers: [] },
+        sent: {
+          method: 'POST',
+          url: 'https://soap.test',
+          headers: { 'Content-Type': 'text/xml' },
+          body:
+            '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header>' +
+            '<wsse:Security xmlns:wsse="urn:wsse"><wsse:UsernameToken><wsse:Username>bob</wsse:Username>' +
+            '<wsse:Password Type="#PasswordText">ex4mple-WSSE-pw</wsse:Password></wsse:UsernameToken>' +
+            '</wsse:Security></soapenv:Header><soapenv:Body><Ping/></soapenv:Body></soapenv:Envelope>',
+        },
+      }),
+    })) as { data: { id: string; request_json: string } }
+    const row = testDb
+      .prepare('SELECT request_json FROM saved_responses WHERE id = ?')
+      .get(created.data.id) as { request_json: string }
+    expect(row.request_json).not.toContain('ex4mple-WSSE-pw')
+    expect(row.request_json).toContain('<wsse:Username>bob</wsse:Username>')
+  })
+
   it('stores NULL request_json when the renderer sends none or garbage', async () => {
     const none = (await harness.invoke('savedResponse:create', {
       owner_type: 'saved_request',

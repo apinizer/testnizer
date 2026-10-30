@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
 import { HISTORY_MASK } from '../../shared/credential-headers'
+import { maskBodyText, NAME_ONLY } from '../lib/sensitive-scrub'
 
 /**
  * Named response examples pinned to a request (issue #125) — "Save response"
@@ -105,6 +106,13 @@ export function maskRequestJson(requestJson: string | null | undefined): string 
       ...sent,
       headers: maskSensitiveHeaders(sent.headers as Record<string, unknown>),
     }
+  }
+  // The sent body by the credential NAME rule (`<wsse:Password>`, a JSON
+  // `"password"` field): a SOAP Send carries its WS-Security UsernameToken in
+  // the envelope itself, and examples travel to git with the project.
+  const sentNow = parsed.sent as Record<string, unknown> | undefined
+  if (sentNow && typeof sentNow === 'object' && typeof sentNow.body === 'string') {
+    parsed.sent = { ...sentNow, body: maskBodyText(sentNow.body, NAME_ONLY) }
   }
   const configured = parsed.configured as Record<string, unknown> | undefined
   if (configured && typeof configured === 'object' && Array.isArray(configured.headers)) {
