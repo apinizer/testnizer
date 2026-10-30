@@ -1,7 +1,7 @@
 /**
- * The client tab an "Open in SSE / AI Chat / MCP tab" button of a mock server
- * opens (PM review 1.6.0 #20), shared by `mock-open-in-tab.ts` (SSE, AI) and
- * `mock-mcp/mock-mcp-tabs.ts` (MCP):
+ * The client tab an "Open in SSE / AI Chat / MCP / request tab" button of a
+ * mock server opens (PM review 1.6.0 #20), shared by `mock-open-in-tab.ts`
+ * (SSE, AI, HTTP) and `mock-mcp/mock-mcp-tabs.ts` (MCP):
  *
  *  - one tab per mock target: the id starts with a stable key (kind + server
  *    id + target), so a second click on the same button finds and focuses
@@ -20,7 +20,7 @@ import { switchActiveTab } from '../../lib/activate-tab'
 import { t } from '../../lib/i18n'
 import { makeId } from '../../lib/utils'
 
-export type MockClientKind = 'sse' | 'ai' | 'mcp'
+export type MockClientKind = 'sse' | 'ai' | 'mcp' | 'http'
 
 /** Small stable hash (djb2, base 36) — keeps paths and URLs out of the tab id. */
 function hash(text: string): string {

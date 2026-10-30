@@ -125,11 +125,11 @@ describe('the method chips', () => {
 
 describe('Reveal in APIs (issue #115)', () => {
   it('is offered on every row when the caller supports it', () => {
-    renderResults({ onRevealInApis: () => {} })
+    renderResults({ onReveal: () => {} })
     expect(screen.getAllByTestId(/^runner-reveal-/)).toHaveLength(3)
   })
 
-  it('is absent when the caller does not support it — a suite run', () => {
+  it('is absent when the caller does not pass a reveal handler', () => {
     renderResults()
     expect(screen.queryAllByTestId(/^runner-reveal-/)).toHaveLength(0)
   })
@@ -140,7 +140,7 @@ describe('Reveal in APIs (issue #115)', () => {
     const revealed: string[] = []
     const selected: (string | null)[] = []
     renderResults({
-      onRevealInApis: (id) => revealed.push(id),
+      onReveal: (id) => revealed.push(id),
       onSelectResult: (id) => selected.push(id),
     })
     fireEvent.click(screen.getByTestId('runner-reveal-Delete order'))

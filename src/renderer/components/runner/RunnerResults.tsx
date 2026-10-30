@@ -117,12 +117,13 @@ interface RunnerResultsProps {
    * request without leaving the runner. */
   onOpenEndpoint?: (endpointId: string) => void
   /**
-   * Reveal a result's request in the APIs tree (issue #115). Absent when the
-   * run's ids are not APIs nodes at all — a suite run carries test-suite item
-   * ids, which have no row in that tree — so the control is simply not offered
-   * rather than offered and always failing.
+   * Reveal a result's request in the sidebar (issue #115): the APIs tree for
+   * an APIs / Runner run, the Tests sidebar for a suite run (whose result ids
+   * are test-suite item ids). Absent = the control is not offered.
    */
-  onRevealInApis?: (endpointId: string) => void
+  onReveal?: (endpointId: string) => void
+  /** Where `onReveal` lands — picks the control's tooltip. Default `apis`. */
+  revealIn?: 'apis' | 'tests'
 }
 
 export default function RunnerResults({
@@ -143,7 +144,8 @@ export default function RunnerResults({
   selectedResultId,
   onSelectResult,
   onOpenEndpoint,
-  onRevealInApis,
+  onReveal,
+  revealIn = 'apis',
 }: RunnerResultsProps) {
   const { t, locale } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
@@ -679,7 +681,8 @@ export default function RunnerResults({
                       result.endpointId === selectedResultId ? null : result.endpointId,
                     )
                   }
-                  onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
+                  onReveal={onReveal && (() => onReveal(result.endpointId))}
+                  revealIn={revealIn}
                 />
               ))}
             </PhaseSection>
@@ -726,7 +729,8 @@ export default function RunnerResults({
                           result.endpointId === selectedResultId ? null : result.endpointId,
                         )
                       }
-                      onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
+                      onReveal={onReveal && (() => onReveal(result.endpointId))}
+                      revealIn={revealIn}
                     />
                   ))}
               </div>
@@ -748,7 +752,8 @@ export default function RunnerResults({
                       result.endpointId === selectedResultId ? null : result.endpointId,
                     )
                   }
-                  onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
+                  onReveal={onReveal && (() => onReveal(result.endpointId))}
+                  revealIn={revealIn}
                 />
               ))}
             </PhaseSection>
@@ -1133,12 +1138,14 @@ function ResultRow({
   isSelected,
   onClick,
   onReveal,
+  revealIn = 'apis',
 }: {
   result: EndpointRunResult
   isSelected: boolean
   onClick: () => void
-  /** Jump to this request in the APIs tree (issue #115). Absent = not offered. */
+  /** Jump to this request in the sidebar (issue #115). Absent = not offered. */
   onReveal?: () => void
+  revealIn?: 'apis' | 'tests'
 }) {
   const { t } = useTranslation()
   const mc = getMethodColors(result.method)
@@ -1197,8 +1204,10 @@ function ResultRow({
           <button
             type="button"
             data-testid={`runner-reveal-${result.endpointId}`}
-            title={t('runResults.revealInApis')}
-            aria-label={t('runResults.revealInApis')}
+            title={t(revealIn === 'tests' ? 'runResults.revealInTests' : 'runResults.revealInApis')}
+            aria-label={t(
+              revealIn === 'tests' ? 'runResults.revealInTests' : 'runResults.revealInApis',
+            )}
             onClick={(e) => {
               e.stopPropagation()
               onReveal()

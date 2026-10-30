@@ -18,7 +18,6 @@ import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { runnerKey } from '../../lib/runner-storage'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
 import { useUIStore } from '../../stores/ui.store'
-import { toast } from '../../lib/toast'
 import { useTranslation } from '../../lib/i18n'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
@@ -28,6 +27,7 @@ import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import type { RunPhase } from '../../../shared/runner-verdict'
 import { lockDragStyles } from '../../lib/drag-lock'
 import { setRunnerBusy } from '../../lib/runner-activity'
+import { revealRunResult, revealTargetFor } from '../../lib/reveal-run-result'
 
 /**
  * After a run, refresh the renderer env store from the DB so script-written
@@ -1526,19 +1526,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onViewAllRuns={handleViewAllRuns}
             selectedResultId={selectedResultId}
             onSelectResult={setSelectedResultId}
-            // Suite runs carry test-suite item ids, which have no row in the
-            // APIs tree — the control is not offered there rather than offered
-            // and always failing (issue #115).
-            onRevealInApis={
-              runOrigin === 'suite'
-                ? undefined
-                : (endpointId) => {
-                    useUIStore.getState().setActiveSidebarPage('apis')
-                    if (!useWorkspaceStore.getState().revealNode(endpointId)) {
-                      toast.info(t('runResults.revealNotFound'))
-                    }
-                  }
-            }
+            // Suite runs carry test-suite item ids → revealed in the Tests
+            // sidebar; APIs / Runner runs → the APIs tree (issue #115).
+            onReveal={(id) => void revealRunResult(runOrigin, id)}
+            revealIn={revealTargetFor(runOrigin)}
             onOpenEndpoint={(itemId) => {
               // Suite runs carry test_suite_items ids — those open as suite
               // item tabs and the sidebar stays on Tests. APIs / Runner runs
