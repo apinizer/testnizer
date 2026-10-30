@@ -68,3 +68,15 @@ export function endpointDidPass(r: EndpointVerdictShape): boolean {
 export function isSkippedStep(r: { skipped?: number }): boolean {
   return (r.skipped ?? 0) > 0
 }
+
+/**
+ * The row whose failure stopped the run because it is marked Critical (issue
+ * #304), if any. Derived from the results — not from `RunnerReport.stopReason`
+ * — because `runner_history` and the exports keep only the results; every
+ * reader (live results, history, HTML report) asks this one helper.
+ */
+export function criticalStopOf<T extends { stoppedRun?: boolean; phase?: RunPhase }>(
+  results: readonly T[],
+): T | undefined {
+  return results.find((r) => r.stoppedRun === true && r.phase !== 'teardown')
+}

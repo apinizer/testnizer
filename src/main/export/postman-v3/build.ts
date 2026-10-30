@@ -704,6 +704,18 @@ class Builder {
   }
 
   request(req: ExportRequest): Json | null {
+    const doc = this.requestDoc(req)
+    // Issue #304: Testnizer-only; v3 has no x-apinizer carrier, so it is
+    // reported like the timeout rather than dropped silently.
+    if (doc && readRequestSettings(req.schema).critical)
+      this.note(
+        req.name,
+        'the Critical flag (stops a Testnizer run when the request fails) has no Postman v3 field and was not exported.',
+      )
+    return doc
+  }
+
+  private requestDoc(req: ExportRequest): Json | null {
     switch (req.protocol) {
       case 'http':
       case 'https':

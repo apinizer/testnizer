@@ -8,6 +8,7 @@ import { useTranslation } from '../../lib/i18n'
 import CredentialRowsHint from '../shared/CredentialRowsHint'
 import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { scrubJsonCredentials } from '../../lib/credential-text'
+import GraphQLSettingsSection from './GraphQLSettingsSection'
 
 export default function GraphQLQueryPane() {
   const { t, locale } = useTranslation()
@@ -184,6 +185,9 @@ export default function GraphQLQueryPane() {
             </div>
           )}
         </div>
+
+        {/* Settings (collapsible) — Critical for Runs, issue #304 */}
+        <GraphQLSettingsSection />
       </div>
     </div>
   )

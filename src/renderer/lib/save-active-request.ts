@@ -44,6 +44,7 @@ import { mergeParamsFromUrl } from './url-query-sync'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
+import { isRunnableProtocol } from '../../shared/request-protocols'
 import { pathVariablesField, type PathVariableLike } from '../../shared/path-variables'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
@@ -295,20 +296,26 @@ const HTTP_SETTINGS_PROTOCOLS = new Set(['http'])
  * HTTP: timeout + redirects + SSL from the request store's Settings tab. MCP:
  * the timeout from the MCP store. Other protocols carry none. A `null`
  * timeout (inherit) is left out, so a cleared value does not survive.
+ * `critical` (issue #304): every protocol the Runner runs (HTTP, SOAP,
+ * GraphQL, MCP — `isRunnableProtocol`), from the request store; written only
+ * when on, so an unmarked row's JSON is unchanged.
  */
 export function requestSettingsFor(tab: Tab): RequestSettings {
   const protocol = (tab.protocol ?? 'http') as string
+  const critical: RequestSettings =
+    isRunnableProtocol(protocol) && useRequestStore.getState().critical ? { critical: true } : {}
   if (protocol === 'mcp') {
     const timeout = useMcpStore.getState().requestTimeout
-    return timeout != null ? { timeout } : {}
+    return { ...(timeout != null ? { timeout } : {}), ...critical }
   }
-  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return {}
+  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return critical
   const req = useRequestStore.getState()
   return {
     ...(req.requestTimeout != null ? { timeout: req.requestTimeout } : {}),
     followRedirects: req.followRedirects,
     maxRedirects: req.maxRedirects,
     sslVerification: req.sslVerification,
+    ...critical,
   }
 }
 
@@ -347,12 +354,14 @@ export function requestStoreSettings(s: RequestSettings): {
   followRedirects?: boolean
   maxRedirects?: number
   sslVerification?: boolean
+  critical: boolean
 } {
   return {
     requestTimeout: s.timeout ?? null,
     followRedirects: s.followRedirects,
     maxRedirects: s.maxRedirects,
     sslVerification: s.sslVerification,
+    critical: s.critical === true,
   }
 }
 

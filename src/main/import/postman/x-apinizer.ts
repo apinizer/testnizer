@@ -30,6 +30,12 @@ export interface XApinizerExtension {
   /** Raw-body sub-type Postman can't carry natively: JSON / XML / TEXT / HTML. */
   bodyRowType?: string
   timeoutSeconds?: number
+  /**
+   * Testnizer-only (issue #304): the request is marked Critical — a failing
+   * run of it stops the whole Run. Postman has no equivalent; carried here so
+   * a Testnizer → Postman v2.1 → Testnizer round trip keeps it.
+   */
+  critical?: boolean
   testType?: string
   apiType?: string
   assertions?: XApinizerAssertion[]

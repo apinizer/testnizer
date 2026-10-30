@@ -79,6 +79,18 @@ export interface EndpointRunResult {
    * reports written before the console pipeline existed.
    */
   consoleLogs?: ScriptConsoleLog[]
+  /**
+   * The request is marked Critical in its Settings tab (issue #304). Set on
+   * main-flow rows only — setup and teardown keep their own fixed rules.
+   */
+  critical?: boolean
+  /**
+   * THIS row is why the run stopped: a critical request that did not pass
+   * (issue #304). Carried on the row, not only on the report, so the reason
+   * survives into `runner_history.results_json` and both exports, which only
+   * see the results. Read through `criticalStopOf` (shared/runner-verdict).
+   */
+  stoppedRun?: boolean
 }
 
 export interface RunnerExecuteOptions {
@@ -182,6 +194,10 @@ export interface RunnerProgress {
 /**
  * 'setupFailed'        — a run-level setup step failed, so the flow was skipped.
  * 'stopOnError'        — a flow request failed and the run was configured to halt.
+ * 'criticalFailed'     — a flow request marked Critical did not pass (or could
+ *                        not run), which stops the run whatever "Stop on error"
+ *                        says (issue #304). Wins over 'stopOnError' when both
+ *                        apply. The row that caused it carries `stoppedRun`.
  * 'cancelled'          — the user pressed Stop (graceful: cleanup still ran).
  * 'teardownAborted'    — cleanup was cut short after it had already begun.
  * 'stoppedImmediately' — the user pressed Stop now: the request on the wire was
@@ -198,6 +214,7 @@ export interface RunnerProgress {
 export type RunStopReason =
   | 'setupFailed'
   | 'stopOnError'
+  | 'criticalFailed'
   | 'cancelled'
   | 'teardownAborted'
   | 'stoppedImmediately'

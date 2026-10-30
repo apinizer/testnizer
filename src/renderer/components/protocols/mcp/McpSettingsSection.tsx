@@ -1,6 +1,7 @@
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
 import { MCP_DEFAULT_TIMEOUT_MS } from '../../../../shared/request-settings'
+import CriticalRequestToggle from '../../request/CriticalRequestToggle'
 
 /**
  * Settings panel of the MCP config tab strip (issue #185): the call timeout,
@@ -39,6 +40,10 @@ export default function McpSettingsSection() {
         </span>
       </div>
       <p className="m-0 text-[11px] text-[var(--muted)]">{t('mcp.settings.timeoutHint')}</p>
+      {/* Issue #304 — the HTTP Settings tab's switch, same store. */}
+      <div className="mt-2">
+        <CriticalRequestToggle />
+      </div>
     </div>
   )
 }

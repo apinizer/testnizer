@@ -618,6 +618,8 @@ export function importCollectionTx(
         ) {
           requestSchema.timeout = Math.round(xa.timeoutSeconds * 1000)
         }
+        // Testnizer's Critical flag (issue #304) — the row's top-level key.
+        if (xa.critical === true) requestSchema.critical = true
       } else if (xa) {
         warnings.push(
           `Ignored x-apinizer extension with unsupported schemaVersion "${

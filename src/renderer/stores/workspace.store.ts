@@ -15,6 +15,7 @@ import { useTabsStore } from './tabs.store'
 import { useConsoleStore } from './console.store'
 import { loadJson, saveJson } from '../lib/persist-helpers'
 import { scrubTabCredentials } from '../lib/credential-text'
+import { readRequestSettingsJson } from '../../shared/request-settings'
 
 /**
  * Did a write actually land?
@@ -319,6 +320,7 @@ interface EndpointRow {
   method: string | null
   path: string
   protocol: string
+  request_schema?: string | null
 }
 
 interface SavedRequestRow {
@@ -329,6 +331,18 @@ interface SavedRequestRow {
   method: string | null
   url: string
   protocol: string
+  metadata?: string | null
+}
+
+/**
+ * `{critical: true}` when the row's settings mark it Critical (issue #304) —
+ * the Runner sequence shows the badge before the run. Cheap substring guard
+ * first: most rows never carry the key, and this runs for every tree row.
+ */
+function criticalField(json: string | null | undefined): { critical?: true } {
+  return json && json.includes('"critical"') && readRequestSettingsJson(json).critical
+    ? { critical: true }
+    : {}
 }
 
 async function buildTreeFromDB(projectId: string, projectName: string): Promise<TreeNode[]> {
@@ -405,6 +419,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
               method: e.method || 'GET',
               protocol: e.protocol,
               path: e.path,
+              ...criticalField(e.request_schema),
             },
             'endpoint',
           ),
@@ -421,6 +436,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
               method: r.method || 'GET',
               protocol: r.protocol,
               path: r.url,
+              ...criticalField(r.metadata),
             },
             'saved_request',
           ),
@@ -462,6 +478,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
             method: e.method || 'GET',
             protocol: e.protocol,
             path: e.path,
+            ...criticalField(e.request_schema),
           },
           'endpoint',
         ),
@@ -479,6 +496,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
             method: r.method || 'GET',
             protocol: r.protocol,
             path: r.url,
+            ...criticalField(r.metadata),
           },
           'saved_request',
         ),

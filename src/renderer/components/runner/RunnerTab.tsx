@@ -25,6 +25,7 @@ import ScheduledTasksView from './ScheduledTasksView'
 import TestsHome from './TestsHome'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import type { RunPhase } from '../../../shared/runner-verdict'
+import { readRequestSettingsJson } from '../../../shared/request-settings'
 import { lockDragStyles } from '../../lib/drag-lock'
 import { setRunnerBusy } from '../../lib/runner-activity'
 import { revealRunResult, revealTargetFor } from '../../lib/reveal-run-result'
@@ -61,6 +62,8 @@ export interface RunnerEndpointItem {
   selected: boolean
   /** Non-HTTP rows (MCP runs, issue #161) show the protocol chip, not their placeholder method. */
   protocol?: string
+  /** Marked Critical in its Settings tab — a failure stops the run (issue #304). */
+  critical?: boolean
   folderName?: string
   /**
    * Lifecycle phase for THIS run (issue #72). Undefined = 'main' (the flow).
@@ -102,6 +105,7 @@ function collectEndpointsFromNode(node: TreeNode): RunnerEndpointItem[] {
       url: node.path,
       selected: true,
       protocol: node.protocol,
+      ...(node.critical ? { critical: true } : {}),
     })
   }
   if (node.children) {
@@ -139,6 +143,7 @@ function collectFolderGroupsFromNode(
         url: child.path,
         selected: true,
         protocol: child.protocol,
+        ...(child.critical ? { critical: true } : {}),
       })
     }
   }
@@ -834,6 +839,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           url: string | null
           folder_id: string | null
           protocol?: string
+          request_schema?: string | null
         }>
         // `parent_id` has always been in the row (suite folders nest); the
         // runner simply never read it, which is why a two-level suite arrived
@@ -886,6 +892,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         url: it.url || '',
         selected: true,
         protocol: it.protocol,
+        // The suite item's OWN flag (issue #304) — items are copies.
+        ...(readRequestSettingsJson(it.request_schema).critical ? { critical: true } : {}),
       })
 
       /**

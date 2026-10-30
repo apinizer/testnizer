@@ -2446,12 +2446,16 @@ function buildPostmanCollection(
     // `timeout` (ms) is the request's own timeout (issue #185); rows imported
     // before it carry the legacy `timeoutSeconds` — `readRequestSettings`
     // reads both. Apinizer takes whole seconds; 0 (= no limit) is not sent.
-    const ownTimeout = readRequestSettings(schema).timeout
+    const ownSettings = readRequestSettings(schema)
+    const ownTimeout = ownSettings.timeout
     const timeoutSeconds =
       ownTimeout !== undefined && ownTimeout > 0
         ? Math.max(1, Math.round(ownTimeout / 1000))
         : undefined
-    if (xaAssertions.length > 0 || timeoutSeconds !== undefined) {
+    // Critical (issue #304) has no Postman field — it rides in x-apinizer, the
+    // same carrier as the timeout, and the v2 importer reads it back.
+    const critical = ownSettings.critical === true
+    if (xaAssertions.length > 0 || timeoutSeconds !== undefined || critical) {
       const { apiType, testType } = protocolToApinizerTypes(ep.protocol ?? undefined)
       const ext: XApinizerExtension = {
         schemaVersion: '1.0',
@@ -2462,6 +2466,7 @@ function buildPostmanCollection(
       const rowType = bodyTypeToApinizerRowType(schema.body?.type)
       if (rowType) ext.bodyRowType = rowType
       if (timeoutSeconds !== undefined) ext.timeoutSeconds = timeoutSeconds
+      if (critical) ext.critical = true
       if (xaAssertions.length > 0) ext.assertions = xaAssertions
       ;(item as PostmanItem)['x-apinizer'] = ext
     }

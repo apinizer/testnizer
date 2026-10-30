@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import RequestBadge from '../shared/RequestBadge'
+import CriticalBadge from './CriticalBadge'
 import { ChevronRight, ChevronDown, FolderClosed, FolderOpen } from 'lucide-react'
 import type { RunPhase } from '../../../shared/runner-verdict'
 import { useTranslation } from '../../lib/i18n'
@@ -507,6 +508,10 @@ function EndpointRow({
       <span draggable={false} className="flex-1 truncate" style={{ color: 'var(--text)' }}>
         {endpoint.name}
       </span>
+
+      {/* Marked Critical in its Settings tab (issue #304). Flow rows only:
+          setup already stops the flow on any failure, teardown never stops. */}
+      {endpoint.critical && (endpoint.phase ?? 'main') === 'main' && <CriticalBadge />}
 
       {/* Phase picker — designates this request as run setup or teardown. */}
       {onSetPhase && (

@@ -61,7 +61,12 @@ import {
 } from '../../shared/script/pm'
 import type { PmRequestBodyInput } from '../../shared/script/pm-request'
 import type { NormalizedResponse, ScriptTestResult } from '../../shared/script'
-import { endpointDidPass, countsTowardRunVerdict } from '../../shared/runner-verdict'
+import {
+  endpointDidPass,
+  countsTowardRunVerdict,
+  criticalStopOf,
+  isSkippedStep,
+} from '../../shared/runner-verdict'
 import { isRunnerHttpLike } from '../../shared/request-protocols'
 import { summarizeRun } from '../../shared/runner-summary'
 import type { RunPhase } from '../../shared/runner-verdict'
@@ -1247,6 +1252,13 @@ interface RunContext {
   total: number
   /** Ticks emitted so far — drives `current` in the progress event. */
   emitted: number
+  /**
+   * Main-flow ids whose request is marked Critical (issue #304), read once at
+   * run start from the row's own settings (`readRequestSettings`) — a suite
+   * item carries its own flag. `recordStep` stamps the rows and decides the
+   * stop; the main loop only obeys `StepOutcome.criticalStop`.
+   */
+  criticalIds: ReadonlySet<string>
 }
 
 interface StepOutcome {
@@ -1263,6 +1275,13 @@ interface StepOutcome {
    * on a leftover row would be a silent, unrequested behaviour change.
    */
   configError?: boolean
+  /**
+   * A main-flow request marked Critical did not pass — or could not run at all
+   * (config error, unsupported protocol) — so the run stops whatever the
+   * run-level "Stop on error" says (issue #304). A user skip
+   * (`pm.execution.skipRequest()`) and a "Stop now" cancel are not failures.
+   */
+  criticalStop?: boolean
 }
 
 /**
@@ -1346,10 +1365,25 @@ function recordStep(
   rawResult: EndpointRunResult,
   secrets: unknown[] = [],
 ): StepOutcome {
+  // Critical requests (issue #304): stamped here — the one funnel for the live
+  // progress row, the report, runner_history and the exports — so every view
+  // can badge the row and name the request that stopped the run. Main flow
+  // only: setup already stops the flow on any failure, teardown never stops.
+  const critical = rawResult.phase === 'main' && ctx.criticalIds.has(rawResult.endpointId)
+  // "Could not run" counts as not passing for a critical request: a config
+  // error row is already a failure; an UNSUPPORTED row is a neutral skip for
+  // everyone else, but its dependents would fail just the same.
+  const criticalStop =
+    critical &&
+    (rawResult.statusText === 'UNSUPPORTED' ||
+      ((rawResult.skipped ?? 0) === 0 && !endpointDidPass(rawResult)))
+  const stamped: EndpointRunResult = critical
+    ? { ...rawResult, critical: true, ...(criticalStop ? { stoppedRun: true } : {}) }
+    : rawResult
   // Secret values THIS run wrote (a script's set, pm.vault — issue #281) are
   // masked before they reach the DB.
   const result = maskRunResult(
-    rawResult,
+    stamped,
     scrubberFor(secretDb(), [...secrets, ...liveSecretValues(ctx.scopes)]),
   )
   ctx.results.push(result)
@@ -1389,7 +1423,7 @@ function recordStep(
     endpointId: result.endpointId,
     result,
   })
-  return { didPass, skipped }
+  return { didPass, skipped, ...(criticalStop ? { criticalStop: true } : {}) }
 }
 
 /**
@@ -1419,6 +1453,8 @@ function recordNotRun(ctx: RunContext, endpointId: string, phase: RunPhase, iter
     assertions: [],
     iteration: iteration + 1,
     phase,
+    // Keeps its Critical badge in the report (issue #304).
+    ...(phase === 'main' && ctx.criticalIds.has(endpointId) ? { critical: true } : {}),
   })
 }
 
@@ -2690,6 +2726,23 @@ export function inSuiteExecutionOrder(ids: readonly string[]): string[] {
   return [...ids].sort((a, b) => (rank.get(a) ?? 0) - (rank.get(b) ?? 0))
 }
 
+/**
+ * The main-flow ids whose request is marked Critical in its Settings tab
+ * (issue #304) — the row's own top-level `critical` (endpoint / suite item
+ * `request_schema`, saved request `metadata` lifted by `savedRequestToEndpoint`).
+ */
+export function criticalRequestIds(ids: readonly string[]): Set<string> {
+  const out = new Set<string>()
+  for (const id of ids) {
+    const entity = getRunnableEntity(id)
+    if (!entity) continue
+    if (readRequestSettings(parseJsonSafe<unknown>(entity.row.request_schema, {})).critical) {
+      out.add(id)
+    }
+  }
+  return out
+}
+
 async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<RunnerReport> {
   const options: RunnerExecuteOptions = {
     ...rawOptions,
@@ -2813,6 +2866,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     totals,
     total,
     emitted: 0,
+    criticalIds: criticalRequestIds(options.endpointIds),
   }
 
   let stopReason: RunStopReason | undefined
@@ -2888,6 +2942,18 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
         // Endpoint id is keyed by the inner loop only — endpointIds has
         // `endpointsPerIteration` elements and is reused across iterations.
         const outcome = await runEndpointStep(ctx, options.endpointIds[j], 'main', iter)
+
+        // A critical request that did not pass (issue #304) ends the WHOLE run
+        // — every remaining iteration included, exactly like stopOnError —
+        // whatever the run-level switch says. Checked before flow control: a
+        // setNextRequest() from the failing request neither rescues the run nor
+        // moves `j` (the not-run rows below are counted from it). Teardown
+        // still runs (finally).
+        if (outcome.criticalStop) {
+          stopReason = 'criticalFailed'
+          mainAbortedAt = { iter, index: j }
+          break outer
+        }
 
         if (!outcome.skipped) {
           // Flow control: honour pm.execution.setNextRequest(name|null) from this
@@ -3217,13 +3283,47 @@ function exportAsHtml(results: EndpointRunResult[]): string {
   const escapeHtml = (str: string): string =>
     str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 
+  // Why the run stopped (issue #304) — from the rows, the only thing an export
+  // (or a history row) has.
+  const criticalStop = criticalStopOf(results)
+  const stopLine = criticalStop
+    ? `<p data-testid="report-stop-reason" style="margin:8px 0 0;font-size:13px;color:#cc2200;font-weight:600">${escapeHtml(
+        `Stopped: critical request "${criticalStop.endpointName}" failed`,
+      )}</p>`
+    : ''
+  const criticalBadge =
+    '<span data-critical="true" style="padding:2px 6px;border-radius:4px;border:1px solid #cc2200;color:#cc2200;font-size:11px;font-weight:600">Critical</span>'
+
   const renderRows = (list: EndpointRunResult[]): string =>
     list
       .map((r) => {
         const didPass = endpointDidPass(r)
-        const statusColor = r.error ? '#cc2200' : !didPass ? '#b35a00' : '#1a7a4a'
-        const statusBg = r.error ? '#fff0f0' : !didPass ? '#fff4e0' : '#e8f9f1'
-        const statusText = r.error ? 'Error' : !didPass ? 'Failed' : 'Passed'
+        // A row that never ran (NOT_RUN after a stop, SKIPPED, UNSUPPORTED,
+        // CANCELLED) is neither passed nor failed — `endpointDidPass` scores
+        // its null status as passed, which painted every row a stop skipped
+        // green under a "Stopped: …" line (issue #304 made that visible).
+        const neutral = isSkippedStep(r)
+        const statusColor = neutral
+          ? '#888888'
+          : r.error
+            ? '#cc2200'
+            : !didPass
+              ? '#b35a00'
+              : '#1a7a4a'
+        const statusBg = neutral
+          ? '#f5f5f7'
+          : r.error
+            ? '#fff0f0'
+            : !didPass
+              ? '#fff4e0'
+              : '#e8f9f1'
+        const statusText = neutral
+          ? escapeHtml((r.statusText || 'SKIPPED').replace('_', ' '))
+          : r.error
+            ? 'Error'
+            : !didPass
+              ? 'Failed'
+              : 'Passed'
 
         const assertionRows = r.assertions
           .map((a) => {
@@ -3238,6 +3338,7 @@ function exportAsHtml(results: EndpointRunResult[]): string {
         <div style="display:flex;align-items:center;padding:12px 16px;background:${statusBg};gap:12px">
           <span style="font-weight:600;color:${statusColor};min-width:60px">${escapeHtml(r.method)}</span>
           <span style="flex:1;font-family:monospace;font-size:13px">${escapeHtml(r.url)}</span>
+          ${r.critical ? criticalBadge : ''}
           <span style="font-size:13px;color:#888">${r.duration}ms</span>
           <span style="padding:2px 8px;border-radius:4px;background:${statusColor};color:white;font-size:12px;font-weight:600">${r.status ?? '-'} ${statusText}</span>
         </div>
@@ -3278,6 +3379,7 @@ function exportAsHtml(results: EndpointRunResult[]): string {
     <h1 style="margin:0;font-size:20px;color:#2D5FA0">Testnizer</h1>
     <h2 style="margin:8px 0 0;font-size:16px;font-weight:500">Collection Run Report</h2>
     <p style="margin:8px 0 0;font-size:13px;color:#888">Generated: ${new Date().toISOString()}</p>
+    ${stopLine}
     <div class="stats">
       <div class="stat"><div class="stat-value" style="color:#1a7a4a">${endpointsPassed}</div><div class="stat-label">Passed</div></div>
       <div class="stat"><div class="stat-value" style="color:#cc2200">${endpointsFailed}</div><div class="stat-label">Failed</div></div>

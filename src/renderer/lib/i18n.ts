@@ -511,6 +511,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'settingsTab.timeoutHelp': 'ms (empty = general default · 0 = no timeout)',
     'settingsTab.maxRedirects': 'Max redirects',
     'settingsTab.maxRedirectsHelp': 'maximum number of redirects',
+    'settingsTab.critical': 'Critical request',
+    'settingsTab.criticalHelp':
+      'If this request fails in a run, the run stops, whatever "Stop run if an error occurs" says.',
     'testsTab.catStatus': 'Status',
     'testsTab.catBody': 'Body',
     'testsTab.catHeaders': 'Headers',
@@ -1809,6 +1812,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runResults.badgeUnsupported': 'UNSUPPORTED',
     'runResults.badgeCancelled': 'CANCELLED',
     'runResults.badgeError': 'Error',
+    'runResults.badgeCritical': 'Critical',
+    'runResults.badgeCriticalTitle': 'Critical request: if it fails, the run stops',
     'runResults.sourceRunner': 'Runner',
     'runResults.sourceSuite': 'Suite',
     'runResults.sourceApis': 'APIs',
@@ -1821,6 +1826,7 @@ const translations: Record<Locale, Record<string, string>> = {
       'Halted by you — the request in flight was aborted and nothing after it ran, cleanup included.',
     'runLifecycle.stoppedSetupFailed':
       'A setup step failed, so the flow was skipped. Teardown still ran.',
+    'runLifecycle.stoppedCritical': 'Stopped: critical request "{name}" failed.',
 
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Import Endpoints into',
@@ -4675,14 +4681,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'codeGen.includeSecretsHint':
       'Gizli değişkenler {{name}} yer tutucusu olarak kalır. Doğrudan çalışan bir komut için dahil edin — kopyalanan metin o zaman gerçek değerleri içerir.',
     'codeGen.secretsHidden': 'Dahil edilmeyen gizli değerler:',
+    'codeGen.wsseNote':
+      'WS-Security bu kod parçasında yok. Testnizer wsse:Security başlığını gönderim anında zarfa ekler (nonce, zaman damgası ve imza, yapılandırıldıysa, her gönderimde yeniden hesaplanır).',
     'codeGen.title': 'Kod Oluştur',
     'codeGen.languages': 'Diller',
     'codeGen.copy': 'Kopyala',
     'codeGen.copied': 'Kopyalandı!',
     'codeGen.curl.shell': 'Kabuk',
     'codeGen.curl.bash': 'bash',
-    'codeGen.wsseNote':
-      'WS-Security bu kod parçasında yok. Testnizer wsse:Security başlığını gönderim anında zarfa ekler (nonce, zaman damgası ve imza, yapılandırıldıysa, her gönderimde yeniden hesaplanır).',
     'codeGen.curl.cmd': 'CMD',
     'codeGen.curl.powershell': 'PowerShell',
     'codeGen.curl.bashHint': 'Linux / macOS terminali (bash, zsh)',
@@ -4783,6 +4789,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'settingsTab.timeoutHelp': 'ms (boş = genel varsayılan · 0 = zaman aşımı yok)',
     'settingsTab.maxRedirects': 'En fazla yönlendirme',
     'settingsTab.maxRedirectsHelp': 'izin verilen en fazla yönlendirme sayısı',
+    'settingsTab.critical': 'Kritik istek',
+    'settingsTab.criticalHelp':
+      'Bu istek bir çalıştırmada başarısız olursa, “Hata olursa çalıştırmayı durdur” ayarından bağımsız olarak çalıştırma durur.',
     'testsTab.catStatus': 'Durum',
     'testsTab.catBody': 'Gövde',
     'testsTab.catHeaders': 'Başlıklar',
@@ -6085,6 +6094,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runResults.badgeUnsupported': 'DESTEKLENMİYOR',
     'runResults.badgeCancelled': 'İPTAL EDİLDİ',
     'runResults.badgeError': 'Hata',
+    'runResults.badgeCritical': 'Kritik',
+    'runResults.badgeCriticalTitle': 'Kritik istek: başarısız olursa çalıştırma durur',
     'runResults.sourceRunner': 'Çalıştırıcı',
     'runResults.sourceSuite': 'Test Paketi',
     'runResults.sourceApis': "API'ler",
@@ -6097,6 +6108,7 @@ const translations: Record<Locale, Record<string, string>> = {
       'Sizin tarafınızdan anında durduruldu — uçuştaki istek iptal edildi, sonrasında temizlik dâhil hiçbir şey çalışmadı.',
     'runLifecycle.stoppedSetupFailed':
       'Bir hazırlık adımı başarısız oldu, akış atlandı. Temizlik yine de çalıştı.',
+    'runLifecycle.stoppedCritical': 'Durduruldu: kritik istek “{name}” başarısız oldu.',
 
     // Add Endpoints to Test Suite
     'addEndpoints.addTo': 'Uç Noktaları İçe Aktar:',

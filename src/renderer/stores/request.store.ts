@@ -103,6 +103,13 @@ interface TabRequestState extends WithheldState {
   sslVerification: boolean
   requestTimeout: number | null
   /**
+   * Issue #304: a Run stops when this request does not pass, whatever the
+   * run-level "Stop on error" says. Every protocol the Runner runs keeps it
+   * here (MCP / SOAP / GraphQL tabs have a request-store slice too) and
+   * `requestSettingsFor` writes it as the row's top-level `critical`.
+   */
+  critical: boolean
+  /**
    * The tab is bound to a saved row (endpoint / saved request / suite item)
    * but this slice was never filled from it: the cache cap dropped it, or the
    * snapshot read at startup did not hold it. Like a withheld credential
@@ -134,6 +141,7 @@ function emptyTabState(): TabRequestState {
     maxRedirects: 5,
     sslVerification: true,
     requestTimeout: null,
+    critical: false,
     withheldCredentials: [],
     unloaded: false,
     unloadedProtocol: false,
@@ -254,6 +262,7 @@ interface RequestStore extends TabRequestState {
   setMaxRedirects: (v: number) => void
   setSslVerification: (v: boolean) => void
   setRequestTimeout: (v: number | null) => void
+  setCritical: (v: boolean) => void
   sendRequest: () => Promise<void>
   /** Abort the in-flight HTTP request, if any. No-op when nothing is in flight. */
   cancelRequest: () => Promise<void>
@@ -274,6 +283,7 @@ interface RequestStore extends TabRequestState {
       maxRedirects?: number
       sslVerification?: boolean
       requestTimeout?: number | null
+      critical?: boolean
     },
     opts?: {
       /**
@@ -318,6 +328,7 @@ function extractState(s: RequestStore): TabRequestState {
     maxRedirects: s.maxRedirects,
     sslVerification: s.sslVerification,
     requestTimeout: s.requestTimeout,
+    critical: s.critical,
     withheldCredentials: s.withheldCredentials,
     unloaded: s.unloaded,
     unloadedProtocol: s.unloadedProtocol,
@@ -381,6 +392,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   maxRedirects: persisted.current.maxRedirects ?? 5,
   sslVerification: persisted.current.sslVerification ?? true,
   requestTimeout: persisted.current.requestTimeout ?? null,
+  critical: persisted.current.critical ?? false,
   pathVariables: persisted.current.pathVariables ?? [],
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
@@ -526,6 +538,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // null → inherit the general timeout; a finite >= 0 number is an explicit
     // override (0 = no timeout). Anything else collapses to inherit.
     set({ requestTimeout: v != null && Number.isFinite(v) && v >= 0 ? v : null })
+    markActiveDirty()
+  },
+  setCritical: (v) => {
+    set({ critical: v })
     markActiveDirty()
   },
 
@@ -1175,6 +1191,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       maxRedirects: data.maxRedirects ?? 5,
       sslVerification: data.sslVerification ?? true,
       requestTimeout: data.requestTimeout ?? null,
+      // Absent = not critical: a reopened row must not inherit the previous
+      // tab's flag (issue #304).
+      critical: data.critical ?? false,
       // Fresh from the row — nothing is waiting for a withheld value (#244).
       withheldCredentials: [] as string[],
       unloaded: false,

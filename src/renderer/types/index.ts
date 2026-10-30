@@ -456,6 +456,8 @@ export interface TreeNode {
   /** Example rows: which request row owns them (mirrors saved_responses.owner_*). */
   ownerType?: SavedResponseOwnerType
   ownerId?: string
+  /** Request rows marked Critical in their Settings tab (issue #304) — Runner badge. */
+  critical?: boolean
   icon?: string
   count?: number
   countColor?: string

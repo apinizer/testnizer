@@ -12,11 +12,12 @@ import {
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
-import { endpointDidPass } from '../../../shared/runner-verdict'
+import { endpointDidPass, criticalStopOf } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
 import { displayRunSourceLabel } from '../../lib/runner-source-label'
+import CriticalBadge from './CriticalBadge'
 import {
   filterRunResults,
   runResultMethods,
@@ -36,6 +37,7 @@ type FilterTab = RunResultTab
 const STOP_REASON_KEY: Record<RunStopReason, string> = {
   setupFailed: 'runLifecycle.stoppedSetupFailed',
   stopOnError: 'runLifecycle.stoppedOnError',
+  criticalFailed: 'runLifecycle.stoppedCritical',
   cancelled: 'runLifecycle.stoppedCancelled',
   teardownAborted: 'runLifecycle.stoppedTeardownAborted',
   stoppedImmediately: 'runLifecycle.stoppedImmediately',
@@ -169,6 +171,7 @@ export default function RunnerResults({
   // `error` as an error (so a cleanup failure raised the Errors counter this very
   // feature promises never affects the verdict).
   const summary = useMemo(() => summarizeRun(results), [results])
+  const criticalStop = useMemo(() => criticalStopOf(results), [results])
   const totalPassed = summary.passed
   const totalFailed = summary.failed
   const teardownFailedCount = summary.teardownFailed
@@ -476,10 +479,21 @@ export default function RunnerResults({
             </div>
 
             {/* Why the run ended early + whether cleanup got its turn. Without
-                this line a short result list looks like data loss (issue #72). */}
-            {(report?.stopReason || teardownFailedCount > 0) && (
+                this line a short result list looks like data loss (issue #72).
+                A critical stop (issue #304) is read off the rows, so a run
+                reopened from history — whose report has no stopReason — says
+                it too. */}
+            {(report?.stopReason || criticalStop || teardownFailedCount > 0) && (
               <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 12 }}>
-                {report?.stopReason && (
+                {criticalStop && (
+                  <span
+                    data-testid="runner-stop-critical"
+                    style={{ color: '#cc2200', fontWeight: 600 }}
+                  >
+                    {t('runLifecycle.stoppedCritical').replace('{name}', criticalStop.endpointName)}
+                  </span>
+                )}
+                {report?.stopReason && report.stopReason !== 'criticalFailed' && (
                   <span style={{ color: 'var(--muted)' }}>
                     {t(stopReasonKey(report.stopReason))}
                   </span>
@@ -1185,6 +1199,7 @@ function ResultRow({
         >
           {result.endpointName}
         </span>
+        {result.critical && <CriticalBadge />}
         {badge && (
           <span
             style={{
