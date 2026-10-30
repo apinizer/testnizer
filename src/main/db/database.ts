@@ -4,6 +4,14 @@ import { join } from 'path'
 import { randomUUID } from 'crypto'
 import { existsSync, renameSync } from 'fs'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
+import { currentBuildIdentity, type BuildIdentity } from '../lib/build-identity'
+import {
+  backupBeforeMigration,
+  writeBuildMarker,
+  type BackupFailureCode,
+  type PreMigrationBackupOptions,
+  type PreMigrationBackupOutcome,
+} from './pre-migration-backup'
 
 let db: Database.Database | null = null
 
@@ -18,6 +26,17 @@ export interface InitDatabaseResult {
   recovered: boolean
   /** Absolute path of the backed-up corrupt DB file (only when recovered). */
   backupPath?: string
+  /** What the pre-migration copy did (issue #297), for the log. */
+  preMigrationBackup: PreMigrationBackupOutcome
+  /**
+   * Set when the pre-migration copy failed and the user should be told once.
+   * Not set when the DB was corrupt and recovered: that dialog covers it.
+   */
+  backupFailed?: string
+  /** Why the copy failed, when the notice should name it (e.g. low disk space). */
+  backupFailedCode?: BackupFailureCode
+  /** Set when the "last started build" marker could not be written. */
+  markerError?: string
 }
 
 export function getDb(): Database.Database {
@@ -107,21 +126,56 @@ export function openAndMigrate(dbPath: string): Database.Database {
  * @throws if even the fresh-DB creation fails — the caller is expected to show
  *   an error and quit gracefully rather than leave a windowless process.
  */
-export function initDatabase(): InitDatabaseResult {
-  const dbPath = join(app.getPath('userData'), 'testnizer.db')
+export function initDatabase(
+  options: {
+    build?: BuildIdentity
+    /** Test seam for the pre-migration copy (e.g. a fake free-space probe). */
+    backup?: Pick<PreMigrationBackupOptions, 'freeBytes'>
+  } = {},
+): InitDatabaseResult {
+  const userData = app.getPath('userData')
+  const dbPath = join(userData, 'testnizer.db')
+  const build = options.build ?? currentBuildIdentity()
 
+  // Issue #297: copy the DB before this build's migrations touch it. Opens the
+  // file read-only and never throws; a corrupt file simply fails here and is
+  // then quarantined below exactly as before.
+  const preMigrationBackup = backupBeforeMigration({ userData, dbPath, build, ...options.backup })
+
+  let recovered = false
+  let backupPath: string | undefined
   try {
     db = openAndMigrate(dbPath)
-    return { recovered: false }
   } catch (err) {
     if (!isCorruptDbError(err)) {
       // Not a recognised corruption — re-throw so the caller can surface it.
+      // The build marker stays unchanged, so this build is still "new" on the
+      // next start (the copy taken now is kept, see pre-migration-backup.ts).
       throw err
     }
     // Corrupt file: quarantine it (+ sidecars) and start fresh.
-    const backupPath = quarantineCorruptDb(dbPath)
+    backupPath = quarantineCorruptDb(dbPath) ?? undefined
     db = openAndMigrate(dbPath)
-    return { recovered: true, backupPath: backupPath ?? undefined }
+    recovered = true
+  }
+
+  // Only now — open + migrate succeeded — record this build as started.
+  let markerError: string | undefined
+  try {
+    writeBuildMarker(userData, build)
+  } catch (err) {
+    markerError = err instanceof Error ? err.message : String(err)
+  }
+
+  return {
+    recovered,
+    backupPath,
+    preMigrationBackup,
+    backupFailed:
+      !recovered && preMigrationBackup.status === 'failed' ? preMigrationBackup.error : undefined,
+    backupFailedCode:
+      !recovered && preMigrationBackup.status === 'failed' ? preMigrationBackup.code : undefined,
+    markerError,
   }
 }
 

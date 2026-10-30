@@ -13,7 +13,7 @@ import { test, expect, _electron as electron } from '@playwright/test'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { electronLaunchOptions } from '../../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../../helpers/electron-env'
 import { acceptEula, waitForApiBridge } from '../../helpers/ui/bootstrap'
 import {
   disablePasswordViaIpc,
@@ -31,7 +31,7 @@ function mkUserData() {
 
 async function coldStart(userDataDir: string) {
   const app = await electron.launch(electronLaunchOptions(MAIN, userDataDir))
-  const win = await app.firstWindow()
+  const win = await firstAppWindow(app)
   await win.waitForLoadState('domcontentloaded')
   await waitForApiBridge(win)
   return { app, win }

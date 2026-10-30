@@ -7,6 +7,7 @@ import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -253,6 +254,8 @@ interface GrpcStore extends TabGrpcState {
   getSelectedMethod: () => GrpcMethod | undefined
 
   /** Switch active tab — saves current state and loads target tab state. */
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   /** Remove cached state for a closed tab. Tears down any stream subscription. */
   removeTabState: (tabId: string) => void
@@ -331,9 +334,14 @@ function extractState(s: GrpcStore): TabGrpcState {
 export const GRPC_CREDENTIALS: CredentialSpec = { fields: [], rows: [credentialRows('metadata')] }
 
 function persistableGrpc(st: TabGrpcState): TabGrpcState {
+  return idleGrpc(withholdCredentials(st, GRPC_CREDENTIALS))
+}
+
+/** A tab with no call in flight, stream or response — stored and copied by Duplicate Tab. */
+function idleGrpc(st: TabGrpcState): TabGrpcState {
   const idle = emptyTabState()
   return {
-    ...withholdCredentials(st, GRPC_CREDENTIALS),
+    ...st,
     response: idle.response,
     streamEvents: idle.streamEvents,
     activeStreamId: idle.activeStreamId,
@@ -970,6 +978,9 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const svc = get().getSelectedService()
     return svc?.methods.find((m) => m.name === get().selectedMethod)
   },
+
+  cloneTabState: (srcTabId, dstTabId) =>
+    cloneTabSlice(useGrpcStore, extractState, srcTabId, dstTabId, idleGrpc),
 
   switchToTab: (tabId) => {
     const state = get()

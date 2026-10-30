@@ -30,6 +30,7 @@ import type {
 } from '../types/mcp'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -260,6 +261,11 @@ interface McpStore extends TabMcpState {
   /** Run the OAuth 2.1 debugger flow against this tab's server (issue #141). */
   startOAuth: () => Promise<void>
   cancelOAuth: () => Promise<void>
+  /**
+   * Issue #295: answer the running step's `confirmation` — send the client
+   * secret to the advertised authorization server, or stop the flow.
+   */
+  answerOAuthConfirmation: (accept: boolean) => Promise<void>
   /** Drop this tab's tokens in main and clear the flow state. */
   forgetOAuth: () => Promise<void>
   /** Use the last flow's token for this tab and (re)connect with it. */
@@ -299,6 +305,8 @@ interface McpStore extends TabMcpState {
     action: 'accept' | 'decline' | 'cancel',
     content?: Record<string, string | number | boolean | string[]>,
   ) => Promise<void>
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   removeTabState: (tabId: string) => void
 }
@@ -514,13 +522,27 @@ function persistable(s: TabMcpState): TabMcpState {
   return {
     // Literal auth / header / env credentials (issue #244) — the saved row
     // keeps them, `lib/withheld-credentials.ts` reloads them after a restart.
-    ...withholdCredentials(s, MCP_CREDENTIALS),
+    ...idleMcp(withholdCredentials(s, MCP_CREDENTIALS)),
+    // Write-only secret never reaches localStorage.
+    oauthClientSecret: '',
+  }
+}
+
+/**
+ * A tab with no connection, logs, token session or scan — what is stored and
+ * what Duplicate Tab copies (the copy starts disconnected).
+ */
+function idleMcp(s: TabMcpState): TabMcpState {
+  return {
+    ...s,
     ...disconnectedPatch(),
     notifications: [],
     frames: [],
+    // Questions of a live call / connection belong to it, not to a copy.
+    pendingElicitations: [],
+    inputOutcome: null,
     section: MCP_EXPLORER_SECTION,
-    // Write-only secret and the token session never reach localStorage.
-    oauthClientSecret: '',
+    // The token session belongs to the tab it was opened in.
     ...oauthIdle(),
     // Scan results are transient; only the rate-limit opt-in survives.
     ...securityIdle(),
@@ -1514,6 +1536,20 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     }
   },
 
+  answerOAuthConfirmation: async (accept) => {
+    const { oauthFlowId, oauthRunning, _currentTabId: ownerTabId } = get()
+    const api = getMcpApi()
+    if (!oauthRunning || !oauthFlowId || !api?.oauthConfirm) return
+    let res: Awaited<ReturnType<McpBridge['oauthConfirm']>>
+    try {
+      res = await api.oauthConfirm(oauthFlowId, accept)
+    } catch (e) {
+      res = { success: false, error: errText(e, 'Could not answer the confirmation') }
+    }
+    if (!res.success)
+      patchTab(ownerTabId, { oauthError: res.error ?? 'Could not answer the confirmation' })
+  },
+
   forgetOAuth: async () => {
     const { oauthFlowId, oauthSessionId } = get()
     set(oauthIdle())
@@ -1791,6 +1827,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     callStarts.set(callId, now())
     // This tab's timeout, captured before any await (issue #76 / #185).
     const timeoutMs = mcpSendTimeout(get().requestTimeout)
+    // The workspace / project the call started in — a project switch during
+    // the script cascade must not re-home it (peer review of issue #298).
+    const context = callContext()
     // Captured NOW — the request store follows the active tab (issue #76).
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     // The call owns the tab from here: Run turns into Cancel during the scripts too.
@@ -1820,7 +1859,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     let res: McpCallReply
     try {
       res = await api.callTool(connectionId, selectedTool, args, {
-        ...callContext(),
+        ...context,
         callId,
         timeoutMs,
       })
@@ -1917,6 +1956,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const callId = makeId()
     callStarts.set(callId, now())
     const timeoutMs = mcpSendTimeout(get().requestTimeout)
+    const context = callContext()
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     set({
       isReadingResource: true,
@@ -1940,7 +1980,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     let res: McpCallReply<McpReadResourceResult>
     try {
       // Scope ids too, so the History row lands in this project (issue #166).
-      res = await api.readResource(connectionId, uri, { ...callContext(), callId, timeoutMs })
+      res = await api.readResource(connectionId, uri, { ...context, callId, timeoutMs })
     } catch (e) {
       res = { success: false, error: errText(e, t('mcp.error.readFailed')) }
     }
@@ -2000,6 +2040,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const callId = makeId()
     callStarts.set(callId, now())
     const timeoutMs = mcpSendTimeout(get().requestTimeout)
+    const context = callContext()
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     set({
       isGettingPrompt: true,
@@ -2016,7 +2057,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     let res: McpCallReply<McpGetPromptResult>
     try {
       res = await api.getPrompt(connectionId, selectedPrompt, args, {
-        ...callContext(),
+        ...context,
         callId,
         timeoutMs,
       })
@@ -2136,6 +2177,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       }
     })
   },
+
+  cloneTabState: (srcTabId, dstTabId) =>
+    cloneTabSlice(useMcpStore, extractState, srcTabId, dstTabId, idleMcp),
 
   switchToTab: (tabId) => {
     const state = get()

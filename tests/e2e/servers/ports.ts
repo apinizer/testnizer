@@ -23,6 +23,8 @@ export interface TestServerPorts {
   mcp: number
   llm: number
   git: number
+  /** MQTT broker, plain TCP (issue #284). */
+  mqtt: number
 }
 
 export const PORT_ENV_KEYS: Record<keyof TestServerPorts, string> = {
@@ -35,4 +37,5 @@ export const PORT_ENV_KEYS: Record<keyof TestServerPorts, string> = {
   mcp: 'E2E_MCP_PORT',
   llm: 'E2E_LLM_PORT',
   git: 'E2E_GIT_PORT',
+  mqtt: 'E2E_MQTT_PORT',
 }

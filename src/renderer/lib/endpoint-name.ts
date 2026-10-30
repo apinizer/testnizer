@@ -31,6 +31,7 @@ export const DEFAULT_REQUEST_BY_PROTOCOL: Partial<
   ai: { name: 'New AI Chat', method: 'POST' },
   mcp: { name: 'New MCP', method: 'GET' },
   socketio: { name: 'New Socket.IO', method: 'GET' },
+  mqtt: { name: 'New MQTT', method: 'GET' },
 }
 
 /** The blank scratch tab's literal name (see `isBlankScratchTab`). */

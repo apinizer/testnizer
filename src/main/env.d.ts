@@ -8,6 +8,7 @@
  *
  * It is replaced at build time, so it is a plain string literal at runtime, not
  * a variable that could be undefined. Under vitest, where no `define` runs, the
- * reference is guarded with a `typeof` check at its one call site.
+ * reference is guarded with a `typeof` check at its one call site,
+ * `currentBuildIdentity()` in src/main/lib/build-identity.ts.
  */
 declare const __BUILD_ID__: string

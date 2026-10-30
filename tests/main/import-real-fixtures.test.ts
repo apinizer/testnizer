@@ -494,18 +494,14 @@ describe('Postman Oracle CRUD — field-level audit', () => {
     expect(postAudited).toBe(6)
   })
 
-  it('imports the single collection variable into a project-scoped environment', async () => {
+  // Issue #281: collection variables are the project variables (Globals).
+  it('imports the single collection variable into the project variables', async () => {
     await importPostman(PROJECT_ID, content, null)
     const envVars = testDb
-      .prepare(
-        `SELECT ev.key, ev.value FROM environment_variables ev
-         JOIN environments e ON e.id = ev.environment_id
-         WHERE e.project_id = ?`,
-      )
+      .prepare('SELECT key, value FROM global_variables WHERE project_id = ?')
       .all(PROJECT_ID) as { key: string; value: string }[]
 
-    // The fixture defines exactly one collection variable (baseUrl). The
-    // importer should create one env and one row inside it.
+    // The fixture defines exactly one collection variable (baseUrl).
     expect(rawDoc.variable?.length).toBe(1)
     expect(envVars.length).toBeGreaterThanOrEqual(1)
     const baseUrl = envVars.find((v) => v.key === rawDoc.variable![0].key)

@@ -21,12 +21,14 @@ import { cleanup, render, screen } from '@testing-library/react'
 import WsConnectionBar from '../../src/renderer/components/protocols/WsConnectionBar'
 import SseConnectionBar from '../../src/renderer/components/protocols/SseConnectionBar'
 import SocketIOEditor from '../../src/renderer/components/protocols/SocketIOEditor'
+import MqttEditor from '../../src/renderer/components/protocols/MqttEditor'
 import McpConnectionBar from '../../src/renderer/components/protocols/mcp/McpConnectionBar'
 import McpCapabilityList from '../../src/renderer/components/protocols/mcp/McpCapabilityList'
 import McpAuthSection from '../../src/renderer/components/protocols/mcp/McpAuthSection'
 import { useWebSocketStore } from '../../src/renderer/stores/websocket.store'
 import { useSseStore } from '../../src/renderer/stores/sse.store'
 import { useSocketIOStore } from '../../src/renderer/stores/socketio.store'
+import { useMqttStore } from '../../src/renderer/stores/mqtt.store'
 import { useMcpStore } from '../../src/renderer/stores/mcp.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
@@ -99,6 +101,22 @@ const BARS = [
     url: 'mcp-url',
     button: 'mcp-connect',
     pill: 'mcp-status',
+  },
+  {
+    // Issue #284: appended last: tests index the bars above, same tokens and wrap rule.
+    name: 'MQTT',
+    mount: () => {
+      useMqttStore.setState({
+        url: 'mqtt://127.0.0.1:1883',
+        connectionState: 'disconnected',
+        errorMessage: null,
+      })
+      render(React.createElement(MqttEditor))
+    },
+    row: 'mqtt-connection-row',
+    url: 'mqtt-url',
+    button: 'mqtt-connect',
+    pill: 'mqtt-status',
   },
 ] as const
 

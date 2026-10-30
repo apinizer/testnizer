@@ -12,6 +12,7 @@ import { useSoapStore } from '../../src/renderer/stores/soap.store'
 import { useEnvironmentStore } from '../../src/renderer/stores/environment.store'
 import { useResponseStore } from '../../src/renderer/stores/response.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
+import { useRequestStore } from '../../src/renderer/stores/request.store'
 
 type KV = { key: string; value: string; enabled: boolean }
 let sendSpy: ReturnType<typeof vi.fn>
@@ -36,6 +37,7 @@ beforeEach(() => {
   })
   useResponseStore.setState({ response: null, isLoading: false })
   useTabsStore.setState({ tabs: [], activeTabId: null })
+  useRequestStore.setState({ headers: [], auth: { type: 'none' }, withheldCredentials: [] })
   useSoapStore.setState({
     ...useSoapStore.getState(),
     parsedWsdl: null,
@@ -66,5 +68,66 @@ describe('soap.store.sendSoap manual transport headers (#17)', () => {
     expect(ct).toContain('application/soap+xml')
     expect(ct).toContain('action="http://tempuri.org/Add"')
     expect(header(payload, 'SOAPAction')).toBeUndefined()
+  })
+})
+
+/**
+ * Issue #298 follow-up — the SOAP editor shows the request store's Headers
+ * tab, and Run has always sent its rows (`withSoapTransportHeaders` over
+ * `schema.headers`). Send now does too, through the same helper: transport
+ * headers first unless the user typed an ENABLED Content-Type / SOAPAction,
+ * then the user's rows, `{{var}}` resolved.
+ */
+describe('soap.store.sendSoap — the Headers tab (issue #298 follow-up)', () => {
+  const row = (key: string, value: string, enabled = true) => ({
+    id: `h-${key}`,
+    key,
+    value,
+    enabled,
+  })
+
+  it('sends the enabled Headers-tab rows with {{var}} resolved, after the transport headers', async () => {
+    useEnvironmentStore.setState({
+      ...useEnvironmentStore.getState(),
+      environments: [
+        {
+          id: 'e',
+          name: 'e',
+          variables: [
+            {
+              id: 'v',
+              key: 'tenant',
+              value: 'acme',
+              initialValue: '',
+              enabled: true,
+              secret: false,
+            },
+          ],
+        },
+      ] as never,
+      activeEnvironmentId: 'e',
+    })
+    useRequestStore.setState({
+      headers: [row('X-Tenant', '{{tenant}}'), row('X-Off', 'x', false)],
+    })
+    await useSoapStore.getState().sendSoap()
+    const payload = sendSpy.mock.calls[0][0] as { headers?: KV[] }
+    expect(payload.headers?.map((h) => h.key)).toEqual([
+      'Content-Type',
+      'SOAPAction',
+      'X-Tenant',
+      'X-Off',
+    ])
+    expect(header(payload, 'X-Tenant')).toBe('acme')
+    expect(payload.headers?.find((h) => h.key === 'X-Off')?.enabled).toBe(false)
+  })
+
+  it("a user's enabled Content-Type replaces the transport one; SOAPAction stays", async () => {
+    useRequestStore.setState({ headers: [row('content-type', 'text/xml; charset=iso-8859-9')] })
+    await useSoapStore.getState().sendSoap()
+    const payload = sendSpy.mock.calls[0][0] as { headers?: KV[] }
+    const cts = (payload.headers ?? []).filter((h) => h.key.toLowerCase() === 'content-type')
+    expect(cts).toEqual([expect.objectContaining({ value: 'text/xml; charset=iso-8859-9' })])
+    expect(header(payload, 'SOAPAction')).toBe('"http://tempuri.org/Add"')
   })
 })

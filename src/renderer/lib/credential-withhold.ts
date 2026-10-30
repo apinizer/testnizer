@@ -16,6 +16,12 @@
  *     only that part is blanked, the rest of the text stays as typed
  *     (`lib/credential-text.ts`).
  *
+ * A `rows` list or `texts` path may step into a list of id-carrying items:
+ * `savedMessages[].content` in a spec names the `content` of every saved
+ * message, and the marker names the item it was found in
+ * (`savedMessages[m1].content`, `savedMessages[m1].args[a2].content` — the
+ * realtime message bodies of issue #284).
+ *
  * On the way to localStorage (`withholdCredentials`, the store's snapshot
  * sanitizer — also applied on load, so a snapshot an older build wrote is
  * cleaned at once) a LITERAL value is blanked and its path recorded in the
@@ -105,35 +111,100 @@ function parseRowPath(path: string): { list: string; id: string } | null {
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
-function getPath(obj: unknown, path: string): unknown {
+/** `name[id]` — the item with that `id` of list `name`; `name[]` in a spec = every item. */
+const ITEM_SEG = /^([^[\]]+)\[([^[\]]*)\]$/
+
+interface Seg {
+  key: string
+  /** Set on an item step: the item's id (`''` = every item — spec paths only). */
+  item?: string
+}
+
+function segsOf(path: string): Seg[] {
+  return path.split('.').map((seg) => {
+    const m = ITEM_SEG.exec(seg)
+    return m ? { key: m[1], item: m[2] } : { key: seg }
+  })
+}
+
+const idOf = (v: unknown): string | undefined =>
+  isRecord(v) && typeof v.id === 'string' && v.id !== '' ? v.id : undefined
+
+/**
+ * The value at `path`. `like` is the state the path was taken from: an item
+ * missing by id in `obj` (a saved row whose items carry other ids) is then
+ * looked up at the position it has in `like`.
+ */
+function getIn(obj: unknown, path: string, like?: unknown): unknown {
   let cur: unknown = obj
-  for (const seg of path.split('.')) {
+  let peer: unknown = like
+  for (const seg of segsOf(path)) {
     if (!isRecord(cur)) return undefined
-    cur = cur[seg]
+    cur = cur[seg.key]
+    peer = isRecord(peer) ? peer[seg.key] : undefined
+    if (seg.item === undefined) continue
+    if (!Array.isArray(cur) || seg.item === '') return undefined
+    const list: unknown[] = cur
+    const peers: unknown[] = Array.isArray(peer) ? peer : []
+    let i = list.findIndex((x) => idOf(x) === seg.item)
+    if (i < 0) i = peers.findIndex((x) => idOf(x) === seg.item)
+    cur = i >= 0 ? list[i] : undefined
+    peer = peers.find((x) => idOf(x) === seg.item)
   }
   return cur
 }
 
+function getPath(obj: unknown, path: string): unknown {
+  return getIn(obj, path)
+}
+
 /** Immutable set of `segs` under `obj` (only called where the path exists). */
-function setIn(obj: unknown, segs: string[], value: unknown): unknown {
+function setIn(obj: unknown, segs: Seg[], value: unknown): unknown {
   if (segs.length === 0) return value
   const base = isRecord(obj) ? obj : {}
   const [head, ...rest] = segs
-  return { ...base, [head]: setIn(base[head], rest, value) }
+  if (head.item === undefined) return { ...base, [head.key]: setIn(base[head.key], rest, value) }
+  const list: unknown[] = Array.isArray(base[head.key]) ? (base[head.key] as unknown[]) : []
+  return {
+    ...base,
+    [head.key]: list.map((x) => (idOf(x) === head.item ? setIn(x, rest, value) : x)),
+  }
 }
 
-function rowsOf(obj: unknown, list: string): KeyValuePair[] | undefined {
-  const v = getPath(obj, list)
+/** A spec path → the concrete paths it names in `obj` (one per list item). */
+function expandPath(obj: unknown, pattern: string): string[] {
+  const walk = (cur: unknown, segs: Seg[], prefix: string): string[] => {
+    if (segs.length === 0) return [prefix]
+    if (!isRecord(cur)) return []
+    const [head, ...rest] = segs
+    const at = (p: string): string => (prefix ? `${prefix}.${p}` : p)
+    const next = cur[head.key]
+    if (head.item === undefined) return walk(next, rest, at(head.key))
+    if (!Array.isArray(next)) return []
+    return next.flatMap((x) => {
+      const id = idOf(x)
+      if (!id || (head.item !== '' && head.item !== id)) return []
+      return walk(x, rest, at(`${head.key}[${id}]`))
+    })
+  }
+  return walk(obj, segsOf(pattern), '')
+}
+
+/** A concrete path → the spec path it matches (`savedMessages[m1].content` → `savedMessages[].content`). */
+const patternOf = (path: string): string => path.replace(/\[[^[\]]*\]/g, '[]')
+
+function rowsOf(obj: unknown, list: string, like?: unknown): KeyValuePair[] | undefined {
+  const v = getIn(obj, list, like)
   return Array.isArray(v) ? (v as KeyValuePair[]) : undefined
 }
 
-/** `obj` with the value at dot path `path` replaced. */
+/** `obj` with the value at path `path` replaced. */
 function putPath(
   obj: Record<string, unknown>,
   path: string,
   value: unknown,
 ): Record<string, unknown> {
-  return setIn(obj, path.split('.'), value) as Record<string, unknown>
+  return setIn(obj, segsOf(path), value) as Record<string, unknown>
 }
 
 function isCredentialRow(r: KeyValuePair | undefined, rule: CredentialRowList): boolean {
@@ -142,7 +213,7 @@ function isCredentialRow(r: KeyValuePair | undefined, rule: CredentialRowList): 
 }
 
 const textOf = (spec: CredentialSpec | undefined, path: string): CredentialText | undefined =>
-  spec?.texts?.find((t) => t.path === path)
+  spec?.texts?.find((t) => patternOf(t.path) === patternOf(path))
 
 const sameKey = (a: string | undefined, b: string | undefined): boolean =>
   (a ?? '').trim() !== '' && (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase()
@@ -195,24 +266,28 @@ export function withholdCredentials<T extends object>(st: T, spec: CredentialSpe
     marks.add(path)
   }
   for (const rule of spec.rows) {
-    const rows = rowsOf(out, rule.list)
-    if (!rows) continue
-    let changed = false
-    const next = rows.map((r) => {
-      if (!isCredentialRow(r, rule)) return r
-      changed = true
-      marks.add(rowPath(rule.list, r.id))
-      return { ...r, value: '' }
-    })
-    if (changed) out = putPath(out, rule.list, next)
+    for (const list of expandPath(out, rule.list)) {
+      const rows = rowsOf(out, list)
+      if (!rows) continue
+      let changed = false
+      const next = rows.map((r) => {
+        if (!isCredentialRow(r, rule)) return r
+        changed = true
+        marks.add(rowPath(list, r.id))
+        return { ...r, value: '' }
+      })
+      if (changed) out = putPath(out, list, next)
+    }
   }
   for (const text of spec.texts ?? []) {
-    const v = getPath(out, text.path)
-    if (typeof v !== 'string') continue
-    const scrubbed = text.scrub(v, out)
-    if (scrubbed === v) continue
-    out = putPath(out, text.path, scrubbed)
-    marks.add(text.path)
+    for (const path of expandPath(out, text.path)) {
+      const v = getPath(out, path)
+      if (typeof v !== 'string') continue
+      const scrubbed = text.scrub(v, out)
+      if (scrubbed === v) continue
+      out = putPath(out, path, scrubbed)
+      marks.add(path)
+    }
   }
   const earlier = (st as Partial<WithheldState>).withheldCredentials
   for (const path of Array.isArray(earlier) ? earlier : []) {
@@ -312,7 +387,7 @@ export function restoreWithheld<T extends WithheldState>(
   const touched = new Set<string>()
   const put = (path: string, value: unknown): void => {
     work = putPath(work, path, value)
-    touched.add(path.split('.')[0])
+    touched.add(segsOf(path)[0].key)
   }
   for (const path of st.withheldCredentials ?? []) {
     if (source === undefined) break
@@ -321,7 +396,7 @@ export function restoreWithheld<T extends WithheldState>(
       const rows = rowsOf(work, row.list)
       const i = rows ? rows.findIndex((r) => r.id === row.id) : -1
       if (!rows || i < 0 || rows[i].value !== '') continue
-      const saved = rowsOf(source, row.list)
+      const saved = rowsOf(source, row.list, work)
       const match =
         saved?.find((r) => r?.id === row.id) ?? saved?.find((r) => sameKey(r?.key, rows[i].key))
       if (typeof match?.value !== 'string') continue
@@ -332,7 +407,7 @@ export function restoreWithheld<T extends WithheldState>(
     }
     const live = getPath(work, path)
     const text = textOf(spec, path)
-    const value = getPath(source, text?.source ?? path)
+    const value = getIn(source, text?.source ?? path, work)
     if (typeof value !== 'string') continue
     if (text) {
       if (typeof live !== 'string') continue
@@ -346,6 +421,21 @@ export function restoreWithheld<T extends WithheldState>(
   const patch: Record<string, unknown> = { withheldCredentials: [] }
   for (const key of touched) patch[key] = work[key]
   return patch as Partial<T>
+}
+
+/**
+ * Whether a marker sits at `prefix` or anywhere under it — a field
+ * (`composer.content`), a row (`composer.properties.userProperties#r1`) or a
+ * list item (`emitArgs[a1].content`, `savedMessages[m1].args[a2].content`).
+ */
+export function isWithheldUnder(marks: readonly string[] | undefined, prefix: string): boolean {
+  return (marks ?? []).some(
+    (p) =>
+      p === prefix ||
+      p.startsWith(`${prefix}.`) ||
+      p.startsWith(`${prefix}${ROW_SEP}`) ||
+      p.startsWith(`${prefix}[`),
+  )
 }
 
 /** Row paths re-pointed onto re-stamped row ids (Duplicate Tab). */

@@ -2,9 +2,9 @@
  * Load the variable map a request should see, given a project context.
  *
  * Layering (each step overrides the previous):
- *   1. Workspace-level globals (broadest scope)
- *   2. Project-level globals
- *   3. The project's active environment's variables (highest priority)
+ *   1. The project's globals (`global_variables.project_id`) — the rows Send
+ *      reads through `globalVariable:listByProject`, nothing wider
+ *   2. The project's active environment's variables (highest priority)
  *
  * Used by:
  *   - The Collection Runner (`runner.handler.ts`) when executing a
@@ -20,7 +20,6 @@ import { getDb } from '../db/database'
 import { openSecret } from './secret-at-rest'
 
 export interface EnvVarLoadOptions {
-  workspaceId?: string
   projectId?: string
   /** Explicit override — when omitted, the project's active env is used. */
   environmentId?: string
@@ -30,6 +29,10 @@ interface DualValueRow {
   key: string
   value: string | null
   initial_value: string | null
+}
+
+interface GlobalRow extends DualValueRow {
+  secret: number | null
 }
 
 /**
@@ -70,26 +73,39 @@ function undecryptable(key: string): string {
   return ''
 }
 
-export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
-  const vars: Record<string, string> = {}
+/**
+ * The same variables, kept apart by scope: `globals` (the project's globals —
+ * Postman's globals AND collection variables, issue #281) and `environment`
+ * (the active / requested environment). `vaultKeys` names the project globals
+ * marked secret: what `pm.vault` reads. The Collection Runner backs the separate `pm.globals` and
+ * `pm.environment` script objects with these (issue #281); `loadEnvVars` is
+ * their merge.
+ */
+export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
+  globals: Record<string, string>
+  environment: Record<string, string>
+  vaultKeys: string[]
+} {
+  const globals: Record<string, string> = {}
+  const environment: Record<string, string> = {}
+  const vaultKeys: string[] = []
   const db = getDb()
 
-  if (opts.workspaceId) {
-    const rows = db
-      .prepare(
-        'SELECT key, value, initial_value FROM global_variables WHERE workspace_id = ? AND enabled = 1',
-      )
-      .all(opts.workspaceId) as DualValueRow[]
-    for (const r of rows) vars[r.key] = effectiveValue(r)
-  }
-
+  // Project rows ONLY. This used to start from every row of the WORKSPACE
+  // (`workspace_id = ?`) and overlay the project's: every row carries a
+  // workspace id, so another project's globals — and legacy rows saved
+  // without a project — resolved on Run and in the mock while Send, which
+  // reads only the active project's rows, left them unresolved.
   if (opts.projectId) {
     const rows = db
       .prepare(
-        'SELECT key, value, initial_value FROM global_variables WHERE project_id = ? AND enabled = 1',
+        'SELECT key, value, initial_value, secret FROM global_variables WHERE project_id = ? AND enabled = 1',
       )
-      .all(opts.projectId) as DualValueRow[]
-    for (const r of rows) vars[r.key] = effectiveValue(r)
+      .all(opts.projectId) as GlobalRow[]
+    for (const r of rows) {
+      globals[r.key] = effectiveValue(r)
+      if (r.secret === 1) vaultKeys.push(r.key)
+    }
   }
 
   let effectiveEnvId = opts.environmentId
@@ -109,8 +125,13 @@ export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
         'SELECT key, value, initial_value FROM environment_variables WHERE environment_id = ? AND enabled = 1',
       )
       .all(effectiveEnvId) as DualValueRow[]
-    for (const r of rows) vars[r.key] = effectiveValue(r)
+    for (const r of rows) environment[r.key] = effectiveValue(r)
   }
 
-  return vars
+  return { globals, environment, vaultKeys }
+}
+
+export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
+  const { globals, environment } = loadEnvVarScopes(opts)
+  return { ...globals, ...environment }
 }

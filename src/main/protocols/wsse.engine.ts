@@ -257,7 +257,10 @@ interface SecurityHeaderBuild {
   tokenIds: { usernameToken?: string; timestamp?: string }
 }
 
-function buildSecurityHeader(config: WsSecurityConfig): SecurityHeaderBuild {
+function buildSecurityHeader(
+  config: WsSecurityConfig,
+  layout: EnvelopeLayout,
+): SecurityHeaderBuild {
   const tokenIds: SecurityHeaderBuild['tokenIds'] = {}
   const parts: string[] = []
 
@@ -275,8 +278,22 @@ function buildSecurityHeader(config: WsSecurityConfig): SecurityHeaderBuild {
     if (m) tokenIds.timestamp = m[1]
   }
 
+  // `mustUnderstand` is an attribute in the ENVELOPE's namespace. With a
+  // prefixed envelope that prefix is already in scope (it is declared on the
+  // root); a default-namespace envelope has no prefix to borrow — an
+  // unprefixed attribute is in no namespace at all — so one is declared here,
+  // on the Security element itself. The same happens when the envelope's own
+  // prefix is `wsse` / `wsu`: Security rebinds both to the WS-Security
+  // namespaces, so a borrowed `wsse:mustUnderstand` would land in the wrong
+  // namespace (peer review of issue #298 / issue #299). `soapenv` is always
+  // free on Security — only this engine's own tokens sit inside it.
+  const borrow = layout.prefix && !SECURITY_PREFIXES.has(layout.prefix)
+  const mustUnderstand = borrow
+    ? `${layout.prefix}:mustUnderstand="1"`
+    : `xmlns:${DEFAULT_NS_ENV_PREFIX}="${layout.ns}" ${DEFAULT_NS_ENV_PREFIX}:mustUnderstand="1"`
+
   const headerXml = [
-    `<wsse:Security xmlns:wsse="${WSSE_NS}" xmlns:wsu="${WSU_NS}" soap:mustUnderstand="1">`,
+    `<wsse:Security xmlns:wsse="${WSSE_NS}" xmlns:wsu="${WSU_NS}" ${mustUnderstand}>`,
     parts.join(''),
     '</wsse:Security>',
   ].join('')
@@ -284,18 +301,197 @@ function buildSecurityHeader(config: WsSecurityConfig): SecurityHeaderBuild {
   return { headerXml, tokenIds }
 }
 
+// ─── Locate the SOAP Envelope / Header / Body ───────────────
+
+export const SOAP11_ENV_NS = 'http://schemas.xmlsoap.org/soap/envelope/'
+export const SOAP12_ENV_NS = 'http://www.w3.org/2003/05/soap-envelope'
+
+/**
+ * Prefix declared on wsse:Security for `mustUnderstand` when the envelope's
+ * own prefix cannot be borrowed (none, or one Security rebinds).
+ */
+const DEFAULT_NS_ENV_PREFIX = 'soapenv'
+
+/** The prefixes `<wsse:Security>` declares on itself — never borrowable from the envelope. */
+const SECURITY_PREFIXES = new Set(['wsse', 'wsu'])
+
+/** One element tag found by the scanner. */
+interface TagInfo {
+  /** Index of `<`. */
+  start: number
+  /** Index just past `>`. */
+  end: number
+  /** Qualified name as written (`soapenv:Body`, `Body`). */
+  qname: string
+  prefix: string
+  local: string
+  /** Raw attribute text (everything between the name and `>` / `/>`). */
+  attrs: string
+  kind: 'open' | 'close' | 'empty'
+}
+
+/** An Envelope child (Header / Body) with its content span. */
+interface ChildSpan {
+  open: TagInfo
+  /** Index where the content starts (= `open.end`). */
+  contentStart: number
+  /** Index of the closing tag's `<` (= `open.end` for `<x/>`). */
+  contentEnd: number
+  /** Index just past the closing tag (= `open.end` for `<x/>`). */
+  end: number
+}
+
+/**
+ * Where the SOAP parts sit in the envelope TEXT. WS-Security edits the user's
+ * envelope in place (formatting kept, nothing re-serialised), so positions are
+ * found by a small tag scanner rather than a DOM round-trip.
+ */
+export interface EnvelopeLayout {
+  /** The Envelope's prefix as written — `''` for a default-namespace envelope. */
+  prefix: string
+  /** SOAP 1.1 or 1.2 envelope namespace. */
+  ns: string
+  envelope: TagInfo
+  header?: ChildSpan
+  body?: ChildSpan
+}
+
+/**
+ * Comments, CDATA, processing instructions, DOCTYPE, and element tags. An
+ * attribute value may contain `>`, so element tags consume quoted values whole.
+ */
+const XML_TOKEN =
+  /<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>|<![^>]*>|<(\/?)([A-Za-z_][\w.:-]*)((?:\s+[^\s=/>]+\s*=\s*(?:"[^"]*"|'[^']*'))*)\s*(\/?)>/g
+
+function nextTag(xml: string, from: number): TagInfo | null {
+  XML_TOKEN.lastIndex = from
+  let m: RegExpExecArray | null
+  while ((m = XML_TOKEN.exec(xml))) {
+    if (!m[2]) continue // comment / CDATA / PI / DOCTYPE
+    const qname = m[2]
+    const colon = qname.indexOf(':')
+    return {
+      start: m.index,
+      end: m.index + m[0].length,
+      qname,
+      prefix: colon >= 0 ? qname.slice(0, colon) : '',
+      local: colon >= 0 ? qname.slice(colon + 1) : qname,
+      attrs: m[3] ?? '',
+      kind: m[1] ? 'close' : m[4] ? 'empty' : 'open',
+    }
+  }
+  return null
+}
+
+const XML_ATTR = /([^\s=]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+
+function attributesOf(tag: TagInfo): Map<string, string> {
+  const out = new Map<string, string>()
+  XML_ATTR.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = XML_ATTR.exec(tag.attrs))) out.set(m[1], m[2] ?? m[3] ?? '')
+  return out
+}
+
+/** The namespace a prefix (`''` = default) resolves to on `tag`, given the root's declarations. */
+function namespaceOf(
+  prefix: string,
+  tag: TagInfo,
+  rootDecls: Map<string, string>,
+): string | undefined {
+  const name = prefix ? `xmlns:${prefix}` : 'xmlns'
+  return attributesOf(tag).get(name) ?? rootDecls.get(name)
+}
+
+/** Walk one element child of the Envelope (from its open tag) to its end. */
+function spanOf(xml: string, open: TagInfo): ChildSpan {
+  if (open.kind === 'empty') {
+    return { open, contentStart: open.end, contentEnd: open.end, end: open.end }
+  }
+  let depth = 1
+  let pos = open.end
+  for (;;) {
+    const t = nextTag(xml, pos)
+    if (!t) throw new Error(`Malformed SOAP Envelope: <${open.qname}> is never closed`)
+    if (t.kind === 'open') depth++
+    else if (t.kind === 'close') depth--
+    pos = t.end
+    if (depth === 0) {
+      return { open, contentStart: open.end, contentEnd: t.start, end: t.end }
+    }
+  }
+}
+
+const NOT_AN_ENVELOPE =
+  'WS-Security needs a SOAP Envelope: the document element must be an Envelope in the SOAP 1.1 ' +
+  `(${SOAP11_ENV_NS}) or SOAP 1.2 (${SOAP12_ENV_NS}) namespace`
+
+/**
+ * Find the SOAP Envelope and its Header / Body, whatever prefix the envelope
+ * uses (`soap:`, SoapUI's `soapenv:`, `env:`, …) or none (default namespace).
+ * Throws on anything that is not a SOAP 1.1 / 1.2 envelope — WS-Security on a
+ * non-envelope must fail visibly, never come back unchanged as a "success".
+ */
+export function locateEnvelope(xml: string): EnvelopeLayout {
+  const envelope = nextTag(xml, 0)
+  if (!envelope || envelope.kind !== 'open' || envelope.local !== 'Envelope') {
+    throw new Error(`${NOT_AN_ENVELOPE}.`)
+  }
+  // The Envelope is the document element, so its own prefix can only be
+  // declared on this very tag.
+  const rootDecls = attributesOf(envelope)
+  const ns = rootDecls.get(envelope.prefix ? `xmlns:${envelope.prefix}` : 'xmlns')
+  if (ns !== SOAP11_ENV_NS && ns !== SOAP12_ENV_NS) {
+    throw new Error(
+      `${NOT_AN_ENVELOPE}; <${envelope.qname}> is ` +
+        (ns ? `in namespace "${ns}".` : `in no declared namespace.`),
+    )
+  }
+
+  const layout: EnvelopeLayout = { prefix: envelope.prefix, ns, envelope }
+  // Only DIRECT children of the Envelope count — a payload element that
+  // happens to be called Header / Body (likely with a default namespace)
+  // must never be mistaken for the SOAP one.
+  let pos = envelope.end
+  for (;;) {
+    const t = nextTag(xml, pos)
+    if (!t) throw new Error(`Malformed SOAP Envelope: <${envelope.qname}> is never closed`)
+    if (t.kind === 'close') break // </Envelope>
+    const span = spanOf(xml, t)
+    pos = span.end
+    if (namespaceOf(t.prefix, t, rootDecls) !== ns) continue
+    if (t.local === 'Header' && !layout.header && !layout.body) layout.header = span
+    else if (t.local === 'Body' && !layout.body) layout.body = span
+  }
+  return layout
+}
+
+/** `<p:Local` / `</p:Local>` for this envelope's prefix. */
+function envQName(layout: EnvelopeLayout, local: string): string {
+  return layout.prefix ? `${layout.prefix}:${local}` : local
+}
+
 // ─── Insert/replace SOAP Header ─────────────────────────────
 
-function insertSecurityHeader(envelope: string, headerXml: string): string {
-  if (/<soap:Header\s*\/>/i.test(envelope)) {
-    return envelope.replace(/<soap:Header\s*\/>/i, `<soap:Header>${headerXml}</soap:Header>`)
+function insertSecurityHeader(envelope: string, layout: EnvelopeLayout, headerXml: string): string {
+  const header = layout.header
+  if (header && header.open.kind === 'empty') {
+    // `<p:Header/>` / `<p:Header a="1" />` → open it, keeping its attributes.
+    const q = header.open.qname
+    return (
+      envelope.slice(0, header.open.start) +
+      `<${q}${header.open.attrs}>${headerXml}</${q}>` +
+      envelope.slice(header.end)
+    )
   }
-  if (/<soap:Header\s*>/i.test(envelope)) {
-    // Insert security header inside existing Header element
-    return envelope.replace(/<soap:Header\s*>/i, `<soap:Header>${headerXml}`)
+  if (header) {
+    // Existing Header: Security goes first, the rest of its content is kept.
+    return envelope.slice(0, header.contentStart) + headerXml + envelope.slice(header.contentStart)
   }
-  // No Header — insert right after Envelope opening tag's first child
-  return envelope.replace(/(<soap:Envelope[^>]*>)/i, `$1<soap:Header>${headerXml}</soap:Header>`)
+  // No Header: create one as the Envelope's first child, in its namespace.
+  const q = envQName(layout, 'Header')
+  const at = layout.envelope.end
+  return envelope.slice(0, at) + `<${q}>${headerXml}</${q}>` + envelope.slice(at)
 }
 
 // ─── XML Signature (xml-crypto) ─────────────────────────────
@@ -343,6 +539,42 @@ function referenceToXpath(
   return null
 }
 
+/**
+ * Give the SOAP Body a `wsu:Id` (the WS-Security reference id). An Id the Body
+ * already carries is reused — a second `wsu:Id` / `xmlns:wsu` on the same
+ * element would be a duplicate attribute, i.e. malformed XML.
+ */
+function ensureBodyWsuId(
+  envelope: string,
+  layout: EnvelopeLayout,
+): { envelope: string; bodyId: string } {
+  const body = layout.body
+  if (!body) throw new Error(`Could not find the SOAP ${envQName(layout, 'Body')} element to sign`)
+  const rootDecls = attributesOf(layout.envelope)
+  const attrs = attributesOf(body.open)
+  for (const [name, value] of attrs) {
+    const colon = name.indexOf(':')
+    if (colon < 0 || name.slice(colon + 1) !== 'Id') continue
+    if (namespaceOf(name.slice(0, colon), body.open, rootDecls) === WSU_NS) {
+      return { envelope, bodyId: value }
+    }
+  }
+  const bodyId = genId('Body')
+  const wsuInScope = namespaceOf('wsu', body.open, rootDecls)
+  // `wsu` bound to anything else — on this tag or on the root, e.g. a
+  // `<wsu:Envelope>` whose SOAP prefix is `wsu` — must not be rebound here: on
+  // `<wsu:Body>` that would move the Body element itself out of the SOAP
+  // namespace. A fresh prefix is used instead.
+  const insert =
+    wsuInScope === WSU_NS
+      ? ` wsu:Id="${bodyId}"`
+      : wsuInScope !== undefined || attrs.has('xmlns:wsu')
+        ? ` xmlns:wsuid="${WSU_NS}" wsuid:Id="${bodyId}"`
+        : ` xmlns:wsu="${WSU_NS}" wsu:Id="${bodyId}"`
+  const at = body.open.start + 1 + body.open.qname.length
+  return { envelope: envelope.slice(0, at) + insert + envelope.slice(at), bodyId }
+}
+
 interface SignArgs {
   envelope: string
   config: SignConfig
@@ -369,11 +601,9 @@ function applySignature(args: SignArgs): string {
   let signedEnvelope = envelope
   let bodyId = args.bodyId
   if (config.references.includes('Body') && !bodyId) {
-    bodyId = genId('Body')
-    signedEnvelope = signedEnvelope.replace(
-      /<soap:Body(\s|>)/i,
-      `<soap:Body xmlns:wsu="${WSU_NS}" wsu:Id="${bodyId}"$1`,
-    )
+    const injected = ensureBodyWsuId(signedEnvelope, locateEnvelope(signedEnvelope))
+    signedEnvelope = injected.envelope
+    bodyId = injected.bodyId
   }
 
   const bstId = genId('X509')
@@ -425,18 +655,30 @@ function applyEncryptionToBody(envelope: string, config: EncryptConfig): Promise
   return new Promise((resolve, reject) => {
     const targetXpath = config.targetXpath ?? '//*[local-name()="Body"]/*'
 
-    // Extract target element XML using DOMParser would be heavier.
-    // Use a regex-based approach for the default Body case; for custom xpath,
-    // we fall back to inserting an EncryptedData wrapper as a sibling.
-    const bodyMatch = envelope.match(/<soap:Body[^>]*>([\s\S]*?)<\/soap:Body>/i)
-    if (!bodyMatch) {
-      reject(new Error('Could not find soap:Body element to encrypt'))
+    // The SOAP Body is located by the envelope's own prefix (or none). A
+    // custom target xpath is not implemented yet: the Body content is the
+    // target.
+    let layout: EnvelopeLayout
+    try {
+      layout = locateEnvelope(envelope)
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)))
+      return
+    }
+    const body = layout.body
+    const bodyName = envQName(layout, 'Body')
+    if (!body) {
+      reject(new Error(`Could not find the SOAP ${bodyName} element to encrypt`))
       return
     }
 
-    const targetContent = bodyMatch[1].trim()
-    if (!targetContent) {
-      reject(new Error('soap:Body is empty — nothing to encrypt'))
+    // The EXACT Body content — whitespace text nodes included. A signature
+    // computed before encryption covers those bytes; trimming them here meant
+    // the decrypted Body no longer matched its digest (peer review of issue
+    // #298). Trim only to decide whether there is anything to encrypt.
+    const targetContent = envelope.slice(body.contentStart, body.contentEnd)
+    if (!targetContent.trim()) {
+      reject(new Error(`${bodyName} is empty — nothing to encrypt`))
       return
     }
 
@@ -465,11 +707,12 @@ function applyEncryptionToBody(envelope: string, config: EncryptConfig): Promise
         reject(err ?? new Error('xml-encryption returned empty result'))
         return
       }
-      // Wrap as EncryptedData (xml-encryption returns full <xenc:EncryptedData>)
-      const replaced = envelope.replace(
-        /<soap:Body([^>]*)>([\s\S]*?)<\/soap:Body>/i,
-        `<soap:Body$1>${encryptedXml}</soap:Body>`,
-      )
+      // Wrap as EncryptedData (xml-encryption returns full <xenc:EncryptedData>).
+      // Spliced in without surrounding text: whatever sits outside the
+      // EncryptedData element survives decryption and would end up in the
+      // restored Body next to the signed bytes.
+      const replaced =
+        envelope.slice(0, body.contentStart) + encryptedXml.trim() + envelope.slice(body.contentEnd)
       resolve(replaced)
       // suppress unused targetXpath warning while custom-xpath encryption is unimplemented
       void targetXpath
@@ -495,9 +738,11 @@ export async function applyWsSecurity(envelope: string, config: WsSecurityConfig
     return envelope
   }
 
-  let result = envelope
-  const { headerXml, tokenIds } = buildSecurityHeader(config)
-  result = insertSecurityHeader(result, headerXml)
+  // Throws on a non-envelope (or an envelope in a foreign namespace): that
+  // must fail visibly, never come back unchanged as if it had been secured.
+  const layout = locateEnvelope(envelope)
+  const { headerXml, tokenIds } = buildSecurityHeader(config, layout)
+  let result = insertSecurityHeader(envelope, layout, headerXml)
 
   const wantsSign = config.modes.includes('sign') && config.sign
   const wantsEncrypt = config.modes.includes('encrypt') && config.encrypt
@@ -526,6 +771,12 @@ export async function applyWsSecurity(envelope: string, config: WsSecurityConfig
   return result
 }
 
+/** `<p:Signature …>…</p:Signature>` with the same (optional) prefix on both tags. */
+const SIGNATURE_ELEMENT = /<((?:[\w.-]+:)?)Signature(?=[\s>])[\s\S]*?<\/\1Signature\s*>/
+/** `<p:EncryptedData …>…</p:EncryptedData>` with the same (optional) prefix on both tags. */
+const ENCRYPTED_DATA_ELEMENT =
+  /<((?:[\w.-]+:)?)EncryptedData(?=[\s>])[\s\S]*?<\/\1EncryptedData\s*>/
+
 /**
  * Verify XML signature on a signed envelope.
  *
@@ -534,7 +785,8 @@ export async function applyWsSecurity(envelope: string, config: WsSecurityConfig
  */
 export function verifySignature(envelope: string, certPem: string): VerifyResult {
   const sig = new SignedXml({ publicCert: certPem })
-  const sigNodeMatch = envelope.match(/<(?:ds:)?Signature[\s\S]*?<\/(?:ds:)?Signature>/)
+  // Any prefix (`ds:`, `dsig:`, none) — the closing tag must use the same one.
+  const sigNodeMatch = envelope.match(SIGNATURE_ELEMENT)
   if (!sigNodeMatch) {
     return { valid: false, reason: 'No signature element found', signedReferences: [] }
   }
@@ -575,7 +827,8 @@ export function decryptEnvelope(
   passphrase?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const encMatch = envelope.match(/<(?:xenc:)?EncryptedData[\s\S]*?<\/(?:xenc:)?EncryptedData>/)
+    // Any prefix (`xenc:`, `enc:`, none) — the closing tag must use the same one.
+    const encMatch = envelope.match(ENCRYPTED_DATA_ELEMENT)
     if (!encMatch) {
       resolve(envelope) // nothing encrypted
       return
@@ -601,10 +854,10 @@ export function decryptEnvelope(
           reject(err ?? new Error('xml-encryption returned empty result'))
           return
         }
-        const replaced = envelope.replace(
-          /<(?:xenc:)?EncryptedData[\s\S]*?<\/(?:xenc:)?EncryptedData>/,
-          plaintext,
-        )
+        const replaced =
+          envelope.slice(0, encMatch.index) +
+          plaintext +
+          envelope.slice((encMatch.index ?? 0) + encMatch[0].length)
         resolve(replaced)
       },
     )

@@ -49,6 +49,24 @@ export async function listEnvVariables(page: Page, environmentId: string) {
   }, environmentId)
 }
 
+/** The project variables ("Globals") — where Postman collection variables land (issue #281). */
+export async function listGlobalVariablesByProject(page: Page, projectId: string) {
+  return page.evaluate(async (pid) => {
+    const w = window as Window & {
+      api?: {
+        globalVariable?: {
+          listByProject: (
+            id: string,
+          ) => Promise<IpcResult<Array<{ id: string; key: string; value: string; secret: number }>>>
+        }
+      }
+    }
+    const res = await w.api?.globalVariable?.listByProject(pid)
+    if (!res?.success) throw new Error(res?.error ?? 'list global variables failed')
+    return res.data ?? []
+  }, projectId)
+}
+
 export async function listSavedRequestsByProject(page: Page, projectId: string) {
   return page.evaluate(async (pid) => {
     const w = window as Window & {

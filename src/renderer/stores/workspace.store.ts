@@ -15,6 +15,7 @@ import { useTabsStore } from './tabs.store'
 import { useConsoleStore } from './console.store'
 import { loadJson, saveJson } from '../lib/persist-helpers'
 import { scrubTabCredentials } from '../lib/credential-text'
+import { readRequestSettingsJson } from '../../shared/request-settings'
 
 /**
  * Did a write actually land?
@@ -238,6 +239,28 @@ interface WorkspaceStore {
    * say so instead of navigating to nothing.
    */
   revealNode: (id: string) => boolean
+  /**
+   * The Tests-sidebar twin of `revealCommand`: which suite item to bring into
+   * view, its suite and the folders to open (outermost first). `stage` walks
+   * `expand` (TestsPanel opens the suite) → `scroll` (the item row scrolls
+   * itself into view) → `done`, so a later remount of the panel does not
+   * replay an old reveal. `seq === 0` means "nothing revealed yet".
+   */
+  suiteRevealCommand: SuiteRevealCommand
+  /** The suite item highlighted in the Tests sidebar (revealed or clicked). */
+  activeSuiteItemId: string | null
+  setActiveSuiteItem: (id: string | null) => void
+  /**
+   * Bring a test-suite item into view in the Tests sidebar — the counterpart
+   * of `revealNode` for suite runs, whose result ids are `test_suite_items`
+   * ids. Reads the item's OWN suite and folder chain from the DB (the item may
+   * have moved since the run), selects it and publishes the reveal command.
+   * The caller switches the sidebar page. Resolves false when the item no
+   * longer exists, so the caller can say so instead of navigating to nothing.
+   */
+  revealSuiteItem: (itemId: string) => Promise<boolean>
+  /** Advance the current reveal's stage — a stale `seq` is ignored. */
+  advanceSuiteReveal: (seq: number, stage: SuiteRevealCommand['stage']) => void
   setSearchQuery: (query: string) => void
   fetchWorkspaces: () => Promise<void>
   createWorkspace: (name: string, description?: string) => Promise<void>
@@ -297,6 +320,7 @@ interface EndpointRow {
   method: string | null
   path: string
   protocol: string
+  request_schema?: string | null
 }
 
 interface SavedRequestRow {
@@ -307,6 +331,18 @@ interface SavedRequestRow {
   method: string | null
   url: string
   protocol: string
+  metadata?: string | null
+}
+
+/**
+ * `{critical: true}` when the row's settings mark it Critical (issue #304) —
+ * the Runner sequence shows the badge before the run. Cheap substring guard
+ * first: most rows never carry the key, and this runs for every tree row.
+ */
+function criticalField(json: string | null | undefined): { critical?: true } {
+  return json && json.includes('"critical"') && readRequestSettingsJson(json).critical
+    ? { critical: true }
+    : {}
 }
 
 async function buildTreeFromDB(projectId: string, projectName: string): Promise<TreeNode[]> {
@@ -383,6 +419,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
               method: e.method || 'GET',
               protocol: e.protocol,
               path: e.path,
+              ...criticalField(e.request_schema),
             },
             'endpoint',
           ),
@@ -399,6 +436,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
               method: r.method || 'GET',
               protocol: r.protocol,
               path: r.url,
+              ...criticalField(r.metadata),
             },
             'saved_request',
           ),
@@ -440,6 +478,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
             method: e.method || 'GET',
             protocol: e.protocol,
             path: e.path,
+            ...criticalField(e.request_schema),
           },
           'endpoint',
         ),
@@ -457,6 +496,7 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
             method: r.method || 'GET',
             protocol: r.protocol,
             path: r.url,
+            ...criticalField(r.metadata),
           },
           'saved_request',
         ),
@@ -506,6 +546,41 @@ export function ancestorPath(nodes: TreeNode[], id: string): string[] | null {
   return null
 }
 
+/** A suite folder's link to its parent — all `suiteFolderChain` reads. */
+export interface SuiteFolderLink {
+  id: string
+  parent_id: string | null
+}
+
+export interface SuiteRevealCommand {
+  itemId: string
+  suiteId: string
+  /** Folders to open, outermost first. */
+  folderIds: string[]
+  seq: number
+  stage: 'expand' | 'scroll' | 'done'
+}
+
+/**
+ * The suite folders holding `folderId`, outermost first, `folderId` itself
+ * last. Cycle-safe: a corrupt parent loop stops at the first repeat.
+ */
+export function suiteFolderChain(
+  folders: readonly SuiteFolderLink[],
+  folderId: string | null,
+): string[] {
+  const byId = new Map(folders.map((f) => [f.id, f]))
+  const chain: string[] = []
+  const seen = new Set<string>()
+  let cur = folderId
+  while (cur && !seen.has(cur)) {
+    seen.add(cur)
+    chain.unshift(cur)
+    cur = byId.get(cur)?.parent_id ?? null
+  }
+  return chain
+}
+
 /** Depth-first lookup of a tree node by id. */
 function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
   for (const n of nodes) {
@@ -545,6 +620,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
   treeData: emptyTree(),
   openNodeIds: new Set(['default-module']),
   revealCommand: { nodeId: '', seq: 0 },
+  suiteRevealCommand: { itemId: '', suiteId: '', folderIds: [], seq: 0, stage: 'done' },
+  activeSuiteItemId: null,
   allNodesCommand: { kind: 'expand', seq: 0 },
   activeNodeId: null,
   searchQuery: '',
@@ -731,6 +808,52 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     })
     return true
   },
+
+  setActiveSuiteItem: (id) => set({ activeSuiteItemId: id }),
+
+  revealSuiteItem: async (itemId) => {
+    const api = window.api
+    let item: { suite_id: string; folder_id: string | null } | null = null
+    try {
+      const res = (await api?.testSuiteItem?.get(itemId)) as
+        | { success: boolean; data?: { suite_id: string; folder_id: string | null } | null }
+        | undefined
+      item = res?.success && res.data ? res.data : null
+    } catch {
+      item = null
+    }
+    if (!item) return false
+    const { suite_id: suiteId, folder_id: folderId } = item
+    let folders: SuiteFolderLink[] = []
+    if (folderId) {
+      try {
+        const res = (await api?.testSuite?.listEndpoints(suiteId)) as
+          | { success: boolean; data?: { folders?: SuiteFolderLink[] } }
+          | undefined
+        folders = res?.success ? (res.data?.folders ?? []) : []
+      } catch {
+        folders = []
+      }
+    }
+    set((state) => ({
+      activeSuiteItemId: itemId,
+      suiteRevealCommand: {
+        itemId,
+        suiteId,
+        folderIds: suiteFolderChain(folders, folderId),
+        seq: state.suiteRevealCommand.seq + 1,
+        stage: 'expand',
+      },
+    }))
+    return true
+  },
+
+  advanceSuiteReveal: (seq, stage) =>
+    set((state) =>
+      state.suiteRevealCommand.seq === seq
+        ? { suiteRevealCommand: { ...state.suiteRevealCommand, stage } }
+        : {},
+    ),
 
   setSearchQuery: (query) => set({ searchQuery: query }),
 

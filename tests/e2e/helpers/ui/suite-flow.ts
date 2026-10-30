@@ -19,11 +19,17 @@ export async function navigateToTestsPanel(page: Page): Promise<void> {
 
 export async function createTestSuite(page: Page, name: string): Promise<void> {
   await navigateToTestsPanel(page)
+  // The panel renders its empty state ("+ Create Test Suite") for a moment
+  // before the suite list arrives, then swaps it out. Checking the empty-state
+  // button first raced that swap and clicked a node that was being detached
+  // (seen on Electron 44, issue #291). The header button stays put, so prefer it.
+  const headerBtn = page.getByTitle(/New Test Suite|Yeni Test Paketi/i)
   const createBtn = page.getByRole('button', { name: /Create.*suite|suite.*create/i })
-  if (await createBtn.isVisible().catch(() => false)) {
-    await createBtn.click()
+  await expect(headerBtn.or(createBtn).first()).toBeVisible({ timeout: 15_000 })
+  if (await headerBtn.first().isVisible().catch(() => false)) {
+    await headerBtn.first().click()
   } else {
-    await page.getByTitle(/New Test Suite|Yeni Test Paketi/i).click()
+    await createBtn.click()
   }
   const input = page.getByPlaceholder(/Test suite name|Test paketi adı/i)
   await input.fill(name)

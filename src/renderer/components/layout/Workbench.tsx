@@ -7,7 +7,7 @@ import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
 import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
-import { activateTabStores, switchActiveTab } from '../../lib/activate-tab'
+import { activateTabStores, cloneTabStores, switchActiveTab } from '../../lib/activate-tab'
 import { useTranslation } from '../../lib/i18n'
 import { useScrollStrip } from '../../lib/use-scroll-strip'
 import UrlBar from './UrlBar'
@@ -24,6 +24,7 @@ import SseEditor from '../protocols/SseEditor'
 import AiChatEditor from '../protocols/AiChatEditor'
 import McpEditor from '../protocols/McpEditor'
 import SocketIOEditor from '../protocols/SocketIOEditor'
+import MqttEditor from '../protocols/MqttEditor'
 import RunnerTab from '../runner/RunnerTab'
 import JwtTool from '../tools/JwtTool'
 import JsonFormatTool from '../tools/JsonFormatTool'
@@ -57,7 +58,6 @@ import MockMcpServerEditor from '../mock-mcp/MockMcpServerEditor'
 import RightPanel from './RightPanel'
 import EdgeResizeHandle from './EdgeResizeHandle'
 import { useTabsStore } from '../../stores/tabs.store'
-import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
@@ -348,7 +348,7 @@ export function EndpointTabBar() {
       // Unsaved edits travel with the duplicate: the row is a copy of what is
       // SAVED, while the user is looking at what they have typed.
       const openedId = useTabsStore.getState().activeTabId
-      if (openedId) useRequestStore.getState().cloneTabState(tabId, openedId)
+      if (openedId) cloneTabStores(tabId, openedId, src.protocol)
       return
     }
 
@@ -363,7 +363,7 @@ export function EndpointTabBar() {
       url: src.url,
       folderId: src.folderId,
     })
-    useRequestStore.getState().cloneTabState(tabId, newId)
+    cloneTabStores(tabId, newId, src.protocol)
     // Switch every store onto the new tab so stale per-tab caches are loaded.
     handleSwitchTab(newId)
   }
@@ -1291,6 +1291,19 @@ export default function Workbench() {
           <EndpointTabBar />
           <HistoryHiddenNote />
           <SocketIOEditor key={activeTab.id} />
+        </div>
+      )
+    }
+
+    if (protocol === 'mqtt') {
+      return (
+        <div
+          className="flex flex-1 flex-col overflow-hidden"
+          style={{ background: 'var(--white)' }}
+        >
+          <EndpointTabBar />
+          <HistoryHiddenNote />
+          <MqttEditor key={activeTab.id} />
         </div>
       )
     }

@@ -4,13 +4,15 @@
  * ── Why a door at all ───────────────────────────────────────────────────────
  *
  * `jose@6` is ESM-only: its package.json is `"type": "module"` and its exports
- * map offers only a `default` (ESM) condition — no `require`. electron-vite's
- * `externalizeDepsPlugin` leaves every dependency as a runtime `require()`, and
- * Electron 33's Node 20 cannot `require()` an ES module, so an externalized
- * jose kills the app ON LOAD with ERR_REQUIRE_ESM — before a window ever opens.
- * That is exactly the v1.4.19 launch-crash regression (CLAUDE.md).
+ * map offers only a `default` (ESM) condition — no `require`. electron-vite
+ * externalizes every dependency to a runtime `require()` by default, and
+ * Electron 33's Node 20 could not `require()` an ES module, so an externalized
+ * jose killed the app ON LOAD with ERR_REQUIRE_ESM — before a window ever opened.
+ * That is exactly the v1.4.19 launch-crash regression (CLAUDE.md). Electron 44's
+ * Node 24 can require(ESM); the bundling stays anyway (issue #291).
  *
- * The fix is `externalizeDepsPlugin({ exclude: [..., 'jose'] })`, which makes
+ * The fix is the main build's `externalizeDeps: { exclude: [..., 'jose'] }`
+ * (electron-vite 5; it was `externalizeDepsPlugin` before), which makes
  * Rollup BUNDLE jose (ESM→CJS) into out/main. Keeping every main-side import in
  * this module means that decision has one place to live and one place to check:
  * if a future module imports 'jose' directly and someone later drops the

@@ -103,7 +103,7 @@ function rightClick(label: string): void {
 }
 
 describe('APIs tree root Export picks a format (issue #208)', () => {
-  it('offers the four formats and exports the project as Postman v2.1', async () => {
+  it('offers the six formats and exports the project as Postman v2.1', async () => {
     render(<TreeView />)
     rightClick('My API')
     fireEvent.click(screen.getByRole('button', { name: 'Export' }))
@@ -115,7 +115,29 @@ describe('APIs tree root Export picks a format (issue #208)', () => {
       within(submenu)
         .getAllByRole('button')
         .map((b) => b.textContent?.trim()),
-    ).toEqual(['Testnizer JSON', 'Postman v2.1', 'OpenAPI 3', 'Insomnia'])
+    ).toEqual([
+      'Testnizer JSON',
+      'Postman v2.1',
+      // Issue #277
+      'Postman v3 (folder)',
+      'Postman v3 (JSON)',
+      'OpenAPI 3',
+      'Insomnia',
+    ])
+
+    // Every entry has a per-format test id (issue #277).
+    expect(
+      within(submenu)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('data-testid')),
+    ).toEqual([
+      'tree-export-format-testnizer',
+      'tree-export-format-postman',
+      'tree-export-format-postman-v3-folder',
+      'tree-export-format-postman-v3',
+      'tree-export-format-openapi',
+      'tree-export-format-insomnia',
+    ])
 
     fireEvent.click(within(submenu).getByRole('button', { name: 'Postman v2.1' }))
     await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(1))

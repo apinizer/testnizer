@@ -19,6 +19,7 @@ const CHIPS: Record<string, ProtocolChipInfo> = {
   websocket: { label: 'WS', color: 'text-[var(--mb-options-fg)]', name: 'WebSocket' },
   sse: { label: 'SSE', color: 'text-[var(--orange)]', name: 'Server-Sent Events' },
   socketio: { label: 'SIO', color: 'text-[var(--mb-query-fg)]', name: 'Socket.IO' },
+  mqtt: { label: 'MQTT', color: 'text-[var(--blue)]', name: 'MQTT' },
   graphql: { label: 'GQL', color: 'text-[var(--mb-put-fg)]', name: 'GraphQL' },
   grpc: { label: 'gRPC', color: 'text-[var(--green)]', name: 'gRPC' },
   // AI Chat requests are saved with a placeholder POST (issue #203).

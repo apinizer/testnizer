@@ -8,14 +8,20 @@ section: Reference
 ## How do I migrate from Postman?
 
 Open the **Import** dialog (`File → Import` or drag a file onto the left
-sidebar) and select your Postman export file. Testnizer supports Postman
-Collection v2 and v2.1 format. Environments exported from Postman as JSON are
-also importable — use the same Import dialog and choose the environment file.
+sidebar), pick the **Postman** card and select your Postman file. Testnizer
+reads Postman Collection **v1, v2.0, v2.1 and v3** (a single JSON file, or a
+Postman 12 *Native Git* folder through **Import folder…**), Postman
+environments and globals files, a Postman data export, and `.zip` archives of
+those. It detects the version from the file, so you do not choose one.
 
-Folder hierarchy, request descriptions, pre-request scripts, test scripts, and
-authorization settings are all preserved. A small number of Postman-specific
-collection runner options (such as `postman.setNextRequest`) are treated as
-no-ops and logged to the console during import.
+Folder hierarchy, request descriptions, pre-request scripts, test scripts,
+saved examples and authorization settings are preserved. Collection variables
+become the project's **Globals**, and collection-level auth and scripts move to
+the import folder instead of being copied into every request. When something
+cannot be carried over (an auth type Testnizer does not have, a Kafka request,
+a `pm.require` call), the **Import finished** panel lists it. See
+[Import & export](/docs/import-formats#postman) for the details, and
+[Environments & variables](/docs/environments#globals) for Globals.
 
 ---
 
@@ -60,13 +66,14 @@ so use it only for initial setup or migration scenarios.
 
 Most scripts work without changes. Testnizer implements the `pm` scripting API
 including `pm.request`, `pm.response`, `pm.environment`, `pm.globals`,
-`pm.collectionVariables`, `pm.variables`, `pm.test`, `pm.expect`, and
-`pm.sendRequest`.
+`pm.collectionVariables`, `pm.variables`, `pm.vault`, `pm.test` (including the
+`done` callback form), `pm.expect`, and `pm.sendRequest`.
 
 The following Postman-specific features are not supported:
 
-- `postman.setNextRequest()` — collection runner uses sequential execution only
 - Visualizer (`pm.visualizer.set()`) — no equivalent; output is ignored
+- `pm.require()` (Postman package libraries) — throws a clear "not supported"
+  error; the built-in `require()` libraries cover the common cases
 - `pm.info.iteration` and `pm.info.iterationCount` — available only inside the
   collection runner context, not in single-request runs
 - References to the built-in Postman cloud or monitor APIs
@@ -92,10 +99,10 @@ local file and lists all available operations without making a network request.
 ## How are certificates and private keys stored?
 
 Client certificate files (PEM / P12) are referenced by their file path. The
-private key passphrase, if any, is stored through `electron-store` using the OS
-keychain on macOS (Keychain Access) and the Windows Credential Manager on
-Windows. On Linux, the passphrase is stored in an encrypted file in the
-application data directory using a machine-specific key.
+private key passphrase, if any, is encrypted with Electron `safeStorage` — the OS
+keychain: Keychain on macOS, DPAPI on Windows, libsecret on Linux. Where no keychain
+is available on Linux, the passphrase is stored without encryption on your computer.
+It is never written to project files, Git or exports.
 
 The certificate files themselves are never copied into the application data
 directory — Testnizer reads them from the path you specify at the time each
@@ -177,9 +184,9 @@ HTTP or SOCKS5 proxy address that applies to all requests made by Testnizer.
 Per-request proxy overrides are not currently supported; the proxy setting is
 global.
 
-Proxy authentication (username and password) is supported. The credentials are
-stored in `electron-store` and are not written to collection or environment
-files.
+Proxy authentication (username and password) is supported. The password is
+encrypted with the OS keychain (`safeStorage`) and is not written to collection or
+environment files.
 
 The system proxy configured in macOS Network Preferences or Windows Internet
 Options is respected by default unless you set a custom proxy in Testnizer

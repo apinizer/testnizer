@@ -78,6 +78,7 @@ export function openHistoryEntryInTab(entry: Row, tabId: string): void {
     method: r.method,
     url: r.url,
     params: r.params,
+    pathVariables: r.pathVariables,
     headers: r.headers,
     body: r.body,
     auth: r.auth,

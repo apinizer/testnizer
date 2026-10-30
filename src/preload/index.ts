@@ -1,6 +1,20 @@
 // v1.1.0 — mcp + socketio bridge
 import { contextBridge, ipcRenderer } from 'electron'
-import { electronAPI } from '@electron-toolkit/preload'
+
+/**
+ * `window.electron` — exactly what the renderer reads (issue #294): the
+ * platform and runtime versions shown in Settings → About. It used to be
+ * `@electron-toolkit/preload`'s `electronAPI`, which handed the page a generic
+ * `ipcRenderer` (any channel, `sendSync` included — around the narrow
+ * `window.api` surface) and a getter returning the whole `process.env`. Plain
+ * values copied once at load; nothing callable.
+ */
+const electronInfo = {
+  process: {
+    platform: process.platform as string,
+    versions: { ...process.versions } as Record<string, string | undefined>,
+  },
+}
 
 const api = {
   // ─── Auth ───────────────────────────────────────────────
@@ -191,6 +205,8 @@ const api = {
     setActiveForProject: (projectId: string, environmentId: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:setActiveForProject', projectId, environmentId),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('environment:delete', id),
+    moveToProjectVariables: (id: string): Promise<unknown> =>
+      ipcRenderer.invoke('environment:moveToProjectVariables', id),
   },
 
   // ─── Environment Variables ───────────────────────────────
@@ -262,7 +278,8 @@ const api = {
   // ─── Import/Export ───────────────────────────────────────
   importExport: {
     fetchUrl: (url: string): Promise<unknown> => ipcRenderer.invoke('import:fetchUrl', url),
-    openFile: (): Promise<unknown> => ipcRenderer.invoke('import:openFile'),
+    openFile: (options?: { format?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('import:openFile', options ?? {}),
     importOpenApi: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:openApi', payload),
     exportOpenApi: (projectId: string): Promise<unknown> =>
@@ -275,6 +292,13 @@ const api = {
       ipcRenderer.invoke('import:postmanEnvironment', payload),
     exportPostman: (projectId: string): Promise<unknown> =>
       ipcRenderer.invoke('export:postman', projectId),
+    exportPostmanV3Json: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('export:postmanV3Json', projectId),
+    exportPostmanV3Folder: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('export:postmanV3Folder', projectId),
+    pickPostmanFolder: (): Promise<unknown> => ipcRenderer.invoke('import:pickPostmanFolder'),
+    importPostmanFolder: (payload: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('import:postmanFolder', payload),
     importHar: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('import:har', payload),
     importInsomnia: (payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('import:insomnia', payload),
@@ -339,8 +363,11 @@ const api = {
       ipcRenderer.invoke('ws:cancelConnect', pendingId),
     disconnect: (connectionId: string): Promise<unknown> =>
       ipcRenderer.invoke('ws:disconnect', connectionId),
-    send: (connectionId: string, message: string): Promise<unknown> =>
-      ipcRenderer.invoke('ws:send', connectionId, message),
+    send: (
+      connectionId: string,
+      message: string,
+      opts?: { binary?: 'base64' | 'hex' },
+    ): Promise<unknown> => ipcRenderer.invoke('ws:send', connectionId, message, opts),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -804,7 +831,7 @@ const api = {
       ipcRenderer.invoke('save:exportFolder', folderId),
     exportTestSuite: (
       suiteId: string,
-      format?: 'testnizer' | 'postman' | 'insomnia',
+      format?: 'testnizer' | 'postman' | 'insomnia' | 'postman-v3' | 'postman-v3-folder',
     ): Promise<unknown> => ipcRenderer.invoke('save:exportTestSuite', suiteId, format),
     importProject: (payload: { workspaceId: string; name?: string }): Promise<unknown> =>
       ipcRenderer.invoke('save:importProject', payload),
@@ -1087,6 +1114,9 @@ const api = {
       ipcRenderer.invoke('mcp:oauth:cancel', oauthSessionId),
     oauthForget: (oauthSessionId: string): Promise<unknown> =>
       ipcRenderer.invoke('mcp:oauth:forget', oauthSessionId),
+    // issue #295 — confirm (or refuse) sending the client secret to the advertised AS
+    oauthConfirm: (oauthSessionId: string, accept: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('mcp:oauth:confirm', oauthSessionId, accept),
     onOauthStep: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -1155,6 +1185,15 @@ const api = {
       ipcRenderer.invoke('socketio:subscribe', connectionId, eventName),
     unsubscribe: (connectionId: string, eventName: string): Promise<unknown> =>
       ipcRenderer.invoke('socketio:unsubscribe', connectionId, eventName),
+    emitArgs: (
+      connectionId: string,
+      eventName: string,
+      args: unknown,
+      opts?: { ack?: boolean },
+    ): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:emitArgs', connectionId, eventName, args, opts),
+    setListen: (connectionId: string, cfg: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('socketio:setListen', connectionId, cfg),
     onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -1162,6 +1201,50 @@ const api = {
       ipcRenderer.on('socketio:event', handler)
       return () => {
         ipcRenderer.removeListener('socketio:event', handler)
+      }
+    },
+    /** The server closed the connection (issue #275): `{ connectionId, reason }`. */
+    onClosed: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('socketio:closed', handler)
+      return () => {
+        ipcRenderer.removeListener('socketio:closed', handler)
+      }
+    },
+  },
+
+  // ─── MQTT (issue #284) ──────────────────────────────────────
+  mqtt: {
+    connect: (options: unknown): Promise<unknown> => ipcRenderer.invoke('mqtt:connect', options),
+    cancelConnect: (pendingId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:cancelConnect', pendingId),
+    disconnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:disconnect', connectionId),
+    publish: (connectionId: string, message: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:publish', connectionId, message),
+    subscribe: (connectionId: string, subscriptions: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:subscribe', connectionId, subscriptions),
+    unsubscribe: (connectionId: string, topics: string[]): Promise<unknown> =>
+      ipcRenderer.invoke('mqtt:unsubscribe', connectionId, topics),
+    onEvent: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mqtt:event', handler)
+      return () => {
+        ipcRenderer.removeListener('mqtt:event', handler)
+      }
+    },
+    /** The broker closed the connection: `{ connectionId, reason }`. */
+    onClosed: (callback: (event: unknown) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
+        callback(data)
+      }
+      ipcRenderer.on('mqtt:closed', handler)
+      return () => {
+        ipcRenderer.removeListener('mqtt:closed', handler)
       }
     },
   },
@@ -1257,14 +1340,14 @@ const api = {
 
 if (process.contextIsolated) {
   try {
-    contextBridge.exposeInMainWorld('electron', electronAPI)
+    contextBridge.exposeInMainWorld('electron', electronInfo)
     contextBridge.exposeInMainWorld('api', api)
   } catch (error) {
     console.error(error)
   }
 } else {
   // @ts-expect-error fallback for non-isolated context
-  window.electron = electronAPI
+  window.electron = electronInfo
   // @ts-expect-error fallback
   window.api = api
 }

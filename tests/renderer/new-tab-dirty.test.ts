@@ -131,6 +131,7 @@ describe('isRequestLikeTab (#101)', () => {
       'ai',
       'mcp',
       'socketio',
+      'mqtt',
     ]
     for (const protocol of requestProtocols) {
       expect(isRequestLikeTab({ ...base, protocol }), protocol).toBe(true)

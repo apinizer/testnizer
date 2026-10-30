@@ -12,11 +12,12 @@ import {
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
-import { endpointDidPass } from '../../../shared/runner-verdict'
+import { endpointDidPass, criticalStopOf } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
 import { displayRunSourceLabel } from '../../lib/runner-source-label'
+import CriticalBadge from './CriticalBadge'
 import {
   filterRunResults,
   runResultMethods,
@@ -36,6 +37,7 @@ type FilterTab = RunResultTab
 const STOP_REASON_KEY: Record<RunStopReason, string> = {
   setupFailed: 'runLifecycle.stoppedSetupFailed',
   stopOnError: 'runLifecycle.stoppedOnError',
+  criticalFailed: 'runLifecycle.stoppedCritical',
   cancelled: 'runLifecycle.stoppedCancelled',
   teardownAborted: 'runLifecycle.stoppedTeardownAborted',
   stoppedImmediately: 'runLifecycle.stoppedImmediately',
@@ -117,12 +119,13 @@ interface RunnerResultsProps {
    * request without leaving the runner. */
   onOpenEndpoint?: (endpointId: string) => void
   /**
-   * Reveal a result's request in the APIs tree (issue #115). Absent when the
-   * run's ids are not APIs nodes at all — a suite run carries test-suite item
-   * ids, which have no row in that tree — so the control is simply not offered
-   * rather than offered and always failing.
+   * Reveal a result's request in the sidebar (issue #115): the APIs tree for
+   * an APIs / Runner run, the Tests sidebar for a suite run (whose result ids
+   * are test-suite item ids). Absent = the control is not offered.
    */
-  onRevealInApis?: (endpointId: string) => void
+  onReveal?: (endpointId: string) => void
+  /** Where `onReveal` lands — picks the control's tooltip. Default `apis`. */
+  revealIn?: 'apis' | 'tests'
 }
 
 export default function RunnerResults({
@@ -143,7 +146,8 @@ export default function RunnerResults({
   selectedResultId,
   onSelectResult,
   onOpenEndpoint,
-  onRevealInApis,
+  onReveal,
+  revealIn = 'apis',
 }: RunnerResultsProps) {
   const { t, locale } = useTranslation()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('all')
@@ -167,6 +171,7 @@ export default function RunnerResults({
   // `error` as an error (so a cleanup failure raised the Errors counter this very
   // feature promises never affects the verdict).
   const summary = useMemo(() => summarizeRun(results), [results])
+  const criticalStop = useMemo(() => criticalStopOf(results), [results])
   const totalPassed = summary.passed
   const totalFailed = summary.failed
   const teardownFailedCount = summary.teardownFailed
@@ -474,10 +479,21 @@ export default function RunnerResults({
             </div>
 
             {/* Why the run ended early + whether cleanup got its turn. Without
-                this line a short result list looks like data loss (issue #72). */}
-            {(report?.stopReason || teardownFailedCount > 0) && (
+                this line a short result list looks like data loss (issue #72).
+                A critical stop (issue #304) is read off the rows, so a run
+                reopened from history — whose report has no stopReason — says
+                it too. */}
+            {(report?.stopReason || criticalStop || teardownFailedCount > 0) && (
               <div className="mb-3 flex flex-wrap items-center gap-2" style={{ fontSize: 12 }}>
-                {report?.stopReason && (
+                {criticalStop && (
+                  <span
+                    data-testid="runner-stop-critical"
+                    style={{ color: '#cc2200', fontWeight: 600 }}
+                  >
+                    {t('runLifecycle.stoppedCritical').replace('{name}', criticalStop.endpointName)}
+                  </span>
+                )}
+                {report?.stopReason && report.stopReason !== 'criticalFailed' && (
                   <span style={{ color: 'var(--muted)' }}>
                     {t(stopReasonKey(report.stopReason))}
                   </span>
@@ -679,7 +695,8 @@ export default function RunnerResults({
                       result.endpointId === selectedResultId ? null : result.endpointId,
                     )
                   }
-                  onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
+                  onReveal={onReveal && (() => onReveal(result.endpointId))}
+                  revealIn={revealIn}
                 />
               ))}
             </PhaseSection>
@@ -726,7 +743,8 @@ export default function RunnerResults({
                           result.endpointId === selectedResultId ? null : result.endpointId,
                         )
                       }
-                      onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
+                      onReveal={onReveal && (() => onReveal(result.endpointId))}
+                      revealIn={revealIn}
                     />
                   ))}
               </div>
@@ -748,7 +766,8 @@ export default function RunnerResults({
                       result.endpointId === selectedResultId ? null : result.endpointId,
                     )
                   }
-                  onReveal={onRevealInApis && (() => onRevealInApis(result.endpointId))}
+                  onReveal={onReveal && (() => onReveal(result.endpointId))}
+                  revealIn={revealIn}
                 />
               ))}
             </PhaseSection>
@@ -1133,12 +1152,14 @@ function ResultRow({
   isSelected,
   onClick,
   onReveal,
+  revealIn = 'apis',
 }: {
   result: EndpointRunResult
   isSelected: boolean
   onClick: () => void
-  /** Jump to this request in the APIs tree (issue #115). Absent = not offered. */
+  /** Jump to this request in the sidebar (issue #115). Absent = not offered. */
   onReveal?: () => void
+  revealIn?: 'apis' | 'tests'
 }) {
   const { t } = useTranslation()
   const mc = getMethodColors(result.method)
@@ -1178,6 +1199,7 @@ function ResultRow({
         >
           {result.endpointName}
         </span>
+        {result.critical && <CriticalBadge />}
         {badge && (
           <span
             style={{
@@ -1197,8 +1219,10 @@ function ResultRow({
           <button
             type="button"
             data-testid={`runner-reveal-${result.endpointId}`}
-            title={t('runResults.revealInApis')}
-            aria-label={t('runResults.revealInApis')}
+            title={t(revealIn === 'tests' ? 'runResults.revealInTests' : 'runResults.revealInApis')}
+            aria-label={t(
+              revealIn === 'tests' ? 'runResults.revealInTests' : 'runResults.revealInApis',
+            )}
             onClick={(e) => {
               e.stopPropagation()
               onReveal()

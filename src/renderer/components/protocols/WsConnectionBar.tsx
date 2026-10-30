@@ -2,7 +2,15 @@ import { Plug, Unplug, X } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import { useTranslation } from '../../lib/i18n'
 import McpStatusPill from './mcp/McpStatusPill'
-import { CB_ERROR_BOX, CB_ROW, CB_TARGET, CB_URL, cbPrimaryButton } from './connection-bar-ui'
+import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
+import {
+  CB_ERROR_BOX,
+  CB_ROW,
+  CB_TARGET,
+  CB_URL_FIELD,
+  CB_URL_FIELDSET,
+  cbPrimaryButton,
+} from './connection-bar-ui'
 
 /**
  * WebSocket connection bar — the MCP / SSE bars' anatomy (issue #224): the
@@ -31,18 +39,20 @@ export default function WsConnectionBar() {
         <McpStatusPill state={connectionState} testId="ws-status" />
 
         <div className={CB_TARGET}>
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={busy}
-            data-testid="ws-url"
-            placeholder="wss://echo.websocket.org"
-            className={CB_URL}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !busy) connect()
-            }}
-          />
+          <fieldset disabled={busy} className={CB_URL_FIELDSET}>
+            <VariableAutocompleteInput
+              value={url}
+              onChange={setUrl}
+              data-testid="ws-url"
+              placeholder="wss://echo.websocket.org"
+              spellCheck={false}
+              autoComplete="off"
+              className={CB_URL_FIELD}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !busy) connect()
+              }}
+            />
+          </fieldset>
 
           {/* Connect / Cancel / Disconnect — same tokens as the MCP / SSE bars' button. */}
           <button

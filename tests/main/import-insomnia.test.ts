@@ -440,53 +440,133 @@ describe('importInsomnia — wrong-file-type guard', () => {
   })
 })
 
-// ─── v5 collection import creates its bundled environment (issue #11) ──
+// ─── Bundled environments: base → project variables, subs → environments ──
+//
+// issue #11 made the bundled environment real; issue #281 made
+// `insomnia.baseEnvironment` / `pm.collectionVariables` read the project
+// variables, so the collection's BASE environment now lands there (through
+// the same writer as Postman collection variables) and sub-environments stay
+// environments.
 
-describe('importInsomnia v5 — bundled environment', () => {
+function projectVarsOf(pid: string): Record<string, string> {
+  const rows = getDb()
+    .prepare('SELECT key, value FROM global_variables WHERE project_id = ?')
+    .all(pid) as Array<{ key: string; value: string }>
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]))
+}
+
+function envsOf(pid: string): Array<{ id: string; name: string }> {
+  return getDb()
+    .prepare('SELECT id, name FROM environments WHERE project_id = ? ORDER BY name')
+    .all(pid) as Array<{ id: string; name: string }>
+}
+
+function envVarsOf(envId: string): Record<string, string> {
+  const rows = getDb()
+    .prepare('SELECT key, value FROM environment_variables WHERE environment_id = ?')
+    .all(envId) as Array<{ key: string; value: string }>
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]))
+}
+
+describe('importInsomnia v5 — bundled environments (issue #281 follow-up)', () => {
   const v5Collection = {
     type: 'collection.insomnia.rest/5.0',
     name: 'Sample v5',
     collection: [{ name: 'Get user', method: 'GET', url: '{{ _.baseUrl }}/users/1' }],
     environments: {
-      data: { baseUrl: 'https://api.example.com', token: 'abc123' },
+      name: 'Base Environment',
+      data: { baseUrl: 'https://api.example.com', token: 'abc123', nested: { a: 1 } },
+      subEnvironments: [
+        { name: 'Staging', data: { host: 'staging.example.com' } },
+        { name: 'Prod', data: { host: 'example.com' } },
+      ],
     },
   }
 
-  it('creates a real environment + variables from environments.data', async () => {
+  it('writes the base environment to the project variables, not to an environment', async () => {
     const r = await importInsomnia(projectId, JSON.stringify(v5Collection))
     expect(r.success).toBe(true)
-
-    const db = getDb()
-    const env = db
-      .prepare('SELECT id, name FROM environments WHERE project_id = ?')
-      .get(projectId) as { id: string; name: string } | undefined
-    expect(env).toBeTruthy()
-    // Named from the collection (no explicit environments.name in the export).
-    expect(env!.name).toBe('Sample v5 Environment')
-
-    const vars = db
-      .prepare('SELECT key, value, initial_value FROM environment_variables WHERE environment_id = ?')
-      .all(env!.id) as Array<{ key: string; value: string; initial_value: string }>
-    const byKey = Object.fromEntries(vars.map((v) => [v.key, v]))
-    expect(byKey.baseUrl.value).toBe('https://api.example.com')
-    expect(byKey.baseUrl.initial_value).toBe('https://api.example.com')
-    expect(byKey.token.value).toBe('abc123')
+    expect(projectVarsOf(projectId)).toEqual({
+      baseUrl: 'https://api.example.com',
+      token: 'abc123',
+      nested: '{"a":1}',
+    })
+    expect(envsOf(projectId).map((e) => e.name)).not.toContain('Base Environment')
+    // The report says where they went and how to move an earlier import.
+    const note = (r.warnings ?? []).find((w) => w.includes('Insomnia base environment'))
+    expect(note).toMatch(/Globals/)
+    expect(note).toMatch(/Move to Globals/)
   })
 
-  it('is idempotent — re-importing replaces the env vars, not duplicates them', async () => {
-    await importInsomnia(projectId, JSON.stringify(v5Collection))
-    await importInsomnia(projectId, JSON.stringify(v5Collection))
+  it('imports sub-environments as environments', async () => {
+    const r = await importInsomnia(projectId, JSON.stringify(v5Collection))
+    const envs = envsOf(projectId)
+    expect(envs.map((e) => e.name)).toEqual(['Prod', 'Staging'])
+    expect(envVarsOf(envs.find((e) => e.name === 'Staging')!.id)).toEqual({
+      host: 'staging.example.com',
+    })
+    expect(r.environmentName).toBe('Prod')
+  })
 
-    const db = getDb()
-    const envs = db
-      .prepare('SELECT id FROM environments WHERE project_id = ? AND name = ?')
-      .all(projectId, 'Sample v5 Environment') as Array<{ id: string }>
-    expect(envs).toHaveLength(1)
-    const vars = db
-      .prepare('SELECT key FROM environment_variables WHERE environment_id = ?')
-      .all(envs[0].id) as Array<{ key: string }>
-    // baseUrl + token, not duplicated.
-    expect(vars).toHaveLength(2)
+  it('keeps a project variable the project already has and names it in the report', async () => {
+    const wsRow = getDb().prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as {
+      workspace_id: string
+    }
+    getDb()
+      .prepare(
+        `INSERT INTO global_variables (id, workspace_id, project_id, key, value, initial_value, enabled, secret)
+         VALUES (?, ?, ?, 'token', 'local-token', 'local-token', 1, 0)`,
+      )
+      .run(randomUUID(), wsRow.workspace_id, projectId)
+    const r = await importInsomnia(projectId, JSON.stringify(v5Collection))
+    expect(projectVarsOf(projectId).token).toBe('local-token')
+    expect(projectVarsOf(projectId).baseUrl).toBe('https://api.example.com')
+    expect((r.warnings ?? []).some((w) => w.includes('"token"') && /kept/.test(w))).toBe(true)
+  })
+
+  it('is idempotent — re-importing adds no duplicates and no conflict', async () => {
+    await importInsomnia(projectId, JSON.stringify(v5Collection))
+    const r = await importInsomnia(projectId, JSON.stringify(v5Collection))
+    const rows = getDb()
+      .prepare('SELECT key FROM global_variables WHERE project_id = ?')
+      .all(projectId) as Array<{ key: string }>
+    expect(rows).toHaveLength(3)
+    expect(envsOf(projectId)).toHaveLength(2)
+    expect((r.warnings ?? []).some((w) => /different value/.test(w))).toBe(false)
+  })
+})
+
+describe('importInsomnia v4 — base environment vs sub-environments (issue #281 follow-up)', () => {
+  const doc = {
+    _type: 'export',
+    __export_format: 4,
+    resources: [
+      { _id: 'wrk_1', _type: 'workspace', name: 'WS' },
+      {
+        _id: 'env_base',
+        _type: 'environment',
+        parentId: 'wrk_1',
+        name: 'Base Environment',
+        data: { baseUrl: 'https://api.example.com' },
+      },
+      {
+        _id: 'env_dev',
+        _type: 'environment',
+        parentId: 'env_base',
+        name: 'Dev',
+        data: { host: 'dev.example.com' },
+      },
+    ],
+  }
+
+  it('base → project variables, sub-environment → environment', async () => {
+    const r = await importInsomnia(projectId, JSON.stringify(doc))
+    expect(r.success).toBe(true)
+    expect(projectVarsOf(projectId)).toEqual({ baseUrl: 'https://api.example.com' })
+    const envs = envsOf(projectId)
+    expect(envs.map((e) => e.name)).toEqual(['Dev'])
+    expect(envVarsOf(envs[0].id)).toEqual({ host: 'dev.example.com' })
+    expect(r.environmentName).toBe('Dev')
   })
 })
 

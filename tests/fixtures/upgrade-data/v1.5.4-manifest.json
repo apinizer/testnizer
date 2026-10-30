@@ -1,0 +1,45 @@
+{
+  "workspaceId": "42bcfcbf-8425-45bc-9a10-2110ee13cd0b",
+  "projectIds": [
+    "57d43ecf-9626-4af1-b84c-f5bdcd7d8f5f",
+    "4d802125-a694-4db4-9e37-a5490dfac2a8"
+  ],
+  "sendEndpointId": "8671490f-79d5-46e2-bac1-e67dec0ea454",
+  "environmentId": "df9cd8ae-4906-494b-b554-0490fb388bac",
+  "baseUrlVarId": "c059af3b-fd81-440d-b3cc-ecba6648893a",
+  "envSecrets": {
+    "0272dfa0-91ff-40b1-b0d2-1646526d30ca": {
+      "value": "fixture-token-current-v1.5.4",
+      "initial_value": "fixture-token-initial-v1.5.4"
+    },
+    "348a689b-9e45-4545-8b02-38d8d4b682bd": {
+      "value": "",
+      "initial_value": "fixture-pass-initial-v1.5.4"
+    }
+  },
+  "globalSecrets": {
+    "855ae088-8712-4c60-8a8b-6fe855776c46": {
+      "value": "fixture-client-secret-v1.5.4",
+      "initial_value": "fixture-client-secret-initial-v1.5.4"
+    }
+  },
+  "mockServerId": "924c3e6c-844e-4912-a305-ecb6af75e405",
+  "mockAuth": {
+    "type": "bearer",
+    "token": "fixture-mock-token-v1.5.4"
+  },
+  "settings": {
+    "ui.theme": "dark",
+    "ui.locale": "tr",
+    "ui.fontSize": 15,
+    "project.57d43ecf-9626-4af1-b84c-f5bdcd7d8f5f.settings": {
+      "requestTimeout": 20000,
+      "followRedirects": false,
+      "preScript": "pm.variables.set('fromProject', 'yes')"
+    }
+  },
+  "skipped": [
+    "mockMcp.server.create",
+    "aiChat.setKey"
+  ]
+}

@@ -31,6 +31,7 @@ import { MockEditorTabButton } from '../mock-mcp/MockMcpEditorTabs'
 import { mockSdkBaseUrl, mockServerUrl } from './mock-http-tabs'
 import { bodyTypeLabel, bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
 import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
+import { MockEndpointOpenInHttp } from './MockOpenInHttp'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
 import MockLlmOptions, { MockLlmBodyNotes } from './MockLlmOptions'
 import { OptionNumber } from './MockOptionFields'
@@ -699,7 +700,7 @@ function EndpointEditor({
   )
 }
 
-// ─── Full URL bar (Copy / Open / Copy as cURL) ───────────────────
+// ─── Full URL bar (Copy / Copy as cURL / Open in request tab) ─────
 
 function FullUrlBar({
   server,
@@ -721,14 +722,7 @@ function FullUrlBar({
 
   if (!server) return null
 
-  // Browsers can't visit ws:/wss: paths, and ANY method or non-GET shouldn't
-  // open in a browser even on http. Path-param/wildcard/regex modes have
-  // placeholders that won't resolve to a real address.
   const fullUrl = `http://${server.host}:${server.port}${server.basePath}${endpoint.path}`
-  const canOpen =
-    status === 'running' &&
-    (endpoint.method === 'GET' || endpoint.method === 'ANY') &&
-    endpoint.pathMode === 'exact'
 
   const curl = buildMockCurl(server, endpoint, llm)
 
@@ -740,11 +734,6 @@ function FullUrlBar({
     } catch {
       /* ignore */
     }
-  }
-
-  function open(): void {
-    const url = `http://${server!.host}:${server!.port}${server!.basePath}${endpoint.path}`
-    window.open(url, '_blank', 'noopener')
   }
 
   // Narrow editor (issue #226): the URL box keeps a minimum width and
@@ -818,29 +807,13 @@ function FullUrlBar({
         >
           {copied === 'curl' ? '✓' : '⧉'} cURL
         </button>
-        <button
-          onClick={open}
-          disabled={!canOpen}
-          className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
-          style={{
-            borderColor: 'var(--border)',
-            color: canOpen ? 'var(--accent-text)' : 'var(--hint)',
-            background: 'var(--white)',
-            opacity: canOpen ? 1 : 0.5,
-            cursor: canOpen ? 'pointer' : 'not-allowed',
-          }}
-          title={
-            !canOpen
-              ? endpoint.pathMode !== 'exact'
-                ? t('mock.openHintPath')
-                : endpoint.method !== 'GET' && endpoint.method !== 'ANY'
-                  ? t('mock.openHintMethod')
-                  : t('mock.openHintRunning')
-              : t('mock.openInBrowser')
-          }
-        >
-          ↗ {t('mock.openInBrowser')}
-        </button>
+        <MockEndpointOpenInHttp
+          server={server}
+          endpoint={endpoint}
+          status={status}
+          llm={llm}
+          streams={streams}
+        />
         {streams && <MockEndpointOpenInSse server={server} endpoint={endpoint} status={status} />}
       </div>
     </div>

@@ -30,9 +30,11 @@ on:
         description: 'Release tag to sync issues for (e.g. v1.4.11)'
         required: true
 
+# Least privilege (issue #296): read-only by default. Each job grants
+# issues: write itself (gh comment / label / close with GITHUB_TOKEN). The PR
+# text comes from the event payload, so no pull-requests scope is needed.
 permissions:
   contents: read
-  issues: write
 
 env:
   # gh defaults to GITHUB_REPOSITORY; pin it explicitly for clarity.
@@ -52,6 +54,9 @@ jobs:
       github.event.action != 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Comment + label referenced issues (in-review)
         env:
@@ -85,6 +90,9 @@ jobs:
       github.event.pull_request.merged == true &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Comment + label referenced issues (needs-verification)
         env:
@@ -115,10 +123,14 @@ jobs:
   released:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Close referenced issues for this release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

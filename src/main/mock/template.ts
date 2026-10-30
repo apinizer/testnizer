@@ -29,6 +29,7 @@
 
 import Handlebars from 'handlebars'
 import { resolveVariables } from '../lib/variable-resolver'
+import { resolveDynamicPlaceholders } from '../../shared/dynamic-variables'
 
 export interface TemplateContext {
   request: {
@@ -196,13 +197,19 @@ export function renderTemplate(source: string, ctx: TemplateContext): string {
   // and plain `{{varName}}` against the provided env map. If no env vars
   // were supplied, fall back to the standalone dynamic-only pass so
   // existing tests / call sites keep working.
-  const stage0 = ctx.envVars ? resolveVariables(source, ctx.envVars) : applyDynamicValues(source)
+  const resolved = ctx.envVars
+    ? resolveVariables(source, ctx.envVars)
+    : resolveDynamicPlaceholders(source)
+  // An unknown `{{$name}}` survives the pre-pass as written (issue #281).
+  // Escape it so Handlebars prints it literally instead of looking up `$name`
+  // and emitting an empty string.
+  const stage0 = resolved.replace(/(^|[^\\])\{\{(\s*)\$/g, '$1\\{{$2$')
   try {
     const compiled = hb.compile(stage0, { noEscape: true })
     return compiled(withCaseInsensitiveHeaders(ctx))
   } catch {
     // Invalid Handlebars syntax — return the partially-resolved source.
-    return stage0
+    return resolved
   }
 }
 
@@ -247,60 +254,4 @@ function withCaseInsensitiveHeaders(ctx: TemplateContext): TemplateContext {
     },
   })
   return { ...ctx, request: { ...ctx.request, headers: ciHeaders } }
-}
-
-/** Replace dynamic-value tokens like {{$randomUUID}}. */
-function applyDynamicValues(src: string): string {
-  return src.replace(/\{\{\$([a-zA-Z]+)(\([^)]*\))?\}\}/g, (full, name: string, args?: string) => {
-    try {
-      const argList = args
-        ? args
-            .slice(1, -1)
-            .split(',')
-            .map((a) => a.trim())
-        : []
-      switch (name) {
-        case 'timestamp':
-          return String(Math.floor(Date.now() / 1000))
-        case 'isoTimestamp':
-          return new Date().toISOString()
-        case 'randomUUID':
-          return cryptoUUID()
-        case 'randomInt': {
-          const min = argList.length >= 1 ? Number(argList[0]) : 0
-          const max = argList.length >= 2 ? Number(argList[1]) : 1000
-          return String(Math.floor(Math.random() * (max - min + 1)) + min)
-        }
-        case 'randomEmail':
-          return `user${Math.floor(Math.random() * 100000)}@example.com`
-        case 'randomString': {
-          const n = argList.length >= 1 ? Number(argList[0]) : 8
-          const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
-          let out = ''
-          for (let i = 0; i < n; i++) out += chars[Math.floor(Math.random() * chars.length)]
-          return out
-        }
-      }
-    } catch {
-      return full
-    }
-    return full
-  })
-}
-
-function cryptoUUID(): string {
-  // Use Node's crypto.randomUUID via dynamic require so this module also
-  // works in the renderer (jsdom) test env where it's exposed on globalThis.
-  const g = globalThis as { crypto?: { randomUUID?: () => string } }
-  if (g.crypto?.randomUUID) return g.crypto.randomUUID()
-  // Fallback: very simple v4 generator
-  const hex = '0123456789abcdef'
-  let s = ''
-  for (let i = 0; i < 36; i++) {
-    if (i === 8 || i === 13 || i === 18 || i === 23) s += '-'
-    else if (i === 14) s += '4'
-    else if (i === 19) s += hex[(Math.random() * 4) | 8]
-    else s += hex[(Math.random() * 16) | 0]
-  }
-  return s
 }

@@ -2,13 +2,15 @@ import { Plug, Unplug, RefreshCw, X } from 'lucide-react'
 import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 import { useTranslation } from '../../lib/i18n'
 import McpStatusPill from './mcp/McpStatusPill'
+import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import {
   CB_ERROR_BOX,
   CB_ROW,
   CB_SECONDARY_BUTTON,
   CB_SELECT,
   CB_TARGET,
-  CB_URL,
+  CB_URL_FIELD,
+  CB_URL_FIELDSET,
   cbPrimaryButton,
 } from './connection-bar-ui'
 
@@ -75,18 +77,20 @@ export default function SseConnectionBar() {
         </select>
 
         <div className={CB_TARGET}>
-          <input
-            type="text"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            disabled={busy}
-            data-testid="sse-url"
-            placeholder="https://api.example.com/events"
-            className={CB_URL}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !isConnected) connect()
-            }}
-          />
+          <fieldset disabled={busy} className={CB_URL_FIELDSET}>
+            <VariableAutocompleteInput
+              value={url}
+              onChange={setUrl}
+              data-testid="sse-url"
+              placeholder="https://api.example.com/events"
+              spellCheck={false}
+              autoComplete="off"
+              className={CB_URL_FIELD}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !isConnected) connect()
+              }}
+            />
+          </fieldset>
 
           {/* Connect / Cancel / Disconnect — same tokens as the MCP bar's button. */}
           <button

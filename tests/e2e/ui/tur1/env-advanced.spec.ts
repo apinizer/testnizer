@@ -185,34 +185,77 @@ uiTest.describe('Tur1 — Env Advanced [MST-063, MST-064, MST-066, MST-068]', ()
       fs.rmSync(outDir, { recursive: true, force: true })
     }
 
-    // 5. The Postman collection export projects the ACTIVE environment as
-    //    collection variables — same rule: key + secret type, empty value.
-    const pmRes = await window.evaluate(
-      async ({ pid }) => {
+    // 5. The Postman collection export carries the PROJECT variables as
+    //    collection variables (issue #281 / issue #289) — environments travel
+    //    as environment files, so the environment secret above is not in it.
+    //    Same secret rule for a project variable: key + `secret` type, empty
+    //    value, never the plaintext.
+    const projKey = 'projApiSecret'
+    const projSecretVal = `proj-secret-${uid()}`
+    const workspaceId = await getDefaultWorkspaceId(window)
+    const created = await window.evaluate(
+      async ({ wid, pid, k, v }) => {
         const w = window as unknown as Window & {
           api: {
-            importExport: {
-              exportPostman: (id: string) => Promise<{
-                success: boolean
-                data?: string
-                error?: string
-              }>
+            globalVariable: {
+              create: (
+                p: unknown,
+              ) => Promise<{ success: boolean; data?: { id: string }; error?: string }>
             }
           }
         }
-        return w.api.importExport.exportPostman(pid)
+        return w.api.globalVariable.create({
+          workspace_id: wid,
+          project_id: pid,
+          key: k,
+          value: v,
+          initial_value: v,
+          secret: true,
+        })
       },
-      { pid: projectId },
+      { wid: workspaceId, pid: projectId, k: projKey, v: projSecretVal },
     )
-    expect(pmRes.error).toBeUndefined()
-    expect(pmRes.data ?? '').not.toContain(secretVal)
-    const collection = JSON.parse(pmRes.data ?? '{}') as {
-      variable?: Array<{ key: string; value: string; type?: string }>
+    expect(created.error).toBeUndefined()
+    const projVarId = created.data?.id ?? ''
+    expect(projVarId).not.toBe('')
+    try {
+      const pmRes = await window.evaluate(
+        async ({ pid }) => {
+          const w = window as unknown as Window & {
+            api: {
+              importExport: {
+                exportPostman: (id: string) => Promise<{
+                  success: boolean
+                  data?: string
+                  error?: string
+                }>
+              }
+            }
+          }
+          return w.api.importExport.exportPostman(pid)
+        },
+        { pid: projectId },
+      )
+      expect(pmRes.error).toBeUndefined()
+      expect(pmRes.data ?? '').not.toContain(secretVal)
+      expect(pmRes.data ?? '').not.toContain(projSecretVal)
+      const collection = JSON.parse(pmRes.data ?? '{}') as {
+        variable?: Array<{ key: string; value: string; type?: string }>
+      }
+      expect(collection.variable?.find((v) => v.key === projKey)).toMatchObject({
+        value: '',
+        type: 'secret',
+      })
+      // The environment variable is not a collection variable any more.
+      expect(collection.variable?.find((v) => v.key === key)).toBeUndefined()
+    } finally {
+      await window.evaluate(async (id) => {
+        const w = window as unknown as Window & {
+          api: { globalVariable: { delete: (id: string) => Promise<unknown> } }
+        }
+        await w.api.globalVariable.delete(id)
+      }, projVarId)
     }
-    expect(collection.variable?.find((v) => v.key === key)).toMatchObject({
-      value: '',
-      type: 'secret',
-    })
 
     await closeEnvModal(window)
   })

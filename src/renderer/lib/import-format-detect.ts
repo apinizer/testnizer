@@ -9,6 +9,9 @@
 // return `null` and let the import proceed (the protocol-specific parser
 // will report a more accurate error if the content is truly bad).
 
+import { startsWithCurl } from '../../shared/curl'
+import { classifyPostmanDocument, classifyPostmanText } from '../../shared/postman-detect'
+
 /**
  * Inspect a content snippet (and optional file path) and return a
  * coarse format bucket: `wsdl` | `soapui` | `proto` | `raml` | `openapi`
@@ -23,8 +26,9 @@ export function detectImportFormat(content: string, filePath?: string | null): s
   const trimmed = content.replace(/^\uFEFF/, '').trimStart()
   const head = trimmed.slice(0, 4096)
 
-  // cURL — single-line "curl ..." command (extension rarely meaningful)
-  if (/^\s*curl\s+/i.test(trimmed)) return 'curl'
+  // cURL — `curl …` / `curl.exe …` in any of the three shells, optionally
+  // after a `$ ` / `PS> ` prompt or PowerShell's `&` (issue #279).
+  if (startsWithCurl(trimmed) && /\S\s+\S/.test(trimmed)) return 'curl'
 
   // XML-family: WSDL, SoapUI. RAML uses YAML so it's handled below.
   if (head.startsWith('<?xml') || head.startsWith('<')) {
@@ -58,6 +62,13 @@ export function detectImportFormat(content: string, filePath?: string | null): s
   // YAML-style OpenAPI/Swagger (no JSON braces)
   if (/^(openapi|swagger)\s*:/m.test(head)) return 'openapi'
 
+  // Postman v3 YAML (`$kind: collection` / `$kind: http-request` …) — routed
+  // to the Postman importer: a single file of a v3 folder is answered with a
+  // pointer to "Import folder…" (issue #276 part 2).
+  if (!head.startsWith('{') && !head.startsWith('[') && classifyPostmanText(trimmed)) {
+    return 'postman'
+  }
+
   // JSON-family detection — try to parse
   if (head.startsWith('{') || head.startsWith('[')) {
     try {
@@ -82,22 +93,11 @@ export function detectImportFormat(content: string, filePath?: string | null): s
         if (typeof obj.openapi === 'string' || typeof obj.swagger === 'string') {
           return 'openapi'
         }
-        // Postman collection v2.x: info + (postman id OR schema URL)
-        const info = obj.info as Record<string, unknown> | undefined
-        if (
-          info &&
-          typeof info === 'object' &&
-          (typeof info._postman_id === 'string' ||
-            (typeof info.schema === 'string' && info.schema.includes('postman')))
-        ) {
-          return 'postman'
-        }
-        // Postman environment export — `_postman_variable_scope: "environment"`
-        // plus a `values[]` array. Routed through the Postman import flow; the
-        // main handler dispatches collections vs environments internally.
-        if (obj._postman_variable_scope === 'environment' && Array.isArray(obj.values)) {
-          return 'postman'
-        }
+        // Every Postman artifact — collection v1 / v2.0 / v2.1 (no
+        // `_postman_id` needed), environment, globals, legacy data dump, v3 —
+        // through the ONE shared classifier the main importer uses (#276).
+        // The Postman importer routes each kind itself.
+        if (classifyPostmanDocument(obj)) return 'postman'
         // Insomnia v4 export
         if (obj._type === 'export' && Array.isArray(obj.resources)) {
           return 'insomnia'

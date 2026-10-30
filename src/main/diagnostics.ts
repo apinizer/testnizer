@@ -20,6 +20,7 @@ const log = require('electron-log/main') as {
     file: { resolvePathFn?: (vars: { electronDefaultDir?: string }) => string; level: string }
     console: { level: string }
   }
+  debug: (...args: unknown[]) => void
   info: (...args: unknown[]) => void
   warn: (...args: unknown[]) => void
   error: (...args: unknown[]) => void
@@ -38,6 +39,9 @@ const archiver = require('archiver') as (
 }
 
 let initialized = false
+
+/** The main-process file log (`userData/logs/main.log`) for startup events. */
+export const mainLog: Pick<typeof log, 'debug' | 'info' | 'warn' | 'error'> = log
 
 export function initLogging(): void {
   if (initialized) return

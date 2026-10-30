@@ -48,6 +48,13 @@ export const CB_INPUT = `min-w-0 ${FIELD_LOOK} ${FIELD_DISABLED}`
  */
 export const CB_URL_FIELD = `w-full min-w-[10rem] flex-1 ${FIELD_LOOK}`
 
+/**
+ * The disabled-able wrapper of a `{{var}}` field (`VariableAutocompleteInput`):
+ * `disabled` on the fieldset disables the input and fades its overlay too.
+ * The URL's size rule (grows, never below 10rem) sits here, on the flex item.
+ */
+export const CB_URL_FIELDSET = 'm-0 flex min-w-[10rem] flex-1 border-0 p-0 disabled:opacity-60'
+
 /** The URL / command field: grows, never below 10rem (rule 4). */
 export const CB_URL = `${CB_URL_FIELD} ${FIELD_DISABLED}`
 

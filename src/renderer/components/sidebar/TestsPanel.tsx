@@ -134,6 +134,22 @@ export default function TestsPanel() {
     }
   }, [])
 
+  // Reveal a suite item (Run results folder icon on a suite run, issue #115):
+  // open its suite and drop the search filter (it filters suites by name and
+  // could hide the very suite being revealed — `revealNode` clears the APIs
+  // box for the same reason). Runs on mount too: the sidebar switch to Tests
+  // is what mounts this panel. Folder chain + scroll happen further down
+  // (`SuiteContentsTree`, `SuiteItemRow`) once the rows exist.
+  const suiteReveal = useWorkspaceStore((s) => s.suiteRevealCommand)
+  useEffect(() => {
+    if (suiteReveal.stage !== 'expand') return
+    setSearchQuery('')
+    setExpandedSuites((s) => ({ ...s, [suiteReveal.suiteId]: true }))
+    // Fresh contents: the item may have been added or moved since they loaded.
+    void loadSuiteContents(suiteReveal.suiteId)
+    useWorkspaceStore.getState().advanceSuiteReveal(suiteReveal.seq, 'scroll')
+  }, [suiteReveal, loadSuiteContents])
+
   // Auto-load suite contents on expand
   useEffect(() => {
     for (const suiteId of Object.keys(expandedSuites)) {
@@ -508,7 +524,15 @@ export default function TestsPanel() {
   // Postman v2.1 / Insomnia collection so the suite can be carried into those
   // tools (folder tree + per-item request snapshot + cascade scripts).
   const handleExportSuite = useCallback(
-    async (suiteId: string, format: 'testnizer' | 'postman' | 'insomnia' = 'testnizer') => {
+    async (
+      suiteId: string,
+      format:
+        | 'testnizer'
+        | 'postman'
+        | 'insomnia'
+        | 'postman-v3'
+        | 'postman-v3-folder' = 'testnizer',
+    ) => {
       try {
         const result = await api().save?.exportTestSuite?.(suiteId, format)
         if (!result?.success && result?.error && result.error !== 'Cancelled') {
@@ -518,8 +542,18 @@ export default function TestsPanel() {
         // WebSocket, gRPC, AI …) left out of the file instead of dropping them
         // silently (issue #197).
         if (result?.success && format !== 'testnizer') {
-          const msg = formatExportSkipped(result.data?.skipped, format, t)
+          const msg = formatExportSkipped(
+            result.data?.skipped,
+            format === 'postman-v3-folder' ? 'postman-v3' : format,
+            t,
+          )
           if (msg) toast.warning(msg)
+          const notes = result.data?.notes ?? []
+          if (notes.length > 0) {
+            toast.warning(t('export.v3Notes').replace('{count}', String(notes.length)), {
+              description: notes.slice(0, 3).join('\n') + (notes.length > 3 ? '\n…' : ''),
+            })
+          }
         }
       } catch (err) {
         console.error(err)
@@ -861,6 +895,18 @@ export default function TestsPanel() {
               />
               <ContextMenuItem
                 icon={<Upload size={13} />}
+                label={t('testsPanel.exportPostmanV3Folder')}
+                testId="suite-export-postman-v3-folder"
+                onClick={() => handleExportSuite(suite.id, 'postman-v3-folder')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
+                label={t('testsPanel.exportPostmanV3Json')}
+                testId="suite-export-postman-v3-json"
+                onClick={() => handleExportSuite(suite.id, 'postman-v3')}
+              />
+              <ContextMenuItem
+                icon={<Upload size={13} />}
                 label={t('testsPanel.exportInsomnia')}
                 onClick={() => handleExportSuite(suite.id, 'insomnia')}
               />
@@ -1174,6 +1220,18 @@ function SuiteContentsTree({
 }) {
   const { t } = useTranslation()
   const [collapsedFolders, setCollapsedFolders] = useState<Record<string, boolean>>({})
+  // A suite-item reveal opens every folder above the item (folder ids are
+  // unique across suites, so no suite check is needed).
+  const suiteReveal = useWorkspaceStore((s) => s.suiteRevealCommand)
+  useEffect(() => {
+    if (suiteReveal.stage !== 'scroll' || suiteReveal.folderIds.length === 0) return
+    setCollapsedFolders((prev) => {
+      if (!suiteReveal.folderIds.some((id) => prev[id])) return prev
+      const next = { ...prev }
+      for (const id of suiteReveal.folderIds) next[id] = false
+      return next
+    })
+  }, [suiteReveal])
   // Which suite folder's auth/scripts settings modal is open (D-2).
   const [settingsFolder, setSettingsFolder] = useState<{ id: string; name: string } | null>(null)
   const settingsFolderId = settingsFolder?.id
@@ -1323,6 +1381,9 @@ function SuiteContentsTree({
             <div style={dropLineStyle('bottom')} />
           )}
           <div
+            data-testid="suite-folder-row"
+            data-folder-id={folder.id}
+            aria-expanded={!collapsed}
             className="group flex cursor-pointer items-center gap-1.5 py-[3px] pr-3"
             draggable={renamingFolderId !== folder.id}
             style={{
@@ -1552,11 +1613,24 @@ function SuiteItemRow({
   // 'before' = drop indicator above this row (insert before)
   // 'after'  = drop indicator below this row (insert after)
   const [dropPos, setDropPos] = useState<'before' | 'after' | null>(null)
+  const isActive = useWorkspaceStore((s) => s.activeSuiteItemId === item.id)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  // Scroll a revealed item into view (issue #115) — same optional-call
+  // `scrollIntoView` as a just-created suite row (jsdom has none). Runs when
+  // the row mounts too: a folder opened by the reveal mounts it afterwards.
+  const suiteReveal = useWorkspaceStore((s) => s.suiteRevealCommand)
+  useEffect(() => {
+    if (suiteReveal.stage !== 'scroll' || suiteReveal.itemId !== item.id) return
+    rowRef.current?.scrollIntoView?.({ block: 'nearest' })
+    useWorkspaceStore.getState().advanceSuiteReveal(suiteReveal.seq, 'done')
+  }, [suiteReveal, item.id])
 
   // Clicking opens the inline-snapshot request in the Workbench. Save
   // routes back to `testSuiteItem.update`, so changes never bleed into
   // the APIs-tree endpoint the item was imported from.
   const handleOpen = useCallback(() => {
+    useWorkspaceStore.getState().setActiveSuiteItem(item.id)
     void openSuiteItemTab(item.id)
   }, [item.id])
 
@@ -1625,11 +1699,20 @@ function SuiteItemRow({
         />
       )}
       <div
+        ref={rowRef}
+        data-testid="suite-item-row"
+        data-item-id={item.id}
+        data-active={isActive ? 'true' : undefined}
         draggable={!isRenaming}
         className="flex cursor-pointer items-center gap-2 py-[3px] pr-3"
         style={{
           paddingLeft: indent + 28,
-          background: hovered ? 'var(--item-hover)' : 'transparent',
+          // Same selected look as the APIs tree row (TreeNode).
+          background: isActive
+            ? 'var(--accent-light)'
+            : hovered
+              ? 'var(--item-hover)'
+              : 'transparent',
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
@@ -1670,7 +1753,7 @@ function SuiteItemRow({
           <span
             draggable={false}
             className="flex-1 truncate"
-            style={{ fontSize: 13, color: 'var(--text)' }}
+            style={{ fontSize: 13, color: isActive ? 'var(--accent-text)' : 'var(--text)' }}
           >
             {item.name}
           </span>
@@ -1701,15 +1784,18 @@ function ContextMenuItem({
   label,
   danger,
   onClick,
+  testId,
 }: {
   icon: React.ReactNode
   label: string
   danger?: boolean
   onClick: () => void
+  testId?: string
 }) {
   return (
     <button
       type="button"
+      data-testid={testId}
       onClick={(e) => {
         e.stopPropagation()
         onClick()

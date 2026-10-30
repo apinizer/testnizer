@@ -2,6 +2,7 @@ import WebSocket from 'ws'
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
+import { decodeBinary } from '../../shared/realtime'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -10,6 +11,14 @@ export interface WsConnectOptions {
   headers?: Record<string, string>
   protocols?: string[]
   rejectUnauthorized?: boolean
+  /** Handshake timeout in ms (Settings tab, issue #282). Default 15 s. */
+  handshakeTimeout?: number
+  /** Largest incoming message in bytes; 0 = unlimited. Default: the `ws` library's 100 MiB. */
+  maxPayload?: number
+  /** Reconnection attempts after an unexpected close; 0 / omitted = none. */
+  retryCount?: number
+  /** Delay between reconnection attempts in ms. */
+  retryDelay?: number
   /**
    * Renderer-generated id that can later be passed to `cancelConnect()` so
    * the user can abort a long handshake. Optional — when omitted the
@@ -26,16 +35,26 @@ export interface WsConnectionInfo {
   connectedAt: number
 }
 
+/**
+ * Engine → renderer. `reconnecting` (issue #282): the connection dropped and
+ * attempt `attempt` starts after the retry delay; a later `open` carries
+ * `reconnected: true`. `close` is final.
+ */
 export interface WsEventPayload {
   connectionId: string
-  type: 'open' | 'message' | 'close' | 'error'
+  type: 'open' | 'message' | 'close' | 'error' | 'reconnecting'
   data?: string
   code?: number
   reason?: string
   timestamp: number
   messageId?: string
   contentType?: 'text' | 'json' | 'binary'
+  attempt?: number
+  reconnected?: boolean
 }
+
+/** Default handshake timeout (the fixed timer before issue #282). */
+export const WS_DEFAULT_HANDSHAKE_TIMEOUT_MS = 15_000
 
 // ─── Connection manager ─────────────────────────────────────
 
@@ -45,6 +64,12 @@ interface ManagedConnection {
   url: string
   connectedAt: number
   windowId: number
+  options: WsConnectOptions
+  /** Set by `disconnect()`: the close that follows is the user's, never retried. */
+  userClosed: boolean
+  /** Reconnection attempts since the last successful open. */
+  attempts: number
+  retryTimer?: ReturnType<typeof setTimeout>
 }
 
 const connections = new Map<string, ManagedConnection>()
@@ -96,19 +121,135 @@ export function describeWebSocketError(err: unknown): string {
 
 // ─── Public API ─────────────────────────────────────────────
 
+function newSocket(options: WsConnectOptions): WebSocket {
+  const wsOptions: WebSocket.ClientOptions = {
+    headers: options.headers ?? {},
+    rejectUnauthorized: options.rejectUnauthorized !== false,
+    // A second behind the connect timer below (whose message names the
+    // setting); the only timer of a reconnection attempt.
+    handshakeTimeout: (options.handshakeTimeout ?? WS_DEFAULT_HANDSHAKE_TIMEOUT_MS) + 1000,
+  }
+  if (options.maxPayload !== undefined) wsOptions.maxPayload = options.maxPayload
+  return new WebSocket(options.url, options.protocols ?? [], wsOptions)
+}
+
+/** A received frame → the renderer's text / JSON / binary (base64) message. */
+function messageEvent(
+  connectionId: string,
+  data: WebSocket.RawData,
+  isBinary: boolean,
+): WsEventPayload {
+  let content: string
+  let contentType: 'text' | 'json' | 'binary'
+  if (isBinary) {
+    const buf = Buffer.isBuffer(data)
+      ? data
+      : Array.isArray(data)
+        ? Buffer.concat(data)
+        : Buffer.from(data as ArrayBuffer)
+    content = buf.toString('base64')
+    contentType = 'binary'
+  } else {
+    content = data.toString()
+    contentType = 'text'
+    try {
+      JSON.parse(content)
+      contentType = 'json'
+    } catch {
+      // Not JSON, keep as text
+    }
+  }
+  return {
+    connectionId,
+    type: 'message',
+    data: content,
+    timestamp: Date.now(),
+    messageId: randomUUID(),
+    contentType,
+  }
+}
+
+/**
+ * Wire an opened (or re-opened) socket of `managed`: messages, and the close
+ * that either ends the connection or — when it was not the user's and
+ * reconnection is configured — schedules the next attempt (issue #282).
+ */
+function attachLive(managed: ManagedConnection): void {
+  const { ws, connectionId, windowId } = managed
+  ws.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
+    if (managed.ws !== ws) return
+    sendEventToRenderer(windowId, messageEvent(connectionId, data, isBinary))
+  })
+  ws.on('close', (code: number, reason: Buffer) => {
+    if (managed.ws !== ws) return
+    onSocketClosed(managed, code, reason.toString())
+  })
+}
+
+function onSocketClosed(managed: ManagedConnection, code: number, reason: string): void {
+  const retry = managed.options.retryCount ?? 0
+  const live = connections.get(managed.connectionId) === managed
+  if (live && !managed.userClosed && managed.attempts < retry) {
+    managed.attempts += 1
+    sendEventToRenderer(managed.windowId, {
+      connectionId: managed.connectionId,
+      type: 'reconnecting',
+      attempt: managed.attempts,
+      code,
+      reason,
+      timestamp: Date.now(),
+    })
+    managed.retryTimer = setTimeout(() => reconnect(managed), managed.options.retryDelay ?? 0)
+    return
+  }
+  if (live) connections.delete(managed.connectionId)
+  sendEventToRenderer(managed.windowId, {
+    connectionId: managed.connectionId,
+    type: 'close',
+    code,
+    reason,
+    timestamp: Date.now(),
+  })
+}
+
+/** One reconnection attempt; its failure closes the socket, which retries or ends. */
+function reconnect(managed: ManagedConnection): void {
+  managed.retryTimer = undefined
+  if (connections.get(managed.connectionId) !== managed || managed.userClosed) return
+  let ws: WebSocket
+  try {
+    ws = newSocket(managed.options)
+  } catch {
+    onSocketClosed(managed, 1006, 'reconnect failed')
+    return
+  }
+  managed.ws = ws
+  attachLive(managed)
+  // A failed attempt surfaces as 'close' (handled above); its 'error' is not
+  // a new error state for the renderer — the reconnecting row says it all.
+  ws.on('error', () => {})
+  ws.on('open', () => {
+    if (managed.ws !== ws) return
+    managed.attempts = 0
+    managed.connectedAt = Date.now()
+    sendEventToRenderer(managed.windowId, {
+      connectionId: managed.connectionId,
+      type: 'open',
+      reconnected: true,
+      timestamp: Date.now(),
+    })
+  })
+}
+
 export function connect(options: WsConnectOptions, windowId: number): Promise<WsConnectionInfo> {
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
-
-    const wsOptions: WebSocket.ClientOptions = {
-      headers: options.headers ?? {},
-      rejectUnauthorized: options.rejectUnauthorized !== false,
-    }
+    const timeoutMs = options.handshakeTimeout ?? WS_DEFAULT_HANDSHAKE_TIMEOUT_MS
 
     let ws: WebSocket
 
     try {
-      ws = new WebSocket(options.url, options.protocols ?? [], wsOptions)
+      ws = newSocket(options)
     } catch (err) {
       reject(err instanceof Error ? err : new Error(String(err)))
       return
@@ -126,20 +267,25 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       url: options.url,
       connectedAt: Date.now(),
       windowId,
+      options,
+      userClosed: false,
+      attempts: 0,
     }
 
-    // Set a connection timeout
+    // Our own timer next to `ws`'s `handshakeTimeout` so the message names
+    // the configured value.
     const timeout = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
         ws.terminate()
         connections.delete(connectionId)
-        reject(new Error('WebSocket connection timeout (15s)'))
+        reject(new Error(`WebSocket connection timeout (${Math.round(timeoutMs / 100) / 10}s)`))
       }
-    }, 15000)
+    }, timeoutMs)
 
     ws.on('open', () => {
       clearTimeout(timeout)
       if (options.pendingId) pendingConnects.delete(options.pendingId)
+      managed.connectedAt = Date.now()
       connections.set(connectionId, managed)
 
       sendEventToRenderer(windowId, {
@@ -156,49 +302,7 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       })
     })
 
-    ws.on('message', (data: WebSocket.RawData, isBinary: boolean) => {
-      const messageId = randomUUID()
-      let content: string
-      let contentType: 'text' | 'json' | 'binary'
-
-      if (isBinary) {
-        content = Buffer.isBuffer(data)
-          ? data.toString('base64')
-          : Buffer.from(data as ArrayBuffer).toString('base64')
-        contentType = 'binary'
-      } else {
-        content = data.toString()
-        contentType = 'text'
-        // Try to detect JSON
-        try {
-          JSON.parse(content)
-          contentType = 'json'
-        } catch {
-          // Not JSON, keep as text
-        }
-      }
-
-      sendEventToRenderer(windowId, {
-        connectionId,
-        type: 'message',
-        data: content,
-        timestamp: Date.now(),
-        messageId,
-        contentType,
-      })
-    })
-
-    ws.on('close', (code: number, reason: Buffer) => {
-      connections.delete(connectionId)
-
-      sendEventToRenderer(windowId, {
-        connectionId,
-        type: 'close',
-        code,
-        reason: reason.toString(),
-        timestamp: Date.now(),
-      })
-    })
+    attachLive(managed)
 
     ws.on('error', (err: Error) => {
       clearTimeout(timeout)
@@ -215,7 +319,6 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       // If we haven't connected yet, reject the promise with the enriched
       // message so the renderer surfaces the same text as the error event.
       if (!connections.has(connectionId)) {
-        connections.delete(connectionId)
         reject(new Error(message))
       }
     })
@@ -245,6 +348,8 @@ export function disconnect(connectionId: string): boolean {
     return false
   }
 
+  managed.userClosed = true
+  if (managed.retryTimer) clearTimeout(managed.retryTimer)
   try {
     managed.ws.close(1000, 'Client disconnected')
   } catch {
@@ -255,7 +360,15 @@ export function disconnect(connectionId: string): boolean {
   return true
 }
 
-export function sendMessage(connectionId: string, message: string): boolean {
+/**
+ * Send one frame. `binary` (issue #282): the content is base64 / hex text,
+ * decoded here into a binary frame — never sent as the text itself.
+ */
+export function sendMessage(
+  connectionId: string,
+  message: string,
+  opts: { binary?: 'base64' | 'hex' } = {},
+): boolean {
   const managed = connections.get(connectionId)
   if (!managed) {
     throw new Error(`No active connection with id: ${connectionId}`)
@@ -265,6 +378,12 @@ export function sendMessage(connectionId: string, message: string): boolean {
     throw new Error(`WebSocket is not open (state: ${managed.ws.readyState})`)
   }
 
+  if (opts.binary) {
+    const res = decodeBinary(message, opts.binary)
+    if (!res.ok) throw new Error(res.error)
+    managed.ws.send(Buffer.from(res.bytes), { binary: true })
+    return true
+  }
   managed.ws.send(message)
   return true
 }

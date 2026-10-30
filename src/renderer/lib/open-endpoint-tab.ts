@@ -6,6 +6,11 @@ import type {
   AuthConfig,
   TestAssertion,
 } from '../types'
+import {
+  readPathVariables,
+  readPathVariablesJson,
+  type PathVariableLike,
+} from '../../shared/path-variables'
 import { useTabsStore } from '../stores/tabs.store'
 import { useRequestStore } from '../stores/request.store'
 import { useResponseStore } from '../stores/response.store'
@@ -125,6 +130,8 @@ export async function openEndpointTab(id: string): Promise<void> {
         postScript: sr.post_script ?? '',
         assertions,
         ...requestStoreSettings(settings),
+        // `:name` values ride in `metadata` like the settings (issue #276).
+        pathVariables: readPathVariablesJson(sr.metadata),
       })
       restoreRequestSettings((sr.protocol || 'http') as string, settings)
       // Re-hydrate protocol-specific state (SOAP/WS/SSE/Socket.IO/gRPC/GraphQL)
@@ -172,11 +179,13 @@ export async function openEndpointTab(id: string): Promise<void> {
       let method = ep.method || 'GET'
       let metadata: unknown = undefined
       let settings: RequestSettings = {}
+      let pathVariables: PathVariableLike[] = []
 
       if (ep.request_schema) {
         try {
           const schema = JSON.parse(ep.request_schema)
           settings = readRequestSettings(schema)
+          pathVariables = readPathVariables(schema)
           params = schema.params || []
           headers = schema.headers || []
           body = schema.body || { type: 'none' }
@@ -219,6 +228,7 @@ export async function openEndpointTab(id: string): Promise<void> {
         postScript,
         assertions,
         ...requestStoreSettings(settings),
+        pathVariables,
       })
       restoreRequestSettings(protocol, settings)
       // Restore protocol-specific state from request_schema.metadata (#18).
@@ -281,9 +291,11 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
     let preScript = ''
     let postScript = ''
     let settings: RequestSettings = {}
+    let pathVariables: PathVariableLike[] = []
     try {
       const schema = JSON.parse(item.request_schema || '{}')
       settings = readRequestSettings(schema)
+      pathVariables = readPathVariables(schema)
       params = schema.params || []
       headers = schema.headers || []
       body = schema.body || { type: 'none' }
@@ -330,6 +342,7 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
       postScript,
       assertions,
       ...requestStoreSettings(settings),
+      pathVariables,
     })
     restoreRequestSettings(protocol, settings)
 

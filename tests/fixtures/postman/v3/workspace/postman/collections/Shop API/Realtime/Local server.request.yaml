@@ -1,0 +1,10 @@
+$kind: mcp-request
+transport: stdio
+command: npx -y @modelcontextprotocol/server-everything
+env:
+  - key: LOG_LEVEL
+    value: debug
+message: '{"jsonrpc":"2.0","id":2,"method":"resources/read","params":{"uri":"file:///readme.md"}}'
+settings:
+  version: legacy
+order: 6000

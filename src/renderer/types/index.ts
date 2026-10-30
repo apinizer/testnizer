@@ -18,6 +18,7 @@ export type Protocol =
   | 'ai'
   | 'mcp'
   | 'socketio'
+  | 'mqtt'
   | 'runner'
   | 'mockServer'
   // Mock MCP Server editor (issue #140) — tab carries `mockMcpServerId`.
@@ -455,6 +456,8 @@ export interface TreeNode {
   /** Example rows: which request row owns them (mirrors saved_responses.owner_*). */
   ownerType?: SavedResponseOwnerType
   ownerId?: string
+  /** Request rows marked Critical in their Settings tab (issue #304) — Runner badge. */
+  critical?: boolean
   icon?: string
   count?: number
   countColor?: string
@@ -910,10 +913,14 @@ export interface ConsoleLog {
 
 export interface WsMessage {
   id: string
-  direction: 'sent' | 'received'
+  /** `system`: a connection row (issue #282) — `event` names it, `content` carries the detail. */
+  direction: 'sent' | 'received' | 'system'
+  /** `binary`: `content` is base64. */
   content: string
-  contentType: 'text' | 'json' | 'binary'
+  contentType: 'text' | 'json' | 'xml' | 'html' | 'binary'
   timestamp: number
+  /** System rows: `connected`, `disconnected`, `error`, `reconnecting`, `reconnected`. */
+  event?: string
 }
 
 // ─── SSE ─────────────────────────────────────────────────────
@@ -980,6 +987,8 @@ export interface TestResult {
   passed: boolean
   actual?: string | number
   error?: string
+  /** `pm.test.skip(...)` — never ran; recorded as not-failed (issue #281). */
+  skipped?: boolean
 }
 
 // ─── History ─────────────────────────────────────────────────
@@ -1068,7 +1077,12 @@ export interface ImportResult {
   collectionId?: string
   endpointCount?: number
   folderCount?: number
+  /** Saved examples written (Postman `response[]`, issue #276). */
+  exampleCount?: number
+  /** Set when the import wrote an environment (Postman environment / globals file). */
+  environmentName?: string
   suggestedEnvVars?: Record<string, string>
+  /** Everything skipped or degraded, one line per item (shown in the Import result step). */
   warnings?: string[]
   error?: string
 }

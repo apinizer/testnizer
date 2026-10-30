@@ -126,6 +126,26 @@ export async function openImportModal(page: Page): Promise<void> {
   await expect(page.getByTestId('import-modal')).toBeVisible({ timeout: 8_000 })
 }
 
+/**
+ * After clicking Import: the modal either closes, or (issue #276) shows the
+ * result step listing what could not be imported as-is — then click Done.
+ */
+export async function finishImportWizard(page: Page, timeout = 60_000): Promise<void> {
+  const modal = page.getByTestId('import-modal')
+  const result = page.getByTestId('import-result')
+  await expect(modal.or(result).first()).toBeVisible({ timeout: 5_000 }).catch(() => {})
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (!(await modal.isVisible().catch(() => false))) return
+    if (await result.isVisible().catch(() => false)) {
+      await page.getByTestId('import-result-done').click()
+      break
+    }
+    await page.waitForTimeout(150)
+  }
+  await expect(modal).toBeHidden({ timeout: Math.max(1_000, deadline - Date.now()) })
+}
+
 export async function selectImportFormat(page: Page, formatName: RegExp | string): Promise<void> {
   const modal = page.getByTestId('import-modal')
   await modal.getByRole('button', { name: formatName }).click()
@@ -141,7 +161,7 @@ export async function importCurlCommand(page: Page, curl: string, folderName?: s
     await modal.getByPlaceholder('Folder name').fill(folderName)
   }
   await modal.getByRole('button', { name: /^Import$/i }).click()
-  await expect(page.getByTestId('import-modal')).toBeHidden({ timeout: 30_000 })
+  await finishImportWizard(page, 30_000)
 }
 
 export async function importFromUrl(
@@ -159,7 +179,7 @@ export async function importFromUrl(
     await modal.getByPlaceholder('Folder name').fill(folderName)
   }
   await modal.getByRole('button', { name: /^Import$/i }).click()
-  await expect(page.getByTestId('import-modal')).toBeHidden({ timeout: 60_000 })
+  await finishImportWizard(page)
 }
 
 export async function importFromFile(
@@ -180,5 +200,5 @@ export async function importFromFile(
     await modal.getByPlaceholder('Folder name').fill(folderName)
   }
   await modal.getByRole('button', { name: /^Import$/i }).click()
-  await expect(page.getByTestId('import-modal')).toBeHidden({ timeout: 60_000 })
+  await finishImportWizard(page)
 }

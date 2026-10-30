@@ -1,0 +1,7 @@
+$kind: http-request
+method: POST
+url: https://ping.example.test/echo
+body:
+  type: text
+  content: hello
+order: 1000

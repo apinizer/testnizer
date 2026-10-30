@@ -11,7 +11,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { bootstrapWorkbench, closeAllTabs } from '../helpers/ui/bootstrap'
-import { electronLaunchOptions } from '../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../helpers/electron-env'
 
 export interface UiFixtures {
   app: ElectronApplication
@@ -36,6 +36,11 @@ const KNOWN_BENIGN_CONSOLE_ERRORS: RegExp[] = [
   // success tripped this guard — the one case where the error IS the expected
   // result. Narrow on purpose: only the refusal message, nothing else.
   /Refused to connect to .* because it violates (the following )?(the document's )?Content Security Policy/i,
+  // Same refusal, Chromium 152 wording (Electron 44, issue #291): the blocked
+  // connect is reported as "Connecting to '…' violates the following Content
+  // Security Policy directive", followed by a Fetch API line.
+  /Connecting to '.*' violates the following Content Security Policy directive: "connect-src/i,
+  /Fetch API cannot load .*\. Refused to connect because it violates the document's Content Security Policy/i,
   // Monaco uses a `Canceled` exception as CONTROL FLOW when a pending delayer
   // is disposed — which happens whenever an editor unmounts with work in
   // flight (switching tabs, closing a tool). It surfaces as an unhandled
@@ -164,7 +169,7 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
   ],
   window: [
     async ({ app }, use) => {
-      const win = await app.firstWindow()
+      const win = await firstAppWindow(app)
       await win.waitForLoadState('domcontentloaded')
       await bootstrapWorkbench(win)
       await use(win)

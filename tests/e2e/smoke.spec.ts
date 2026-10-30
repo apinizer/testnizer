@@ -2,7 +2,7 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { electronLaunchOptions } from './helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from './helpers/electron-env'
 import {
   bootstrapWorkbench,
   navigateSidebar,
@@ -25,7 +25,7 @@ test.beforeAll(async () => {
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-e2e-'))
 
   app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-  window = await app.firstWindow()
+  window = await firstAppWindow(app)
   await window.waitForLoadState('domcontentloaded')
 })
 

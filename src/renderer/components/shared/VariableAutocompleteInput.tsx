@@ -2,20 +2,10 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useUIStore } from '../../stores/ui.store'
+import { DYNAMIC_VARIABLES, isKnownDynamicVariable } from '../../../shared/dynamic-variables'
 
-/** Built-in dynamic variables with $ prefix */
-const BUILTIN_DYNAMIC_VARS: { name: string; description: string }[] = [
-  { name: '$randomInt', description: 'Random integer 0-1000' },
-  { name: '$randomInt(min,max)', description: 'Random integer in range' },
-  { name: '$timestamp', description: 'Unix timestamp (seconds)' },
-  { name: '$isoTimestamp', description: 'ISO 8601 date string' },
-  { name: '$randomUUID', description: 'Random UUID v4' },
-  { name: '$randomEmail', description: 'Random email address' },
-  { name: '$randomName', description: 'Random full name' },
-  { name: '$randomString', description: 'Random 8-char string' },
-  { name: '$randomString(n)', description: 'Random n-char string' },
-  { name: '$datetime(format)', description: 'Formatted date (YYYY-MM-DD etc.)' },
-]
+/** Built-in dynamic variables — the shared table Send, Run and Mock resolve (issue #281). */
+const BUILTIN_DYNAMIC_VARS: readonly { name: string; description: string }[] = DYNAMIC_VARIABLES
 
 type VariableCategory = 'environment' | 'global' | 'dynamic'
 
@@ -44,6 +34,19 @@ interface VariableAutocompleteInputProps {
   spellCheck?: boolean
   /** Passed to the `<input>` (`off` for URL fields). */
   autoComplete?: string
+  /**
+   * Passed to the `<input>`. Read the text from `e.clipboardData` — the input
+   * strips newlines from its value — and `preventDefault()` to take it over
+   * (the HTTP URL bar's cURL paste, issue #278).
+   */
+  onPaste?: (e: React.ClipboardEvent<HTMLInputElement>) => void
+  /**
+   * `password` keeps the field masked: suggestions still open on `{{`, but no
+   * coloured overlay is drawn — it would show the text in clear.
+   */
+  type?: 'text' | 'password'
+  'aria-label'?: string
+  'aria-describedby'?: string
 }
 
 /**
@@ -60,7 +63,12 @@ export default function VariableAutocompleteInput({
   'data-testid': testId,
   spellCheck,
   autoComplete,
+  onPaste,
+  type = 'text',
+  'aria-label': ariaLabel,
+  'aria-describedby': ariaDescribedBy,
 }: VariableAutocompleteInputProps) {
+  const masked = type === 'password'
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [queryStart, setQueryStart] = useState(-1) // cursor position where {{ started
@@ -109,8 +117,9 @@ export default function VariableAutocompleteInput({
     } => {
       const trimmed = name.trim()
 
-      // Dynamic ($randomInt, $timestamp, …) — resolved at request time
-      if (trimmed.startsWith('$')) {
+      // Dynamic ($randomInt, $timestamp, …) — resolved at request time. An
+      // unknown `$name` is sent as written, so it is shown as unresolved.
+      if (trimmed.startsWith('$') && isKnownDynamicVariable(trimmed)) {
         return { value: '(generated at send time)', category: 'dynamic', envName: null }
       }
 
@@ -374,12 +383,13 @@ export default function VariableAutocompleteInput({
 
   // Hide the real text in the input so only the overlay shows colored text,
   // but keep the caret visible.
-  const inputOverlayHider: React.CSSProperties = value
-    ? {
-        color: 'transparent',
-        caretColor: ((inputStyle as React.CSSProperties).color as string) || 'var(--text)',
-      }
-    : {}
+  const inputOverlayHider: React.CSSProperties =
+    value && !masked
+      ? {
+          color: 'transparent',
+          caretColor: ((inputStyle as React.CSSProperties).color as string) || 'var(--text)',
+        }
+      : {}
 
   return (
     <>
@@ -395,9 +405,13 @@ export default function VariableAutocompleteInput({
         <input
           ref={inputRef}
           data-testid={testId}
+          type={type}
+          aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           spellCheck={spellCheck}
           autoComplete={autoComplete}
@@ -430,7 +444,7 @@ export default function VariableAutocompleteInput({
             variable" report. Variables are distinguished by color only.
           */}
           <span style={{ whiteSpace: 'pre' }}>
-            {segments.map((seg, i) => {
+            {(masked ? [] : segments).map((seg, i) => {
               if (!seg.isVar) return <span key={i}>{seg.text}</span>
               // Strip the surrounding `{{` `}}` to extract the bare name.
               const varName = seg.text.slice(2, -2)

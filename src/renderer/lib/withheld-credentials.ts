@@ -28,6 +28,7 @@ import { useSseStore, SSE_CREDENTIALS } from '../stores/sse.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { useGrpcStore, GRPC_CREDENTIALS } from '../stores/grpc.store'
 import { useSocketIOStore, SIO_CREDENTIALS } from '../stores/socketio.store'
+import { useMqttStore, MQTT_CREDENTIALS } from '../stores/mqtt.store'
 import { useSoapStore, SOAP_CREDENTIALS } from '../stores/soap.store'
 import { HTTP_CREDENTIALS } from '../stores/request.store'
 import { MCP_CREDENTIALS } from '../stores/mcp.store'
@@ -40,6 +41,7 @@ import {
   restoreRequestSettings,
 } from './save-active-request'
 import { readRequestSettings } from '../../shared/request-settings'
+import { readPathVariables } from '../../shared/path-variables'
 import type {
   AuthConfig,
   HttpMethod,
@@ -183,6 +185,8 @@ async function readBoundRowState(
         // Timeout / redirects / SSL ride at the top of `metadata` on this
         // table (#185) — lifted here so `request` reads like a request_schema.
         ...readRequestSettings(meta),
+        // Path variable values sit there too (issue #276).
+        ...(Array.isArray(meta.pathVariables) ? { pathVariables: meta.pathVariables } : {}),
         params: params.value,
         body: body.value,
         headers: headers.value,
@@ -338,6 +342,7 @@ function reloadUnloadedTab(tab: BoundTab, row: BoundRow | undefined): void {
         postScript: stringOr(r.postScript, ''),
         assertions: arrayOr<TestAssertion>(r.assertions, []),
         ...requestStoreSettings(settings),
+        pathVariables: readPathVariables(r),
       },
       // Nothing on the slice to keep — it was never loaded.
       { force: true },
@@ -401,13 +406,22 @@ const ADAPTERS: WithheldAdapter[] = [
     metaBlock('soap'),
     SOAP_CREDENTIALS,
   ),
-  // The connection URL (issue #247) — the generic marker.
+  // The connection URL (issue #247), handshake rows (#283) and emit / saved
+  // message arguments (#284 audit) — the generic marker.
   tabbedAdapter(
-    'Socket.IO URL',
+    'Socket.IO credentials',
     'socketio',
     asTabbed(useSocketIOStore),
     metaBlock('socketio'),
     SIO_CREDENTIALS,
+  ),
+  // Password, broker URL, credential-named user properties (issue #284).
+  tabbedAdapter(
+    'MQTT credentials',
+    'mqtt',
+    asTabbed(useMqttStore),
+    metaBlock('mqtt'),
+    MQTT_CREDENTIALS,
   ),
   // The bearer token keeps its own single-field marker (issue #243).
   {

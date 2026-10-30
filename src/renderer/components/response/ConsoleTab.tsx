@@ -87,6 +87,7 @@ export default function ConsoleTab({ tabFilterId }: ConsoleTabProps = {}) {
     { key: 'websocket', label: 'WebSocket' },
     { key: 'sse', label: 'SSE' },
     { key: 'socketio', label: 'Socket.IO' },
+    { key: 'mqtt', label: 'MQTT' },
     { key: 'mcp', label: 'MCP' },
     { key: 'ai', label: 'AI Chat' },
     { key: 'warn', label: t('console.filter.warn') },

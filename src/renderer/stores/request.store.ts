@@ -11,6 +11,7 @@ import type {
 } from '../types'
 import { loadTabbedState, attachTabbedPersist, storedBoundTabs } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   remapWithheldRows,
@@ -39,10 +40,18 @@ import {
   resolveRequestBody,
 } from '../lib/variable-resolver'
 import { runAssertions, runScript, createPmApi, resolveAssertionVars } from '../lib/test-runner'
+import {
+  absorbScriptWrites,
+  emptyScriptWrites,
+  persistScriptWrites,
+  sendScriptScopes,
+} from '../lib/script-scopes'
 import { resolveInheritance } from '../lib/auth-inheritance'
 import { makeId } from '../lib/utils'
+import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
 import { httpMaskedSendError } from '../lib/masked-send-guard'
 import { resolveHttpTimeout } from '../../shared/request-settings'
+import { applyPathVariables, syncPathVariables } from '../../shared/path-variables'
 // Shared dirty-flag helper, also used by the protocol stores so the blue dot
 // is consistent across request types (issue #8). Aliased to keep the existing
 // `markActiveDirty()` call sites unchanged.
@@ -52,52 +61,25 @@ function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
 }
 
-// ─── URL ⇄ Query-param sync (issue #22) ───────────────────────
-// The URL bar and the Params tab were independent: adding a param never
-// touched the URL. Keep them in lockstep without encoding (so `{{vars}}`
-// survive intact, matching what the URL bar renders) and without losing
-// disabled rows.
-function buildQueryString(params: KeyValuePair[]): string {
-  return params
-    .filter((p) => p.enabled && p.key.trim() !== '')
-    .map((p) => (p.value !== '' ? `${p.key}=${p.value}` : p.key))
-    .join('&')
+/** The Path Variables rows the URL's `:name` segments call for (issue #276). */
+function pathRowsFor(url: string, rows: readonly KeyValuePair[]): KeyValuePair[] {
+  return syncPathVariables(url, rows, (key) => defaultKv(key, ''))
 }
 
-/** Rewrite the URL's query string from the current params (enabled only). */
-function applyParamsToUrl(url: string, params: KeyValuePair[]): string {
-  const base = url.split('?')[0]
-  const qs = buildQueryString(params)
-  return qs ? `${base}?${qs}` : base
-}
-
-/**
- * Derive params from the URL's query, preserving any disabled rows the user
- * set in the Params tab (those never appear in the URL). Enabled rows are
- * rebuilt from the query.
- */
-function mergeParamsFromUrl(url: string, existing: KeyValuePair[]): KeyValuePair[] {
-  const qIdx = url.indexOf('?')
-  const fromUrl: KeyValuePair[] = []
-  if (qIdx !== -1) {
-    const qs = url.slice(qIdx + 1)
-    for (const pair of qs.split('&')) {
-      if (!pair) continue
-      const eq = pair.indexOf('=')
-      const key = eq === -1 ? pair : pair.slice(0, eq)
-      const value = eq === -1 ? '' : pair.slice(eq + 1)
-      fromUrl.push({ id: makeId(), key, value, enabled: true })
-    }
-  }
-  const disabled = existing.filter((p) => !p.enabled)
-  return [...fromUrl, ...disabled]
-}
+// URL ⇄ Query-param sync (issue #22): `lib/url-query-sync.ts`, shared with
+// the WebSocket and Socket.IO Params tabs.
 
 /** Snapshot of request state for a single tab */
 interface TabRequestState extends WithheldState {
   method: HttpMethod
   url: string
   params: KeyValuePair[]
+  /**
+   * Values of the URL's `:name` path segments (issue #276) — one row per
+   * name, derived from the URL (`src/shared/path-variables.ts`). Stored as
+   * `pathVariables` with the request; Send / Run / codegen substitute them.
+   */
+  pathVariables: KeyValuePair[]
   headers: KeyValuePair[]
   body: RequestBody
   auth: AuthConfig
@@ -121,6 +103,13 @@ interface TabRequestState extends WithheldState {
   sslVerification: boolean
   requestTimeout: number | null
   /**
+   * Issue #304: a Run stops when this request does not pass, whatever the
+   * run-level "Stop on error" says. Every protocol the Runner runs keeps it
+   * here (MCP / SOAP / GraphQL tabs have a request-store slice too) and
+   * `requestSettingsFor` writes it as the row's top-level `critical`.
+   */
+  critical: boolean
+  /**
    * The tab is bound to a saved row (endpoint / saved request / suite item)
    * but this slice was never filled from it: the cache cap dropped it, or the
    * snapshot read at startup did not hold it. Like a withheld credential
@@ -138,6 +127,7 @@ function emptyTabState(): TabRequestState {
     method: 'GET',
     url: '',
     params: [],
+    pathVariables: [],
     headers: [],
     body: { type: 'none' },
     // New requests default to inheriting auth from their folder / project
@@ -151,6 +141,7 @@ function emptyTabState(): TabRequestState {
     maxRedirects: 5,
     sslVerification: true,
     requestTimeout: null,
+    critical: false,
     withheldCredentials: [],
     unloaded: false,
     unloadedProtocol: false,
@@ -205,6 +196,7 @@ export const HTTP_CREDENTIALS: CredentialSpec = {
   rows: [
     credentialRows('headers'),
     argRows('params'),
+    argRows('pathVariables'),
     argRows('body.formData', (r) => r.type === 'file'),
     argRows('body.urlEncoded'),
   ],
@@ -250,6 +242,11 @@ interface RequestStore extends TabRequestState {
   addParam: () => void
   updateParam: (id: string, updates: Partial<KeyValuePair>) => void
   removeParam: (id: string) => void
+  /** Edit a Path Variables row's value / description (its key follows the URL). */
+  updatePathVariable: (
+    id: string,
+    updates: Partial<Pick<KeyValuePair, 'value' | 'description'>>,
+  ) => void
   setHeaders: (headers: KeyValuePair[]) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
@@ -265,6 +262,7 @@ interface RequestStore extends TabRequestState {
   setMaxRedirects: (v: number) => void
   setSslVerification: (v: boolean) => void
   setRequestTimeout: (v: number | null) => void
+  setCritical: (v: boolean) => void
   sendRequest: () => Promise<void>
   /** Abort the in-flight HTTP request, if any. No-op when nothing is in flight. */
   cancelRequest: () => Promise<void>
@@ -273,6 +271,8 @@ interface RequestStore extends TabRequestState {
       method: HttpMethod
       url: string
       params?: KeyValuePair[]
+      /** Stored rows (`readPathVariables`); re-derived from `url` on load. */
+      pathVariables?: Array<Partial<KeyValuePair> & { key: string; value: string }>
       headers?: KeyValuePair[]
       body?: RequestBody
       auth?: AuthConfig
@@ -283,6 +283,7 @@ interface RequestStore extends TabRequestState {
       maxRedirects?: number
       sslVerification?: boolean
       requestTimeout?: number | null
+      critical?: boolean
     },
     opts?: {
       /**
@@ -316,6 +317,7 @@ function extractState(s: RequestStore): TabRequestState {
     method: s.method,
     url: s.url,
     params: s.params,
+    pathVariables: s.pathVariables,
     headers: s.headers,
     body: s.body,
     auth: s.auth,
@@ -326,6 +328,7 @@ function extractState(s: RequestStore): TabRequestState {
     maxRedirects: s.maxRedirects,
     sslVerification: s.sslVerification,
     requestTimeout: s.requestTimeout,
+    critical: s.critical,
     withheldCredentials: s.withheldCredentials,
     unloaded: s.unloaded,
     unloadedProtocol: s.unloadedProtocol,
@@ -389,6 +392,8 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   maxRedirects: persisted.current.maxRedirects ?? 5,
   sslVerification: persisted.current.sslVerification ?? true,
   requestTimeout: persisted.current.requestTimeout ?? null,
+  critical: persisted.current.critical ?? false,
+  pathVariables: persisted.current.pathVariables ?? [],
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
   _inflightByTab: {},
@@ -405,7 +410,12 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   },
   setUrl: (url) => {
     // Keep the Params tab in sync with the query the user typed (#22).
-    set((state) => ({ url, params: mergeParamsFromUrl(url, state.params) }))
+    set((state) => ({
+      url,
+      params: mergeParamsFromUrl(url, state.params),
+      // Rows follow the URL's `:name` segments (issue #276).
+      pathVariables: pathRowsFor(url, state.pathVariables ?? []),
+    }))
     markActiveDirty()
   },
 
@@ -432,6 +442,20 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       const params = state.params.filter((p) => p.id !== id)
       return { params, url: applyParamsToUrl(state.url, params) }
     })
+    markActiveDirty()
+  },
+  updatePathVariable: (id, updates) => {
+    set((state) => ({
+      pathVariables: (state.pathVariables ?? []).map((p) =>
+        p.id === id
+          ? {
+              ...p,
+              ...(updates.value !== undefined ? { value: updates.value } : {}),
+              ...(updates.description !== undefined ? { description: updates.description } : {}),
+            }
+          : p,
+      ),
+    }))
     markActiveDirty()
   },
 
@@ -516,6 +540,10 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     set({ requestTimeout: v != null && Number.isFinite(v) && v >= 0 ? v : null })
     markActiveDirty()
   },
+  setCritical: (v) => {
+    set({ critical: v })
+    markActiveDirty()
+  },
 
   switchToTab: (tabId) => {
     const state = get()
@@ -573,44 +601,41 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     set({ _tabStates: tabStates })
   },
 
-  cloneTabState: (srcTabId, dstTabId) => {
-    const state = get()
-    // Pull from cache, but if the source tab is the currently-loaded one its
-    // latest edits live on the live state — not in the cache yet.
-    const srcState =
-      state._currentTabId === srcTabId ? extractState(state) : state._tabStates.get(srcTabId)
-    if (!srcState) return
-    const tabStates = new Map(state._tabStates)
-    // KV/asssertion arrays carry stable ids — re-stamp them so future edits
-    // on the duplicate don't accidentally mutate the source via a shared id.
-    const rowIds = new Map<string, string>()
-    const restamp = (r: KeyValuePair): KeyValuePair => {
-      const id = makeId()
-      rowIds.set(r.id, id)
-      return { ...r, id }
-    }
-    const headers = srcState.headers.map(restamp)
-    tabStates.set(dstTabId, {
-      ...srcState,
-      params: srcState.params.map(restamp),
-      headers,
-      assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
-      // Issue #244: a value still withheld on the source stays withheld on
-      // the copy (its row is a copy of the source's), so Ctrl+S on the copy
-      // reloads it instead of writing the empty field.
-      withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], rowIds),
-      // The copy is a new draft: there is no row to reload it from.
-      unloaded: false,
-      unloadedProtocol: false,
-    })
-    set({ _tabStates: tabStates })
-  },
+  cloneTabState: (srcTabId, dstTabId) =>
+    // Live source / live destination handled by the one helper (a bound
+    // duplicate is already the current tab when this runs).
+    cloneTabSlice(useRequestStore, extractState, srcTabId, dstTabId, (srcState) => {
+      // KV/asssertion arrays carry stable ids — re-stamp them so future edits
+      // on the duplicate don't accidentally mutate the source via a shared id.
+      const rowIds = new Map<string, string>()
+      const restamp = (r: KeyValuePair): KeyValuePair => {
+        const id = makeId()
+        rowIds.set(r.id, id)
+        return { ...r, id }
+      }
+      const headers = srcState.headers.map(restamp)
+      return {
+        ...srcState,
+        params: srcState.params.map(restamp),
+        pathVariables: (srcState.pathVariables ?? []).map(restamp),
+        headers,
+        assertions: srcState.assertions.map((a) => ({ ...a, id: makeId() })),
+        // Issue #244: a value still withheld on the source stays withheld on
+        // the copy (its row is a copy of the source's), so Ctrl+S on the copy
+        // reloads it instead of writing the empty field.
+        withheldCredentials: remapWithheldRows(srcState.withheldCredentials ?? [], rowIds),
+        // The copy is a new draft: there is no row to reload it from.
+        unloaded: false,
+        unloadedProtocol: false,
+      }
+    }),
 
   sendRequest: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
     // A saved tab whose state was dropped from the cache is reloaded from its row.
     if (get().withheldCredentials.length > 0 || get().unloaded) await reloadWithheldBeforeSend()
     const { method, url, params, headers, body, auth, preScript } = get()
+    const pathVariables = get().pathVariables ?? []
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const envStore = useEnvironmentStore.getState()
@@ -638,6 +663,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       projectId: wsStore.activeProjectId,
       endpointId: activeTab?.endpointId,
       savedRequestId: activeTab?.savedRequestId,
+      testSuiteItemId: activeTab?.testSuiteItemId,
       requestAuth: auth,
       requestPre: preScript,
       requestPost: get().postScript,
@@ -645,6 +671,14 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const effectiveAuth = inheritance.auth
     const preScripts = inheritance.preScripts
     const postScripts = inheritance.postScripts
+    // `pm.info.requestId` / `pm.execution.location` — what Run reports too.
+    const scriptRequestId = activeTab?.endpointId ?? activeTab?.savedRequestId
+    const scriptRequestName = activeTab?.name ?? ''
+    const scriptLocation = [...(inheritance.folderNames ?? []), scriptRequestName]
+    // Per-scope writes of the earlier scripts in this send's cascade: each pm
+    // scope stays separate (issue #281); `scriptOverrides` below is the merged
+    // view `{{var}}` resolution reads.
+    const scriptWrites = emptyScriptWrites()
 
     const preScriptLogs: ConsoleLog[] = []
 
@@ -668,23 +702,23 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // so a project/folder script's env writes are visible to inner scripts.
     for (const script of preScripts) {
       if (!script || !script.trim()) continue
-      // Rebuild the env map each iteration so later scripts see earlier writes.
-      const activeVarsRecord = { ...envStore.getActiveVariables(), ...scriptOverrides }
-      const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
-      const globalMap = new Map<string, string>()
-      const globalVars = envStore.globalVariables || []
-      for (const gv of globalVars) {
-        if (gv.enabled) globalMap.set(gv.key, gv.value || gv.initialValue || '')
-      }
+      // Rebuild the scope maps each iteration so later scripts see earlier writes.
+      const { envMap, globalMap, localVars, vaultKeys, environmentActive } =
+        sendScriptScopes(scriptWrites)
       // Pre-request scripts don't read response — supply an empty shell so the
       // pm API contract is satisfied.
       const emptyResp: ApiResponse = { requestId: makeId(), protocol: 'http', timing: { total: 0 } }
-      const requestName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
       // Populate pm.request with the user-typed values so the script can read
       // method/url/headers BEFORE variable resolution (Mehmet BUG-01).
       const pmApi = createPmApi(emptyResp, envMap, globalMap, {
         eventName: 'prerequest',
-        requestName,
+        requestName: scriptRequestName,
+        requestId: scriptRequestId,
+        location: scriptLocation,
+        localVars,
+        vaultKeys,
+        environmentActive,
+        body,
         request: {
           method,
           url,
@@ -695,6 +729,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         projectId: wsStore.activeProjectId || undefined,
       })
       const scriptResult = await runScript(script, pmApi)
+      absorbScriptWrites(scriptWrites, scriptResult)
       // test-runner emits 'info'/'debug' via console.info/debug — flatten those
       // into 'log' so they satisfy ConsoleLog's narrower level union.
       for (const log of scriptResult.consoleLogs) {
@@ -716,12 +751,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       // transient scriptOverrides map for this one send. That made a derived
       // variable set in one request's pre-script invisible to a later request
       // sent separately (issue #29). Symmetric with the post-response branch.
-      if (
-        Object.keys(scriptResult.envUpdates).length > 0 ||
-        Object.keys(scriptResult.globalUpdates).length > 0
-      ) {
-        void envStore.applyScriptUpdates(scriptResult.envUpdates, scriptResult.globalUpdates)
-      }
+      // A pm.vault write is stored as a secret BEFORE the request goes out
+      // (History masks from the DB's secrets — issue #281).
+      await persistScriptWrites(scriptResult)
       // Later scripts' header mutations take precedence; keep the last non-null.
       if (scriptResult.requestHeaders) preScriptHeaders = scriptResult.requestHeaders
       if (scriptResult.skipRequest) preScriptSkippedRequest = true
@@ -805,7 +837,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // Resolve {{variable}} placeholders (after pre-request script has had
     // a chance to mutate env/globals).
     const activeVars = { ...envStore.getActiveVariables(), ...scriptOverrides }
-    const resolvedUrl = resolveVariables(url, activeVars)
+    // `:name` path segments first (issue #276) — the same helper Run uses;
+    // a value's own `{{var}}` is resolved with the rest of the URL.
+    const resolvedUrl = resolveVariables(applyPathVariables(url, pathVariables), activeVars)
     const resolvedParams = resolveKeyValuePairs(
       params.filter((p) => p.enabled),
       activeVars,
@@ -967,6 +1001,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           method,
           url,
           params,
+          ...(pathVariables.length > 0 ? { pathVariables } : {}),
           headers,
           body,
           auth: effectiveAuth ?? auth,
@@ -1005,22 +1040,22 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         // folder(s) → request). pm.test results from every level are merged.
         for (const script of postScripts) {
           if (!script || !script.trim()) continue
-          const activeVarsRecord = { ...envStore.getActiveVariables(), ...scriptOverrides }
-          const envMap = new Map<string, string>(Object.entries(activeVarsRecord))
-          const globalMap = new Map<string, string>()
-          // Populate global vars
-          const globalVars = envStore.globalVariables || []
-          for (const gv of globalVars) {
-            if (gv.enabled) globalMap.set(gv.key, gv.value || gv.initialValue || '')
-          }
-
-          const requestName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
+          const { envMap, globalMap, localVars, vaultKeys, environmentActive } =
+            sendScriptScopes(scriptWrites)
           const pmApi = createPmApi(apiResp, envMap, globalMap, {
             eventName: 'test',
-            requestName,
+            requestName: scriptRequestName,
+            requestId: scriptRequestId,
+            location: scriptLocation,
+            localVars,
+            vaultKeys,
+            environmentActive,
+            // `pm.request.body` is the body as defined — the same source Run uses.
+            body,
             projectId: wsStore.activeProjectId || undefined,
           })
           const scriptResult = await runScript(script, pmApi)
+          absorbScriptWrites(scriptWrites, scriptResult)
           allTestResults.push(...scriptResult.results)
           allConsoleLogs.push(...scriptResult.consoleLogs)
           // Fold writes into the overlay so a later cascade script sees them.
@@ -1034,12 +1069,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
           // Persist `pm.environment.set(...)` / `pm.globals.set(...)` writes
           // back to the env store. Without this, scripts that capture a token
           // from the response would silently lose it on the next request.
-          if (
-            Object.keys(scriptResult.envUpdates).length > 0 ||
-            Object.keys(scriptResult.globalUpdates).length > 0
-          ) {
-            void envStore.applyScriptUpdates(scriptResult.envUpdates, scriptResult.globalUpdates)
-          }
+          await persistScriptWrites(scriptResult)
         }
 
         // Merge test results and console logs into response
@@ -1141,6 +1171,16 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       method: data.method,
       url: data.url,
       params: data.params || [],
+      pathVariables: pathRowsFor(
+        data.url ?? '',
+        (data.pathVariables ?? []).map((p) => ({
+          id: p.id || makeId(),
+          key: p.key,
+          value: p.value,
+          enabled: true,
+          ...(p.description ? { description: p.description } : {}),
+        })),
+      ),
       headers: data.headers || [],
       body: data.body || { type: 'none' },
       auth: data.auth || { type: 'none' },
@@ -1151,6 +1191,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       maxRedirects: data.maxRedirects ?? 5,
       sslVerification: data.sslVerification ?? true,
       requestTimeout: data.requestTimeout ?? null,
+      // Absent = not critical: a reopened row must not inherit the previous
+      // tab's flag (issue #304).
+      critical: data.critical ?? false,
       // Fresh from the row — nothing is waiting for a withheld value (#244).
       withheldCredentials: [] as string[],
       unloaded: false,

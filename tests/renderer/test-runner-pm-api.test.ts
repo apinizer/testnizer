@@ -167,17 +167,21 @@ describe('pm.globals', () => {
 // ─── pm.collectionVariables ──────────────────────────────────────
 
 describe('pm.collectionVariables', () => {
-  it('shares the env backing store: set surfaces in envUpdates and env.get reads it', async () => {
+  // Issue #281: a Testnizer project is the Postman collection — collection
+  // variables ARE the project variables (pm.globals), not the environment.
+  it('is the project-variable scope: set surfaces in globalUpdates, never in the environment', async () => {
     const pm = makePm(makeResponse())
     const script = `
       pm.collectionVariables.set('cv', 'val')
       pm.test('cv', () => {
         pm.expect(pm.collectionVariables.get('cv')).to.equal('val')
-        pm.expect(pm.environment.get('cv')).to.equal('val')
+        pm.expect(pm.globals.get('cv')).to.equal('val')
+        pm.expect(pm.environment.get('cv')).to.equal(undefined)
       })`
     const out = await runScript(script, pm)
     expect(out.results[0].passed).toBe(true)
-    expect(out.envUpdates).toEqual({ cv: 'val' })
+    expect(out.globalUpdates).toEqual({ cv: 'val' })
+    expect(out.envUpdates).toEqual({})
   })
 })
 
@@ -321,13 +325,16 @@ describe('pre-request scripts', () => {
     expect(out.consoleLogs.some((l) => l.level === 'error')).toBe(false)
   })
 
-  it('accessing pm.response in a pre-request script throws a clear error', async () => {
+  it('pm.response does not exist in a pre-request script (Postman; issue #281)', async () => {
+    // postman-sandbox defines pm.response only for the 'test' target, so an
+    // `if (pm.response)` guard must not throw. It used to (BUG-07 getter).
     const pm = makePm(makeResponse(), {}, {}, { eventName: 'prerequest', requestName: 'pre' })
-    const out = await runScript(`var c = pm.response.code`, pm)
-    // The guard throws; runScript captures it as an error console log.
-    const errLog = out.consoleLogs.find((l) => l.level === 'error')
-    expect(errLog).toBeDefined()
-    expect(errLog?.message).toMatch(/pm\.response is not available in pre-request scripts/)
+    const out = await runScript(
+      `pm.environment.set('r', String(pm.response)); pm.environment.set('in', String('response' in pm))`,
+      pm,
+    )
+    expect(out.envUpdates).toEqual({ r: 'undefined', in: 'false' })
+    expect(out.scriptError).toBeUndefined()
   })
 
   it('pm.info exposes eventName and requestName', async () => {

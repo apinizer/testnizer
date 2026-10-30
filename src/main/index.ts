@@ -6,6 +6,7 @@ import {
   ipcMain,
   nativeImage,
   Menu,
+  session,
   type MenuItemConstructorOptions,
 } from 'electron'
 import { join } from 'path'
@@ -16,10 +17,14 @@ import { runSecretAtRestMigration } from './db/secret-at-rest-migration'
 import { registerAllHandlers } from './ipc'
 import { migrateProjectSettings } from './ipc/settings.handler'
 import { initAutoUpdater } from './updater'
-import { initLogging } from './diagnostics'
+import { initLogging, mainLog } from './diagnostics'
+import { currentBuildIdentity } from './lib/build-identity'
+import { BACKUP_DIR_NAME, backupFailureNotice } from './db/pre-migration-backup'
 import { maybeInitTelemetry } from './telemetry'
 import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
 import { mcpDisconnectAll } from './protocols/mcp.engine'
+import { mqttDisconnectAll } from './protocols/mqtt.engine'
+import { installPermissionPolicy, type AppDocument } from './lib/permission-policy'
 import pkg from '../../package.json'
 
 function getIconPath(): string {
@@ -27,6 +32,20 @@ function getIconPath(): string {
     return join(__dirname, '../../resources/icon.png')
   }
   return join(process.resourcesPath, 'resources/icon.png')
+}
+
+/**
+ * Where the renderer document comes from. `createWindow` loads it and the
+ * permission policy (issue #294) only trusts a top-level frame showing it.
+ */
+function appDocument(): AppDocument {
+  return {
+    devServerUrl:
+      is.dev && process.env['ELECTRON_RENDERER_URL']
+        ? process.env['ELECTRON_RENDERER_URL']
+        : undefined,
+    indexHtmlPath: join(__dirname, '../renderer/index.html'),
+  }
 }
 
 function createWindow(): BrowserWindow {
@@ -46,7 +65,11 @@ function createWindow(): BrowserWindow {
     trafficLightPosition: { x: 12, y: 14 },
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
+      // OS sandbox for the renderer (issue #294): a renderer exploit reached
+      // through a response body or a user script has no unsandboxed process to
+      // land in. The preload is a single bundle that only `require`s electron
+      // (see electron.vite.config.ts), which is all a sandboxed preload may load.
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: !is.dev,
@@ -74,10 +97,11 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+  const doc = appDocument()
+  if (doc.devServerUrl) {
+    mainWindow.loadURL(doc.devServerUrl)
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadFile(doc.indexHtmlPath)
   }
 
   return mainWindow
@@ -116,7 +140,7 @@ ipcMain.handle('app:version', () => {
     // "which one am I running?" — and a fix verified on one round was reported
     // as still broken from another because of exactly that. See __BUILD_ID__ in
     // electron.vite.config.ts.
-    const buildId = typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'unknown'
+    const buildId = currentBuildIdentity().build
     return { success: true, data: { version, name: app.name, buildId } }
   } catch (e) {
     return { success: false, error: (e as Error).message }
@@ -297,6 +321,24 @@ app.whenReady().then(() => {
     return
   }
 
+  // Issue #297: what the pre-migration copy did goes to the log either way.
+  const backup = dbInit.preMigrationBackup
+  if (backup.status === 'created') {
+    mainLog.info(`[db] pre-migration backup written: ${backup.path}`)
+    if (backup.pruned.length) mainLog.info(`[db] old backups removed: ${backup.pruned.join(', ')}`)
+    if (backup.pruneError) mainLog.warn(`[db] could not remove old backups: ${backup.pruneError}`)
+  } else if (backup.status === 'failed') {
+    mainLog.error(`[db] pre-migration backup failed: ${backup.error}`)
+  }
+  if (dbInit.markerError) {
+    mainLog.warn(`[db] could not record the started build: ${dbInit.markerError}`)
+  }
+
+  // Deny-by-default web permissions (issue #294): Electron would otherwise
+  // grant camera, microphone, geolocation, notifications… to any frame.
+  // Denials are logged at debug level only (not written to main.log).
+  installPermissionPolicy(session.defaultSession, appDocument(), (m) => mainLog.debug(m))
+
   // Register all IPC handlers
   registerAllHandlers()
   // Project settings that travel with the project moved from electron-store
@@ -380,6 +422,46 @@ app.whenReady().then(() => {
     })
   }
 
+  // Issue #297: the pre-migration copy failed. Same pattern as above, once:
+  // the build marker was advanced, so the next start does not ask again (a
+  // copy taken after the migration would not be the one worth keeping).
+  // In the UI language (settings `ui.locale`; the renderer defaults to 'en').
+  const backupFailed = dbInit.backupFailed
+  if (backupFailed && process.env.E2E_HEADLESS !== '1') {
+    mainWindow.once('ready-to-show', () => {
+      void (async () => {
+        let locale = 'en'
+        try {
+          const { default: Store } = await import('electron-store')
+          type SettingsStore = { get: (k: string) => unknown }
+          const store = new Store({ name: 'settings' }) as unknown as SettingsStore
+          if (store.get('ui.locale') === 'tr') locale = 'tr'
+        } catch {
+          // Unreadable settings — English, like the renderer.
+        }
+        const notice = backupFailureNotice(
+          locale,
+          backupFailed,
+          join(app.getPath('userData'), BACKUP_DIR_NAME),
+          dbInit.backupFailedCode,
+        )
+        const options = {
+          type: 'warning' as const,
+          title: notice.title,
+          message: notice.message,
+          detail: notice.detail,
+          buttons: [notice.button],
+        }
+        const win = mainWindow.isDestroyed() ? undefined : mainWindow
+        if (win) {
+          await dialog.showMessageBox(win, options)
+        } else {
+          await dialog.showMessageBox(options)
+        }
+      })().catch(() => undefined)
+    })
+  }
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -401,6 +483,11 @@ app.on('will-quit', () => {
   }
   try {
     mcpDisconnectAll()
+  } catch {
+    /* ignore */
+  }
+  try {
+    mqttDisconnectAll()
   } catch {
     /* ignore */
   }

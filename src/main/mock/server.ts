@@ -661,10 +661,7 @@ class MockServerManager extends EventEmitter {
     let envVars: Record<string, string> | undefined
     if (s.def.projectId) {
       try {
-        envVars = loadEnvVars({
-          projectId: s.def.projectId,
-          workspaceId: s.def.workspaceId,
-        })
+        envVars = loadEnvVars({ projectId: s.def.projectId })
       } catch {
         /* fall through with no env — mock still responds */
       }

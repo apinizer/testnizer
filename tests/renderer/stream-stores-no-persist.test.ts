@@ -108,15 +108,18 @@ describe('WebSocket store', () => {
       _currentTabId: 'tab-1',
       _tabStates: new Map([['tab-2', { ...useWebSocketStore.getState(), messages: [received] }]]),
       url: 'wss://config.example.test/ws',
-      composerContent: '{"hello":"{{name}}"}',
+      // Issue #284 audit: the draft stays, except a literal credential member
+      // of JSON-looking text — that one is withheld like an HTTP JSON body.
+      composerContent: `{"hello":"{{name}}","token":"${CANARY}"}`,
       messages: [received],
       errorMessage: `closed: ${CANARY}`,
     })
     const stored = raw(KEY)
     expect(stored).not.toContain(CANARY)
     expect(stored).toContain('wss://config.example.test/ws')
-    expect(stored).toContain('{{name}}')
+    expect(stored).toContain('{\\"hello\\":\\"{{name}}\\",\\"token\\":\\"\\"}')
     expect(useWebSocketStore.getState().messages).toHaveLength(1)
+    expect(useWebSocketStore.getState().composerContent).toContain(CANARY)
   })
 
   it('scrubs an old snapshot on load', async () => {
@@ -148,7 +151,7 @@ describe('Socket.IO store', () => {
       _tabStates: new Map([['tab-2', { ...useSocketIOStore.getState(), events: [received] }]]),
       url: 'http://config.example.test',
       namespace: '/chat',
-      emitPayload: '{"draft":true}',
+      emitArgs: [{ id: 'a1', content: '{"draft":true}', contentType: 'json' }],
       events: [received],
       errorMessage: CANARY,
     })
@@ -172,6 +175,27 @@ describe('Socket.IO store', () => {
     expect(useSocketIOStore.getState().url).toBe('http://config.example.test')
     expect(useSocketIOStore.getState().events).toEqual([])
     expect(raw(KEY)).not.toContain(CANARY)
+  })
+
+  it('a pre-#283 snapshot (subscriptions / emitPayload) keeps showing every event', async () => {
+    const old = {
+      url: 'http://old.example.test',
+      subscriptions: ['chat'],
+      newSubscription: '',
+      emitEvent: 'go',
+      emitPayload: '{"a":1}',
+    }
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ current: old, _currentTabId: 'tab-1', _tabStates: [['tab-2', old]] }),
+    )
+    const { useSocketIOStore } = await import('../../src/renderer/stores/socketio.store')
+    const st = useSocketIOStore.getState()
+    expect(st.listenAll).toBe(true)
+    expect(st.listeners.map((l) => l.name)).toEqual(['chat'])
+    expect(st.emitArgs.map((a) => [a.content, a.contentType])).toEqual([['{"a":1}', 'json']])
+    expect(st._tabStates.get('tab-2')?.listenAll).toBe(true)
+    expect(raw(KEY)).not.toContain('subscriptions')
   })
 })
 
@@ -306,5 +330,34 @@ describe('MCP store', () => {
     expect(stored).not.toContain(CANARY)
     expect(stored).toContain('https://config.example.test/mcp')
     expect(stored).toContain('{{query}}')
+  })
+})
+
+// ─── MQTT (issue #284) ─────────────────────────────────────────────────
+
+describe('MQTT store', () => {
+  const KEY = 'testnizer-mqtt'
+
+  it('keeps the message log and errors out of localStorage; the request stays', async () => {
+    const { useMqttStore } = await import('../../src/renderer/stores/mqtt.store')
+    const row = {
+      id: 'r1',
+      direction: 'received' as const,
+      topic: 't',
+      content: `{"token":"${CANARY}"}`,
+      contentType: 'json' as const,
+      timestamp: 1,
+    }
+    useMqttStore.setState({
+      _currentTabId: 'tab-1',
+      _tabStates: new Map([['tab-2', { ...useMqttStore.getState(), log: [row] }]]),
+      url: 'mqtt://config.example.test',
+      log: [row],
+      errorMessage: CANARY,
+    })
+    const stored = raw(KEY)
+    expect(stored).not.toContain(CANARY)
+    expect(stored).toContain('mqtt://config.example.test')
+    expect(useMqttStore.getState().log).toHaveLength(1)
   })
 })

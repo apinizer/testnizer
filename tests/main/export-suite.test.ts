@@ -116,18 +116,19 @@ beforeEach(() => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(projectId, wsRow.id, 'SuitePrj', 'suite export project', 'http', 0, now, now)
 
-  // Active environment so the Postman export carries collection variables.
-  // `environments` is keyed by workspace_id (NOT NULL) with project_id added by
-  // a later migration — both must be set for the project-scoped lookup to hit.
-  const envId = randomUUID()
+  // Project variables ("Globals") so the Postman export carries collection
+  // variables (issue #281 — they used to come from the active environment).
   db.prepare(
-    `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 1, ?, ?)`,
-  ).run(envId, wsRow.id, projectId, 'Base', now, now)
-  db.prepare(
-    `INSERT INTO environment_variables (id, environment_id, key, value, initial_value, enabled)
-     VALUES (?, ?, ?, ?, ?, 1)`,
-  ).run(randomUUID(), envId, 'baseUrl', 'https://api.example.com', 'https://api.example.com')
+    `INSERT INTO global_variables (id, workspace_id, project_id, key, value, initial_value, enabled)
+     VALUES (?, ?, ?, ?, ?, ?, 1)`,
+  ).run(
+    randomUUID(),
+    wsRow.id,
+    projectId,
+    'baseUrl',
+    'https://api.example.com',
+    'https://api.example.com',
+  )
 
   suiteId = insertSuite('Checkout Suite')
 
@@ -201,7 +202,7 @@ describe('exportSuiteAsPostman', () => {
     expect(() => exportSuiteAsPostman('nope')).toThrow(/not found/i)
   })
 
-  it('emits a v2.1 collection named after the suite with project env variables', () => {
+  it('emits a v2.1 collection named after the suite with the project variables', () => {
     const col = JSON.parse(exportSuiteAsPostman(suiteId)) as PmCollection
     expect(col.info?.name).toBe('Checkout Suite')
     expect(col.info?.schema).toContain('v2.1.0')

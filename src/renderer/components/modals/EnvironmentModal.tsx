@@ -18,12 +18,14 @@ import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import type { Environment, EnvironmentVariable, GlobalVariable } from '../../types'
+import { buildVariablesExport } from '../../lib/variables-export'
 import DeleteConfirmDialog from './DeleteConfirmDialog'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
 import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
+import { classifyPostmanDocument, isPostmanVariablesKind } from '../../../shared/postman-detect'
 
 type Pane = { kind: 'globals' } | { kind: 'env'; id: string }
 
@@ -52,6 +54,7 @@ export default function EnvironmentModal() {
   const updateEnvironment = useEnvironmentStore((s) => s.updateEnvironment)
   const deleteEnvironment = useEnvironmentStore((s) => s.deleteEnvironment)
   const createEnvironment = useEnvironmentStore((s) => s.createEnvironment)
+  const moveToGlobals = useEnvironmentStore((s) => s.moveEnvironmentToProjectVariables)
 
   const globalVariables = useEnvironmentStore((s) => s.globalVariables)
   const addGlobalVariable = useEnvironmentStore((s) => s.addGlobalVariable)
@@ -59,6 +62,7 @@ export default function EnvironmentModal() {
   const deleteGlobalVariable = useEnvironmentStore((s) => s.deleteGlobalVariable)
 
   const fetchEnvironments = useEnvironmentStore((s) => s.fetchEnvironments)
+  const fetchGlobalVariables = useEnvironmentStore((s) => s.fetchGlobalVariables)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const { t, locale } = useTranslation()
 
@@ -66,6 +70,8 @@ export default function EnvironmentModal() {
   const [creatingEnv, setCreatingEnv] = useState(false)
   const [newEnvName, setNewEnvName] = useState('')
   const [deleteEnvTarget, setDeleteEnvTarget] = useState<Environment | null>(null)
+  // Issue #281: after "Move to Globals", the environment is deleted only on confirm.
+  const [movedEnv, setMovedEnv] = useState<{ env: Environment; conflicts: string[] } | null>(null)
   const [importing, setImporting] = useState(false)
 
   const selectedEnv: Environment | null = useMemo(() => {
@@ -83,6 +89,8 @@ export default function EnvironmentModal() {
         | { success: boolean; data?: { content: string } | null; error?: string }
         | undefined
       if (!fileResult?.success || !fileResult.data) {
+        // Main refuses a file it will not read here (a .zip: issue #276).
+        if (fileResult?.error) toast.error(`${t('env.importFailed')}: ${fileResult.error}`)
         return
       }
       const content = fileResult.data.content
@@ -110,8 +118,12 @@ export default function EnvironmentModal() {
       // a collection export) so for Insomnia we route through the same
       // importer that handles the collection — it picks up any environment
       // resources along the way and surfaces them as suggested vars.
-      const isPostmanEnv = !isInsomniaV5Yaml && root['_postman_variable_scope'] === 'environment'
-      const isPostmanCollection = !isInsomniaV5Yaml && root['info'] && Array.isArray(root['item'])
+      // One shared Postman classifier (issue #276): environment AND globals
+      // exports import here (globals → the project Globals, issue #281); any
+      // collection kind (v1 / v2 / dump / v3) gets the "use APIs Import" hint.
+      const postmanKind = isInsomniaV5Yaml ? null : (classifyPostmanDocument(root)?.kind ?? null)
+      const isPostmanEnv = isPostmanVariablesKind(postmanKind)
+      const isPostmanCollection = !!postmanKind && !isPostmanEnv
       const isInsomniaV4 =
         !isInsomniaV5Yaml && root['_type'] === 'export' && Array.isArray(root['resources'])
       const isInsomniaV5 =
@@ -133,6 +145,7 @@ export default function EnvironmentModal() {
               error?: string
               environmentName?: string
               suggestedEnvVars?: Record<string, string>
+              warnings?: string[]
             }
             error?: string
           }
@@ -171,9 +184,20 @@ export default function EnvironmentModal() {
       const ipcOk = result?.success === true
       const importerOk = result?.data?.success !== false
       if (ipcOk && importerOk) {
-        await fetchEnvironments()
+        // A Postman globals file lands in Globals (issue #281), not in an environment.
+        await Promise.all([fetchEnvironments(), fetchGlobalVariables()])
         const name = result?.data?.environmentName
-        toast.success(name ? `${t('env.importSuccess')}: ${name}` : t('env.importSuccess'))
+        toast.success(
+          name
+            ? `${t('env.importSuccess')}: ${name}`
+            : isPostmanEnv && postmanKind === 'globals'
+              ? t('env.importedToGlobals')
+              : t('env.importSuccess'),
+        )
+        // Nothing silently dropped (issue #276): vault-linked secrets, the
+        // Globals note, an inactive imported environment.
+        const warnings = result?.data?.warnings ?? []
+        if (warnings.length > 0) toast.warning(warnings.join(' · '))
       } else {
         const errMsg = result?.data?.error || result?.error || t('env.unknownError')
         toast.error(`${t('env.importFailed')}: ${errMsg}`)
@@ -183,6 +207,20 @@ export default function EnvironmentModal() {
       toast.error(`${t('env.importFailed')}: ${message}`)
     } finally {
       setImporting(false)
+    }
+  }
+
+  async function handleMoveToGlobals(env: Environment): Promise<void> {
+    try {
+      const { moved, conflicts } = await moveToGlobals(env.id)
+      toast.success(t('env.moveDone').replace('{count}', String(moved.length)))
+      if (conflicts.length > 0) {
+        toast.warning(t('env.moveConflicts').replace('{keys}', conflicts.join(', ')))
+      }
+      setMovedEnv({ env, conflicts })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      toast.error(`${t('env.moveFailed')}: ${message}`)
     }
   }
 
@@ -396,28 +434,24 @@ export default function EnvironmentModal() {
              *  so exports aren't Postman-branded (issue #7; export added #15). */}
             <button
               type="button"
+              data-testid={
+                pane.kind === 'globals' ? 'env-export-globals' : 'env-export-environment'
+              }
               onClick={() => {
-                if (!selectedEnv) return
-                const doc = {
-                  id: selectedEnv.id,
-                  name: selectedEnv.name,
-                  // Values marked secret stay on this computer (issue #177):
-                  // the file keeps the key and the `secret` type, never the value.
-                  values: selectedEnv.variables.map((v) => ({
-                    key: v.key,
-                    value: v.secret ? '' : v.value || v.initialValue || '',
-                    enabled: v.enabled,
-                    type: v.secret ? 'secret' : 'default',
-                  })),
-                  _postman_variable_scope: 'environment',
-                  _postman_exported_using: 'Testnizer',
-                }
+                // Globals pane → a Postman globals export (issue #277); an
+                // environment → the environment export. Same Postman shape,
+                // `_postman_variable_scope` tells them apart on import.
+                const exported = buildVariablesExport(
+                  pane.kind === 'globals' ? null : selectedEnv,
+                  globalVariables,
+                )
+                if (!exported) return
                 void window.api?.importExport?.saveFile(
-                  JSON.stringify(doc, null, 2),
-                  `${selectedEnv.name || 'environment'}.testnizer_environment.json`,
+                  JSON.stringify(exported.doc, null, 2),
+                  exported.fileName,
                 )
               }}
-              disabled={!selectedEnv}
+              disabled={pane.kind !== 'globals' && !selectedEnv}
               className="flex w-full cursor-pointer items-center justify-center gap-1 rounded-[6px] py-1.5 disabled:cursor-default disabled:opacity-60"
               style={{
                 background: 'var(--white)',
@@ -426,11 +460,15 @@ export default function EnvironmentModal() {
                 fontWeight: 500,
               }}
               title={
-                selectedEnv ? t('env.exportEnvironmentHint') : t('env.exportEnvironmentSelectHint')
+                pane.kind === 'globals'
+                  ? t('env.exportGlobalsHint')
+                  : selectedEnv
+                    ? t('env.exportEnvironmentHint')
+                    : t('env.exportEnvironmentSelectHint')
               }
             >
               <Upload size={12} />
-              {t('env.exportEnvironment')}
+              {pane.kind === 'globals' ? t('env.exportGlobals') : t('env.exportEnvironment')}
             </button>
           </div>
         </div>
@@ -450,6 +488,7 @@ export default function EnvironmentModal() {
               isActive={selectedEnv.id === activeEnvId}
               onSetActive={() => setActiveEnv(selectedEnv.id)}
               onDelete={() => setDeleteEnvTarget(selectedEnv)}
+              onMoveToGlobals={() => void handleMoveToGlobals(selectedEnv)}
               onVarChange={handleVarChange}
               onAddVar={handleAddVar}
               onRemoveVar={handleRemoveVar}
@@ -477,6 +516,27 @@ export default function EnvironmentModal() {
           setDeleteEnvTarget(null)
         }}
         onCancel={() => setDeleteEnvTarget(null)}
+      />
+
+      {/* After "Move to Globals": the environment goes only on confirm, and
+          the dialog names the variables whose value it still holds alone. */}
+      <DeleteConfirmDialog
+        open={!!movedEnv}
+        itemName={movedEnv?.env.name || ''}
+        itemType={t('env.itemType')}
+        description={
+          movedEnv && movedEnv.conflicts.length > 0
+            ? t('env.moveDeleteConflicts').replace('{keys}', movedEnv.conflicts.join(', '))
+            : t('env.moveDeleteDesc')
+        }
+        onConfirm={() => {
+          if (movedEnv) {
+            void deleteEnvironment(movedEnv.env.id)
+            setPane({ kind: 'globals' })
+          }
+          setMovedEnv(null)
+        }}
+        onCancel={() => setMovedEnv(null)}
       />
     </Modal>
   )
@@ -531,6 +591,7 @@ function EnvPane({
   isActive,
   onSetActive,
   onDelete,
+  onMoveToGlobals,
   onVarChange,
   onAddVar,
   onRemoveVar,
@@ -539,6 +600,7 @@ function EnvPane({
   isActive: boolean
   onSetActive: () => void
   onDelete: () => void
+  onMoveToGlobals: () => void
   onVarChange: (
     id: string,
     field: 'key' | 'initialValue' | 'value' | 'enabled' | 'secret',
@@ -596,6 +658,23 @@ function EnvPane({
               {t('env.setActive')}
             </button>
           )}
+          <button
+            type="button"
+            data-testid="env-move-to-project-vars"
+            onClick={onMoveToGlobals}
+            disabled={count === 0}
+            className="flex cursor-pointer items-center gap-1 rounded px-2.5 py-1 disabled:cursor-default disabled:opacity-60"
+            style={{
+              background: 'var(--white)',
+              border: '1px solid var(--border)',
+              color: 'var(--text)',
+              fontWeight: 500,
+            }}
+            title={t('env.moveToGlobalsHint')}
+          >
+            <Globe size={12} aria-hidden="true" />
+            {t('env.moveToGlobals')}
+          </button>
           <button
             type="button"
             data-testid="env-delete"

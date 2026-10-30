@@ -7,7 +7,7 @@
  *    "Start & open in SSE tab": starts first, opens only on success. Targets
  *    the first exact-path GET / ANY endpoint; none → disabled with the reason.
  *  - `MockEndpointOpenInSse` — per endpoint in the URL bar, next to (and
- *    styled like) its Copy / cURL / Open buttons: carries the endpoint's
+ *    styled like) its Copy / cURL / "Open in request tab" buttons: carries the endpoint's
  *    method (ANY → GET); exact paths only. Same start-then-open path and
  *    label as the header (`useOpenInSse`).
  */
@@ -92,7 +92,7 @@ export function MockEndpointOpenInSse({
       onClick={() => method && open(endpoint.path, method)}
       disabled={!can}
       className="whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
-      // Same look as the URL bar's Open button (MockServerEditor.tsx FullUrlBar).
+      // Same look as the URL bar's "Open in request tab" button (MockOpenInHttp.tsx).
       style={{
         borderColor: 'var(--border)',
         color: can ? 'var(--accent-text)' : 'var(--hint)',

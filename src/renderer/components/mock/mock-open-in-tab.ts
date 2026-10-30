@@ -1,6 +1,6 @@
 /**
- * "Open in SSE tab" / "Open in AI Chat tab" (and their "Start & open …"
- * forms) for SSE and AI mock servers (issue #221, design Ek D §D.3.4–D.3.5)
+ * "Open in SSE tab" / "Open in AI Chat tab" / "Open in request tab" (and their
+ * "Start & open …" forms) for HTTP-table mock servers (issue #221, design Ek D §D.3.4–D.3.5)
  * — the twins of `openMockInMcpTab` (`mock-mcp/mock-mcp-tabs.ts`).
  *
  * Ordering matters for the same reason as there: `openTab` only flips
@@ -18,9 +18,11 @@
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 import { useAiChatStore } from '../../stores/ai-chat.store'
+import { useRequestStore } from '../../stores/request.store'
+import { makeId } from '../../lib/utils'
 import { activateTabStores } from '../../lib/activate-tab'
 import { toast } from '../../lib/toast'
-import type { MockEndpoint, MockMethod, MockServer } from '../../types'
+import type { HttpMethod, MockEndpoint, MockMethod, MockServer } from '../../types'
 import { mockServerUrl } from './mock-http-tabs'
 import { MOCK_LLM_MODEL } from './mock-ai-presets'
 import {
@@ -129,6 +131,83 @@ function connectSseIfIdle(): void {
   const sse = useSseStore.getState()
   if (sse.connectionState === 'connected' || sse.connectionState === 'connecting') return
   void sse.connect()
+}
+
+export interface OpenMockHttpTarget {
+  /** The mock server — with the method and path, the key of its one client tab. */
+  serverId: string
+  name: string
+  url: string
+  method: HttpMethod
+  /** The endpoint path: a second click on the same endpoint focuses its tab. */
+  path: string
+  /** Headers and JSON body the endpoint expects (`mockRequestShape`, shared with cURL). */
+  headers: readonly { name: string; value: string }[]
+  body: string | null
+  /**
+   * Send right after opening — false while the URL still has `:param`
+   * placeholders, and for an endpoint with an SSE reply (a looping or held-open
+   * stream would leave a plain Send waiting until its timeout).
+   */
+  send: boolean
+}
+
+/**
+ * Open a plain HTTP request tab for a mock endpoint, prefilled with its method,
+ * URL and the headers / JSON body the cURL copy carries, and send it (the twin
+ * of `openMockInSseTab`, which connects). It is an ordinary unsaved request
+ * tab: Send any method, Save / Save As, credential withholding — all the
+ * normal tab machinery. A second click focuses that tab and does NOT send
+ * again: the user may have edited it.
+ *
+ * Auth is `none`, not the new-request default `inherit`: the tab sends on its
+ * own, and inheriting would hand the project's real credential to the mock
+ * (and its request log) without the user asking — the rule the AI Chat twin
+ * keeps with `savedKeyDisabled`. The mock's own tokens are never copied in
+ * either. Returns the tab id.
+ */
+export function openMockInHttpTab(o: OpenMockHttpTarget): string {
+  const key = mockClientTabKey('http', o.serverId, `${o.method} ${o.path}`)
+  const open = focusMockClientTab(key)
+  if (open) return open
+  const id = newMockClientTabId(key)
+  useTabsStore.getState().openTab({
+    id,
+    name: mockClientTabName(o.name),
+    protocol: 'http',
+    method: o.method,
+    url: o.url,
+  })
+  activateTabStores(id)
+  const req = useRequestStore.getState()
+  req.setMethod(o.method)
+  req.setUrl(o.url)
+  req.setHeaders(
+    o.headers.map((h) => ({ id: makeId(), key: h.name, value: h.value, enabled: true })),
+  )
+  req.setBody(o.body === null ? { type: 'none' } : { type: 'json', content: o.body })
+  req.setAuth({ type: 'none' })
+  // A prefilled scratch tab holds nothing the user typed — no dirty dot.
+  useTabsStore.getState().markDirty(id, false)
+  if (o.send) void useRequestStore.getState().sendRequest()
+  return id
+}
+
+export function startAndOpenMockInHttpTab(
+  o: OpenMockHttpTarget & StartThenOpen,
+): Promise<string | null> {
+  return startThenOpen(o, () =>
+    openMockInHttpTab({
+      serverId: o.serverId,
+      name: o.name,
+      url: o.url,
+      method: o.method,
+      path: o.path,
+      headers: o.headers,
+      body: o.body,
+      send: o.send,
+    }),
+  )
 }
 
 export interface OpenMockAiChatTarget {

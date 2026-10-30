@@ -3,10 +3,12 @@
 // call `exportProjectAs`, so the format list, the file name, cancel handling
 // and the "items left out" warning live in one place.
 //
-// Two main-process paths sit behind it:
+// Three main-process paths sit behind it:
 //  - `testnizer` → `save:exportProject` — main builds the project JSON (secrets
 //    stripped, issue #177), opens the save dialog and writes the file; a
 //    dismissed dialog comes back as `{ success: false, error: 'Cancelled' }`.
+//  - `postman-v3-folder` → `export:postmanV3Folder` — main asks where to create
+//    the Postman v3 folder and writes it (issue #277); cancelled = `data: null`.
 //  - `postman` / `openapi` / `insomnia` → `export:*` returns the file TEXT plus
 //    `skipped` (items the format cannot hold, issue #197), then
 //    `export:saveFile` opens the dialog; a dismissed dialog comes back as
@@ -20,7 +22,7 @@ import { t as translate } from './i18n'
 import { toast } from './toast'
 import { useWorkspaceStore } from '../stores/workspace.store'
 
-export type ProjectExportFormat = 'testnizer' | CollectionExportFormat
+export type ProjectExportFormat = 'testnizer' | CollectionExportFormat | 'postman-v3-folder'
 
 export interface ProjectExportFormatOption {
   id: ProjectExportFormat
@@ -43,6 +45,16 @@ export const PROJECT_EXPORT_FORMATS: readonly ProjectExportFormatOption[] = [
     descKey: 'projectExport.format.postmanDesc',
   },
   {
+    id: 'postman-v3-folder',
+    labelKey: 'projectExport.format.postmanV3Folder',
+    descKey: 'projectExport.format.postmanV3FolderDesc',
+  },
+  {
+    id: 'postman-v3',
+    labelKey: 'projectExport.format.postmanV3Json',
+    descKey: 'projectExport.format.postmanV3JsonDesc',
+  },
+  {
     id: 'openapi',
     labelKey: 'projectExport.format.openapi',
     descKey: 'projectExport.format.openapiDesc',
@@ -57,6 +69,7 @@ export const PROJECT_EXPORT_FORMATS: readonly ProjectExportFormatOption[] = [
 /** File-name suffix per collection format — all JSON, so the dialog picks the JSON filter. */
 const FILE_SUFFIX: Record<CollectionExportFormat, string> = {
   postman: '.postman_collection.json',
+  'postman-v3': '.postman_collection.v3.json',
   openapi: '.openapi.json',
   insomnia: '.insomnia.json',
 }
@@ -117,7 +130,19 @@ type CollectionExportCall = (projectId: string) => Promise<{
   data?: string
   error?: string
   skipped?: ExportSkippedItem[]
+  notes?: string[]
 }>
+
+/**
+ * What a Postman v3 export could not carry (a timeout, a Socket.IO token, …)
+ * — one warning toast, the first lines as its description.
+ */
+function notesToast(notes: string[] | undefined): void {
+  if (!notes || notes.length === 0) return
+  toast.warning(translate('export.v3Notes').replace('{count}', String(notes.length)), {
+    description: notes.slice(0, 3).join('\n') + (notes.length > 3 ? '\n…' : ''),
+  })
+}
 
 function collectionExporter(format: CollectionExportFormat): CollectionExportCall | undefined {
   const ie = window.api?.importExport
@@ -129,6 +154,8 @@ function collectionExporter(format: CollectionExportFormat): CollectionExportCal
       return ie.exportOpenApi
     case 'insomnia':
       return ie.exportInsomnia
+    case 'postman-v3':
+      return ie.exportPostmanV3Json
   }
 }
 
@@ -151,6 +178,21 @@ export async function exportProjectAs(
       }
       if (res?.error && res.error !== 'Cancelled') failedToast(res.error)
       return false
+    }
+
+    if (format === 'postman-v3-folder') {
+      const res = await window.api?.importExport?.exportPostmanV3Folder?.(projectId)
+      if (!res?.success) {
+        failedToast(res?.error || 'export API unavailable')
+        return false
+      }
+      // `{ success: true, data: null }` = the folder dialog was dismissed.
+      if (!res.data) return false
+      exportedToast(res.data)
+      const skippedMsg = formatExportSkipped(res.skipped, 'postman-v3', translate)
+      if (skippedMsg) toast.warning(skippedMsg)
+      notesToast(res.notes)
+      return true
     }
 
     const exporter = collectionExporter(format)
@@ -177,6 +219,7 @@ export async function exportProjectAs(
     exportedToast(saved.data)
     const skippedMsg = formatExportSkipped(built.skipped, format, translate)
     if (skippedMsg) toast.warning(skippedMsg)
+    notesToast(built.notes)
     return true
   } catch (err) {
     console.error('Project export failed:', err)

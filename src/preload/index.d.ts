@@ -1,4 +1,10 @@
-import { ElectronAPI } from '@electron-toolkit/preload'
+/** `window.electron` (issue #294): platform + runtime versions only. */
+interface ElectronInfo {
+  process: {
+    platform: string
+    versions: Record<string, string | undefined>
+  }
+}
 import type {
   IpcResult,
   Workspace,
@@ -290,6 +296,8 @@ interface EnvironmentApi {
   setActive(workspaceId: string, environmentId: string): Promise<IpcResult<boolean>>
   setActiveForProject(projectId: string, environmentId: string): Promise<IpcResult<boolean>>
   delete(id: string): Promise<IpcResult<boolean>>
+  /** Issue #281: copy the variables into the project variables; conflicts keep the local value. */
+  moveToProjectVariables(id: string): Promise<IpcResult<{ moved: string[]; conflicts: string[] }>>
 }
 
 interface EnvVariableApi {
@@ -458,6 +466,11 @@ interface RequestApi {
     _tabId?: string
     /** The request as configured (`{{var}}` kept) for History re-send (issue #195). */
     _configured?: HistoryConfigured
+    /**
+     * SOAP editor WS-Security, `{{var}}` resolved; applied to the envelope in
+     * main (`src/main/lib/soap-wsse.ts`). Only honoured with `_protocol: 'soap'`.
+     */
+    _wsSecurity?: WsSecurityConfig
   }): Promise<IpcResult<ApiResponse>>
   cancel(requestId: string): Promise<IpcResult<boolean>>
 }
@@ -528,6 +541,16 @@ interface ConsoleApi {
 // the format could not carry (issue #197) — see src/shared/collection-export.ts.
 import type { ExportSkippedItem } from '../shared/collection-export'
 import type { HistoryConfigured } from '../shared/history-snapshot'
+import type { SioListenConfig, SioSettings, SioWireArg, WsSettings } from '../shared/realtime'
+import type {
+  MqttConnectProperties,
+  MqttQos,
+  MqttSettings,
+  MqttVersion,
+  MqttWirePublish,
+  MqttWireSubscription,
+  MqttWireWill,
+} from '../shared/mqtt'
 import type { MockServerKind } from '../shared/mock-kind'
 import type {
   AiApprovalDecision,
@@ -548,8 +571,30 @@ import type {
 } from '../shared/git-changes'
 type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
 
+/** A picked Postman v3 folder, as the Import modal shows it. */
+interface PostmanFolderPick {
+  handle: string
+  folderName: string
+  /** A folder picked on disk, or a .zip file (issue #276 follow-up). */
+  source: 'folder' | 'zip'
+  /** Every collection lands in a folder of its own under the destination. */
+  eachInFolder: boolean
+  kind: 'workspace' | 'collection'
+  collections: string[]
+  requestCount: number
+  environmentCount: number
+  globalsCount: number
+}
+
 interface ImportExportApi {
-  openFile(): Promise<IpcResult<{ filePath: string; content: string } | null>>
+  /**
+   * `format` is the Import modal card. For the Postman / Apinizer cards a
+   * .zip is read in main and comes back as `archive` (a one-time handle for
+   * `importPostmanFolder`) with an empty `content`; other cards refuse a zip.
+   */
+  openFile(options?: {
+    format?: string
+  }): Promise<IpcResult<{ filePath: string; content: string; archive?: PostmanFolderPick } | null>>
   importOpenApi(payload: {
     projectId: string
     content: string
@@ -569,6 +614,23 @@ interface ImportExportApi {
     content: string
   }): Promise<IpcResult<ImportResult>>
   exportPostman(projectId: string): Promise<CollectionExportIpcResult>
+  /**
+   * Postman v3 folder (issue #276 part 2): main shows the folder dialog, reads
+   * and checks the folder, and returns an opaque handle + summary (null data
+   * = cancelled). The handle is single-use.
+   */
+  /** Postman v3 (issue #277): the single v3 JSON file's text + what it left out / could not carry. */
+  exportPostmanV3Json(projectId: string): Promise<CollectionExportIpcResult & { notes?: string[] }>
+  /** Postman v3 folder: main asks where, writes it and returns the created folder (null = cancelled). */
+  exportPostmanV3Folder(
+    projectId: string,
+  ): Promise<IpcResult<string | null> & { skipped?: ExportSkippedItem[]; notes?: string[] }>
+  pickPostmanFolder(): Promise<IpcResult<PostmanFolderPick | null>>
+  importPostmanFolder(payload: {
+    projectId: string
+    handle: string
+    folderId?: string | null
+  }): Promise<IpcResult<ImportResult>>
   importHar(payload: {
     projectId: string
     content: string
@@ -634,9 +696,17 @@ interface CurlExportRequest {
     type: string
     basic?: { username: string; password: string }
     bearer?: { token: string; prefix?: string }
+    apiKey?: { key: string; value: string; in?: 'header' | 'query' }
   }
   sslVerification?: boolean
   cookies?: string
+  /** `:name` path variable values (issue #276). */
+  pathVariables?: Array<{ key: string; value: string; description?: string }>
+  /** The stored request — an `inherit` auth then resolves via folder / project. */
+  endpointId?: string
+  savedRequestId?: string
+  testSuiteItemId?: string
+  projectId?: string
 }
 
 // ─── SOAP ────────────────────────────────────────────────────────
@@ -677,6 +747,8 @@ interface WsConnectOptions {
   headers?: Record<string, string>
   protocols?: string[]
   rejectUnauthorized?: boolean
+  /** Settings tab (issue #282). */
+  settings?: Partial<WsSettings>
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
@@ -694,20 +766,29 @@ interface WsConnectionInfo {
 
 interface WsEventPayload {
   connectionId: string
-  type: 'open' | 'message' | 'close' | 'error'
+  type: 'open' | 'message' | 'close' | 'error' | 'reconnecting'
   data?: string
   code?: number
   reason?: string
   timestamp: number
   messageId?: string
   contentType?: 'text' | 'json' | 'binary'
+  /** `reconnecting`: the attempt number (issue #282). */
+  attempt?: number
+  /** `open` after a reconnection. */
+  reconnected?: boolean
 }
 
 interface WsApi {
   connect(options: WsConnectOptions): Promise<IpcResult<WsConnectionInfo>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
-  send(connectionId: string, message: string): Promise<IpcResult<boolean>>
+  /** `opts.binary`: `message` is base64 / hex text sent as a binary frame (issue #282). */
+  send(
+    connectionId: string,
+    message: string,
+    opts?: { binary?: 'base64' | 'hex' },
+  ): Promise<IpcResult<boolean>>
   onEvent(callback: (event: WsEventPayload) => void): () => void
 }
 
@@ -1641,6 +1722,16 @@ interface McpOAuthStep {
   note?: string
   error?: string
   durationMs?: number
+  /**
+   * Issue #295: the running step waits for the user to confirm sending the
+   * client secret to an authorization server on another host — answer with
+   * `oauthConfirm`. Origins only.
+   */
+  confirmation?: {
+    mcpServer: string
+    authorizationServer: string
+    tokenEndpoint: string
+  }
 }
 
 interface McpOAuthSummary {
@@ -1852,6 +1943,8 @@ interface McpApi {
   oauthStart(options: McpOAuthStartOptions): Promise<IpcResult<{ oauthSessionId: string }>>
   oauthCancel(oauthSessionId: string): Promise<IpcResult<{ cancelled: boolean }>>
   oauthForget(oauthSessionId: string): Promise<IpcResult<{ forgotten: boolean }>>
+  /** Issue #295: answer a step's `confirmation`; `answered: false` when nothing was asked. */
+  oauthConfirm(oauthSessionId: string, accept: boolean): Promise<IpcResult<{ answered: boolean }>>
   onOauthStep(callback: (event: McpOAuthStepEvent) => void): () => void
   onOauthDone(callback: (event: McpOAuthDoneEvent) => void): () => void
   securityScan(request: McpSecurityScanRequest): Promise<IpcResult<{ scanId: string }>>
@@ -1870,6 +1963,12 @@ interface SocketIOConnectOptions {
   bearerToken?: string
   /** Socket.IO `auth.*` payload sent during the namespace handshake. */
   auth?: Record<string, unknown>
+  /** Handshake headers (issue #283). */
+  extraHeaders?: Record<string, string>
+  /** Settings tab (issue #283). */
+  settings?: Partial<SioSettings>
+  /** Listened events (issue #283); omitted = every event. */
+  listen?: SioListenConfig
   _workspaceId?: string
   _projectId?: string
   _endpointId?: string
@@ -1880,10 +1979,18 @@ interface SocketIOConnectOptions {
 
 interface SocketIOEventPayload {
   connectionId: string
-  direction: 'in' | 'out'
+  direction: 'in' | 'out' | 'ack' | 'system'
   event: string
   data: unknown
+  args?: unknown[]
+  error?: string
   timestamp: number
+}
+
+/** `socketio:closed` — the server ended the connection (issue #275). */
+interface SocketIOClosedPayload {
+  connectionId: string
+  reason: string
 }
 
 interface SocketIOApi {
@@ -1893,7 +2000,91 @@ interface SocketIOApi {
   emit(connectionId: string, eventName: string, data: unknown): Promise<IpcResult<boolean>>
   subscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
   unsubscribe(connectionId: string, eventName: string): Promise<IpcResult<boolean>>
+  /** Emit with any number of `{content, contentType}` arguments, optionally asking for an ack. */
+  emitArgs(
+    connectionId: string,
+    eventName: string,
+    args: SioWireArg[],
+    opts?: { ack?: boolean },
+  ): Promise<IpcResult<boolean>>
+  setListen(connectionId: string, cfg: SioListenConfig): Promise<IpcResult<boolean>>
   onEvent(callback: (event: SocketIOEventPayload) => void): () => void
+  onClosed(callback: (event: SocketIOClosedPayload) => void): () => void
+}
+
+// ─── MQTT (issue #284) ───────────────────────────────────────────
+
+interface MqttConnectRequest {
+  url: string
+  /** Empty = a random id is generated. */
+  clientId?: string
+  version?: MqttVersion
+  username?: string
+  password?: string
+  settings?: Partial<MqttSettings>
+  properties?: MqttConnectProperties
+  will?: MqttWireWill | null
+  subscriptions?: MqttWireSubscription[]
+  _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _pendingId?: string
+  /** Editor state (`{{var}}` kept) for History reopen. */
+  _configured?: HistoryConfigured
+}
+
+interface MqttConnectResponse {
+  connectionId: string
+  clientId: string
+  url: string
+  sessionPresent: boolean
+  reasonCode: number
+  properties?: Record<string, unknown>
+}
+
+/** `mqtt:event` — one timeline entry of a connection. */
+type MqttEventPayload = { connectionId: string } & (
+  | {
+      type: 'message'
+      direction: 'in' | 'out'
+      topic: string
+      payload: string
+      binary: boolean
+      qos: MqttQos
+      retain: boolean
+      dup?: boolean
+      properties?: Record<string, unknown>
+      timestamp: number
+    }
+  | {
+      type: 'system'
+      event: string
+      detail: string
+      topic?: string
+      reasonCode?: number
+      timestamp: number
+    }
+)
+
+/** `mqtt:closed` — the broker ended the connection. */
+interface MqttClosedPayload {
+  connectionId: string
+  reason: string
+}
+
+interface MqttApi {
+  connect(options: MqttConnectRequest): Promise<IpcResult<MqttConnectResponse>>
+  cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
+  disconnect(connectionId: string): Promise<IpcResult<boolean>>
+  publish(connectionId: string, message: MqttWirePublish): Promise<IpcResult<boolean>>
+  subscribe(
+    connectionId: string,
+    subscriptions: MqttWireSubscription[],
+  ): Promise<IpcResult<Array<{ topic: string; qos: number; refused: boolean }>>>
+  unsubscribe(connectionId: string, topics: string[]): Promise<IpcResult<boolean>>
+  onEvent(callback: (event: MqttEventPayload) => void): () => void
+  onClosed(callback: (event: MqttClosedPayload) => void): () => void
 }
 
 // ─── Updater ─────────────────────────────────────────────────────
@@ -2198,8 +2389,8 @@ interface SaveApi {
   exportFolder(folderId: string): Promise<IpcResult<{ path: string }>>
   exportTestSuite(
     suiteId: string,
-    format?: 'testnizer' | 'postman' | 'insomnia',
-  ): Promise<IpcResult<{ path: string; skipped?: ExportSkippedItem[] }>>
+    format?: 'testnizer' | 'postman' | 'insomnia' | 'postman-v3' | 'postman-v3-folder',
+  ): Promise<IpcResult<{ path: string; skipped?: ExportSkippedItem[]; notes?: string[] }>>
   importProject(payload: {
     workspaceId: string
     name?: string
@@ -3346,6 +3537,7 @@ interface ApiBridge {
   aiChat: AiChatApi
   mcp: McpApi
   socketio: SocketIOApi
+  mqtt: MqttApi
   updater: UpdaterApi
   branch: BranchApi
   git: GitApi
@@ -3368,7 +3560,7 @@ interface ApiBridge {
 
 declare global {
   interface Window {
-    electron: ElectronAPI
+    electron: ElectronInfo
     api: ApiBridge
   }
 }

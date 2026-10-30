@@ -9,9 +9,9 @@
  *     flushed, not dropped; see socketio.engine.ts pendingEvents/dispatchEvent).
  *   - auth.token validation: server does NOT validate auth tokens — connection always
  *     succeeds. MST-143 verifies the token field is accepted without error.
- *   - subscribe/unsubscribe: Socket.IO "subscribe" button adds an event to the
- *     local subscription list; the server's onAny echoes any event — MST-144 tests
- *     that subscribing to "echo" and emitting causes event to arrive in timeline.
+ *   - listen / stop listening (issue #283 Events tab): a new request shows only
+ *     listened events (Postman); MST-142/143 turn on "Listen to all events",
+ *     MST-144 listens to "echo" only and checks `welcome` stays hidden.
  *   - Disconnect reason: when the client disconnects, the server doesn't push a
  *     reason event — MST-145 verifies the UI returns to "disconnected" state.
  */
@@ -42,6 +42,8 @@ uiTest.describe('Tur1 — Socket.IO advanced [MST-142..145]', () => {
     // Fill namespace field
     const nsInput = window.getByPlaceholder(/Namespace/i)
     await nsInput.fill('/chat')
+    // Issue #283: a new request listens to no event (Postman) — show them all.
+    await window.getByTestId('socketio-listen-all-inline').click()
 
     await window.getByTestId('socketio-connect').click()
     // Emit button appears when connected
@@ -77,6 +79,8 @@ uiTest.describe('Tur1 — Socket.IO advanced [MST-142..145]', () => {
     // Fill bearer token
     const tokenInput = window.getByPlaceholder(/Bearer token/i)
     await tokenInput.fill('mst143-secret')
+    // Issue #283: a new request listens to no event (Postman) — show them all.
+    await window.getByTestId('socketio-listen-all-inline').click()
 
     await window.getByTestId('socketio-connect').click()
     await expect(window.getByTestId('socketio-emit')).toBeVisible({ timeout: 15_000 })
@@ -90,40 +94,42 @@ uiTest.describe('Tur1 — Socket.IO advanced [MST-142..145]', () => {
     await window.getByTestId('socketio-connect').click()
   })
 
-  // ── MST-144: Subscribe / unsubscribe ──────────────────────────────────────
-  uiTest('MST-144 subscribe to event then unsubscribe removes from list', async ({ window }) => {
+  // ── MST-144: Listen / stop listening (issue #283 Events tab) ────────────
+  uiTest('MST-144 listen to an event then remove it from the list', async ({ window }) => {
     const { socketio } = getTestServerUrls()
     await openNewDropdownItem(window, /Socket\.IO/i)
     await window.getByTestId('socketio-url').fill(socketio)
     await window.getByTestId('socketio-connect').click()
     await expect(window.getByTestId('socketio-emit')).toBeVisible({ timeout: 15_000 })
 
-    // Subscribe to "echo" event
-    const subscribeInput = window.getByPlaceholder(/event name/i).last()
-    await subscribeInput.fill('echo')
-    // "+" button to add subscription
-    const addSubBtn = window.getByRole('button', { name: /^\+$/ })
-    await addSubBtn.click()
+    // Listen to "echo" (the Events tab; the old subscribe box).
+    await window.getByTestId('socketio-tab-events').click()
+    await window.getByTestId('socketio-listener-input').fill('echo')
+    await window.getByTestId('socketio-listener-add').click()
+    const listener = window.getByTestId('socketio-listener')
+    await expect(listener).toHaveCount(1)
+    await expect(listener.getByTestId('socketio-listener-name')).toHaveValue('echo')
 
-    // "echo" should appear in the subscriptions list
-    await expect(window.getByText(/^echo$/).first()).toBeVisible({ timeout: 5_000 })
-
-    // Emit a "ping" event so the server echoes back
-    const emitEventInput = window.getByPlaceholder(/event name/i).first()
-    await emitEventInput.fill('ping')
+    // Emit an event the server echoes back as `echo`: it reaches the timeline.
+    await window.getByTestId('socketio-tab-message').click()
+    await window
+      .getByPlaceholder(/event name/i)
+      .first()
+      .fill('mst144')
     await window.getByTestId('socketio-emit').click()
+    await expect(
+      window
+        .getByTestId('socketio-event')
+        .filter({ hasText: /mst144/ })
+        .filter({ hasText: /echo/ }),
+    ).toHaveCount(1, { timeout: 10_000 })
+    // `welcome` was not listened to, so it never shows.
+    await expect(window.getByTestId('socketio-event').filter({ hasText: /welcome/ })).toHaveCount(0)
 
-    // Should see pong or echo in timeline
-    await expect(window.getByText(/pong|echo|welcome/i).first()).toBeVisible({ timeout: 10_000 })
-
-    // Unsubscribe by clicking the "×" next to "echo"
-    const echoRow = window.locator('[style*="monospace"]').filter({ hasText: 'echo' }).first()
-    const removeBtn = echoRow.locator('button').first()
-    if (await removeBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await removeBtn.click()
-      // "echo" entry should disappear from subscriptions
-      await expect(echoRow).toBeHidden({ timeout: 5_000 })
-    }
+    // Remove the listener: it leaves the list.
+    await window.getByTestId('socketio-tab-events').click()
+    await listener.getByTestId('socketio-listener-remove').click()
+    await expect(listener).toHaveCount(0, { timeout: 5_000 })
 
     await window.getByTestId('socketio-connect').click()
   })

@@ -19,8 +19,8 @@
  *      carried (its auth fields) are replaced wherever they appear: URL,
  *      query, headers, body, response headers and body, error text. Values
  *      shorter than `MIN_SECRET_LENGTH` are ignored so `1` or `true` never
- *      turn every row into dots. The raw, URL-encoded and JSON-escaped forms
- *      of each value are scrubbed.
+ *      turn every row into dots. The raw, URL-encoded, JSON-escaped and
+ *      XML-escaped forms of each value are scrubbed.
  *
  * Two modes for the name rule:
  *  - `sent`     — what went on the wire (resolved). Every credential-named
@@ -114,6 +114,12 @@ export function createScrubber(values: Iterable<unknown>): Scrubber {
     }
     const json = JSON.stringify(v).slice(1, -1)
     if (json !== v) add(json)
+    // XML-escaped forms: a SOAP envelope carries the WS-Security password as
+    // `alpha&amp;beta`, and an echo service returns it that way (peer review
+    // of issue #298). Serialisers differ — every special escaped, text-node
+    // minimal (`& < >` only), `&#39;` for the apostrophe — and an envelope
+    // echoed as a text node is escaped once more.
+    for (const x of xmlEscapedForms(v)) add(x)
   }
   const needles = [...set].sort((a, b) => b.length - a.length)
   return {
@@ -128,6 +134,18 @@ export function createScrubber(values: Iterable<unknown>): Scrubber {
       return out
     },
   }
+}
+
+/** The XML-escaped spellings of `v` that differ from it (raw form excluded). */
+function xmlEscapedForms(v: string): string[] {
+  if (!/[&<>"']/.test(v)) return []
+  const minimal = v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  const full = minimal.replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+  const numeric = minimal.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+  const forms = new Set([minimal, full, numeric])
+  for (const f of [...forms]) forms.add(f.replace(/&/g, '&amp;'))
+  forms.delete(v)
+  return [...forms]
 }
 
 /** A scrubber that only applies the name rule (no secret values known). */
@@ -862,9 +880,13 @@ const HEADER_KEYS = new Set([
   'responseHeaders',
   'responseMetadata',
   'metadata',
+  // MQTT 5 user properties (CONNECT, will, PUBLISH): name/value pairs like
+  // headers — the renderer withholds credential-named ones by the same
+  // header rule (`MQTT_CREDENTIALS`, issue #284).
+  'userProperties',
 ])
 /** Keys whose value is a query-param-like container (name rule = arg rule). */
-const PARAM_KEYS = new Set(['params', 'query', 'queryParams'])
+const PARAM_KEYS = new Set(['params', 'query', 'queryParams', 'pathVariables'])
 /** Keys whose string value is a URL (credential query params masked). */
 const URL_KEYS = new Set(['url', 'address', 'serverAddress', 'endpointUrl', 'wsdlUrl', 'protoUrl'])
 /** Keys whose value is a request body. */

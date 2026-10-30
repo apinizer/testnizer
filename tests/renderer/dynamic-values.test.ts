@@ -1,12 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { resolveDynamicValue } from '../../src/renderer/lib/dynamic-values'
+import { resolveDynamicVariable } from '../../src/shared/dynamic-variables'
+
+// The generators moved to the shared table (issue #281); an unknown name now
+// resolves to `undefined` so callers can leave the placeholder as written.
+const resolveDynamicValue = (expr: string): string => resolveDynamicVariable(expr) ?? expr
 
 describe('resolveDynamicValue', () => {
   describe('$timestamp', () => {
     it('returns unix seconds as numeric string', () => {
       const before = Math.floor(Date.now() / 1000)
       const result = resolveDynamicValue('$timestamp')
-      const after = Math.floor(Date.now() / 1000)
+      // Postman rounds (postman-collection dynamic-variables.js).
+      const after = Math.round(Date.now() / 1000)
       const ts = parseInt(result, 10)
       expect(ts).toBeGreaterThanOrEqual(before)
       expect(ts).toBeLessThanOrEqual(after)
@@ -24,7 +29,9 @@ describe('resolveDynamicValue', () => {
   describe('$randomUUID', () => {
     it('returns v4-style UUID', () => {
       const result = resolveDynamicValue('$randomUUID')
-      expect(result).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+      expect(result).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      )
     })
 
     it('generates different values on subsequent calls', () => {
@@ -72,7 +79,7 @@ describe('resolveDynamicValue', () => {
   describe('$randomEmail', () => {
     it('returns valid email format', () => {
       const result = resolveDynamicValue('$randomEmail')
-      expect(result).toMatch(/^[a-z]+\.[a-z]+@[a-z.]+$/)
+      expect(result).toMatch(/^\S+@\S+\.\S+$/)
     })
   })
 
@@ -110,12 +117,12 @@ describe('resolveDynamicValue', () => {
   })
 
   describe('unknown expressions', () => {
-    it('returns expression as-is when unrecognized', () => {
-      expect(resolveDynamicValue('$nonexistent')).toBe('$nonexistent')
+    it('returns undefined when unrecognized', () => {
+      expect(resolveDynamicVariable('$nonexistent')).toBeUndefined()
     })
 
-    it('returns expression as-is for unknown function', () => {
-      expect(resolveDynamicValue('$unknownFn(arg)')).toBe('$unknownFn(arg)')
+    it('returns undefined for an unknown function', () => {
+      expect(resolveDynamicVariable('$unknownFn(arg)')).toBeUndefined()
     })
   })
 })

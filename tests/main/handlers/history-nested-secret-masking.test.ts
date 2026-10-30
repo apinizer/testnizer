@@ -186,6 +186,67 @@ describe('History masks nested / body-like credentials (issue #195)', () => {
     expect(text).not.toContain(SIO_KEY)
   })
 
+  it('issue #282 / #283 fields: headers, params, every argument, saved messages (configured)', async () => {
+    const HDR = 'sio-hdr-bearer-5150'
+    const PARAM = 'sio-param-token-6160'
+    const ARG = 'sio-arg-password-7170'
+    const SAVED = 'ws-saved-secret-8180'
+    await harness.invoke('history:add', {
+      protocol: 'socketio',
+      method: 'CONNECT',
+      url: `https://sio.test?token=${PARAM}`,
+      request_snapshot: JSON.stringify({
+        url: `https://sio.test?token=${PARAM}`,
+        extraHeaders: { Authorization: `Bearer ${HDR}` },
+        configured: {
+          url: `https://sio.test?token=${PARAM}`,
+          meta: {
+            socketio: {
+              url: `https://sio.test?token=${PARAM}`,
+              customHeaders: [
+                { id: 'h', key: 'Authorization', value: `Bearer ${HDR}`, enabled: true },
+              ],
+              params: [{ id: 'p', key: 'token', value: PARAM, enabled: true }],
+              emitArgs: [
+                { id: 'a1', content: 'hello', contentType: 'text' },
+                { id: 'a2', content: `{"password":"${ARG}"}`, contentType: 'json' },
+              ],
+              savedMessages: [
+                {
+                  id: 'm',
+                  name: 'login',
+                  eventName: 'login',
+                  acknowledgement: false,
+                  args: [{ id: 'x', content: `{"password":"${ARG}"}`, contentType: 'json' }],
+                },
+              ],
+            },
+          },
+        },
+      }),
+    })
+    await harness.invoke('history:add', {
+      protocol: 'websocket',
+      method: 'CONNECT',
+      url: 'wss://ws.test',
+      request_snapshot: JSON.stringify({
+        configured: {
+          meta: {
+            websocket: {
+              params: [{ id: 'p', key: 'api_key', value: PARAM, enabled: true }],
+              savedMessages: [
+                { id: 'm', name: 'auth', content: `{"secret":"${SAVED}"}`, contentType: 'json' },
+              ],
+            },
+          },
+        },
+      }),
+    })
+    const text = historyText()
+    for (const v of [HDR, PARAM, ARG, SAVED]) expect(text).not.toContain(v)
+    expect(text).toContain('hello')
+  })
+
   it('OAuth token endpoint reply: access_token / refresh_token masked in response_snapshot; the live result is not', async () => {
     const res = (await harness.invoke('request:send', {
       method: 'POST',

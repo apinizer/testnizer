@@ -21,10 +21,11 @@ birinci sınıf bir istek türüdür — eklenti değil. Bkz. [Protokoller](/tr/
 | WS-Security | UsernameToken, Timestamp, RSA-SHA256 imzalama, şifreleme — bkz. [WS-Security](/tr/docs/ws-security) |
 | GraphQL | Query, mutation, subscription, schema introspection |
 | gRPC | Proto yükleme + **server reflection**, dört streaming modu |
-| WebSocket | `wss`, özel header, JSON composer, çift yönlü timeline |
-| Socket.IO | Namespace, `auth.token`, emit + subscribe, event timeline |
+| WebSocket | `wss`, parametreler + özel header, Metin / JSON / XML / HTML / binary composer, kayıtlı mesajlar, hexdump, çift yönlü timeline |
+| Socket.IO | İstemci v4 / v3 / v2, namespace, dinleyiciler, Ack, çok argümanlı emit, kayıtlı mesajlar, event timeline |
+| MQTT | 3.1.1 ve 5.0, `mqtt(s)://` ve `ws(s)://`, konular, QoS, retain, Last Will, kayıtlı mesajlar |
 | SSE | Uzun ömürlü akışlar, adlı event'ler, `Last-Event-ID` resume |
-| MCP | Streamable HTTP / SSE / stdio; tool listele + çağır |
+| MCP | Streamable HTTP / SSE / stdio; araçlar, kaynaklar, istemler, bildirimler, OAuth 2.1, güvenlik taraması |
 | AI Chat | Çoklu LLM provider + özel URL, streaming, tools köprüsü |
 
 ## İstek oluşturma
@@ -46,7 +47,7 @@ Hawk · AWS Signature.
 Bkz. [Ortamlar & değişkenler](/tr/docs/environments).
 
 - Proje-scope **ortamlar**, çift **Initial / Current Value** modeliyle
-- Workspace ve proje scope'unda **global değişkenler**
+- Proje başına **Globaller** — Postman globals ve collection variables tek listede; bir ortam için **Globallere taşı**
 - Zincirli referanslı `{{değişken}}` substitution
 - **Dinamik değerler**: `{{$randomInt}}`, `{{$guid}}`, `{{$timestamp}}` ve daha fazlası
 - Satır içi değişken autocomplete
@@ -61,7 +62,7 @@ değerleri de `{{değişken}}` çözer. Bkz. [Script & test assertion](/tr/docs/
 
 Sandbox'lı runtime'da Postman / Insomnia uyumlu `pm.*` API:
 
-- `pm.environment` / `pm.globals` / `pm.variables` / `pm.collectionVariables` get & set
+- `pm.environment` / `pm.globals` / `pm.variables` / `pm.collectionVariables` get & set ve sır Globaller için `pm.vault`
 - `pm.test()`, `pm.expect()` (chai-BDD chain), `pm.response`
 - `pm.iterationData`, `pm.execution.skipRequest()` / `setNextRequest()`
 
@@ -86,15 +87,21 @@ sunucusu. Bkz. [Mock Server](/tr/docs/mock-server).
 
 Bkz. [İçe & dışa aktarma](/tr/docs/import-formats).
 
-- İçe aktarma: **OpenAPI / Swagger**, **Postman**, **Insomnia**, **HAR**, **cURL**,
-  **WSDL**, **RAML**, **SoapUI**, **Testnizer Native** — otomatik format tespitiyle
-- Dışa aktarma: tüm proje veya klasör alt ağacı, kayıpsız round-trip
+- İçe aktarma: **OpenAPI / Swagger**, **Postman** (v1 – v3, klasörler, `.zip`),
+  **Insomnia**, **HAR**, **cURL** (bash, CMD, PowerShell — ya da URL çubuğuna
+  yapıştırarak), **WSDL**, **RAML**, **SoapUI**, **Testnizer Native** — otomatik
+  format tespitiyle
+- Dışa aktarma: tüm proje veya klasör alt ağacı — Testnizer JSON, Postman
+  v2.1 / v3, OpenAPI 3, Insomnia
 
 ## Kod üretimi
 
-**cURL**, **JavaScript** (fetch / axios), **Python** (requests), **Java**
-(OkHttp), **C#**, **Go**, **PHP**, **Ruby**, **Kotlin** ve **Swift** için
-kopyala-yapıştır hazır istek snippet'i üretin.
+20 dil ve 36 varyantta kopyala-yapıştır hazır istek snippet'i üretin —
+**cURL** (bash, CMD, PowerShell), **JavaScript** (Fetch / XHR / jQuery),
+**NodeJS**, **Python**, **Java**, **C#**, **Go**, **PHP**, **Ruby**, **Kotlin**,
+**Swift**, **Rust**, **Dart**, **R**, **C**, **Objective-C**, **OCaml**,
+**PowerShell**, **Shell** (wget / HTTPie) ve ham **HTTP** — varyant başına
+seçeneklerle. Bkz. [Kod snippet oluşturma](/tr/docs/protocols/http#kod-snippet-oluşturma).
 
 ## Yerleşik araçlar
 
@@ -148,13 +155,14 @@ yönlendirmesi, özel truststore ve şifrelenmiş passphrase saklama. Bkz.
 
 - Yerel veri için opsiyonel **şifre** koruması
 - İlk açılışta EULA / gizlilik onayı
-- `contextIsolation` açık, `nodeIntegration` kapalı, sıkı CSP — arayüz ağa asla
-  doğrudan dokunmaz; tüm trafik Node main process'inden geçer
+- `contextIsolation` açık, `nodeIntegration` kapalı, sandbox'lı renderer, web
+  izinleri varsayılan olarak reddedilir, sıkı CSP — arayüz ağa asla doğrudan
+  dokunmaz; tüm trafik Node main process'inden geçer
 - Geçmişte URL credential temizleme. Bkz. [Neden offline?](/tr/docs/why-offline).
 
 ## Platform
 
-- **Windows, macOS, Linux** (x64 + arm64)
+- **Windows, macOS 13 (Ventura) veya üstü, Linux** (x64 + arm64)
 - **Standalone & %100 offline** — sıfır harici bağımlılık
 - Yerel **SQLite** depolama, şifrelenmiş config
 - Yerleşik **otomatik güncelleme**

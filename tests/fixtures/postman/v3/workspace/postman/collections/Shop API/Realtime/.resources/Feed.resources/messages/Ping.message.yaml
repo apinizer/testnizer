@@ -1,0 +1,5 @@
+$kind: websocket-message
+name: Ping bytes
+content: '00ff10'
+contentType: hex
+order: 2000

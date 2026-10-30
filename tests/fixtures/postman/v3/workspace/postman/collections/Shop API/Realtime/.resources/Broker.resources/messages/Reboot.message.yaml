@@ -1,0 +1,19 @@
+$kind: mqtt-message
+name: Reboot
+description: Ask one device to reboot
+topic: 'devices/{{deviceId}}/commands'
+content: '{"cmd":"reboot","delay":5}'
+contentType: json
+qos: 2
+retain: false
+properties:
+  contentType: application/json
+  responseTopic: devices/shop/replies
+  correlationData: req-1
+  messageExpiryInterval: 60
+  payloadFormatIndicator: true
+  topicAlias: 3
+  userProperties:
+    - key: trace
+      value: t-1
+order: 1000

@@ -12,9 +12,11 @@
 import { useTabsStore } from '../stores/tabs.store'
 import { useRequestStore } from '../stores/request.store'
 import { useSoapStore } from '../stores/soap.store'
+import { isManualSoapMeta } from '../../shared/soap-transport'
 import { useWebSocketStore } from '../stores/websocket.store'
 import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
+import { useMqttStore } from '../stores/mqtt.store'
 import { useGrpcStore } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { restoreMcpCall, useMcpStore, type McpTransport } from '../stores/mcp.store'
@@ -31,9 +33,20 @@ import {
   NOT_LOADED_ERROR,
 } from './withheld-credentials'
 import { orphanTab } from './orphan-tab'
+import {
+  mqttMetaOf,
+  readMqttMeta,
+  readSioMeta,
+  readWsMeta,
+  sioMetaOf,
+  wsMetaOf,
+} from './realtime-meta'
+import { mergeParamsFromUrl } from './url-query-sync'
 import type { WsSecurityConfig } from '../types'
 import type { Tab, KeyValuePair } from '../types'
 import type { RequestSettings } from '../../shared/request-settings'
+import { isRunnableProtocol } from '../../shared/request-protocols'
+import { pathVariablesField, type PathVariableLike } from '../../shared/path-variables'
 
 type SseHttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
@@ -129,15 +142,9 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       effectiveUrl: ws.url || url,
       effectiveMethod: 'GET',
       effectiveBody: { type: 'none' },
-      protocolMeta: {
-        websocket: {
-          url: ws.url,
-          customHeaders: ws.customHeaders,
-          composerContent: ws.composerContent,
-          composerMode: ws.composerMode,
-          autoScroll: ws.autoScroll,
-        },
-      },
+      // One writer (`lib/realtime-meta.ts`), shared with the History row's
+      // `configured`: + params, settings, saved messages (issue #282).
+      protocolMeta: { websocket: wsMetaOf(ws) },
     }
   }
   if (protocol === 'sse') {
@@ -169,16 +176,20 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       effectiveUrl: sio.url || url,
       effectiveMethod: 'GET',
       effectiveBody: { type: 'none' },
-      protocolMeta: {
-        socketio: {
-          url: sio.url,
-          namespace: sio.namespace,
-          bearerToken: sio.bearerToken,
-          subscriptions: sio.subscriptions,
-          emitEvent: sio.emitEvent,
-          emitPayload: sio.emitPayload,
-        },
-      },
+      // One writer for the block (`lib/realtime-meta.ts`), shared with the
+      // History row's `configured` (issue #283).
+      protocolMeta: { socketio: sioMetaOf(sio) },
+    }
+  }
+  if (protocol === 'mqtt') {
+    const mqtt = useMqttStore.getState()
+    return {
+      effectiveUrl: mqtt.url || url,
+      effectiveMethod: 'GET',
+      effectiveBody: { type: 'none' },
+      // One writer for the block (`lib/realtime-meta.ts`), shared with the
+      // History row's `configured` and the Postman v3 import (issue #284).
+      protocolMeta: { mqtt: mqttMetaOf(mqtt) },
     }
   }
   if (protocol === 'grpc') {
@@ -286,21 +297,40 @@ const HTTP_SETTINGS_PROTOCOLS = new Set(['http'])
  * HTTP: timeout + redirects + SSL from the request store's Settings tab. MCP:
  * the timeout from the MCP store. Other protocols carry none. A `null`
  * timeout (inherit) is left out, so a cleared value does not survive.
+ * `critical` (issue #304): every protocol the Runner runs (HTTP, SOAP,
+ * GraphQL, MCP — `isRunnableProtocol`), from the request store; written only
+ * when on, so an unmarked row's JSON is unchanged.
  */
 export function requestSettingsFor(tab: Tab): RequestSettings {
   const protocol = (tab.protocol ?? 'http') as string
+  const critical: RequestSettings =
+    isRunnableProtocol(protocol) && useRequestStore.getState().critical ? { critical: true } : {}
   if (protocol === 'mcp') {
     const timeout = useMcpStore.getState().requestTimeout
-    return timeout != null ? { timeout } : {}
+    return { ...(timeout != null ? { timeout } : {}), ...critical }
   }
-  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return {}
+  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return critical
   const req = useRequestStore.getState()
   return {
     ...(req.requestTimeout != null ? { timeout: req.requestTimeout } : {}),
     followRedirects: req.followRedirects,
     maxRedirects: req.maxRedirects,
     sslVerification: req.sslVerification,
+    ...critical,
   }
+}
+
+/**
+ * The Path Variables rows Ctrl+S / Save As persist with the row (issue #276):
+ * `{pathVariables}` next to the settings — top level of `request_schema`, or
+ * of `metadata` on saved_requests. HTTP only (the request store's URL). A URL
+ * without `:name` writes no key; a `:name` row left empty is stored empty and
+ * still sends `:name` literally (`applyPathVariables`), exactly as before.
+ */
+export function pathVariablesFor(tab: Tab): { pathVariables?: PathVariableLike[] } {
+  const protocol = (tab.protocol ?? 'http') as string
+  if (!HTTP_SETTINGS_PROTOCOLS.has(protocol)) return {}
+  return pathVariablesField(useRequestStore.getState().pathVariables)
 }
 
 /**
@@ -310,7 +340,7 @@ export function requestSettingsFor(tab: Tab): RequestSettings {
  */
 export function savedRequestMetadata(
   protocolMeta: Record<string, unknown>,
-  settings: RequestSettings,
+  settings: RequestSettings & { pathVariables?: PathVariableLike[] },
 ): string | undefined {
   const merged = { ...protocolMeta, ...settings }
   return Object.keys(merged).length > 0 ? JSON.stringify(merged) : undefined
@@ -325,12 +355,14 @@ export function requestStoreSettings(s: RequestSettings): {
   followRedirects?: boolean
   maxRedirects?: number
   sslVerification?: boolean
+  critical: boolean
 } {
   return {
     requestTimeout: s.timeout ?? null,
     followRedirects: s.followRedirects,
     maxRedirects: s.maxRedirects,
     sslVerification: s.sslVerification,
+    critical: s.critical === true,
   }
 }
 
@@ -410,6 +442,9 @@ function switchProtocolToTab(protocol: string, tabId: string): void {
     case 'socketio':
       useSocketIOStore.getState().switchToTab(tabId)
       break
+    case 'mqtt':
+      useMqttStore.getState().switchToTab(tabId)
+      break
     case 'grpc':
       useGrpcStore.getState().switchToTab(tabId)
       break
@@ -438,6 +473,10 @@ function restoreWsSecurity(raw: unknown): void {
   }
 }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
 function applyProtocolMetadata(protocol: string, metadata: unknown): void {
   if (!metadata || typeof metadata !== 'object') return
   const meta = metadata as Record<string, unknown>
@@ -455,17 +494,15 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     const rawXml = str(s.rawXml) ?? (req.body?.type === 'xml' ? req.body.content || '' : '')
     const wsdlUrl = str(s.wsdlUrl)
     const operationName = str(s.operationName ?? s.selectedOperation)
-    // Explicit mode when present; older rows have none — a request with no
-    // WSDL and no selected operation can only have been built manually.
-    const manual = s.mode === 'manual' || (s.mode === undefined && !wsdlUrl && !operationName)
+    // Explicit mode when present; older rows have none (shared rule — the
+    // Runner classifies the row with the same `isManualSoapMeta`).
+    const manual = isManualSoapMeta(s)
     const soap = useSoapStore.getState()
-
-    if (manual) {
-      // No `soap` meta → loadFromEndpoint takes the raw-XML branch, so no
-      // synthetic WSDL is fabricated and the Manual form + raw body render.
-      soap.loadFromEndpoint({ url: endpointUrl, body: { type: 'xml', content: rawXml } })
-      soap.setMode('manual')
-      restoreWsSecurity(s.wsSecurity)
+    // The Manual form fields, restored in BOTH modes: Send falls back to the
+    // manual action when the WSDL operation has none (`soapVersionAndAction`),
+    // so leaving them out read whatever the tab cache held (issue #298
+    // follow-up).
+    const restoreManualFields = (): void => {
       const action = str(s.manualSoapAction)
       if (action !== undefined) soap.setManualSoapAction(action)
       const version = str(s.manualSoapVersion)
@@ -474,6 +511,15 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
       if (opName !== undefined) soap.setManualOperationName(opName)
       const opNs = str(s.manualOperationNamespace)
       if (opNs !== undefined) soap.setManualOperationNamespace(opNs)
+    }
+
+    if (manual) {
+      // No `soap` meta → loadFromEndpoint takes the raw-XML branch, so no
+      // synthetic WSDL is fabricated and the Manual form + raw body render.
+      soap.loadFromEndpoint({ url: endpointUrl, body: { type: 'xml', content: rawXml } })
+      soap.setMode('manual')
+      restoreWsSecurity(s.wsSecurity)
+      restoreManualFields()
       return
     }
 
@@ -489,40 +535,59 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
         portName: str(s.portName ?? s.selectedPort),
         operationName,
         endpointUrl,
+        // The operation's action and the document's version (issue #298
+        // follow-up): dropped here before, so a reopened SOAP 1.2 / `urn:Op`
+        // row Sent as SOAP 1.1 with `SOAPAction: ""` while Run sent the saved
+        // values. Legacy rows may also carry the operation's example/schema.
+        soapAction: str(s.soapAction),
+        soapVersion:
+          s.soapVersion === 'soap12' || s.soapVersion === 'soap11' ? s.soapVersion : undefined,
+        exampleRequest: str(s.exampleRequest),
+        exampleResponse: str(s.exampleResponse),
+        ...(isPlainObject(s.inputSchema) ? { inputSchema: s.inputSchema } : {}),
+        ...(isPlainObject(s.outputSchema) ? { outputSchema: s.outputSchema } : {}),
       },
     })
     soap.setMode('wsdl')
     restoreWsSecurity(s.wsSecurity)
+    restoreManualFields()
     return
   }
 
   if (protocol === 'socketio' && meta.socketio && typeof meta.socketio === 'object') {
-    const s = meta.socketio as Record<string, unknown>
-    const sio = useSocketIOStore.getState()
-    if (typeof s.url === 'string') sio.setUrl(s.url)
-    if (typeof s.namespace === 'string') sio.setNamespace(s.namespace)
-    if (typeof s.bearerToken === 'string') sio.setBearerToken(s.bearerToken)
-    if (typeof s.emitEvent === 'string') sio.setEmitEvent(s.emitEvent)
-    if (typeof s.emitPayload === 'string') sio.setEmitPayload(s.emitPayload)
-    // Snapshotted but never restored (found with issue #182).
-    if (Array.isArray(s.subscriptions)) {
-      useSocketIOStore.setState({
-        subscriptions: s.subscriptions.filter((x): x is string => typeof x === 'string'),
-      })
-    }
+    // One reader (`lib/realtime-meta.ts`): an old row's `subscriptions` /
+    // `emitPayload` migrate, and its missing `listenAll` reads as true — the
+    // behaviour it had (issue #283).
+    const read = readSioMeta(meta.socketio)
+    useSocketIOStore.setState({
+      ...read,
+      ...(read.url !== undefined && read.params === undefined
+        ? { params: mergeParamsFromUrl(read.url, []) }
+        : {}),
+      ...(read.bearerToken !== undefined ? { bearerTokenWithheld: false } : {}),
+      activeSavedMessageId: null,
+    })
+    return
+  }
+
+  if (protocol === 'mqtt' && meta.mqtt && typeof meta.mqtt === 'object') {
+    // One reader (`lib/realtime-meta.ts`); keys the block lacks keep the tab's
+    // defaults. Not an edit: `setState`, the dirty dot stays.
+    useMqttStore.setState({ ...readMqttMeta(meta.mqtt), activeSavedMessageId: null })
     return
   }
 
   if (protocol === 'websocket' && meta.websocket && typeof meta.websocket === 'object') {
-    const w = meta.websocket as Record<string, unknown>
-    const ws = useWebSocketStore.getState()
-    if (typeof w.url === 'string') ws.setUrl(w.url)
-    if (Array.isArray(w.customHeaders)) {
-      ws.setHeaders(w.customHeaders as KeyValuePair[])
-    }
-    if (typeof w.composerContent === 'string') ws.setComposerContent(w.composerContent)
-    if (w.composerMode === 'json' || w.composerMode === 'text') ws.setComposerMode(w.composerMode)
-    if (typeof w.autoScroll === 'boolean') ws.setAutoScroll(w.autoScroll)
+    // One reader (`lib/realtime-meta.ts`); keys an old row lacks keep the
+    // tab's defaults, missing settings read as the pre-#282 behaviour.
+    const read = readWsMeta(meta.websocket)
+    useWebSocketStore.setState({
+      ...read,
+      ...(read.url !== undefined && read.params === undefined
+        ? { params: mergeParamsFromUrl(read.url, []) }
+        : {}),
+      activeSavedMessageId: null,
+    })
     return
   }
 
@@ -652,6 +717,8 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
   // Timeout / redirects / SSL (issue #185) — top-level keys, read back by the
   // tab-open paths and the Runner through `readRequestSettings`.
   const settings = requestSettingsFor(activeTab)
+  // `:name` path variable values (issue #276) ride next to the settings.
+  const pathVars = pathVariablesFor(activeTab)
   // Issue #201: an HTTP request still carrying a placeholder name ('New
   // Endpoint' from the tree's Add Request, 'Yeni Uç Nokta', …) is saved under
   // a name derived from its URL. A name the user typed is never replaced.
@@ -668,6 +735,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       preScript: req.preScript,
       postScript: req.postScript,
       ...settings,
+      ...pathVars,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {
@@ -717,7 +785,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       post_script: req.postScript,
       assertions: JSON.stringify(req.assertions ?? []),
       // No request_schema on this table: settings ride in `metadata`.
-      metadata: savedRequestMetadata(protocolMeta, settings),
+      metadata: savedRequestMetadata(protocolMeta, { ...settings, ...pathVars }),
     }
     try {
       const result = (await window.api?.savedRequest?.update(
@@ -758,6 +826,7 @@ export async function saveActiveRequestInPlace(): Promise<InPlaceSaveResult> {
       postScript: req.postScript,
       assertions: req.assertions ?? [],
       ...settings,
+      ...pathVars,
       ...(Object.keys(protocolMeta).length > 0 ? { metadata: protocolMeta } : {}),
     }
     try {

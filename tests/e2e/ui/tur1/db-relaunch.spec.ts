@@ -19,7 +19,7 @@ import {
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import { electronLaunchOptions } from '../../helpers/electron-env'
+import { electronLaunchOptions, firstAppWindow } from '../../helpers/electron-env'
 import { bootstrapWorkbench } from '../../helpers/ui/bootstrap'
 
 const mainPath = path.resolve(__dirname, '../../../../out/main/index.js')
@@ -29,7 +29,7 @@ async function launchApp(
   userDataDir: string,
 ): Promise<{ app: ElectronApplication; window: Page }> {
   const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
-  const window = await app.firstWindow()
+  const window = await firstAppWindow(app)
   await window.waitForLoadState('domcontentloaded')
   return { app, window }
 }

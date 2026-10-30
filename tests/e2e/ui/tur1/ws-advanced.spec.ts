@@ -138,8 +138,8 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
     await openNewDropdownItem(window, /WebSocket/i)
     await window.getByTestId('ws-url').fill(ws)
 
-    // Expand the Custom Headers section
-    await window.getByRole('button', { name: /Custom Headers/i }).click()
+    // Open the Headers tab (issue #282 tab strip; was a collapsible section)
+    await window.getByTestId('ws-tab-headers').click()
     // The KeyValueTable should be visible now; add a row
     await window.getByRole('button', { name: /\+ Add Header/i }).click()
     // Fill the last kv row
@@ -153,6 +153,7 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
     await expect(window.getByTestId('ws-disconnect')).toBeVisible({ timeout: 15_000 })
 
     // Send a message and get the echo — proves the connection was accepted
+    await window.getByTestId('ws-tab-message').click()
     await fillMonaco(window, 'ws-composer', '{"mst":"115"}')
     await window.getByTestId('ws-send').click()
     await expect(window.getByTestId('ws-message').first()).toBeVisible({ timeout: 10_000 })
@@ -275,8 +276,8 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
     await openNewDropdownItem(window, /WebSocket/i)
     await window.getByTestId('ws-url').fill(ws)
 
-    // Expand Custom Headers, add one
-    await window.getByRole('button', { name: /Custom Headers/i }).click()
+    // Headers tab (issue #282), add one
+    await window.getByTestId('ws-tab-headers').click()
     await window.getByRole('button', { name: /\+ Add Header/i }).click()
     const rows = window.locator('[data-testid^="kv-row-"]')
     const count = await rows.count()
@@ -284,7 +285,8 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
     await row.getByTestId('kv-key').fill('X-Save-Test')
     await row.getByTestId('kv-value').locator('input').fill('mst120')
 
-    // Pre-fill composer
+    // Pre-fill composer (Message tab)
+    await window.getByTestId('ws-tab-message').click()
     await fillMonaco(window, 'ws-composer', '{"saved":"mst120"}')
 
     // Save (Ctrl/Cmd+S) — for an unsaved tab this opens the SaveAs modal.

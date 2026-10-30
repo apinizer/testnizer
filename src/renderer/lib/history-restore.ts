@@ -131,6 +131,8 @@ export interface HttpHistoryRestore {
   method: HttpMethod
   url: string
   params: KeyValuePair[]
+  /** `:name` path variable values of the configured request (issue #276). */
+  pathVariables: KeyValuePair[]
   headers: KeyValuePair[]
   body?: RequestBody
   auth?: AuthConfig
@@ -150,6 +152,7 @@ export function httpHistoryRestore(entry: Row): HttpHistoryRestore {
     {
       url: str(src.url) ?? entry.url ?? '',
       params: src.params,
+      pathVariables: src.pathVariables,
       headers: src.headers,
       body: src.body,
       auth: src.auth,
@@ -162,6 +165,7 @@ export function httpHistoryRestore(entry: Row): HttpHistoryRestore {
     method,
     url: str(clean.url) ?? '',
     params: toKeyValueRows(clean.params),
+    pathVariables: toKeyValueRows(clean.pathVariables),
     headers: toKeyValueRows(clean.headers),
     body: isRecord(clean.body) ? (clean.body as unknown as RequestBody) : undefined,
     auth: isRecord(clean.auth) ? (clean.auth as unknown as AuthConfig) : undefined,
@@ -171,7 +175,14 @@ export function httpHistoryRestore(entry: Row): HttpHistoryRestore {
 }
 
 /** Protocols whose History rows reopen through `restoreProtocolFromMetadata`. */
-export const HISTORY_META_PROTOCOLS = ['websocket', 'grpc', 'graphql', 'sse', 'socketio'] as const
+export const HISTORY_META_PROTOCOLS = [
+  'websocket',
+  'grpc',
+  'graphql',
+  'sse',
+  'socketio',
+  'mqtt',
+] as const
 export type HistoryMetaProtocol = (typeof HISTORY_META_PROTOCOLS)[number]
 
 export function isHistoryMetaProtocol(p: string | undefined): p is HistoryMetaProtocol {
@@ -226,6 +237,10 @@ function legacyMeta(protocol: HistoryMetaProtocol, snap: Json, entry: Row): Json
       url: str(snap.url) ?? entry.url ?? '',
       customHeaders: toKeyValueRows(snap.headers),
     }
+  }
+  if (protocol === 'mqtt') {
+    // Every MQTT row carries `configured`; a row without it reopens the URL.
+    return { url: str(snap.url) ?? entry.url ?? '' }
   }
   if (protocol === 'grpc') {
     return {

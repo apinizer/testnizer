@@ -1,0 +1,19 @@
+$kind: websocket-request
+name: Feed socket
+url: 'wss://feed.example.test/ws?room=general'
+headers:
+  X-Client: testnizer
+queryParams:
+  room: general
+auth:
+  type: bearer
+  credentials:
+    token: '{{feedToken}}'
+settings:
+  handshakeTimeout: 5000
+  retryCount: 2
+  retryDelay: 1500
+  maxPayload: 2097152
+  strictSSL: false
+messages: .resources/Feed.resources/messages
+order: 1000

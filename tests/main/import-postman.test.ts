@@ -89,6 +89,22 @@ beforeEach(async () => {
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
+    -- Issue #277: the v2.1 export carries saved examples as response[] and the
+    -- importer writes response[] back as saved examples (issue #276).
+    CREATE TABLE saved_responses (
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      protocol TEXT NOT NULL DEFAULT 'http',
+      method TEXT,
+      url TEXT,
+      status_code INTEGER,
+      response_json TEXT NOT NULL,
+      request_json TEXT,
+      created_at INTEGER NOT NULL
+    );
     CREATE TABLE environments (
       id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL,
@@ -101,6 +117,17 @@ beforeEach(async () => {
     CREATE TABLE environment_variables (
       id TEXT PRIMARY KEY,
       environment_id TEXT NOT NULL,
+      key TEXT NOT NULL,
+      value TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      secret INTEGER NOT NULL DEFAULT 0,
+      initial_value TEXT
+    );
+    CREATE TABLE global_variables (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      project_id TEXT,
       key TEXT NOT NULL,
       value TEXT NOT NULL DEFAULT '',
       description TEXT,
@@ -564,7 +591,9 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
     expect(allEvents.some((e) => e.listen === 'test')).toBe(true)
   })
 
-  it('emits collection-level variable[] sourced from active project env', async () => {
+  // Issue #281: collection variables ARE the project variables (Globals) —
+  // imported there, exported from there.
+  it('emits collection-level variable[] sourced from the project variables', async () => {
     await importPostman('proj-1', JSON.stringify(buildRealisticCollection()))
     const exported = JSON.parse(exportAsPostman('proj-1'))
     expect(Array.isArray(exported.variable)).toBe(true)
@@ -593,20 +622,21 @@ describe('Postman round-trip: import → exportAsPostman → re-import', () => {
     })
   })
 
-  it('reuses a single imported environment when the same collection is re-imported', async () => {
+  it('re-importing the same collection does not duplicate project variables nor create an environment', async () => {
     const collection = JSON.stringify(buildRealisticCollection())
     await importPostman('proj-1', collection)
-    await importPostman('proj-1', collection)
+    const again = await importPostman('proj-1', collection)
 
     const envs = memDb
       .prepare('SELECT id FROM environments WHERE project_id = ?')
       .all('proj-1') as Array<{ id: string }>
-    expect(envs).toHaveLength(1)
+    expect(envs).toHaveLength(0)
     const vars = memDb
-      .prepare('SELECT key FROM environment_variables WHERE environment_id = ?')
-      .all(envs[0].id) as Array<{ key: string }>
-    // No duplicates — imported variables were replaced, not appended.
+      .prepare('SELECT key FROM global_variables WHERE project_id = ?')
+      .all('proj-1') as Array<{ key: string }>
+    // No duplicates — an existing key keeps its value (same value: no conflict note).
     expect(vars.map((v) => v.key).sort()).toEqual(['apiVersion', 'baseUrl'])
+    expect((again.warnings ?? []).join('\n')).not.toMatch(/already has the variable/)
   })
 
   it('preserves form-data file rows on round-trip (type:file + src)', async () => {
@@ -791,7 +821,7 @@ describe('importPostman — edge cases', () => {
     expect(result.error).toContain('Failed to parse Postman collection JSON')
   })
 
-  it('rejects Postman v1 collection with an actionable migration message', async () => {
+  it('converts a Postman v1 collection and imports it (issue #276 — was rejected)', async () => {
     // v1 used `id`, `name`, `requests[]` instead of `info`, `item[]`.
     const v1 = {
       id: 'old-id',
@@ -800,10 +830,11 @@ describe('importPostman — edge cases', () => {
       requests: [{ id: 'r1', method: 'GET', url: 'https://x/y' }],
     }
     const result = await importPostman('proj-1', JSON.stringify(v1))
-    expect(result.success).toBe(false)
-    // The new v1 detector should fire and tell the user to re-export as v2.1
-    expect(result.error).toMatch(/v1 collections are not supported/i)
-    expect(result.error).toMatch(/v2\.1/i)
+    expect(result.success).toBe(true)
+    expect(result.endpointCount).toBe(1)
+    expect(result.warnings?.some((w) => /Converted from Postman collection v1/.test(w))).toBe(true)
+    // r1 is in no `order` list: Postman's converter dropped it, we keep it.
+    expect(result.warnings?.some((w) => /not listed in any folder order/.test(w))).toBe(true)
   })
 
   it('warns on unknown schema URL', async () => {
@@ -852,12 +883,11 @@ describe('importPostman — edge cases', () => {
 // ─── Postman Environment Import ────────────────────────────
 
 describe('importPostman — wrong-file-type guard', () => {
-  // v1.4.6: importPostman now rejects anything that isn't actually a Postman
-  // v2.x collection. Standalone Postman environment exports used to be
-  // silently routed through here, which created a phantom empty folder in
-  // the API tree alongside the real env row. Env imports go through the
-  // dedicated `import:postmanEnvironment` IPC + EnvironmentModal flow now.
-  it('rejects a Postman environment file with a generic "wrong file type" error', async () => {
+  // v1.4.6 rejected environment files here because the Import modal created
+  // a phantom empty folder before calling the importer. Issue #276: the
+  // modal detects environment / globals files and skips the folder, so the
+  // one Postman entry point routes them to a project environment.
+  it('routes a Postman environment file to an environment, never a folder (issue #276)', async () => {
     const env = {
       id: 'env-1',
       name: 'Dev',
@@ -865,14 +895,13 @@ describe('importPostman — wrong-file-type guard', () => {
       _postman_variable_scope: 'environment',
     }
     const result = await importPostman('proj-1', JSON.stringify(env))
-    expect(result.success).toBe(false)
-    expect(result.error).toMatch(/not a Postman collection/i)
+    expect(result.success).toBe(true)
+    expect(result.environmentName).toBe('Dev')
 
-    // No environment row was created — APIs Import is collection-only.
     const envs = memDb
-      .prepare('SELECT id FROM environments WHERE project_id = ?')
-      .all('proj-1') as Array<{ id: string }>
-    expect(envs).toHaveLength(0)
+      .prepare('SELECT name FROM environments WHERE project_id = ?')
+      .all('proj-1') as Array<{ name: string }>
+    expect(envs.map((e) => e.name)).toEqual(['Dev'])
     // And no phantom folder.
     const folders = memDb
       .prepare('SELECT id FROM folders WHERE project_id = ?')

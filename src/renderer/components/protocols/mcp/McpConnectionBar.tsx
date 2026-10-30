@@ -9,7 +9,14 @@ import McpConfigMenu from './McpConfigMenu'
 import McpProtocolSelect from './McpProtocolSelect'
 import McpStatusPill from './McpStatusPill'
 import CredentialRestartHint from '../../shared/CredentialRestartHint'
-import { CB_ROW, CB_SELECT, CB_TARGET, CB_URL_FIELD, cbPrimaryButton } from '../connection-bar-ui'
+import {
+  CB_ROW,
+  CB_SELECT,
+  CB_TARGET,
+  CB_URL_FIELD,
+  CB_URL_FIELDSET,
+  cbPrimaryButton,
+} from '../connection-bar-ui'
 import { mcpUrlHasLiteralCredential } from './config-ui'
 
 /**
@@ -87,10 +94,7 @@ export default function McpConnectionBar() {
         <McpProtocolSelect disabled={busy} />
         <div data-testid="mcp-connection-target" className={CB_TARGET}>
           {/* A disabled fieldset disables the inner <input> (the shared input has no `disabled` prop). */}
-          <fieldset
-            disabled={busy}
-            className="m-0 flex min-w-[10rem] flex-1 border-0 p-0 disabled:opacity-60"
-          >
+          <fieldset disabled={busy} className={CB_URL_FIELDSET}>
             <VariableAutocompleteInput
               value={url}
               onChange={setUrl}

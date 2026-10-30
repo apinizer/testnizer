@@ -174,6 +174,12 @@ beforeEach(() => {
     0,
   )
   insVar.run(randomUUID(), envId, 'apiToken', SECRET, SECRET, 1)
+  // The project variables are the Postman collection variables (issue #281).
+  const insGlobal = db.prepare(
+    `INSERT INTO global_variables (id, workspace_id, project_id, key, value, initial_value, enabled, secret)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+  )
+  insGlobal.run(randomUUID(), workspaceId, projectId, 'apiToken', SECRET, SECRET, 1)
 
   saveHttpRequest()
   saveMcpRequest()

@@ -975,7 +975,7 @@ export function GeneralPane({
             <input
               value={settings.workingDirectory}
               onChange={(e) => onChange({ workingDirectory: e.target.value })}
-              placeholder={t('general.workingDirectoryHint')}
+              placeholder={t('general.workingDirectoryPlaceholder')}
               style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
             />
             <div className="mt-1" style={{ color: 'var(--hint)' }}>
@@ -1550,7 +1550,7 @@ export function CertificatesPane({
     { id: 'legacy', labelKey: 'tls.presetLegacy' },
     { id: 'custom', labelKey: 'tls.presetCustom' },
   ]
-  // Electron 33 links against BoringSSL, which can't negotiate TLS 1.0/1.1.
+  // Electron links against BoringSSL, which can't negotiate TLS 1.0/1.1.
   // Testnizer ships as a client tool, so we can't refuse to talk to legacy
   // backends — many enterprise customers (banks, government API gateways)
   // still require these versions. When the user picks TLS 1.0/1.1 we route

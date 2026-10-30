@@ -10,6 +10,7 @@ import { startGrpcServer, type GrpcServer } from './grpc-server'
 import { startMcpServer, type McpServer } from './mcp-server'
 import { startFakeLlmServer, type FakeLlmServer } from './fake-llm'
 import { startGitServer, type GitServer } from './git-server'
+import { startMqttServer, type MqttServer } from './mqtt-server'
 
 export const SERVERS_STATE_FILE = path.join(__dirname, '.test-servers.json')
 
@@ -24,6 +25,8 @@ export interface RunningServers {
   mcp: McpServer
   llm: FakeLlmServer
   git: GitServer
+  /** null when the broker could not start (see mqtt-server.ts). */
+  mqtt: MqttServer | null
 }
 
 export async function startAllTestServers(): Promise<RunningServers> {
@@ -37,9 +40,10 @@ export async function startAllTestServers(): Promise<RunningServers> {
     mcp: await getFreePort(),
     llm: await getFreePort(),
     git: await getFreePort(),
+    mqtt: await getFreePort(),
   }
 
-  const [http, ws, sse, socketio, graphql, grpc, mcp, llm, git] = await Promise.all([
+  const [http, ws, sse, socketio, graphql, grpc, mcp, llm, git, mqtt] = await Promise.all([
     startHttpEchoServer(ports.http),
     startWsEchoServer(ports.ws),
     startSseServer(ports.sse),
@@ -49,9 +53,22 @@ export async function startAllTestServers(): Promise<RunningServers> {
     startMcpServer(ports.mcp),
     startFakeLlmServer(ports.llm),
     startGitServer(ports.git),
+    startMqttServer(ports.mqtt),
   ])
 
-  const state: RunningServers = { ports, http, ws, sse, socketio, graphql, grpc, mcp, llm, git }
+  const state: RunningServers = {
+    ports,
+    http,
+    ws,
+    sse,
+    socketio,
+    graphql,
+    grpc,
+    mcp,
+    llm,
+    git,
+    mqtt,
+  }
 
   fs.writeFileSync(
     SERVERS_STATE_FILE,
@@ -68,6 +85,7 @@ export async function startAllTestServers(): Promise<RunningServers> {
           mcp: mcp.url,
           llm: llm.url.replace('/v1/chat/completions', ''),
           git: git.url,
+          ...(mqtt ? { mqtt: mqtt.url } : {}),
         },
         // Credentials the local git server accepts (issue #127 e2e).
         git: { username: git.username, token: git.token },
@@ -97,6 +115,7 @@ export async function stopAllTestServers(servers: RunningServers): Promise<void>
     servers.mcp.close(),
     servers.llm.close(),
     servers.git.close(),
+    servers.mqtt?.close(),
   ])
   if (fs.existsSync(SERVERS_STATE_FILE)) {
     fs.unlinkSync(SERVERS_STATE_FILE)

@@ -26,7 +26,7 @@ import type { EndpointRunResult } from './runner-types'
 /** The subset of a result this module needs — keeps it testable with literals. */
 export type SummarizableResult = Pick<
   EndpointRunResult,
-  'error' | 'failed' | 'status' | 'assertions' | 'skipped' | 'phase' | 'consoleLogs'
+  'error' | 'failed' | 'status' | 'assertions' | 'skipped' | 'phase' | 'consoleLogs' | 'stoppedRun'
 >
 
 export interface RunSummary {

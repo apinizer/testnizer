@@ -1,0 +1,4 @@
+$kind: http-request
+method: GET
+url: https://ping.example.test/
+order: 2000

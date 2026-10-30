@@ -9,12 +9,20 @@ import {
 import { logEvent } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
+import {
+  decodeBinary,
+  maxPayloadBytes,
+  readWsSettings,
+  type WsSettings,
+} from '../../shared/realtime'
 
 interface WsConnectPayload {
   url: string
   headers?: Record<string, string>
   protocols?: string[]
   rejectUnauthorized?: boolean
+  /** Settings tab (issue #282); `strictSSL` wins over `rejectUnauthorized`. */
+  settings?: Partial<WsSettings>
   _tabId?: string
   _workspaceId?: string
   _projectId?: string
@@ -42,11 +50,22 @@ export function registerWebSocketHandlers(): void {
         return { success: false, error: 'No window found for this request' }
       }
 
+      // Missing settings keep the pre-#282 behaviour (verify TLS, 15 s
+      // handshake, `ws`'s 100 MiB cap, no reconnection).
+      const settings = payload.settings ? readWsSettings(payload.settings) : null
       const options: WsConnectOptions = {
         url: payload.url,
         headers: payload.headers,
         protocols: payload.protocols,
-        rejectUnauthorized: payload.rejectUnauthorized,
+        rejectUnauthorized: settings ? settings.strictSSL : payload.rejectUnauthorized,
+        ...(settings
+          ? {
+              handshakeTimeout: settings.handshakeTimeout,
+              maxPayload: maxPayloadBytes(settings.maxPayload),
+              retryCount: settings.retryCount,
+              retryDelay: settings.retryDelay,
+            }
+          : {}),
         pendingId: payload._pendingId,
       }
 
@@ -93,7 +112,8 @@ export function registerWebSocketHandlers(): void {
               url: payload.url,
               headers: payload.headers,
               protocols: payload.protocols,
-              rejectUnauthorized: payload.rejectUnauthorized,
+              rejectUnauthorized: options.rejectUnauthorized,
+              ...(settings ? { settings } : {}),
               ...(payload._configured ? { configured: payload._configured } : {}),
             }),
             response_snapshot: JSON.stringify({
@@ -181,26 +201,36 @@ export function registerWebSocketHandlers(): void {
   })
 
   // ─── Send message ─────────────────────────────────────────
-  ipcMain.handle('ws:send', async (_event, connectionId: string, message: string) => {
-    try {
-      const ctx = wsContext.get(connectionId)
-      const result = sendMessage(connectionId, message)
-      logEvent({
-        protocol: 'websocket',
-        category: 'event',
-        direction: 'out',
-        message: `WS → ${truncate(message, 80)}`,
-        body: message,
-        url: ctx?.url,
-        tabId: ctx?.tabId,
-        sizeBytes: Buffer.byteLength(message, 'utf-8'),
-        durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
-      })
-      return { success: true, data: result }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
+  // `opts.binary` (issue #282): the message is base64 / hex text decoded in
+  // main into a binary frame.
+  ipcMain.handle(
+    'ws:send',
+    async (_event, connectionId: string, message: string, opts?: { binary?: 'base64' | 'hex' }) => {
+      try {
+        const ctx = wsContext.get(connectionId)
+        const binary = opts?.binary === 'base64' || opts?.binary === 'hex' ? opts.binary : undefined
+        const result = sendMessage(connectionId, message, { binary })
+        const decoded = binary ? decodeBinary(message, binary) : null
+        const bytes =
+          decoded && decoded.ok ? decoded.bytes.length : Buffer.byteLength(message, 'utf-8')
+        logEvent({
+          protocol: 'websocket',
+          category: 'event',
+          direction: 'out',
+          message: binary ? `WS → <binary ${bytes} bytes>` : `WS → ${truncate(message, 80)}`,
+          body: message,
+          url: ctx?.url,
+          tabId: ctx?.tabId,
+          sizeBytes: bytes,
+          durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+          ...(binary ? { meta: { binary } } : {}),
+        })
+        return { success: true, data: result }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
 }
 
 function truncate(s: string, max: number): string {

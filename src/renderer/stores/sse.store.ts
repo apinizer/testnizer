@@ -5,6 +5,7 @@ import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -95,6 +96,8 @@ interface SseStore extends TabSseState {
   getEventTypes: () => string[]
 
   /** Switch active tab — saves current state and loads target tab state. */
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   /** Remove cached state for a closed tab. Tears down its `_unsubscribe`. */
   removeTabState: (tabId: string) => void
@@ -167,9 +170,14 @@ export const SSE_CREDENTIALS: CredentialSpec = {
 }
 
 function persistableSse(st: TabSseState): TabSseState {
+  return idleSse(withholdCredentials(st, SSE_CREDENTIALS))
+}
+
+/** A tab with no live connection or events — what is stored and what Duplicate Tab copies. */
+function idleSse(st: TabSseState): TabSseState {
   const idle = emptyTabState()
   return {
-    ...withholdCredentials(st, SSE_CREDENTIALS),
+    ...st,
     events: idle.events,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -528,6 +536,9 @@ export const useSseStore = create<SseStore>((set, get) => ({
     const types = new Set(events.map((e) => e.type))
     return Array.from(types).sort()
   },
+
+  cloneTabState: (srcTabId, dstTabId) =>
+    cloneTabSlice(useSseStore, extractState, srcTabId, dstTabId, idleSse),
 
   switchToTab: (tabId) => {
     const state = get()

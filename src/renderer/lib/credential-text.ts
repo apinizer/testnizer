@@ -212,6 +212,22 @@ export function fillJsonCredentials(live: string, saved: string): string {
   return fillSlots(live, jsonSlots(live), saved, jsonSlots(saved))
 }
 
+/**
+ * A message body that reads as a JSON object or array (`{…}` / `[…]`). The
+ * realtime composers (MQTT, WebSocket, Socket.IO, issue #284) default to the
+ * `text` format, so the format picker is no guide — the shape of the text is.
+ * Base64 / hex never start with a brace or bracket.
+ */
+export function isJsonLookingText(text: string): boolean {
+  const t = (text ?? '').trimStart()
+  return t.startsWith('{') || t.startsWith('[')
+}
+
+/** `scrubJsonCredentials` for a message body: JSON-looking text only, the rest as typed. */
+export function scrubMessageCredentials(text: string): string {
+  return isJsonLookingText(text) ? scrubJsonCredentials(text) : text
+}
+
 // ─── stdio command line ─────────────────────────────────────────────────
 
 interface TokenSlot {
@@ -358,6 +374,20 @@ export function jsonCredentialText(path: string, source?: string): CredentialTex
     path,
     source,
     scrub: (v) => scrubJsonCredentials(v),
+    fill: (live, saved) => fillJsonCredentials(live, saved),
+  }
+}
+
+/**
+ * A realtime message body (composer, will payload, saved message, emit
+ * argument — issue #284): credential-named string members of JSON-looking
+ * text withheld, the format and `{{var}}` placeholders kept. `path` may name
+ * list items (`savedMessages[].content`).
+ */
+export function messageCredentialText(path: string): CredentialText {
+  return {
+    path,
+    scrub: (v) => scrubMessageCredentials(v),
     fill: (live, saved) => fillJsonCredentials(live, saved),
   }
 }

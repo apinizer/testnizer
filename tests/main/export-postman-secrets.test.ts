@@ -2,8 +2,9 @@
  * Issue #177 follow-up — "values marked secret stay on this machine" for the
  * Postman collection export.
  *
- * `exportAsPostman` / `exportSuiteAsPostman` project the project's active
- * environment as collection `variable[]`. A variable marked secret must leave
+ * `exportAsPostman` / `exportSuiteAsPostman` project the project variables
+ * ("Globals" — issue #281; it used to be the active environment) as
+ * collection `variable[]`. A variable marked secret must leave
  * with its key and the `secret` type but an EMPTY value — the same rule the
  * project file (`stripLocalSecrets`) and the environment-file export
  * (EnvironmentModal) follow. Re-importing such a collection keeps the secret
@@ -74,6 +75,21 @@ beforeEach(() => {
     0,
   )
   insVar.run(randomUUID(), envId, 'apiToken', SECRET_CURRENT, SECRET_INITIAL, 1)
+  // The same two as project variables — the collection variables (issue #281).
+  const insGlobal = db.prepare(
+    `INSERT INTO global_variables (id, workspace_id, project_id, key, value, initial_value, enabled, secret)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+  )
+  insGlobal.run(
+    randomUUID(),
+    workspaceId,
+    projectId,
+    'baseUrl',
+    'https://api.example.com',
+    'https://api.example.com',
+    0,
+  )
+  insGlobal.run(randomUUID(), workspaceId, projectId, 'apiToken', SECRET_CURRENT, SECRET_INITIAL, 1)
 
   db.prepare(
     `INSERT INTO endpoints (id, project_id, folder_id, name, protocol, method, path, status,
@@ -140,18 +156,13 @@ describe('Postman collection export never carries values marked secret (issue #1
     expect(res.success).toBe(true)
     const row = db
       .prepare(
-        `SELECT ev.value, ev.initial_value, ev.secret FROM environment_variables ev
-         JOIN environments e ON e.id = ev.environment_id
-         WHERE e.project_id = ? AND ev.key = 'apiToken'`,
+        `SELECT value, initial_value, secret FROM global_variables
+         WHERE project_id = ? AND key = 'apiToken'`,
       )
       .get(targetId) as { value: string; initial_value: string | null; secret: number }
     expect(row).toEqual({ value: '', initial_value: '', secret: 1 })
     const plain = db
-      .prepare(
-        `SELECT ev.secret FROM environment_variables ev
-         JOIN environments e ON e.id = ev.environment_id
-         WHERE e.project_id = ? AND ev.key = 'baseUrl'`,
-      )
+      .prepare(`SELECT secret FROM global_variables WHERE project_id = ? AND key = 'baseUrl'`)
       .get(targetId) as { secret: number }
     expect(plain.secret).toBe(0)
   })
@@ -214,12 +225,18 @@ describe("re-importing a stripped Postman file keeps this machine's secret value
     await importPostman(targetId, json)
     // The user fills the secret in on this machine…
     db.prepare(
-      `UPDATE environment_variables SET value = 'typed-here', initial_value = 'typed-init'
-       WHERE key = 'apiToken' AND environment_id IN (SELECT id FROM environments WHERE project_id = ?)`,
+      `UPDATE global_variables SET value = 'typed-here', initial_value = 'typed-init'
+       WHERE key = 'apiToken' AND project_id = ?`,
     ).run(targetId)
     // …and re-imports the (stripped) collection later.
-    await importPostman(targetId, json)
-    const vars = varsOf('e.project_id = ?', targetId)
-    expect(vars.apiToken).toEqual({ value: 'typed-here', initial_value: 'typed-init', secret: 1 })
+    const again = await importPostman(targetId, json)
+    const row = db
+      .prepare(
+        `SELECT value, initial_value, secret FROM global_variables WHERE project_id = ? AND key = 'apiToken'`,
+      )
+      .get(targetId)
+    expect(row).toEqual({ value: 'typed-here', initial_value: 'typed-init', secret: 1 })
+    // A blank secret from the file is not a conflict worth reporting.
+    expect((again.warnings ?? []).join('\n')).not.toMatch(/apiToken/)
   })
 })

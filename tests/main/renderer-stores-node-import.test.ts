@@ -23,6 +23,7 @@ describe('protocol stores import without a DOM', () => {
     'sse.store',
     'websocket.store',
     'socketio.store',
+    'mqtt.store',
     'mcp.store',
     'request.store',
     'soap.store',

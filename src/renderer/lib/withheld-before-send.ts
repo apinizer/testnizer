@@ -18,6 +18,7 @@
 // process tests import `grpc.store` through the engine fixtures).
 
 import { useTabsStore } from '../stores/tabs.store'
+import { isWithheldUnder } from './credential-withhold'
 
 async function warnReloadFailed(): Promise<void> {
   try {
@@ -39,4 +40,35 @@ export async function reloadWithheldBeforeSend(): Promise<void> {
   } catch {
     await warnReloadFailed()
   }
+}
+
+/**
+ * A copy inside a tab's state — a saved message into the composer, the
+ * composer into a saved message (issue #284) — never copies a value that is
+ * only blank because the snapshot withheld it. The destination would carry no
+ * marker, so the next Ctrl+S would write the blank over the saved value (the
+ * issue #259 data-loss class).
+ *
+ * Nothing withheld at or under `prefix`: `copy` runs at once (synchronously).
+ * Otherwise the saved values are reloaded first, the same way a send path
+ * does; the copy runs only if the same tab is still live and nothing under
+ * `prefix` is still waiting (an unreadable row already warned — copying the
+ * blank would hide that the value is missing).
+ */
+export function afterWithheldReloaded(
+  read: () => { withheldCredentials?: readonly string[]; _currentTabId: string | null },
+  prefix: string,
+  copy: () => void,
+): void | Promise<void> {
+  const before = read()
+  if (!isWithheldUnder(before.withheldCredentials, prefix)) {
+    copy()
+    return
+  }
+  const tabId = before._currentTabId
+  return reloadWithheldBeforeSend().then(() => {
+    const now = read()
+    if (now._currentTabId !== tabId || isWithheldUnder(now.withheldCredentials, prefix)) return
+    copy()
+  })
 }

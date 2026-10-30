@@ -11,12 +11,13 @@ import SoapBodyEditor from './SoapBodyEditor'
 import SoapManualForm from './SoapManualForm'
 import AuthTab from '../request/AuthTab'
 import HeadersTab from '../request/HeadersTab'
+import CriticalRequestToggle from '../request/CriticalRequestToggle'
 import ResponsePane from '../response/ResponsePane'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import MonacoWrapper from '../shared/MonacoWrapper'
 
-type SoapDetailTab = 'body' | 'auth' | 'headers'
-const SOAP_DETAIL_TABS: readonly SoapDetailTab[] = ['body', 'auth', 'headers']
+type SoapDetailTab = 'body' | 'auth' | 'headers' | 'settings'
+const SOAP_DETAIL_TABS: readonly SoapDetailTab[] = ['body', 'auth', 'headers', 'settings']
 
 function RawXmlBodyEditor() {
   const rawXml = useSoapStore((s) => s.rawXml)
@@ -51,6 +52,8 @@ export default function SoapEditor() {
     { key: 'body', label: 'Body' },
     { key: 'auth', label: 'Auth' },
     { key: 'headers', label: 'Headers' },
+    // Run settings (issue #304) — the HTTP Settings tab's Critical switch.
+    { key: 'settings', label: 'Settings' },
   ]
 
   return (
@@ -165,6 +168,11 @@ export default function SoapEditor() {
             {detailTab === 'headers' && (
               <div className="h-full overflow-y-auto px-4 py-3">
                 <HeadersTab />
+              </div>
+            )}
+            {detailTab === 'settings' && (
+              <div className="h-full overflow-y-auto px-4 py-3">
+                <CriticalRequestToggle />
               </div>
             )}
           </div>

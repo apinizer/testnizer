@@ -76,6 +76,8 @@ export default function McpConfigTabs() {
   )
   const testCount = useRequestStore((s) => s.assertions.filter((a) => a.enabled !== false).length)
   const hasTimeout = useMcpStore((s) => s.requestTimeout != null)
+  // Marked Critical (issue #304) — a setting like the timeout, so the same dot.
+  const isCritical = useRequestStore((s) => s.critical)
 
   // Derived, never written back: switching transport keeps the stored choice.
   const active = effectiveConfigTab(storedTab, transport)
@@ -87,7 +89,7 @@ export default function McpConfigTabs() {
   const dots: Partial<Record<McpConfigTab, boolean>> = {
     auth: authType !== 'none',
     scripts: hasScripts,
-    settings: hasTimeout,
+    settings: hasTimeout || isCritical,
   }
   const Panel = PANELS[active]
 

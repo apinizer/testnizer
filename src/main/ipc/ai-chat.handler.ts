@@ -26,6 +26,7 @@ import { AI_MAX_TOKENS_CAP } from '../../shared/ai-limits'
 import { MCP_DEFAULT_TIMEOUT_MS } from '../../shared/request-settings'
 import type { AiApprovalDecision, AiChatStreamEvent } from '../../shared/ai-chat-types'
 import { registerAiConversationHandlers } from './ai-conversation.handler'
+import { isFullMainFrameNavigation, onSenderGone, type SenderLike } from '../lib/sender-lifecycle'
 import {
   aiScrubberFor,
   scrubAiText,
@@ -114,25 +115,10 @@ function settleQuestions(active: ActiveStream): void {
 // children), every pending question settles as denied/cancelled, and its
 // trust tickets are dropped.
 
-/** The slice of `WebContents` this module needs (tests pass an EventEmitter). */
-interface SenderLike {
-  id: number
-  on?: (event: string, listener: (...args: unknown[]) => void) => unknown
-}
-
 const watchedSenders = new Set<number>()
 
-/** A full main-frame navigation (reload / new page) — not an in-page hash / history change. */
-export function isFullMainFrameNavigation(
-  details: unknown,
-  isInPlace?: unknown,
-  isMainFrame?: unknown,
-): boolean {
-  const d = details && typeof details === 'object' ? (details as Record<string, unknown>) : {}
-  const sameDocument = typeof d.isSameDocument === 'boolean' ? d.isSameDocument : isInPlace === true
-  const mainFrame = typeof d.isMainFrame === 'boolean' ? d.isMainFrame : isMainFrame !== false
-  return mainFrame && !sameDocument
-}
+// Moved to `lib/sender-lifecycle.ts` (shared with MQTT, issue #284).
+export { isFullMainFrameNavigation }
 
 /** Abort every stream (and drop every trust ticket) of one renderer. Returns streams ended. */
 export function endSenderStreams(senderId: number): number {
@@ -154,17 +140,10 @@ function watchSender(sender: SenderLike | undefined): void {
   if (!sender || typeof sender.on !== 'function' || watchedSenders.has(sender.id)) return
   const id = sender.id
   watchedSenders.add(id)
-  sender.on('destroyed', () => {
+  onSenderGone(sender, (destroyed) => {
     endSenderStreams(id)
-    watchedSenders.delete(id)
+    if (destroyed) watchedSenders.delete(id)
   })
-  sender.on('render-process-gone', () => endSenderStreams(id))
-  sender.on(
-    'did-start-navigation',
-    (details: unknown, _url: unknown, inPlace: unknown, main: unknown) => {
-      if (isFullMainFrameNavigation(details, inPlace, main)) endSenderStreams(id)
-    },
-  )
 }
 
 // ─── Tools tab trust tickets (issue #180) ───────────────────────────────────

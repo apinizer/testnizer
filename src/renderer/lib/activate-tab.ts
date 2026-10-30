@@ -8,6 +8,7 @@ import { useGraphQLStore } from '../stores/graphql.store'
 import { useAiChatStore } from '../stores/ai-chat.store'
 import { useMcpStore } from '../stores/mcp.store'
 import { useSocketIOStore } from '../stores/socketio.store'
+import { useMqttStore } from '../stores/mqtt.store'
 import { storedBoundTabs } from './persist-helpers'
 
 interface TabbedSlices {
@@ -24,6 +25,7 @@ const PROTOCOL_STORES: Record<string, TabbedSlices> = {
   ai: useAiChatStore,
   mcp: useMcpStore,
   socketio: useSocketIOStore,
+  mqtt: useMqttStore,
 }
 
 /**
@@ -68,7 +70,47 @@ export function activateTabStores(tabId: string): void {
   useAiChatStore.getState().switchToTab(tabId)
   useMcpStore.getState().switchToTab(tabId)
   useSocketIOStore.getState().switchToTab(tabId)
+  useMqttStore.getState().switchToTab(tabId)
   if (protocolLostAtStartup.delete(tabId)) useRequestStore.setState({ unloadedProtocol: true })
+}
+
+interface CloneableSlices {
+  getState: () => { cloneTabState: (srcTabId: string, dstTabId: string) => void }
+}
+
+/**
+ * The protocol stores Duplicate Tab copies. AI Chat is left out on purpose:
+ * its slice is a conversation (an id shared by two tabs would write one
+ * conversation from both) and a duplicate starts a new chat.
+ */
+const CLONEABLE_STORES: Record<string, CloneableSlices> = {
+  soap: useSoapStore,
+  websocket: useWebSocketStore,
+  sse: useSseStore,
+  grpc: useGrpcStore,
+  graphql: useGraphQLStore,
+  mcp: useMcpStore,
+  socketio: useSocketIOStore,
+  mqtt: useMqttStore,
+}
+
+/**
+ * Duplicate Tab: copy `srcTabId`'s editor state onto `dstTabId` — the request
+ * store (every protocol) and the tab protocol's own store. Unsaved edits
+ * travel with the copy; connection and runtime state do not (the duplicate
+ * starts disconnected). Works whether the destination is already the current
+ * tab (a bound duplicate, opened from its new row first) or not yet (a
+ * scratch duplicate, switched to afterwards).
+ */
+export function cloneTabStores(srcTabId: string, dstTabId: string, protocol?: string): void {
+  useRequestStore.getState().cloneTabState(srcTabId, dstTabId)
+  const store = protocol ? CLONEABLE_STORES[protocol] : undefined
+  store?.getState().cloneTabState(srcTabId, dstTabId)
+  // The copied edits are unsaved on the copy too (a bound duplicate's row is
+  // a copy of what was SAVED). Dirty also keeps a bound duplicate — opened as
+  // a preview — from being replaced by the next tree click with them lost.
+  const tabs = useTabsStore.getState()
+  if (tabs.tabs.find((t) => t.id === srcTabId)?.isDirty) tabs.markDirty(dstTabId, true)
 }
 
 /**

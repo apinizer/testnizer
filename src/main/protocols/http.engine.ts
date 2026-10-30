@@ -23,6 +23,7 @@ import { parseSseBody } from '../lib/sse-body-parser'
 import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
 import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
 import { executeViaCurl, shouldUseCurlSidecar } from './curl-shim'
+import { resolveBodyFilePaths } from '../lib/working-directory'
 
 // ─── Types (main-process local, mirrors renderer types) ──────
 
@@ -961,8 +962,23 @@ function attachSocketTimings(httpsAgent: https.Agent, httpAgent: http.Agent): So
 // ─── Main execute function ───────────────────────────────────
 
 export async function executeHttpRequest(options: HttpRequestOptions): Promise<ApiResponse> {
+  // A RELATIVE form-data file / binary body path (a Postman import's) reads
+  // from the project's Working directory — here, before either transport, so
+  // Send, Run and the curl sidecar resolve it the same way (issue #276).
+  try {
+    const body = await resolveBodyFilePaths(options.body, options.projectId)
+    if (body !== options.body) options = { ...options, body }
+  } catch (e) {
+    return {
+      requestId: randomUUID(),
+      protocol: 'http',
+      timing: { total: 0 },
+      error: (e as Error).message,
+    }
+  }
+
   // Legacy-TLS sidecar route. Customers (banks, government API gateways)
-  // still run TLS 1.0/1.1 backends that Electron 33's BoringSSL can't talk
+  // still run TLS 1.0/1.1 backends that Electron's BoringSSL can't talk
   // to. When the user picks one of those protocol bounds we hand the whole
   // request off to system curl, which uses the OS TLS stack and can speak
   // them. See src/main/protocols/curl-shim.ts.

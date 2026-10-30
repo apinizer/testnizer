@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
 import { getDb } from './database'
 import { HISTORY_MASK } from '../../shared/credential-headers'
+import { maskSavedExample } from '../lib/saved-example-mask'
 
 /**
  * Named response examples pinned to a request (issue #125) — "Save response"
@@ -47,76 +48,12 @@ export const SAVED_RESPONSE_COLUMNS = [
   'request_json',
 ] as const
 
-/**
- * Header names whose values never reach disk in a saved example. The
- * resolved snapshot is the wire form, so it carries the real credential —
- * unlike the template (`{{token}}`). Same idea as stripping `user:pass@`
- * from persisted URLs; masked in MAIN so no renderer path can forget it.
- */
-const SENSITIVE_HEADERS = new Set([
-  'authorization',
-  'proxy-authorization',
-  'cookie',
-  'set-cookie',
-  'x-api-key',
-  'x-auth-token',
-])
+// One mask for both wire snapshots of an example (`request_json.sent` and
+// `response_json.actualRequest`) — shared with `stripLocalSecrets`, so rows
+// written before it existed are masked at every file / git boundary too.
+export { maskRequestJson, maskSensitiveHeaders } from '../lib/saved-example-mask'
 // Shared with the renderer, which recognises it when restoring a History row.
 export const MASKED_VALUE = HISTORY_MASK
-
-export function maskSensitiveHeaders(
-  headers: Record<string, unknown> | undefined | null,
-): Record<string, unknown> | undefined {
-  if (!headers || typeof headers !== 'object') return undefined
-  const out: Record<string, unknown> = {}
-  for (const [k, v] of Object.entries(headers)) {
-    out[k] = SENSITIVE_HEADERS.has(k.toLowerCase()) && v ? MASKED_VALUE : v
-  }
-  return out
-}
-
-function isSensitiveKvp(h: unknown): h is { key: string; value: unknown } {
-  return (
-    !!h &&
-    typeof h === 'object' &&
-    typeof (h as { key?: unknown }).key === 'string' &&
-    SENSITIVE_HEADERS.has((h as { key: string }).key.toLowerCase()) &&
-    Boolean((h as { value?: unknown }).value)
-  )
-}
-
-/**
- * Mask secrets inside a serialised request snapshot. Tolerant: anything that
- * is not the expected `{configured, sent}` shape passes through untouched;
- * unparseable text is dropped rather than persisted blindly.
- */
-export function maskRequestJson(requestJson: string | null | undefined): string | null {
-  if (!requestJson) return null
-  let parsed: Record<string, unknown>
-  try {
-    parsed = JSON.parse(requestJson) as Record<string, unknown>
-  } catch {
-    return null
-  }
-  if (!parsed || typeof parsed !== 'object') return null
-  const sent = parsed.sent as Record<string, unknown> | undefined
-  if (sent && typeof sent === 'object' && sent.headers && typeof sent.headers === 'object') {
-    parsed.sent = {
-      ...sent,
-      headers: maskSensitiveHeaders(sent.headers as Record<string, unknown>),
-    }
-  }
-  const configured = parsed.configured as Record<string, unknown> | undefined
-  if (configured && typeof configured === 'object' && Array.isArray(configured.headers)) {
-    parsed.configured = {
-      ...configured,
-      headers: (configured.headers as unknown[]).map((h) =>
-        isSensitiveKvp(h) ? { ...h, value: MASKED_VALUE } : h,
-      ),
-    }
-  }
-  return JSON.stringify(parsed)
-}
 
 /** Response bodies above this are dropped, matching the history snapshot cap. */
 export const SAVED_RESPONSE_BODY_LIMIT = 500_000
@@ -211,6 +148,13 @@ export function createSavedResponse(data: {
   const name = data.name.trim()
   if (!name) throw new Error('A name is required')
   if (!data.owner_id) throw new Error('owner_id is required')
+  // Masked HERE, in main — never trusted from the renderer: both wire
+  // snapshots (the example's `sent` request and the response's
+  // `actualRequest`) carry the resolved credential (peer review of issue #298).
+  const masked = maskSavedExample({
+    response_json: data.response_json,
+    request_json: data.request_json ?? null,
+  })
   getDb()
     .prepare(
       `INSERT INTO saved_responses (${SAVED_RESPONSE_COLUMNS.join(', ')})
@@ -226,9 +170,9 @@ export function createSavedResponse(data: {
       data.method ?? null,
       data.url ?? null,
       data.status_code ?? null,
-      data.response_json,
+      masked.response_json,
       Date.now(),
-      maskRequestJson(data.request_json),
+      masked.request_json,
     )
   return getSavedResponse(id)!
 }

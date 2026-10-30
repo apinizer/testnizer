@@ -1,0 +1,716 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`baseline cURL export — export:curl IPC > GET no extras 1`] = `
+{
+  "data": "curl \\
+  'https://api.example.com/users'",
+  "success": true,
+}
+`;
+
+exports[`baseline cURL export — export:curl IPC > POST json + headers + bearer 1`] = `
+{
+  "data": "curl \\
+  -X POST \\
+  'https://api.example.com/users' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer tok' \\
+  -d '{"name":"it'\\''s"}'",
+  "success": true,
+}
+`;
+
+exports[`baseline cURL export — export:curl IPC > basic auth + cookies + insecure 1`] = `
+{
+  "data": "curl \\
+  'https://x.test' \\
+  -u 'a:b:c' \\
+  -b 'a=1; b=2' \\
+  -k",
+  "success": true,
+}
+`;
+
+exports[`baseline cURL export — export:curl IPC > form-data text + file 1`] = `
+{
+  "data": "curl \\
+  -X POST \\
+  'https://x.test' \\
+  -F 'title=T' \\
+  -F 'f=@/tmp/a.png'",
+  "success": true,
+}
+`;
+
+exports[`baseline cURL export — export:curl IPC > urlencoded rows 1`] = `
+{
+  "data": "curl \\
+  -X POST \\
+  'https://x.test' \\
+  --data-urlencode 'q=a b'",
+  "success": true,
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > GET with query (name drops the query) 1`] = `
+{
+  "res": {
+    "data": {
+      "collectionId": "baseline-curl-project",
+      "endpointCount": 1,
+      "folderCount": 0,
+      "success": true,
+      "warnings": undefined,
+    },
+    "success": true,
+  },
+  "row": {
+    "method": "GET",
+    "name": "GET /users/42",
+    "path": "/users/42",
+    "protocol": "http",
+    "request_schema": {
+      "method": "GET",
+      "params": [
+        {
+          "enabled": true,
+          "id": "<id>",
+          "key": "expand",
+          "value": "1",
+        },
+      ],
+      "url": "https://api.example.com/users/42?expand=1",
+    },
+    "status": "developing",
+  },
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST JSON body 1`] = `
+{
+  "res": {
+    "data": {
+      "collectionId": "baseline-curl-project",
+      "endpointCount": 1,
+      "folderCount": 0,
+      "success": true,
+      "warnings": undefined,
+    },
+    "success": true,
+  },
+  "row": {
+    "method": "POST",
+    "name": "POST /users",
+    "path": "/users",
+    "protocol": "http",
+    "request_schema": {
+      "body": {
+        "content": "{"name":"Ada"}",
+        "type": "json",
+      },
+      "headers": [
+        {
+          "enabled": true,
+          "id": "<id>",
+          "key": "Content-Type",
+          "value": "application/json",
+        },
+      ],
+      "method": "POST",
+      "url": "https://api.example.com/users",
+    },
+    "status": "developing",
+  },
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST XML body 1`] = `
+{
+  "res": {
+    "data": {
+      "collectionId": "baseline-curl-project",
+      "endpointCount": 1,
+      "folderCount": 0,
+      "success": true,
+      "warnings": undefined,
+    },
+    "success": true,
+  },
+  "row": {
+    "method": "POST",
+    "name": "POST /soap",
+    "path": "/soap",
+    "protocol": "http",
+    "request_schema": {
+      "body": {
+        "content": "<a/>",
+        "type": "xml",
+      },
+      "headers": [
+        {
+          "enabled": true,
+          "id": "<id>",
+          "key": "Content-Type",
+          "value": "text/xml",
+        },
+      ],
+      "method": "POST",
+      "url": "https://x.test/soap",
+    },
+    "status": "developing",
+  },
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST body with other content-type becomes raw 1`] = `
+{
+  "res": {
+    "data": {
+      "collectionId": "baseline-curl-project",
+      "endpointCount": 1,
+      "folderCount": 0,
+      "success": true,
+      "warnings": undefined,
+    },
+    "success": true,
+  },
+  "row": {
+    "method": "POST",
+    "name": "POST /n",
+    "path": "/n",
+    "protocol": "http",
+    "request_schema": {
+      "body": {
+        "content": "hello",
+        "type": "text",
+      },
+      "headers": [
+        {
+          "enabled": true,
+          "id": "<id>",
+          "key": "Content-Type",
+          "value": "text/plain",
+        },
+      ],
+      "method": "POST",
+      "url": "https://x.test/n",
+    },
+    "status": "developing",
+  },
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > POST urlencoded body is split into rows 1`] = `
+{
+  "res": {
+    "data": {
+      "collectionId": "baseline-curl-project",
+      "endpointCount": 1,
+      "folderCount": 0,
+      "success": true,
+      "warnings": undefined,
+    },
+    "success": true,
+  },
+  "row": {
+    "method": "POST",
+    "name": "POST /login",
+    "path": "/login",
+    "protocol": "http",
+    "request_schema": {
+      "body": {
+        "type": "urlencoded",
+        "urlEncoded": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "user",
+            "value": "ada",
+          },
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "pass",
+            "value": "p&ss",
+          },
+        ],
+      },
+      "headers": [
+        {
+          "enabled": true,
+          "id": "<id>",
+          "key": "Content-Type",
+          "value": "application/x-www-form-urlencoded",
+        },
+      ],
+      "method": "POST",
+      "url": "https://x.test/login",
+    },
+    "status": "developing",
+  },
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > basic auth 1`] = `
+{
+  "res": {
+    "data": {
+      "collectionId": "baseline-curl-project",
+      "endpointCount": 1,
+      "folderCount": 0,
+      "success": true,
+      "warnings": undefined,
+    },
+    "success": true,
+  },
+  "row": {
+    "method": "GET",
+    "name": "GET /secure",
+    "path": "/secure",
+    "protocol": "http",
+    "request_schema": {
+      "auth": {
+        "basic": {
+          "password": "s3cret",
+          "username": "admin",
+        },
+        "type": "basic",
+      },
+      "method": "GET",
+      "url": "https://x.test/secure",
+    },
+    "status": "developing",
+  },
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > form-data text + file 1`] = `
+{
+  "res": {
+    "data": {
+      "collectionId": "baseline-curl-project",
+      "endpointCount": 1,
+      "folderCount": 0,
+      "success": true,
+      "warnings": undefined,
+    },
+    "success": true,
+  },
+  "row": {
+    "method": "POST",
+    "name": "POST /up",
+    "path": "/up",
+    "protocol": "http",
+    "request_schema": {
+      "body": {
+        "formData": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "name",
+            "type": "text",
+            "value": "Ada",
+          },
+          {
+            "enabled": true,
+            "filePath": "/tmp/a.png",
+            "id": "<id>",
+            "key": "avatar",
+            "type": "file",
+            "value": "a.png",
+          },
+        ],
+        "type": "form-data",
+      },
+      "method": "POST",
+      "url": "https://x.test/up",
+    },
+    "status": "developing",
+  },
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > rejects a curl command with no URL 1`] = `
+{
+  "res": {
+    "data": {
+      "error": "No URL found in cURL command",
+      "success": false,
+    },
+    "success": true,
+  },
+  "row": undefined,
+}
+`;
+
+exports[`baseline cURL import — import:curl IPC (persisted endpoint) > rejects non-cURL text 1`] = `
+{
+  "res": {
+    "data": {
+      "error": "This is not a cURL command. You can't upload this file type from here.",
+      "success": false,
+    },
+    "success": true,
+  },
+  "row": undefined,
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: {{var}} placeholders survive 1`] = `
+{
+  "body": "{{body}}",
+  "headers": {
+    "Content-Type": "application/json",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "{{baseUrl}}/x",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --compressed -L -k flags 1`] = `
+{
+  "headers": {},
+  "insecure": true,
+  "method": "GET",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --data-ascii 1`] = `
+{
+  "body": "a=1",
+  "headers": {
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --data-binary (method inferred POST) 1`] = `
+{
+  "body": "raw bytes",
+  "headers": {
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --data-raw JSON (method inferred POST) 1`] = `
+{
+  "body": "{"a":1}",
+  "headers": {
+    "Content-Type": "application/json",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test/p",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --form long form, file only 1`] = `
+{
+  "formData": [
+    {
+      "filePath": "/var/data/report.pdf",
+      "key": "doc",
+      "type": "file",
+      "value": "report.pdf",
+    },
+  ],
+  "headers": {},
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test/up",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --header long form with time value 1`] = `
+{
+  "headers": {
+    "X-Time": "12:30:45",
+  },
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --header with colons in the value (bearer) 1`] = `
+{
+  "headers": {
+    "Authorization": "Bearer abc:def:ghi",
+    "Origin": "http://localhost:3000",
+  },
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --proxy value does not leak into url 1`] = `
+{
+  "headers": {},
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: --user with colon in password and space in user 1`] = `
+{
+  "auth": {
+    "basic": {
+      "password": "pa:ss",
+      "username": "us er",
+    },
+    "type": "basic",
+  },
+  "headers": {},
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: -F text + file with ;type= modifier 1`] = `
+{
+  "formData": [
+    {
+      "key": "name",
+      "type": "text",
+      "value": "Ada",
+    },
+    {
+      "filePath": "/tmp/a.png",
+      "key": "avatar",
+      "type": "file",
+      "value": "a.png",
+    },
+  ],
+  "headers": {},
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test/up",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: -F with "<" (treated as text today) 1`] = `
+{
+  "formData": [
+    {
+      "key": "a",
+      "type": "text",
+      "value": "<file.txt",
+    },
+  ],
+  "headers": {},
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: -X POST -H -d JSON 1`] = `
+{
+  "body": "{"name":"Ada","n":[1,2]}",
+  "headers": {
+    "Content-Type": "application/json",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://api.example.com/users",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: -X lowercase method is upper-cased 1`] = `
+{
+  "headers": {},
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: -d with -X DELETE keeps DELETE 1`] = `
+{
+  "body": "{"a":1}",
+  "headers": {
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  "insecure": false,
+  "method": "DELETE",
+  "url": "https://x.test/",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: -d with explicit -X PUT adds urlencoded content-type 1`] = `
+{
+  "body": "a=1&b=2",
+  "headers": {
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  "insecure": false,
+  "method": "PUT",
+  "url": "https://x.test/f",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: -u user:pass 1`] = `
+{
+  "auth": {
+    "basic": {
+      "password": "s3cret",
+      "username": "admin",
+    },
+    "type": "basic",
+  },
+  "headers": {},
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test/secure",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: ANSI-C $'...' quoting 1`] = `
+{
+  "body": "line1
+line2",
+  "headers": {
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: cookie, user-agent, referer 1`] = `
+{
+  "cookies": "a=1; b=2",
+  "headers": {
+    "Referer": "http://ref.test",
+    "User-Agent": "agent/1.0",
+  },
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: double-quoted body with escaped quotes 1`] = `
+{
+  "body": "{"a": "b"}",
+  "headers": {
+    "Content-Type": "application/json",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: lowercase content-type header suppresses the default 1`] = `
+{
+  "body": "a=1",
+  "headers": {
+    "content-type": "text/plain",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: multi-line with CRLF continuations 1`] = `
+{
+  "headers": {
+    "A": "b",
+  },
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: multi-line with backslash continuations 1`] = `
+{
+  "headers": {
+    "Accept": "application/json",
+    "X-Trace": "1",
+  },
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test/a?b=1&c=2",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: percent-encoded URL stays as typed 1`] = `
+{
+  "headers": {},
+  "insecure": false,
+  "method": "GET",
+  "url": "http://localhost:3000/a?b=c%20d",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: simple GET 1`] = `
+{
+  "headers": {},
+  "insecure": false,
+  "method": "GET",
+  "url": "https://api.example.com/users",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: simple GET with --url flag 1`] = `
+{
+  "headers": {},
+  "insecure": false,
+  "method": "GET",
+  "url": "https://x.test/u",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > parse: single --data-urlencode adds urlencoded content-type 1`] = `
+{
+  "body": "r=2",
+  "headers": {
+    "Content-Type": "application/x-www-form-urlencoded",
+  },
+  "insecure": false,
+  "method": "POST",
+  "url": "https://x.test",
+}
+`;
+
+exports[`baseline cURL import — tokenizeCurl / parseCurlCommand > tokenizeCurl: quotes, escapes, ANSI-C 1`] = `
+{
+  "ansi": [
+    "curl",
+    "-d",
+    "a	b
+c",
+    "https://x",
+  ],
+  "double": [
+    "curl",
+    "-H",
+    "X: a b",
+    "-d",
+    "q"r",
+    "https://x",
+  ],
+  "single": [
+    "curl",
+    "-H",
+    "X: a b c",
+    "https://x",
+  ],
+}
+`;

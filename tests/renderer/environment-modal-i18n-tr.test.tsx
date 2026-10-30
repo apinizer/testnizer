@@ -169,14 +169,17 @@ describe('issue #248 — Environments dialog in Turkish', () => {
     expect(screen.getAllByText('Ortamlar').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByTestId('env-new').textContent).toContain('Yeni Ortam')
     expect(screen.getByText('Ortam İçe Aktar')).toBeTruthy()
-    expect(screen.getByText('Ortamı Dışa Aktar')).toBeTruthy()
+    // Issue #277: on the Globals view the export button exports the globals.
+    expect(screen.getByTestId('env-export-globals').textContent).toContain(
+      'Global Değişkenleri Dışa Aktar',
+    )
     expect(screen.getByText('Değişken')).toBeTruthy()
     expect(screen.getByText('Tür')).toBeTruthy()
     expect(screen.getByText('Başlangıç Değeri')).toBeTruthy()
     expect(screen.getByText('Geçerli Değer')).toBeTruthy()
     expect(screen.getByTestId('env-var-add').textContent).toContain('Değişken Ekle')
     expect(
-      screen.getByText('Global değişkenlere bu projenin her yerinden erişilebilir.'),
+      screen.getByText(/^Proje değişkenleri: hangi ortam aktif olursa olsun/),
     ).toBeTruthy()
   })
 
@@ -210,6 +213,8 @@ describe('issue #248 — Environments dialog in Turkish', () => {
 
     expect(englishLeftovers()).toEqual([])
     expect(screen.getByTestId('env-set-active').textContent).toBe('Aktif Yap')
+    // Issue #281.
+    expect(screen.getByTestId('env-move-to-project-vars').textContent).toBe('Globallere taşı')
     expect(screen.getByText('1 değişken')).toBeTruthy()
   })
 

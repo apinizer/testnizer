@@ -21,10 +21,14 @@ export function registerContextMenuHandlers(): void {
       target: Omit<ContextTarget, 'canPaste'> = { editable: false, hasSelection: false },
     ) => {
       try {
+        // Electron 44 made the clipboard API asynchronous (W3C Clipboard
+        // shape): readText() now resolves to the string. Without the await,
+        // `.length` reads off a Promise and Paste would stay disabled forever.
+        const clipboardText = await clipboard.readText()
         const template = buildContextMenuTemplate({
           editable: !!target?.editable,
           hasSelection: !!target?.hasSelection,
-          canPaste: clipboard.readText().length > 0,
+          canPaste: clipboardText.length > 0,
         })
         if (template.length === 0) return { success: true, data: { shown: false } }
 

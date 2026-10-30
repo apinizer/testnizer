@@ -4,7 +4,8 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -12,12 +13,25 @@ import {
   type CredentialSpec,
   type WithheldState,
 } from '../lib/credential-withhold'
-import { urlCredentialText } from '../lib/credential-text'
+import { messageCredentialText, urlCredentialText } from '../lib/credential-text'
+import { isCredentialArgName } from '../../shared/credential-headers'
 import { makeId } from '../lib/utils'
 import { wsMaskedSendError } from '../lib/masked-send-guard'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for WebSocket, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
+import {
+  DEFAULT_WS_SETTINGS,
+  bytesToBase64,
+  decodeBinary,
+  isBinaryContentType,
+  type RtContentType,
+  type WsSavedMessage,
+  type WsSettings,
+} from '../../shared/realtime'
+import { wsMetaOf, type WsRequestFields } from '../lib/realtime-meta'
+import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -30,12 +44,9 @@ function getWsApi() {
 }
 
 /** Snapshot of WebSocket state for per-tab caching. */
-interface TabWsState extends WithheldState {
-  url: string
-  customHeaders: KeyValuePair[]
-  composerContent: string
-  composerMode: 'json' | 'text'
-  autoScroll: boolean
+interface TabWsState extends WithheldState, WsRequestFields {
+  /** The saved message the composer was loaded from; Save updates it in place. */
+  activeSavedMessageId: string | null
   messages: WsMessage[]
   connectionId: string | null
   connectionState: ConnectionState
@@ -49,6 +60,8 @@ interface TabWsState extends WithheldState {
    * once the connection opens or fails.
    */
   _pendingConnectId?: string
+  /** The project the connection was opened in (closed on leaving it). */
+  _projectId?: string | null
 }
 
 interface WebSocketStore extends TabWsState {
@@ -62,17 +75,31 @@ interface WebSocketStore extends TabWsState {
   sendMessage: () => Promise<void>
   clearMessages: () => void
   setComposerContent: (content: string) => void
-  setComposerMode: (mode: 'json' | 'text') => void
+  setComposerMode: (mode: RtContentType) => void
   setAutoScroll: (auto: boolean) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
   removeHeader: (id: string) => void
   setHeaders: (headers: KeyValuePair[]) => void
+  setParams: (params: KeyValuePair[]) => void
+  addParam: () => void
+  updateParam: (id: string, updates: Partial<KeyValuePair>) => void
+  removeParam: (id: string) => void
+  setSettings: (patch: Partial<WsSettings>) => void
+  /** `name`: the new message's name (the editor passes a translated default). */
+  saveCurrentMessage: (name?: string) => void | Promise<void>
+  addSavedMessage: (name?: string) => void
+  loadSavedMessage: (id: string) => void | Promise<void>
+  renameSavedMessage: (id: string, name: string) => void
+  deleteSavedMessage: (id: string) => void
+  saveLoggedMessage: (messageId: string, name?: string) => void
   addMessage: (msg: WsMessage) => void
   setConnectionState: (state: ConnectionState) => void
   setErrorMessage: (msg: string | null) => void
 
   /** Switch active tab — saves current state and loads target tab state. */
+  /** Duplicate Tab: copy a tab's slice onto a new tab id, disconnected. */
+  cloneTabState: (srcTabId: string, dstTabId: string) => void
   switchToTab: (tabId: string) => void
   /** Remove cached state for a closed tab. Tears down its `_unsubscribe`. */
   removeTabState: (tabId: string) => void
@@ -85,9 +112,13 @@ function emptyTabState(): TabWsState {
     withheldCredentials: [],
     url: 'wss://echo.websocket.org',
     customHeaders: [defaultKv()],
+    params: [],
+    settings: { ...DEFAULT_WS_SETTINGS },
     composerContent: '{\n  "type": "ping",\n  "payload": "hello"\n}',
     composerMode: 'json',
     autoScroll: true,
+    savedMessages: [],
+    activeSavedMessageId: null,
     messages: [],
     connectionId: null,
     connectionState: 'disconnected',
@@ -95,6 +126,7 @@ function emptyTabState(): TabWsState {
     connectedAt: null,
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
+    _projectId: null,
   }
 }
 
@@ -103,9 +135,13 @@ function extractState(s: WebSocketStore): TabWsState {
     withheldCredentials: s.withheldCredentials,
     url: s.url,
     customHeaders: s.customHeaders,
+    params: s.params,
+    settings: s.settings,
     composerContent: s.composerContent,
     composerMode: s.composerMode,
     autoScroll: s.autoScroll,
+    savedMessages: s.savedMessages,
+    activeSavedMessageId: s.activeSavedMessageId,
     messages: s.messages,
     connectionId: s.connectionId,
     connectionState: s.connectionState,
@@ -113,32 +149,48 @@ function extractState(s: WebSocketStore): TabWsState {
     connectedAt: s.connectedAt,
     _unsubscribe: s._unsubscribe,
     _pendingConnectId: s._pendingConnectId,
+    _projectId: s._projectId,
   }
 }
 
 /**
- * On-disk view of a tab: URL, headers and the composer draft — never the
- * message timeline. Received frames are server output and sent ones are the
- * RESOLVED text (`{{secret}}` already substituted), so neither is written to
- * localStorage; they stay in memory for the session. The connection does not
- * survive a reload, so it is stored as disconnected.
+ * Issue #244 / #247 / #282: credential-named handshake headers and query
+ * params, `?token=…` / `user:pass@` in the connection URL and
+ * credential-named members of a JSON-looking composer draft or saved message
+ * (issue #284 audit) never hold a literal value in the snapshot (the row, its
+ * name and the rest of the text stay; `{{var}}`-only values are kept). The
+ * saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
  */
-/**
- * Issue #244: credential-named WebSocket custom headers rows never hold a literal value in
- * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
- * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
- */
-// Issue #247: `?token=…` / `user:pass@` in the connection URL too.
 export const WS_CREDENTIALS: CredentialSpec = {
   fields: [],
-  rows: [credentialRows('customHeaders')],
-  texts: [urlCredentialText('url')],
+  rows: [
+    credentialRows('customHeaders'),
+    { list: 'params', isCredentialName: isCredentialArgName },
+  ],
+  texts: [
+    urlCredentialText('url'),
+    messageCredentialText('composerContent'),
+    messageCredentialText('savedMessages[].content'),
+  ],
 }
 
+/**
+ * On-disk view of a tab: URL, headers, params, settings, saved messages and
+ * the composer draft — never the message timeline. Received frames are server
+ * output and sent ones are the RESOLVED text (`{{secret}}` already
+ * substituted), so neither is written to localStorage; they stay in memory for
+ * the session. The connection does not survive a reload, so it is stored as
+ * disconnected.
+ */
 function persistableWs(st: TabWsState): TabWsState {
+  return idleWs(withholdCredentials(st, WS_CREDENTIALS))
+}
+
+/** A tab with no live connection or timeline — what is stored and what Duplicate Tab copies. */
+function idleWs(st: TabWsState): TabWsState {
   const idle = emptyTabState()
   return {
-    ...withholdCredentials(st, WS_CREDENTIALS),
+    ...st,
     messages: idle.messages,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
@@ -146,388 +198,495 @@ function persistableWs(st: TabWsState): TabWsState {
     connectedAt: idle.connectedAt,
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
+    _projectId: null,
   }
 }
 
 const STORAGE_KEY = 'testnizer-websocket'
 const persisted = loadTabbedState<TabWsState>(STORAGE_KEY, emptyTabState, persistableWs)
 
-export const useWebSocketStore = create<WebSocketStore>((set, get) => ({
-  ...persisted.current,
-  _tabStates: persisted._tabStates,
-  _currentTabId: persisted._currentTabId,
-  // Cached `_unsubscribe` references aren't valid across reloads; force-clear
-  // them so the store's idle state matches a freshly-opened renderer.
-  _unsubscribe: undefined,
-  connectionId: null,
-  connectionState: 'disconnected',
-  events: [],
+function systemRow(event: string, detail: string): WsMessage {
+  return {
+    id: makeId(),
+    direction: 'system',
+    content: detail,
+    contentType: 'text',
+    timestamp: Date.now(),
+    event,
+  }
+}
 
-  setUrl: (url) => {
-    set({ url })
-    markActiveTabDirty()
-  },
-
-  connect: async () => {
-    // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
-    const { url, customHeaders } = get()
-    if (!url.trim()) return
-    // Issue #195: a History mask left in a credential field is never sent.
-    const maskedConnect = wsMaskedSendError({
-      url,
-      customHeaders: customHeaders.filter((h) => h.enabled),
-    })
-    if (maskedConnect) {
-      set({ connectionState: 'error', errorMessage: maskedConnect })
-      return
-    }
-
-    const pendingConnectId = makeId()
-    set({
-      connectionState: 'connecting',
-      errorMessage: null,
-      messages: [],
-      _pendingConnectId: pendingConnectId,
-    })
-
-    const activeVars = useEnvironmentStore.getState().getActiveVariables()
-    const resolvedUrl = resolveVariables(url, activeVars)
-    const resolvedHeaderRows = resolveKeyValuePairs(
-      customHeaders.filter((h) => h.enabled && h.key.trim()),
-      activeVars,
-    )
-    const headerMap: Record<string, string> = {}
-    for (const row of resolvedHeaderRows) headerMap[row.key] = row.value
-
-    const ws = getWsApi()
-    if (!ws) {
-      set({ connectionState: 'error', errorMessage: 'WebSocket bridge unavailable' })
-      return
-    }
-
-    // Capture the tabId at connect time. Events for this connection are routed
-    // back into the *same* tab's slot even if the user has since switched
-    // tabs (in which case we update the cached entry rather than the live
-    // top-level state).
-    const ownerTabId = get()._currentTabId
-
-    const applyToOwner = (patch: Partial<TabWsState>): void => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) {
-        set(patch as Partial<WebSocketStore>)
-      } else if (ownerTabId !== null) {
-        const map = new Map(current._tabStates)
-        const existing = map.get(ownerTabId) ?? emptyTabState()
-        map.set(ownerTabId, { ...existing, ...patch })
-        set({ _tabStates: map })
-      }
-    }
-
-    // Subscribe BEFORE awaiting connect — main fires the 'open' event from
-    // inside `connect()`, so attaching after would race against the event.
-    const prevUnsub = get()._unsubscribe
-    if (prevUnsub) prevUnsub()
-    const unsub = ws.onEvent((evt) => {
-      // Look up the expected connectionId from the owning tab's state
-      // (live or cached) — if the user has switched tabs we still want
-      // events to land in the right tab.
-      const live = get()
-      let expected: string | null
-      if (live._currentTabId === ownerTabId) {
-        expected = live.connectionId
-      } else if (ownerTabId !== null) {
-        expected = live._tabStates.get(ownerTabId)?.connectionId ?? null
-      } else {
-        expected = live.connectionId
-      }
-      // Ignore stray events from older connections (rapid reconnect).
-      if (expected && evt.connectionId !== expected) return
-
-      switch (evt.type) {
-        case 'open':
-          applyToOwner({
-            connectionState: 'connected',
-            errorMessage: null,
-            connectedAt: Date.now(),
-          })
-          break
-        case 'message': {
-          const contentType: WsMessage['contentType'] =
-            evt.contentType === 'binary' ? 'text' : evt.contentType === 'json' ? 'json' : 'text'
-          const newMsg: WsMessage = {
-            id: evt.messageId ?? makeId(),
-            direction: 'received',
-            content: evt.data ?? '',
-            contentType,
-            timestamp: evt.timestamp,
-          }
-          // Append to the owning tab's messages array.
-          const current = get()
-          if (current._currentTabId === ownerTabId) {
-            set({ messages: [...current.messages, newMsg] })
-          } else if (ownerTabId !== null) {
-            const map = new Map(current._tabStates)
-            const existing = map.get(ownerTabId) ?? emptyTabState()
-            map.set(ownerTabId, { ...existing, messages: [...existing.messages, newMsg] })
-            set({ _tabStates: map })
-          }
-          break
-        }
-        case 'close':
-          applyToOwner({
-            connectionState: 'disconnected',
-            connectionId: null,
-            errorMessage:
-              evt.code && evt.code !== 1000
-                ? `Closed (${evt.code}${evt.reason ? `: ${evt.reason}` : ''})`
-                : null,
-          })
-          break
-        case 'error':
-          applyToOwner({
-            connectionState: 'error',
-            errorMessage: evt.data || 'WebSocket error',
-          })
-          break
-      }
-    })
-    set({ _unsubscribe: unsub })
-
+/**
+ * The composer → what goes on the wire and what the log shows. Binary
+ * content is validated here too (main decodes it again) so the log row holds
+ * the normalized base64 the hexdump view reads.
+ */
+function outgoing(
+  content: string,
+  mode: RtContentType,
+): { ok: true; row: Pick<WsMessage, 'content' | 'contentType'> } | { ok: false; error: string } {
+  if (isBinaryContentType(mode)) {
+    const res = decodeBinary(content, mode)
+    if (!res.ok) return { ok: false, error: res.error }
+    return { ok: true, row: { content: bytesToBase64(res.bytes), contentType: 'binary' } }
+  }
+  if (mode === 'json') {
     try {
-      const wsStore = useWorkspaceStore.getState()
-      const result = await ws.connect({
-        url: resolvedUrl,
-        headers: headerMap,
-        _workspaceId: wsStore.activeWorkspaceId || undefined,
-        _projectId: wsStore.activeProjectId || undefined,
-        _pendingId: pendingConnectId,
-        // Editor state with `{{var}}` kept — the History row reopens from it
-        // (issues #182, #195). Same shape `snapshotProtocol` saves.
-        _configured: {
-          url,
-          meta: {
-            websocket: {
-              url,
-              customHeaders,
-              composerContent: get().composerContent,
-              composerMode: get().composerMode,
-            },
-          },
-        },
+      JSON.parse(content)
+      return { ok: true, row: { content, contentType: 'json' } }
+    } catch {
+      return { ok: true, row: { content, contentType: 'text' } }
+    }
+  }
+  return { ok: true, row: { content, contentType: mode } }
+}
+
+export const useWebSocketStore = create<WebSocketStore>((set, get) => {
+  const edit = (patch: Partial<TabWsState>): void => {
+    set(patch as Partial<WebSocketStore>)
+    markActiveTabDirty()
+  }
+
+  return {
+    ...persisted.current,
+    _tabStates: persisted._tabStates,
+    _currentTabId: persisted._currentTabId,
+    // Cached `_unsubscribe` references aren't valid across reloads; force-clear
+    // them so the store's idle state matches a freshly-opened renderer.
+    _unsubscribe: undefined,
+    connectionId: null,
+    connectionState: 'disconnected',
+
+    setUrl: (url) => edit({ url, params: mergeParamsFromUrl(url, get().params) }),
+
+    connect: async () => {
+      // Issue #244: a credential still withheld after a restart is reloaded first.
+      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+      const start = get()
+      const { url, customHeaders } = start
+      if (!url.trim()) return
+      // Issue #195: a History mask left in a credential field is never sent.
+      const maskedConnect = wsMaskedSendError({
+        url,
+        customHeaders: customHeaders.filter((h) => h.enabled),
+        params: start.params.filter((p) => p.enabled),
+      })
+      if (maskedConnect) {
+        set({ connectionState: 'error', errorMessage: maskedConnect })
+        return
+      }
+
+      const pendingConnectId = makeId()
+      set({
+        connectionState: 'connecting',
+        errorMessage: null,
+        messages: [],
+        _pendingConnectId: pendingConnectId,
+        _projectId: useWorkspaceStore.getState().activeProjectId,
       })
 
-      if (result?.success && result.data) {
-        // The `open` event from main may have already fired by the time the
-        // promise resolves — keep `connected` state if it did, otherwise wait
-        // for it. We always set the connectionId so the listener filter
-        // accepts subsequent events.
-        const newId = result.data.connectionId
+      // Params are part of the URL (URL ⇄ Params sync), resolved with it.
+      const activeVars = useEnvironmentStore.getState().getActiveVariables()
+      const resolvedUrl = resolveVariables(url, activeVars)
+      const resolvedHeaderRows = resolveKeyValuePairs(
+        customHeaders.filter((h) => h.enabled && h.key.trim()),
+        activeVars,
+      )
+      const headerMap: Record<string, string> = {}
+      for (const row of resolvedHeaderRows) headerMap[row.key] = row.value
+
+      const ws = getWsApi()
+      if (!ws) {
+        set({ connectionState: 'error', errorMessage: 'WebSocket bridge unavailable' })
+        return
+      }
+
+      // Capture the tabId at connect time. Events for this connection are routed
+      // back into the *same* tab's slot even if the user has since switched
+      // tabs (in which case we update the cached entry rather than the live
+      // top-level state).
+      const ownerTabId = get()._currentTabId
+
+      const patchOwner = (patch: (slice: TabWsState) => Partial<TabWsState>): void => {
         const current = get()
         if (current._currentTabId === ownerTabId) {
-          set({
-            connectionId: newId,
-            connectionState: current.connectionState === 'connected' ? 'connected' : 'connecting',
-            _pendingConnectId: undefined,
-          })
+          set(patch(current) as Partial<WebSocketStore>)
         } else if (ownerTabId !== null) {
           const map = new Map(current._tabStates)
           const existing = map.get(ownerTabId) ?? emptyTabState()
-          map.set(ownerTabId, {
-            ...existing,
-            connectionId: newId,
-            connectionState: existing.connectionState === 'connected' ? 'connected' : 'connecting',
-            _pendingConnectId: undefined,
-          })
+          map.set(ownerTabId, { ...existing, ...patch(existing) })
           set({ _tabStates: map })
         }
-      } else {
+      }
+      const appendRow = (row: WsMessage): void =>
+        patchOwner((sl) => ({ messages: [...sl.messages, row] }))
+
+      // Subscribe BEFORE awaiting connect — main fires the 'open' event from
+      // inside `connect()`, so attaching after would race against the event.
+      const prevUnsub = get()._unsubscribe
+      if (prevUnsub) prevUnsub()
+      const unsub = ws.onEvent((evt) => {
+        // Look up the expected connectionId from the owning tab's state
+        // (live or cached) — if the user has switched tabs we still want
+        // events to land in the right tab.
+        const live = get()
+        let expected: string | null
+        if (live._currentTabId === ownerTabId) {
+          expected = live.connectionId
+        } else if (ownerTabId !== null) {
+          expected = live._tabStates.get(ownerTabId)?.connectionId ?? null
+        } else {
+          expected = live.connectionId
+        }
+        // Ignore stray events from older connections (rapid reconnect).
+        if (expected && evt.connectionId !== expected) return
+
+        switch (evt.type) {
+          case 'open':
+            patchOwner((sl) => ({
+              connectionState: 'connected',
+              errorMessage: null,
+              connectedAt: Date.now(),
+              messages: [
+                ...sl.messages,
+                systemRow(evt.reconnected ? 'reconnected' : 'connected', resolvedUrl),
+              ],
+            }))
+            break
+          case 'message':
+            appendRow({
+              id: evt.messageId ?? makeId(),
+              direction: 'received',
+              content: evt.data ?? '',
+              // Binary stays binary (base64 content) — the log shows a hexdump.
+              contentType:
+                evt.contentType === 'binary'
+                  ? 'binary'
+                  : evt.contentType === 'json'
+                    ? 'json'
+                    : 'text',
+              timestamp: evt.timestamp,
+            })
+            break
+          case 'reconnecting':
+            appendRow(
+              systemRow(
+                'reconnecting',
+                `#${evt.attempt ?? 1}${evt.code ? ` (${evt.code}${evt.reason ? `: ${evt.reason}` : ''})` : ''}`,
+              ),
+            )
+            break
+          case 'close':
+            patchOwner((sl) => ({
+              connectionState: 'disconnected',
+              connectionId: null,
+              errorMessage:
+                evt.code && evt.code !== 1000
+                  ? `Closed (${evt.code}${evt.reason ? `: ${evt.reason}` : ''})`
+                  : null,
+              messages:
+                sl.connectionState === 'connected'
+                  ? [
+                      ...sl.messages,
+                      systemRow(
+                        'disconnected',
+                        `${evt.code ?? ''}${evt.reason ? ` ${evt.reason}` : ''}`.trim(),
+                      ),
+                    ]
+                  : sl.messages,
+            }))
+            break
+          case 'error':
+            patchOwner((sl) => ({
+              connectionState: 'error',
+              errorMessage: evt.data || 'WebSocket error',
+              messages: [...sl.messages, systemRow('error', evt.data || 'WebSocket error')],
+            }))
+            break
+        }
+      })
+      set({ _unsubscribe: unsub })
+
+      try {
+        const wsStore = useWorkspaceStore.getState()
+        const result = await ws.connect({
+          url: resolvedUrl,
+          headers: headerMap,
+          settings: start.settings,
+          _workspaceId: wsStore.activeWorkspaceId || undefined,
+          _projectId: wsStore.activeProjectId || undefined,
+          _pendingId: pendingConnectId,
+          // Editor state with `{{var}}` kept — the History row reopens from it
+          // (issues #182, #195). The same block `snapshotProtocol` saves.
+          _configured: { url, meta: { websocket: wsMetaOf(start) } },
+        })
+
+        if (result?.success && result.data) {
+          // The `open` event from main may have already fired by the time the
+          // promise resolves — keep `connected` state if it did, otherwise wait
+          // for it. We always set the connectionId so the listener filter
+          // accepts subsequent events.
+          const newId = result.data.connectionId
+          patchOwner((sl) => ({
+            connectionId: newId,
+            connectionState: sl.connectionState === 'connected' ? 'connected' : 'connecting',
+            _pendingConnectId: undefined,
+          }))
+        } else {
+          unsub()
+          patchOwner(() => ({
+            _unsubscribe: undefined,
+            _pendingConnectId: undefined,
+            connectionState: 'error',
+            errorMessage: result?.error || 'Connection failed',
+          }))
+        }
+      } catch (e) {
         unsub()
-        applyToOwner({
+        patchOwner(() => ({
           _unsubscribe: undefined,
           _pendingConnectId: undefined,
           connectionState: 'error',
-          errorMessage: result?.error || 'Connection failed',
-        })
+          errorMessage: (e as Error).message,
+        }))
       }
-    } catch (e) {
-      unsub()
-      applyToOwner({
+    },
+
+    disconnect: async () => {
+      const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
+      const ws = getWsApi()
+
+      if (ws) {
+        // Two paths: a connection already opened → `disconnect`; a handshake is
+        // still in flight → `cancelConnect`. Connection-state is the canonical
+        // indicator; we also fall through to `disconnect` if the connectionId
+        // arrived between state updates.
+        if (connectionState === 'connecting' && _pendingConnectId) {
+          try {
+            await ws.cancelConnect(_pendingConnectId)
+          } catch {
+            // Engine already finished the handshake — disconnect path catches it.
+          }
+        }
+        if (connectionId) {
+          try {
+            await ws.disconnect(connectionId)
+          } catch {
+            // Engine already cleaned up — fall through to local state reset.
+          }
+        }
+      }
+      if (_unsubscribe) _unsubscribe()
+
+      set((s) => ({
+        connectionState: 'disconnected',
+        connectionId: null,
+        errorMessage: null,
         _unsubscribe: undefined,
         _pendingConnectId: undefined,
-        connectionState: 'error',
-        errorMessage: (e as Error).message,
-      })
-    }
-  },
+        messages: connectionId ? [...s.messages, systemRow('disconnected', '1000')] : s.messages,
+      }))
+    },
 
-  disconnect: async () => {
-    const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
-    const ws = getWsApi()
-
-    if (ws) {
-      // Two paths: a connection already opened → `disconnect`; a handshake is
-      // still in flight → `cancelConnect`. Connection-state is the canonical
-      // indicator; we also fall through to `disconnect` if the connectionId
-      // arrived between state updates.
-      if (connectionState === 'connecting' && _pendingConnectId) {
-        try {
-          await ws.cancelConnect(_pendingConnectId)
-        } catch {
-          // Engine already finished the handshake — disconnect path catches it.
-        }
+    sendMessage: async () => {
+      // Issue #284: a composer credential withheld after a restart is reloaded first.
+      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+      const { connectionId, composerContent, composerMode, connectionState } = get()
+      if (connectionState !== 'connected' || !connectionId || !composerContent.trim()) return
+      // Issue #195: a History mask left in a credential field is never sent.
+      const maskedMessage = wsMaskedSendError({ composerContent })
+      if (maskedMessage) {
+        set({ errorMessage: maskedMessage })
+        return
       }
-      if (connectionId) {
-        try {
-          await ws.disconnect(connectionId)
-        } catch {
-          // Engine already cleaned up — fall through to local state reset.
-        }
+      const activeVars = useEnvironmentStore.getState().getActiveVariables()
+      const resolvedContent = resolveVariables(composerContent, activeVars)
+      const out = outgoing(resolvedContent, composerMode)
+      if (!out.ok) {
+        set({ errorMessage: out.error })
+        return
       }
-    }
-    if (_unsubscribe) _unsubscribe()
+      set({ errorMessage: null })
 
-    set({
-      connectionState: 'disconnected',
-      connectionId: null,
-      errorMessage: null,
-      _unsubscribe: undefined,
-      _pendingConnectId: undefined,
-    })
-  },
+      const sentMsg: WsMessage = {
+        id: makeId(),
+        direction: 'sent',
+        ...out.row,
+        timestamp: Date.now(),
+      }
+      set((state) => ({ messages: [...state.messages, sentMsg] }))
 
-  sendMessage: async () => {
-    const { connectionId, composerContent, composerMode, connectionState } = get()
-    if (connectionState !== 'connected' || !connectionId || !composerContent.trim()) return
-    // Issue #195: a History mask left in a credential field is never sent.
-    const maskedMessage = wsMaskedSendError({ composerContent })
-    if (maskedMessage) {
-      set({ errorMessage: maskedMessage })
-      return
-    }
-    set({ errorMessage: null })
-
-    let contentType: 'text' | 'json' = 'text'
-    if (composerMode === 'json') {
+      const ws = getWsApi()
+      if (!ws) return
       try {
-        JSON.parse(composerContent)
-        contentType = 'json'
-      } catch {
-        contentType = 'text'
+        const result = await ws.send(
+          connectionId,
+          resolvedContent,
+          isBinaryContentType(composerMode) ? { binary: composerMode } : undefined,
+        )
+        if (!result?.success && result?.error) {
+          set({ errorMessage: result.error })
+        }
+      } catch (e) {
+        set({ errorMessage: (e as Error).message })
       }
-    }
+    },
 
-    const activeVars = useEnvironmentStore.getState().getActiveVariables()
-    const resolvedContent = resolveVariables(composerContent, activeVars)
+    clearMessages: () => set({ messages: [] }),
 
-    const sentMsg: WsMessage = {
-      id: makeId(),
-      direction: 'sent',
-      content: resolvedContent,
-      contentType,
-      timestamp: Date.now(),
-    }
+    setComposerContent: (content) => edit({ composerContent: content }),
+    setComposerMode: (mode) => edit({ composerMode: mode }),
+    setAutoScroll: (auto) => edit({ autoScroll: auto }),
 
-    set((state) => ({ messages: [...state.messages, sentMsg] }))
+    addHeader: () => edit({ customHeaders: [...get().customHeaders, defaultKv()] }),
+    updateHeader: (id, updates) =>
+      edit({
+        customHeaders: get().customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
+      }),
+    removeHeader: (id) => edit({ customHeaders: get().customHeaders.filter((h) => h.id !== id) }),
+    setHeaders: (headers) => edit({ customHeaders: headers }),
 
-    const ws = getWsApi()
-    if (!ws) return
-    try {
-      const result = await ws.send(connectionId, resolvedContent)
-      if (!result?.success && result?.error) {
-        set({ errorMessage: result.error })
+    setParams: (params) => edit({ params, url: applyParamsToUrl(get().url, params) }),
+    addParam: () => {
+      const params = [...get().params, defaultKv()]
+      edit({ params, url: applyParamsToUrl(get().url, params) })
+    },
+    updateParam: (id, updates) => {
+      const params = get().params.map((p) => (p.id === id ? { ...p, ...updates } : p))
+      edit({ params, url: applyParamsToUrl(get().url, params) })
+    },
+    removeParam: (id) => {
+      const params = get().params.filter((p) => p.id !== id)
+      edit({ params, url: applyParamsToUrl(get().url, params) })
+    },
+
+    setSettings: (patch) => edit({ settings: { ...get().settings, ...patch } }),
+
+    saveCurrentMessage: (name) =>
+      // Issue #284: a body still withheld after a restart is reloaded before
+      // it is copied — the copy would carry no marker and Ctrl+S would save the blank.
+      afterWithheldReloaded(get, 'composerContent', () => {
+        const s = get()
+        const body = { content: s.composerContent, contentType: s.composerMode }
+        const existing = s.savedMessages.find((m) => m.id === s.activeSavedMessageId)
+        if (existing) {
+          edit({
+            savedMessages: s.savedMessages.map((m) =>
+              m.id === existing.id ? { ...m, ...body } : m,
+            ),
+          })
+          return
+        }
+        const msg: WsSavedMessage = {
+          id: makeId(),
+          name: name ?? `Message ${s.savedMessages.length + 1}`,
+          ...body,
+        }
+        edit({ savedMessages: [...s.savedMessages, msg], activeSavedMessageId: msg.id })
+      }),
+    addSavedMessage: (name) => {
+      const msg: WsSavedMessage = {
+        id: makeId(),
+        name: name ?? `Message ${get().savedMessages.length + 1}`,
+        content: '',
+        contentType: 'text',
       }
-    } catch (e) {
-      set({ errorMessage: (e as Error).message })
-    }
-  },
+      edit({
+        savedMessages: [...get().savedMessages, msg],
+        activeSavedMessageId: msg.id,
+        composerContent: '',
+        composerMode: 'text',
+      })
+    },
+    loadSavedMessage: (id) =>
+      // Issue #284: a body still withheld after a restart is reloaded before
+      // it is copied — the copy would carry no marker and Ctrl+S would save the blank.
+      afterWithheldReloaded(get, `savedMessages[${id}]`, () => {
+        const msg = get().savedMessages.find((m) => m.id === id)
+        if (!msg) return
+        edit({
+          activeSavedMessageId: id,
+          composerContent: msg.content,
+          composerMode: msg.contentType,
+        })
+      }),
+    renameSavedMessage: (id, name) =>
+      edit({ savedMessages: get().savedMessages.map((m) => (m.id === id ? { ...m, name } : m)) }),
+    deleteSavedMessage: (id) =>
+      edit({
+        savedMessages: get().savedMessages.filter((m) => m.id !== id),
+        activeSavedMessageId: get().activeSavedMessageId === id ? null : get().activeSavedMessageId,
+      }),
+    saveLoggedMessage: (messageId, name) => {
+      const row = get().messages.find((m) => m.id === messageId)
+      if (!row || row.direction === 'system') return
+      const msg: WsSavedMessage = {
+        id: makeId(),
+        name: name ?? `Message ${get().savedMessages.length + 1}`,
+        content: row.content,
+        contentType: row.contentType === 'binary' ? 'base64' : row.contentType,
+      }
+      edit({ savedMessages: [...get().savedMessages, msg] })
+    },
 
-  clearMessages: () => set({ messages: [] }),
+    addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
 
-  setComposerContent: (content) => {
-    set({ composerContent: content })
-    markActiveTabDirty()
-  },
-  setComposerMode: (mode) => {
-    set({ composerMode: mode })
-    markActiveTabDirty()
-  },
-  setAutoScroll: (auto) => {
-    set({ autoScroll: auto })
-    markActiveTabDirty()
-  },
+    setConnectionState: (connectionState) => set({ connectionState }),
+    setErrorMessage: (errorMessage) => set({ errorMessage }),
 
-  addHeader: () => {
-    set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] }))
-    markActiveTabDirty()
-  },
+    cloneTabState: (srcTabId, dstTabId) =>
+      cloneTabSlice(useWebSocketStore, extractState, srcTabId, dstTabId, idleWs),
 
-  updateHeader: (id, updates) => {
-    set((state) => ({
-      customHeaders: state.customHeaders.map((h) => (h.id === id ? { ...h, ...updates } : h)),
-    }))
-    markActiveTabDirty()
-  },
+    switchToTab: (tabId) => {
+      const state = get()
+      const tabStates = new Map(state._tabStates)
 
-  removeHeader: (id) => {
-    set((state) => ({
-      customHeaders: state.customHeaders.filter((h) => h.id !== id),
-    }))
-    markActiveTabDirty()
-  },
+      // Save current tab state under its own key
+      const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
+      tabStates.set(currentKey, extractState(state))
 
-  setHeaders: (headers) => {
-    set({ customHeaders: headers })
-    markActiveTabDirty()
-  },
+      // Load target tab (or empty for new tabs)
+      const target = tabStates.get(tabId) || emptyTabState()
 
-  addMessage: (msg) => set((state) => ({ messages: [...state.messages, msg] })),
+      set({
+        ...target,
+        _tabStates: tabStates,
+        _currentTabId: tabId,
+      })
+    },
 
-  setConnectionState: (connectionState) => set({ connectionState }),
-  setErrorMessage: (errorMessage) => set({ errorMessage }),
+    removeTabState: (tabId) => {
+      const state = get()
+      const live = state._currentTabId === tabId
+      const cached = state._tabStates.get(tabId)
+      // Closing the tab closes its connection (it used to stay open in main
+      // with nothing left to disconnect it).
+      releaseConnection(live ? extractState(state) : cached, getWsApi())
+      if (live && cached?._unsubscribe && cached._unsubscribe !== state._unsubscribe) {
+        cached._unsubscribe()
+      }
+      const tabStates = new Map(state._tabStates)
+      tabStates.delete(tabId)
+      set(
+        live
+          ? {
+              _tabStates: tabStates,
+              connectionId: null,
+              connectionState: 'disconnected',
+              _pendingConnectId: undefined,
+              _unsubscribe: undefined,
+            }
+          : { _tabStates: tabStates },
+      )
+    },
 
-  switchToTab: (tabId) => {
-    const state = get()
-    const tabStates = new Map(state._tabStates)
-
-    // Save current tab state under its own key
-    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
-    tabStates.set(currentKey, extractState(state))
-
-    // Load target tab (or empty for new tabs)
-    const target = tabStates.get(tabId) || emptyTabState()
-
-    set({
-      ...target,
-      _tabStates: tabStates,
-      _currentTabId: tabId,
-    })
-  },
-
-  removeTabState: (tabId) => {
-    const tabStates = new Map(get()._tabStates)
-    const removed = tabStates.get(tabId)
-    if (removed?._unsubscribe) {
-      removed._unsubscribe()
-    }
-    tabStates.delete(tabId)
-    set({ _tabStates: tabStates })
-
-    // If the closed tab was also the live one, also tear down live listener
-    // (it may already be the same function reference, so guard with a flag).
-    if (get()._currentTabId === tabId) {
-      const liveUnsub = get()._unsubscribe
-      if (liveUnsub && liveUnsub !== removed?._unsubscribe) liveUnsub()
-      set({ _unsubscribe: undefined })
-    }
-  },
-
-  reset: () => {
-    const { _unsubscribe } = get()
-    if (_unsubscribe) _unsubscribe()
-    set({ ...emptyTabState() })
-  },
-}))
+    reset: () => {
+      const { _unsubscribe } = get()
+      if (_unsubscribe) _unsubscribe()
+      set({ ...emptyTabState() })
+    },
+  }
+})
 
 attachTabbedPersist(
   useWebSocketStore,
@@ -538,3 +697,17 @@ attachTabbedPersist(
 )
 // Issue #244: a user edit to a withheld value drops its marker.
 trackCredentialEdits(useWebSocketStore, WS_CREDENTIALS)
+// Leaving a project closes the connections opened in it (one rule for the
+// realtime editors, `lib/realtime-connections.ts`).
+bindConnectionsToProject({
+  store: useWebSocketStore,
+  extract: extractState,
+  api: getWsApi,
+  closed: (sl, wasConnected) => ({
+    ...sl,
+    connectionState: 'disconnected' as const,
+    messages: wasConnected
+      ? [...sl.messages, systemRow('disconnected', 'project switched')]
+      : sl.messages,
+  }),
+})

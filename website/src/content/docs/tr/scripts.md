@@ -68,9 +68,10 @@ const chai       = require('chai')               // Chai onay kütüphanesi
 ### pm kapsamları — environment / globals / collectionVariables / variables
 
 Her kapsam aynı setter/getter yüzeyini sunar. `environment` aktif ortamdır,
-`globals` proje genelindedir, `collectionVariables` proje ortamını paylaşır ve
-`pm.variables` birleşik bir okuma görünümü artı **kalıcı olmayan**,
-**isteğe-özel** bir geçici kapsamdır.
+`globals` ve `collectionVariables` **tek bir kapsamdır** — projenin
+[Globaller](/tr/docs/environments#globaller)'i (Testnizer projesi Postman
+koleksiyonuna denk gelir) — ve `pm.variables` birleşik bir okuma görünümü artı
+**kalıcı olmayan**, **isteğe-özel** bir geçici kapsamdır.
 
 ```js
 pm.environment.get('baseUrl')          // → string | undefined
@@ -89,10 +90,14 @@ bulunur:
 pm.globals.set('apiVersion', 'v2')
 pm.collectionVariables.set('nextPageToken', body.nextPage)
 
-const baseUrl = pm.variables.get('baseUrl')   // local → environment → global çözümlenir
+const baseUrl = pm.variables.get('baseUrl')   // local → data → environment → Globaller çözümlenir
 pm.variables.set('tempSig', sig)              // yalnızca isteğe-özel, kalıcı değil
 pm.variables.toObject()                       // birleşik anlık görüntü
 ```
+
+Bu yüzden `pm.collectionVariables.set(...)` ve `pm.globals.set(...)` aynı proje
+değişkenine yazar; bir sır değişkene yazan betik de Çalıştır sonuçlarında,
+Geçmiş'te ve Konsol'da maskelenir.
 
 **Ön istek** betiğinde yapılan yazmalar; istek URL'si, başlıkları ve gövdesinde
 görünür. **Test** betiğinde yapılan yazmalar ilgili kapsama **kalıcı** olur
@@ -147,6 +152,10 @@ pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token })
 ```
 
 ### pm.response (yalnızca test betiği)
+
+`pm.response`, Postman'de olduğu gibi ön istek betiğinde tanımlı değildir; bu
+yüzden alışılmış `if (pm.response) { … }` koruması hem Gönder'de hem Çalıştır'da
+çalışır.
 
 Tam Postman/Newman yanıt yüzeyi:
 
@@ -203,6 +212,20 @@ pm.test('kullanıcının id ve e-postası var', function () {
   pm.expect(body.email).to.match(/@/)
 })
 ```
+
+Bir test Node tarzı bir callback de alabilir. Bu durumda test `done()` çağrısını
+bekler — `done(error)` ile, bir hata fırlatılmasıyla ya da 5 saniye içinde
+`done` çağrılmamasıyla başarısız olur (`async` callback eskisi gibi beklenir):
+
+```js
+pm.test('token döndü', function (done) {
+  pm.expect(pm.response.json()).to.have.property('token')
+  done()
+})
+```
+
+`pm.test.skip(ad, fn)` bir testi çalıştırmadan atlanmış olarak kaydeder;
+`pm.test.index()` betiğin o ana kadar kaydettiği test sayısını döndürür.
 
 **Eksiksiz Chai BDD API'si** ([chaijs.com/api/bdd](https://www.chaijs.com/api/bdd/))
 kullanılabilir; buna şunlar dahildir:
@@ -322,6 +345,29 @@ Send ve Run'da birebir aynı olan iki kapsam kuralı:
 - **Proje istemci sertifikası** (mTLS) eklemez — bkz.
   [Sertifikalar](/tr/docs/certificates).
 
+### pm.vault ve pm.require
+
+Postman'in vault'u sırları tutar. Testnizer'da bu, projenin sır olarak
+işaretlenmiş [Globaller](/tr/docs/environments#globaller)'idir. Üç yöntem de
+asenkrondur:
+
+```js
+await pm.vault.set('apiKey', 'sk-live-…')   // sır Global oluşturur veya günceller
+const key = await pm.vault.get('apiKey')    // yalnızca sır Globalleri okur
+await pm.vault.unset('apiKey')              // bir sır Global'i siler
+```
+
+`pm.vault.get`, sır olmayan bir değişken için `undefined` döndürür ve
+`pm.vault.unset` sıradan bir değişkene dokunmaz. `pm.vault.set` ile yazılan değer
+hemen `{{apiKey}}` ve `pm.globals.get` için kullanılabilir, şifreli saklanır ve
+Çalıştır sonuçlarında, Geçmiş'te ve Konsol'da maskelenir.
+
+`pm.require('@takim/paket')` (Postman'in paket kütüphanesi yükleyicisi)
+**desteklenmez**: `pm.require is not supported in Testnizer: <ad>` hatası
+fırlatır. Bunun yerine yerleşik [`require()` kütüphanelerini](#yerleşik-require-kütüphaneleri)
+kullanın. Bir Postman koleksiyonunu içe aktardığınızda, `pm.vault` veya
+`pm.require` kullanan her betik içe aktarma raporunda adıyla geçer.
+
 ### pm.execution
 
 ```js
@@ -365,7 +411,7 @@ data['userId']                             // geçerli yineleme veri satırı
 ## Insomnia & Bruno
 
 **Insomnia** ve **Bruno**'dan dışa aktarılan betikler değişiklik gerektirmeden
-çalışır. Globalleri aynı çalışma zamanına bağlanmıştır.
+çalışır. Bunların global nesneleri aynı çalışma zamanına bağlıdır.
 
 ### insomnia.\*
 
@@ -373,14 +419,22 @@ data['userId']                             // geçerli yineleme veri satırı
 
 - **`insomnia.response.status` SAYISAL durum kodudur** (örn. `200`), sebep metni
   değil — `pm.response.status`'un tersi.
-- **`insomnia.baseEnvironment` ve `insomnia.collectionVariables`**, Postman
-  **koleksiyon** değişkenlerine eşlenir.
+- **`insomnia.baseEnvironment` ve `insomnia.collectionVariables`**, projenin
+  [Globaller](/tr/docs/environments#globaller)'ine eşlenir.
+
+`insomnia.environment`, Insomnia'nın kendi kuralını izler: alt ortam
+seçilmediğinde aktif ortam, temel ortamın kendisidir. Yani Testnizer'da **hiçbir
+ortam seçili değilken** `insomnia.environment.get/set` Globaller'i okur ve yazar;
+bir ortam seçiliyken `pm.environment` olur.
 
 ```js
-insomnia.environment.set('token', 'abc')
-insomnia.baseEnvironment.get('apiKey')        // → koleksiyon değişkeni
+insomnia.environment.set('token', 'abc')      // Globaller veya seçili ortam
+insomnia.baseEnvironment.get('apiKey')        // → Globaller
 if (insomnia.response.status === 200) { … }   // sayısal kod
 ```
+
+Bir Insomnia koleksiyonunun temel ortamı aynı nedenle Globaller'e aktarılır —
+bkz. [Insomnia](/tr/docs/import-formats#insomnia-v4-ve-v5).
 
 ### bru / req / res
 

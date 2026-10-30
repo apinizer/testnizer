@@ -420,6 +420,26 @@ describe('executeCollection — body variable resolution', () => {
   })
 })
 
+describe('executeCollection — globals of another project stay out (Send parity)', () => {
+  it('a global that only exists in another project of the workspace does not resolve', async () => {
+    seedActiveBaseEnv()
+    const other = seedProject(testDb, workspaceId, 'Project B')
+    testDb
+      .prepare(
+        `INSERT INTO global_variables (id, workspace_id, project_id, key, value, enabled, secret, initial_value)
+         VALUES (?, ?, ?, 'leak', 'from-project-b', 1, 0, NULL)`,
+      )
+      .run(crypto.randomUUID(), workspaceId, other)
+    const epId = seedEndpoint({ name: 'Leak', url: '{{base}}/leak?v={{leak}}' })
+
+    const res = await run({ endpointIds: [epId] })
+
+    expect(res.success).toBe(true)
+    // Send leaves `{{leak}}` unresolved for this project; Run must too.
+    expect(received[0].url).not.toContain('from-project-b')
+  })
+})
+
 // ─── e. Declarative assertions ───────────────────────────────────
 
 describe('executeCollection — assertions', () => {

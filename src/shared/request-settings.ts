@@ -8,7 +8,10 @@
  *  - saved_requests (no `request_schema`): the same top-level keys inside the
  *    `metadata` JSON, next to the protocol blocks (`mcp`, `soap`, …).
  * `timeout` is in ms: absent = inherit the general default, `0` = no limit,
- * `>0` = explicit. The Ctrl+S writer is `requestSettingsFor` in
+ * `>0` = explicit. `critical` (issue #304): `true` = a failing run of this
+ * request stops the whole Run (Runner, Test Suite, Quick Run, Scheduler)
+ * whatever the run-level "Stop on error" says; written only when true, so an
+ * unmarked row stays byte-identical. The Ctrl+S writer is `requestSettingsFor` in
  * `save-active-request.ts`; the readers are the tab-open paths and the
  * Runner (`runner.handler.ts`), all through `readRequestSettings`.
  *
@@ -21,6 +24,11 @@ export interface RequestSettings {
   followRedirects?: boolean
   maxRedirects?: number
   sslVerification?: boolean
+  /**
+   * Issue #304: the Runner stops the run when this request does not pass —
+   * independent of the run-level "Stop on error". Present only when true.
+   */
+  critical?: boolean
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -52,6 +60,7 @@ export function readRequestSettings(src: unknown): RequestSettings {
   const maxRedirects = nonNegative(src.maxRedirects)
   if (maxRedirects !== undefined) out.maxRedirects = Math.floor(maxRedirects)
   if (typeof src.sslVerification === 'boolean') out.sslVerification = src.sslVerification
+  if (src.critical === true) out.critical = true
   return out
 }
 

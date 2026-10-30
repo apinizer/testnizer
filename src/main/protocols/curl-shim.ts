@@ -1,6 +1,6 @@
 // src/main/protocols/curl-shim.ts
 //
-// Legacy-TLS sidecar. Electron 33 ships with BoringSSL, which dropped TLS
+// Legacy-TLS sidecar. Electron ships with BoringSSL, which dropped TLS
 // 1.0 / 1.1 at build time — passing `minVersion: 'TLSv1'` to `https.Agent`
 // fails fast with ERR_SSL_INVALID_COMMAND. Several Apinizer customers
 // (banks, government API gateways) still operate backends that only speak

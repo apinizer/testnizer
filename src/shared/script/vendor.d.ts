@@ -7,3 +7,17 @@ declare module 'lodash'
 declare module 'tv4'
 declare module 'xml2js'
 declare module 'postman-collection'
+
+/**
+ * Postman's own dynamic-variable table (`{{$guid}}`, `{{$randomFirstName}}`, …),
+ * CommonJS `module.exports = { $name: { description, generator } }`. Typed
+ * here (not left `any`) because src/shared/dynamic-variables.ts reads it.
+ */
+declare module 'postman-collection/lib/superstring/dynamic-variables' {
+  interface PostmanDynamicGenerator {
+    description: string
+    generator: () => unknown
+  }
+  const generators: Record<string, PostmanDynamicGenerator>
+  export = generators
+}

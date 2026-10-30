@@ -22,7 +22,7 @@
  *        (real boolean, covers IP-SAN + wildcard) — NOT X509Certificate.checkHost.
  *   F-2  caCerts are MERGED with tls.rootCertificates (never replace); omitted
  *        entirely when absent so Node uses its default store.
- *   F-3  TLS 1.0/1.1 are refused by Electron 33 BoringSSL — return a handled
+ *   F-3  TLS 1.0/1.1 are refused by Electron's BoringSSL — return a handled
  *        error, never call tls.connect (which throws ERR_SSL_INVALID_COMMAND).
  *   F-4  cipher control (ciphers / cipherPreset via getCipherPreset) forwarded
  *        to tls.connect, mirroring http.engine — lets the inspector reach
@@ -354,7 +354,7 @@ export async function inspectTls(opts: TlsInspectOptions): Promise<TlsInspectRes
     return failure(opts, port, servername, 'Host is required')
   }
 
-  // F-3 — Electron 33 BoringSSL cannot negotiate TLS 1.0/1.1; there is no curl
+  // F-3 — Electron's BoringSSL cannot negotiate TLS 1.0/1.1; there is no curl
   // fallback for raw cert inspection. Refuse BEFORE tls.connect so we surface a
   // handled error string instead of a leaked ERR_SSL_INVALID_COMMAND throw.
   if (isLegacyTlsVersion(opts.minVersion) || isLegacyTlsVersion(opts.maxVersion)) {

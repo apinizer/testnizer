@@ -6,6 +6,8 @@ import { describe, it, expect } from 'vitest'
 import {
   soapTransportHeaders,
   soapTransportFromMeta,
+  soapTransportForRow,
+  soapVersionAndAction,
   withSoapTransportHeaders,
 } from '../../../src/shared/soap-transport'
 
@@ -84,5 +86,71 @@ describe('withSoapTransportHeaders', () => {
     // disabled SOAPAction row does not count as supplied → transport one added
     expect(out.filter((h) => h.key === 'SOAPAction' && h.enabled)).toHaveLength(1)
     expect(out.find((h) => h.key === 'SOAPAction' && h.enabled)?.value).toBe('"urn:New"')
+  })
+})
+
+// Issue #298 follow-up: the rule Send applies (`soapSendTarget`) and the
+// Runner applies to a saved row are one function — never null.
+describe('soapVersionAndAction', () => {
+  it('a WSDL operation wins: the document version, the action (manual as fallback)', () => {
+    expect(soapVersionAndAction({ op: { soapAction: 'urn:Op' }, wsdlVersion: 'soap12' })).toEqual({
+      version: 'soap12',
+      action: 'urn:Op',
+    })
+    expect(
+      soapVersionAndAction({
+        op: { soapAction: '' },
+        manualSoapAction: 'urn:m',
+        manualSoapVersion: 'soap12',
+      }),
+    ).toEqual({ version: 'soap11', action: 'urn:m' })
+  })
+  it('no operation → the manual form; defaults SOAP 1.1 + empty action', () => {
+    expect(soapVersionAndAction({ manualSoapVersion: 'soap12', manualSoapAction: 'a' })).toEqual({
+      version: 'soap12',
+      action: 'a',
+    })
+    expect(soapVersionAndAction({})).toEqual({ version: 'soap11', action: '' })
+  })
+})
+
+describe('soapTransportForRow', () => {
+  it('WSDL meta without action / version → SOAP 1.1 + "" (soapTransportFromMeta gave null)', () => {
+    expect(soapTransportFromMeta({ mode: 'wsdl' })).toBeNull()
+    expect(soapTransportForRow({ mode: 'wsdl', selectedOperation: 'Add' }, [])).toEqual({
+      version: 'soap11',
+      action: '',
+    })
+  })
+  it('WSDL meta → saved version + action; manual action as fallback', () => {
+    expect(
+      soapTransportForRow({ mode: 'wsdl', soapVersion: 'soap12', soapAction: 'urn:Op' }, []),
+    ).toEqual({ version: 'soap12', action: 'urn:Op' })
+    expect(soapTransportForRow({ mode: 'wsdl', manualSoapAction: 'urn:m' }, [])).toEqual({
+      version: 'soap11',
+      action: 'urn:m',
+    })
+  })
+  it('legacy meta: no mode, an operation → WSDL rule; no WSDL / operation → manual rule', () => {
+    expect(
+      soapTransportForRow(
+        { operationName: 'Add', soapAction: 'urn:Add', soapVersion: 'soap11' },
+        [],
+      ),
+    ).toEqual({ version: 'soap11', action: 'urn:Add' })
+    expect(soapTransportForRow({ manualSoapAction: 'x', manualSoapVersion: 'soap12' }, [])).toEqual(
+      { version: 'soap12', action: 'x' },
+    )
+  })
+  it('no meta → version / action read back from the stored headers', () => {
+    expect(soapTransportForRow(undefined, [])).toEqual({ version: 'soap11', action: '' })
+    expect(
+      soapTransportForRow(undefined, [{ key: 'SOAPAction', value: '"urn:H"', enabled: true }]),
+    ).toEqual({ version: 'soap11', action: 'urn:H' })
+    expect(
+      soapTransportForRow(undefined, [
+        { key: 'Content-Type', value: 'application/soap+xml; action="urn:12"', enabled: true },
+      ]),
+    ).toEqual({ version: 'soap12', action: 'urn:12' })
   })
 })

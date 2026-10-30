@@ -46,9 +46,13 @@ export interface EndpointVerdictShape {
   status: number | null
   /** All assertion results; `.length === 0` means the request has no checks. */
   assertions: { length: number }
+  /** A critical request that did not pass stopped the run (issue #304). */
+  stoppedRun?: boolean
 }
 
 export function endpointDidPass(r: EndpointVerdictShape): boolean {
+  // A row stops the run only because it did not pass (`recordStep`).
+  if (r.stoppedRun === true) return false
   if (r.error || r.failed > 0) return false
   if (r.assertions.length === 0) return (r.status ?? 0) < 400
   return true
@@ -63,8 +67,27 @@ export function endpointDidPass(r: EndpointVerdictShape): boolean {
  * no-assertion fallback reads `(null ?? 0) < 400` and scores it as PASSED. Main's
  * `recordStep` always guarded its tallies with this condition; the renderer
  * results views and the HTML export did not, so a cancelled 12-step run was
- * about to report "Passed 9". Every counter must exclude these first.
+ * about to report "Passed 9". Every counter must exclude these first — through
+ * this helper, never an inline `skipped > 0`.
  */
-export function isSkippedStep(r: { skipped?: number }): boolean {
+export function isSkippedStep(r: { skipped?: number; stoppedRun?: boolean }): boolean {
+  // A row that stopped the run is never neutral: a CRITICAL request the
+  // Runner could not drive (UNSUPPORTED, `skipped: 1`) ended the run, so it is
+  // a failure on every counter — the live run, runner_history, the results
+  // views and the HTML report (peer review of issue #304). Its non-critical
+  // twin has no `stoppedRun` and stays a neutral skip.
+  if (r.stoppedRun === true) return false
   return (r.skipped ?? 0) > 0
+}
+
+/**
+ * The row whose failure stopped the run because it is marked Critical (issue
+ * #304), if any. Derived from the results — not from `RunnerReport.stopReason`
+ * — because `runner_history` and the exports keep only the results; every
+ * reader (live results, history, HTML report) asks this one helper.
+ */
+export function criticalStopOf<T extends { stoppedRun?: boolean; phase?: RunPhase }>(
+  results: readonly T[],
+): T | undefined {
+  return results.find((r) => r.stoppedRun === true && r.phase !== 'teardown')
 }

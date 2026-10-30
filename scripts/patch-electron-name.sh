@@ -55,8 +55,10 @@ fi
 # Patch electron-vite log messages to show "Testnizer" instead of "electron app"
 EV_DIR="node_modules/electron-vite/dist"
 if [ -d "$EV_DIR" ]; then
-  find "$EV_DIR" -type f \( -name "*.mjs" -o -name "*.cjs" \) -exec \
-    sed -i '' 's/start electron app\.\.\./start Testnizer.../g; s/restart electron app\.\.\./restart Testnizer.../g' {} +
+  # electron-vite 2 shipped .mjs/.cjs and said "start electron app..."; 5 ships
+  # plain .js and says "starting electron app...". Cover both.
+  find "$EV_DIR" -type f \( -name "*.js" -o -name "*.mjs" -o -name "*.cjs" \) -exec \
+    sed -i '' 's/start electron app\.\.\./start Testnizer.../g; s/restart electron app\.\.\./restart Testnizer.../g; s/starting electron app\.\.\./starting Testnizer.../g; s/restarting electron app\.\.\./restarting Testnizer.../g' {} +
   echo "Patched electron-vite log messages"
 fi
 

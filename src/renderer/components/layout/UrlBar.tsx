@@ -8,6 +8,7 @@ import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
 import MethodBadge from '../shared/MethodBadge'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
+import { handleUrlBarPaste } from './url-bar-paste'
 import { T, BTN_P, BTN_S, BASE_INP } from '../../styles/tokens'
 import type { HttpMethod } from '../../types'
 
@@ -183,6 +184,7 @@ export default function UrlBar() {
           pinIfPreview()
           setUrl(v)
         }}
+        onPaste={handleUrlBarPaste}
         onKeyDown={(e) => {
           if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
             sendRequest()

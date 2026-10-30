@@ -178,7 +178,7 @@ describe('pre-request script', () => {
       { text: 'T-1' },
       expect.anything(),
     )
-    expect(applyScriptUpdates).toHaveBeenCalledWith({ token: 'T-1' }, {})
+    expect(applyScriptUpdates).toHaveBeenCalledWith({ token: 'T-1' }, {}, {})
   })
 
   it('a throw aborts the call with the script error; Run is free again', async () => {
@@ -275,7 +275,7 @@ describe('post-response checks', () => {
     scripts('', "pm.environment.set('tok', pm.response.text())")
     useMcpStore.setState({ toolArgs: '{"text":"token-123"}' })
     await useMcpStore.getState().callTool()
-    expect(applyScriptUpdates).toHaveBeenCalledWith({ tok: 'token-123' }, {})
+    expect(applyScriptUpdates).toHaveBeenCalledWith({ tok: 'token-123' }, {}, {})
     scripts('', "pm.test('chained', () => pm.expect(pm.response.text()).to.eql('got token-123'))")
     useMcpStore.setState({ toolArgs: '{"text":"got {{tok}}"}' })
     await useMcpStore.getState().callTool()
@@ -424,7 +424,7 @@ describe('pm.request on an MCP call (what Run shows)', () => {
   it('a post-script that only chains a variable leaves no empty Test Results view', async () => {
     scripts('', "pm.environment.set('last', pm.response.text())")
     await useMcpStore.getState().callTool()
-    expect(applyScriptUpdates).toHaveBeenCalledWith({ last: 'hi' }, {})
+    expect(applyScriptUpdates).toHaveBeenCalledWith({ last: 'hi' }, {}, {})
     expect(useMcpStore.getState().toolTests).toBeNull()
   })
 })

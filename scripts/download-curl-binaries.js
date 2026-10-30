@@ -5,7 +5,7 @@
 // stunnel/static-curl GitHub releases (curl 8.20.0+) and drops it under
 // resources/curl/{platform}-{arch}/. Each binary is fully self-contained
 // (musl-static on Linux, no DLLs on Windows, codesign-eligible on macOS)
-// and supports TLS 1.0/1.1, which the bundled Electron 33 (BoringSSL)
+// and supports TLS 1.0/1.1, which the bundled Electron (BoringSSL)
 // refuses to negotiate.
 //
 // Why: TLS 1.0/1.1 fallback path in src/main/protocols/curl-shim.ts

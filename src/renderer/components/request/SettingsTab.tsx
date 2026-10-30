@@ -11,6 +11,7 @@
 import { useRequestStore } from '../../stores/request.store'
 import { useNumberDraft } from '../../lib/number-draft'
 import { useTranslation } from '../../lib/i18n'
+import CriticalRequestToggle from './CriticalRequestToggle'
 
 export default function SettingsTab() {
   const { t } = useTranslation()
@@ -117,6 +118,8 @@ export default function SettingsTab() {
           <span style={{ color: 'var(--muted)' }}>{t('settingsTab.maxRedirectsHelp')}</span>
         </div>
       </div>
+      {/* Critical request — stops a Run when it fails (issue #304) */}
+      <CriticalRequestToggle />
     </div>
   )
 }

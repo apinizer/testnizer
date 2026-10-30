@@ -177,6 +177,12 @@ export default function BinaryResponseView({
               style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
             />
           ) : isPdf ? (
+            // No `sandbox` attribute, on purpose (issue #294): Chromium's PDF
+            // viewer refuses to load in a sandboxed frame (every token set ends
+            // in chrome-error://), and PDFium already runs in Chromium's own
+            // sandboxed processes. The app renderer itself is `sandbox: true`,
+            // and the main-process permission policy denies anything this
+            // frame asks for (it is a subframe, not the app document).
             <iframe
               src={url}
               title={t('response.binary.pdfTitle')}

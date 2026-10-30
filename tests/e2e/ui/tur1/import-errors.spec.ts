@@ -9,7 +9,6 @@ import { uiTest } from './_setup'
 import { dismissOverlays, navigateSidebar } from '../../helpers/ui/bootstrap'
 import { getActiveProjectId, listEndpointsByProject } from '../../helpers/ui/assert-ipc'
 import { openImportDropdown } from '../../helpers/ui/import-flow'
-import { stubImportOpenFile } from '../../helpers/ui/import-export-ui-flow'
 
 const FIXTURES = path.resolve(__dirname, '../../../fixtures/import-export')
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -20,14 +19,37 @@ uiTest.describe('Tur1 — Import errors [MST-085]', () => {
     await navigateSidebar(window, 'apis')
   })
 
-  uiTest('MST-085 Postman environment file rejected as collection import', async ({ window }) => {
-    await stubImportOpenFile(window, 'postman-env-wrong-type.json')
-    await openImportDropdown(window, /Postman/i)
-    const modal = window.getByTestId('import-modal')
-    await modal.getByRole('button', { name: /Click to select a/i }).click()
-    await expect(modal.getByText(/mismatch|environment|Postman/i).first()).toBeVisible({
-      timeout: 15_000,
-    })
+  // Issue #276: the Postman card takes every Postman artifact. An environment
+  // file is no longer rejected — it is announced as an environment import
+  // (no destination folder) instead of being forced through the folder step.
+  // The file is picked through the real `import:openFile` IPC (main-process
+  // dialog patched): the renderer `window.api` stub cannot replace a
+  // contextBridge function in the production build, so the old version of
+  // this test only ever matched the static "Postman" heading.
+  uiTest('MST-085 Postman environment file is routed to an environment import', async ({ app, window }) => {
+    const file = path.join(FIXTURES, 'postman-env-wrong-type.json')
+    await app.evaluate(({ dialog }, p) => {
+      const d = dialog as unknown as Record<string, unknown>
+      if (!d.__orig085) d.__orig085 = d.showOpenDialog
+      d.showOpenDialog = async () => ({ canceled: false, filePaths: [p] })
+    }, file)
+    try {
+      await openImportDropdown(window, /Postman/i)
+      const modal = window.getByTestId('import-modal')
+      await modal.getByRole('button', { name: /Click to select a/i }).click()
+      await expect(modal.getByTestId('import-env-note')).toBeVisible({ timeout: 15_000 })
+      await expect(modal.getByPlaceholder('Folder name')).toBeHidden()
+      await window.keyboard.press('Escape')
+      await expect(modal).toBeHidden({ timeout: 10_000 })
+    } finally {
+      await app.evaluate(({ dialog }) => {
+        const d = dialog as unknown as Record<string, unknown>
+        if (d.__orig085) {
+          d.showOpenDialog = d.__orig085
+          delete d.__orig085
+        }
+      })
+    }
   })
 })
 

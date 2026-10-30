@@ -112,7 +112,8 @@ uiTest.describe('Tier 5 — Tree & Import journeys', () => {
     })
     await expect(window.locator('.monaco-editor').last()).toContainText(/curl/i, { timeout: 8_000 })
 
-    await window.getByRole('button', { name: 'JavaScript (fetch)' }).click()
+    // Issue #280: languages, then variants — JavaScript opens on its Fetch variant.
+    await window.getByRole('button', { name: 'JavaScript', exact: true }).click()
     await expect(window.locator('.monaco-editor').last()).toContainText(/fetch/i, { timeout: 8_000 })
 
     await window.getByRole('button', { name: 'Python' }).click()

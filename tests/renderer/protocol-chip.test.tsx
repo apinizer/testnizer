@@ -52,6 +52,7 @@ describe('ProtocolChip', () => {
     ['websocket', 'WS'],
     ['sse', 'SSE'],
     ['socketio', 'SIO'],
+    ['mqtt', 'MQTT'],
     ['graphql', 'GQL'],
     ['grpc', 'gRPC'],
   ])('%s → %s', (protocol, label) => {

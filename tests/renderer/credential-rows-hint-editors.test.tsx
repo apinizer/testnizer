@@ -38,13 +38,16 @@ const CASES: Array<{
   el: () => React.ReactElement
   /** The collapsed section's toggle; null when the section starts open. */
   toggle: RegExp | null
+  /** The toggle's role: a section button, or a request tab (issue #282). */
+  toggleRole?: 'button' | 'tab'
   testId: string
 }> = [
   {
     name: 'WebSocket custom headers',
     set: (v) => useWebSocketStore.setState({ customHeaders: rows(v) }),
     el: () => React.createElement(WebSocketEditor),
-    toggle: /Custom Headers/,
+    toggle: /^Headers/,
+    toggleRole: 'tab',
     testId: 'ws-headers-restart-hint',
   },
   {
@@ -82,13 +85,13 @@ describe('restart hint in the collapsible editors', () => {
     it(`${c.name}: shown for a literal value, not for {{var}}`, () => {
       c.set('Bearer {{token}}')
       const { unmount } = render(c.el())
-      if (c.toggle) fireEvent.click(screen.getByRole('button', { name: c.toggle }))
+      if (c.toggle) fireEvent.click(screen.getByRole(c.toggleRole ?? 'button', { name: c.toggle }))
       expect(screen.queryByTestId(c.testId)).toBeNull()
       unmount()
 
       c.set('Bearer literal-abc')
       render(c.el())
-      if (c.toggle) fireEvent.click(screen.getByRole('button', { name: c.toggle }))
+      if (c.toggle) fireEvent.click(screen.getByRole(c.toggleRole ?? 'button', { name: c.toggle }))
       expect(screen.getByTestId(c.testId).textContent).toMatch(
         /not kept after a restart unless the request is saved/,
       )

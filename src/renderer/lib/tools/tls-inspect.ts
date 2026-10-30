@@ -23,7 +23,7 @@ import type {
 export const TLS_VERSIONS = ['TLSv1', 'TLSv1.1', 'TLSv1.2', 'TLSv1.3'] as const
 export type TlsVersion = (typeof TLS_VERSIONS)[number]
 
-/** Versions Electron 33 / BoringSSL cannot negotiate — probing them is handled,
+/** Versions Electron's BoringSSL cannot negotiate — probing them is handled,
  *  not attempted (the engine returns a friendly error; the UI warns up front). */
 export const LEGACY_TLS_VERSIONS: readonly string[] = ['TLSv1', 'TLSv1.1']
 
