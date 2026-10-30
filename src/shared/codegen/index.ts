@@ -4,6 +4,7 @@
  *   registry   — Language → Variant catalogue and `renderSnippet`
  *   langs/     — one small file per variant; quoting through `quote.ts`
  * cURL variants delegate to `src/shared/curl/` (the one cURL quoting engine).
+ *   mask-credentials — "Include secret values" OFF: typed credentials → `***` (issue #256)
  */
 export * from './types'
 export { normalizeRequest, graphqlJson } from './normalize'
@@ -19,3 +20,4 @@ export { resolveOptions } from './options'
 export { curlVariantId, curlDialectOf } from './langs/curl'
 export { buildSnippetUrl, encodeSnippetUrl, encodeQueryPart } from './url'
 export { base64Utf8 } from './base64'
+export { CODEGEN_MASK, maskCredentialLiterals, maskUrlCredentials } from './mask-credentials'

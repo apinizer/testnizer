@@ -12,7 +12,7 @@
  */
 import * as React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 
 vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
   default: ({ value }: { value?: string }) =>
@@ -129,6 +129,9 @@ describe('Generate Code — SOAP WS-Security matches Send (issue #298)', () => {
   it("the SOAP tab's Auth tab (Bearer) is in the snippet, as Send sends it", () => {
     soapTab({ enabled: false }, { type: 'bearer', bearer: { token: 'SOAP-TOKEN' } })
     render(<CodeGeneratorModal />)
+    // Off (the default): the typed token is masked, the header is still there (issue #256).
+    expect(code()).toContain("-H 'Authorization: Bearer ***'")
+    fireEvent.click(screen.getByTestId('codegen-include-secrets'))
     expect(code()).toContain("-H 'Authorization: Bearer SOAP-TOKEN'")
   })
 

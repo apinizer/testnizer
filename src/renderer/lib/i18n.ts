@@ -400,7 +400,7 @@ const translations: Record<Locale, Record<string, string>> = {
       'Define these variables in the active environment so the snippet uses real values',
     'codeGen.includeSecrets': 'Include secret values',
     'codeGen.includeSecretsHint':
-      'Secret variables stay as {{name}} placeholders. Include them for a ready-to-run command — the copied text then holds the real values.',
+      'Off: secret variables stay as {{name}} placeholders and literal credentials typed into the request (tokens, API keys, passwords, credential headers and query values) are shown as ***. Turn on for a ready-to-run command — the copied text then holds the real values.',
     'codeGen.secretsHidden': 'Secret values not included:',
     'codeGen.wsseNote':
       'WS-Security is not in this snippet. Testnizer adds the wsse:Security header to the envelope at send time (nonce, timestamp and signature computed per send, as configured).',
@@ -4679,7 +4679,7 @@ const translations: Record<Locale, Record<string, string>> = {
       'Kod parçasının gerçek değerleri kullanması için bu değişkenleri etkin ortamda tanımlayın',
     'codeGen.includeSecrets': 'Gizli değerleri dahil et',
     'codeGen.includeSecretsHint':
-      'Gizli değişkenler {{name}} yer tutucusu olarak kalır. Doğrudan çalışan bir komut için dahil edin — kopyalanan metin o zaman gerçek değerleri içerir.',
+      'Kapalıyken gizli değişkenler {{name}} yer tutucusu olarak kalır, isteğe doğrudan yazılmış kimlik bilgileri (token, API anahtarı, parola, kimlik bilgisi başlıkları ve sorgu değerleri) *** olarak gösterilir. Doğrudan çalışan bir komut için açın — kopyalanan metin o zaman gerçek değerleri içerir.',
     'codeGen.secretsHidden': 'Dahil edilmeyen gizli değerler:',
     'codeGen.wsseNote':
       'WS-Security bu kod parçasında yok. Testnizer wsse:Security başlığını gönderim anında zarfa ekler (nonce, zaman damgası ve imza, yapılandırıldıysa, her gönderimde yeniden hesaplanır).',

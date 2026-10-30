@@ -17,6 +17,7 @@ import { applyPathVariables, type PathVariableLike } from '../../shared/path-var
 import {
   curlVariantId,
   findVariant,
+  maskCredentialLiterals,
   normalizeRequest,
   renderSnippet,
   type CodegenInputBody,
@@ -69,7 +70,12 @@ export interface CodeGenOptions {
    * substituted — the snippet keeps `{{name}}` — unless `includeSecrets`.
    */
   secretNames?: ReadonlySet<string>
-  /** The user's "Include secret values" opt-in (session-only, off by default). */
+  /**
+   * The user's "Include secret values" opt-in (session-only, off by default).
+   * `false` also masks the credentials typed into the request as literals
+   * (issue #256, `maskCredentialLiterals`); `undefined` (a caller that does not
+   * know the toggle) leaves them as typed.
+   */
   includeSecrets?: boolean
 }
 
@@ -124,7 +130,10 @@ function resolveRequest(req: CodeGenRequest, vars: Record<string, string>): Code
   }
 }
 
-/** Path variables, then `{{var}}` (secrets kept), then the shared normaliser. */
+/**
+ * Path variables, then — toggle OFF — typed credentials masked (issue #256),
+ * then `{{var}}` (secrets kept), then the shared normaliser.
+ */
 function prepare(req: CodeGenRequest, options?: CodeGenOptions) {
   const vars = options?.envVars
     ? snippetVariables(
@@ -136,7 +145,10 @@ function prepare(req: CodeGenRequest, options?: CodeGenOptions) {
   const withPath = req.pathVariables?.length
     ? { ...req, url: applyPathVariables(req.url, req.pathVariables), pathVariables: undefined }
     : req
-  const effective = vars ? resolveRequest(withPath, vars) : withPath
+  // Before resolution: only what the user typed is a literal; a variable is
+  // handled by `snippetVariables` (secret → `{{name}}`, otherwise its value).
+  const typed = options?.includeSecrets === false ? maskCredentialLiterals(withPath) : withPath
+  const effective = vars ? resolveRequest(typed, vars) : typed
   return normalizeRequest({
     method: effective.method,
     url: effective.url,
