@@ -8,6 +8,7 @@
  */
 import type { Database } from 'better-sqlite3'
 import { orderSuiteFolders, orderSuiteItems } from '../../../shared/suite-order'
+import { maskSavedExample } from '../../lib/saved-example-mask'
 
 export type Json = Record<string, unknown>
 
@@ -234,7 +235,10 @@ export function loadExamples(db: Database, ownerType: string, ownerId: string): 
     response_json: string | null
     request_json: string | null
   }>
-  return rows.map((r) => {
+  return rows.map((raw) => {
+    // The one example mask (peer review of issue #298): a row written before
+    // examples were masked on write still carries the wire credential.
+    const r = maskSavedExample(raw)
     const req = parseJson<Json>(r.request_json, {})
     return {
       name: r.name,

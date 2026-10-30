@@ -1827,6 +1827,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     callStarts.set(callId, now())
     // This tab's timeout, captured before any await (issue #76 / #185).
     const timeoutMs = mcpSendTimeout(get().requestTimeout)
+    // The workspace / project the call started in — a project switch during
+    // the script cascade must not re-home it (peer review of issue #298).
+    const context = callContext()
     // Captured NOW — the request store follows the active tab (issue #76).
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     // The call owns the tab from here: Run turns into Cancel during the scripts too.
@@ -1856,7 +1859,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     let res: McpCallReply
     try {
       res = await api.callTool(connectionId, selectedTool, args, {
-        ...callContext(),
+        ...context,
         callId,
         timeoutMs,
       })
@@ -1953,6 +1956,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const callId = makeId()
     callStarts.set(callId, now())
     const timeoutMs = mcpSendTimeout(get().requestTimeout)
+    const context = callContext()
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     set({
       isReadingResource: true,
@@ -1976,7 +1980,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     let res: McpCallReply<McpReadResourceResult>
     try {
       // Scope ids too, so the History row lands in this project (issue #166).
-      res = await api.readResource(connectionId, uri, { ...callContext(), callId, timeoutMs })
+      res = await api.readResource(connectionId, uri, { ...context, callId, timeoutMs })
     } catch (e) {
       res = { success: false, error: errText(e, t('mcp.error.readFailed')) }
     }
@@ -2036,6 +2040,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     const callId = makeId()
     callStarts.set(callId, now())
     const timeoutMs = mcpSendTimeout(get().requestTimeout)
+    const context = callContext()
     const scripts = beginMcpScripts(tabId, url, get().customHeaders)
     set({
       isGettingPrompt: true,
@@ -2052,7 +2057,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     let res: McpCallReply<McpGetPromptResult>
     try {
       res = await api.getPrompt(connectionId, selectedPrompt, args, {
-        ...callContext(),
+        ...context,
         callId,
         timeoutMs,
       })

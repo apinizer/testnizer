@@ -54,9 +54,7 @@ vi.mock('../../../src/main/db/database', () => ({ getDb: () => testDb }))
 const { registerRequestHandlers } = await import('../../../src/main/ipc/request.handler')
 const { registerRunnerHandlers } = await import('../../../src/main/ipc/runner.handler')
 const { registerConsoleHandlers } = await import('../../../src/main/ipc/console.handler')
-const { verifySignature, applyWsSecurity } = await import(
-  '../../../src/main/protocols/wsse.engine'
-)
+const { verifySignature, applyWsSecurity } = await import('../../../src/main/protocols/wsse.engine')
 const { useSoapStore } = await import('../../../src/renderer/stores/soap.store')
 const { useEnvironmentStore } = await import('../../../src/renderer/stores/environment.store')
 const { useResponseStore } = await import('../../../src/renderer/stores/response.store')
@@ -287,7 +285,10 @@ interface RunData {
   results: Array<Record<string, unknown>>
 }
 
-async function run(wsSecurity: WsSec, urlPath = '/svc'): Promise<{ wire: Received; data: RunData }> {
+async function run(
+  wsSecurity: WsSec,
+  urlPath = '/svc',
+): Promise<{ wire: Received; data: RunData }> {
   const id = seedSoapEndpoint(wsSecurity, urlPath)
   const before = received.length
   const res = (await harness.invoke('runner:execute', {
@@ -413,8 +414,83 @@ describe('the WS-Security password never reaches a persistent sink', () => {
     expect(consoleEntries()).not.toContain(PW)
   })
 
+  // Peer review of issue #298: the envelope carries the password XML-escaped
+  // (`alpha&amp;beta…`). Run masks the History body before `addHistory`, so
+  // its collector never sees the escaped form, and the value scan only knew
+  // the raw / URL / JSON forms — an echoed envelope kept the password.
+  for (const pw of ['alpha&beta-CANARY-123', `q<u"o't&e-CANARY-77`]) {
+    const escaped = pw
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+    const withPw = (): WsSec => ({
+      ...utConfig(),
+      usernameToken: { ...(utConfig().usernameToken as object), password: pw },
+    })
+
+    it(`Run (echoing server): an XML-escaped password (${JSON.stringify(pw)}) never reaches a sink`, async () => {
+      const { wire, data } = await run(withPw(), '/echo')
+      expect(wire.body).toContain(escaped) // it really went out, escaped
+      for (const form of [pw, escaped]) {
+        expect(JSON.stringify(data.results)).not.toContain(form)
+        expect(persisted()).not.toContain(form)
+        expect(consoleEntries()).not.toContain(form)
+      }
+    })
+
+    it(`Send (echoing server): an XML-escaped password (${JSON.stringify(pw)}) never reaches a sink`, async () => {
+      const wire = await send(withPw(), '/echo')
+      expect(wire.body).toContain(escaped)
+      for (const form of [pw, escaped]) {
+        expect(persisted()).not.toContain(form)
+        expect(consoleEntries()).not.toContain(form)
+      }
+    })
+  }
+
+  it('Run History: a password typed into the envelope itself is collected from the full body before it is masked', async () => {
+    // No WS-Security config: the credential is only in the envelope text, so
+    // only the collector can learn it — and Run used to hand it the body
+    // already masked.
+    const literal = 'Typed-in-ENVELOPE-pw-42'
+    const envelope = ENVELOPE.replace(
+      '<soapenv:Header/>',
+      `<soapenv:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><wsse:UsernameToken><wsse:Username>u</wsse:Username><wsse:Password>${literal}</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header>`,
+    )
+    const id = crypto.randomUUID()
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO endpoints
+          (id, project_id, folder_id, name, protocol, method, path, status,
+           request_schema, sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'Literal', 'soap', 'POST', '/echo', 'developing', ?, 0, ?, ?)`,
+      )
+      .run(
+        id,
+        projectId,
+        JSON.stringify({
+          method: 'POST',
+          url: `${base}/echo`,
+          body: { type: 'xml', content: envelope },
+          metadata: { soap: { mode: 'manual', manualSoapVersion: 'soap11' } },
+        }),
+        now,
+        now,
+      )
+    await harness.invoke('runner:execute', { projectId, workspaceId, endpointIds: [id] })
+    expect(received[received.length - 1].body).toContain(literal)
+    expect(persisted()).not.toContain(literal)
+    expect(consoleEntries()).not.toContain(literal)
+  })
+
   it('a short password (below the value-scan length) is masked by the wsse:Password name rule', async () => {
-    const short = { ...utConfig(), usernameToken: { ...(utConfig().usernameToken as object), password: 'Zq9' } }
+    const short = {
+      ...utConfig(),
+      usernameToken: { ...(utConfig().usernameToken as object), password: 'Zq9' },
+    }
     await send(short)
     await run(short)
     expect(persisted()).not.toMatch(/>Zq9</)

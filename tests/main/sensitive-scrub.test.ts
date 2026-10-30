@@ -41,6 +41,30 @@ describe('value scrub', () => {
   it('ignores non-strings', () => {
     expect(createScrubber([null, undefined, 42, {}]).needles).toEqual([])
   })
+
+  // Peer review of issue #298: a SOAP envelope (and its echo) carries the
+  // WS-Security password XML-escaped — every sink uses this one scrubber.
+  it('replaces the XML-escaped forms of a secret value (full, minimal, &#39;, double-escaped)', () => {
+    const pw = `al&pha<b>"q'-77`
+    const s = createScrubber([pw])
+    const minimal = 'al&amp;pha&lt;b&gt;"q\'-77'
+    const full = 'al&amp;pha&lt;b&gt;&quot;q&apos;-77'
+    const numeric = 'al&amp;pha&lt;b&gt;&quot;q&#39;-77'
+    for (const form of [minimal, full, numeric, full.replace(/&/g, '&amp;')]) {
+      expect(s.text(`<Password>${form}</Password>`)).toBe(`<Password>${HISTORY_MASK}</Password>`)
+    }
+    // A value with no XML specials gains no extra needles.
+    expect(createScrubber(['plain-secret-1']).needles).toEqual(['plain-secret-1'])
+  })
+
+  it('Console entries lose an echoed XML-escaped secret too', () => {
+    const pw = 'alpha&beta-CANARY-123'
+    const out = maskConsoleEntry(
+      { message: 'x', details: { responseBody: '<Echo>alpha&amp;beta-CANARY-123</Echo>' } },
+      createScrubber([pw]),
+    )
+    expect(JSON.stringify(out)).not.toContain('CANARY-123')
+  })
 })
 
 describe('name rule', () => {

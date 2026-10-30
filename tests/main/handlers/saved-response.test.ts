@@ -318,6 +318,126 @@ describe('listByProject / get / request_json (examples in the APIs tree)', () =>
     expect(row.request_json).toContain('<wsse:Username>bob</wsse:Username>')
   })
 
+  // Peer review of issue #298: `serializeResponseForSave` also copies the
+  // engine's `actualRequest` into `response_json` — the same wire envelope as
+  // `sent`, which was masked while this copy was persisted as-is.
+  const WSSE_ENVELOPE =
+    '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Header>' +
+    '<wsse:Security xmlns:wsse="urn:wsse"><wsse:UsernameToken><wsse:Username>bob</wsse:Username>' +
+    '<wsse:Password Type="#PasswordText">ex4mple-WSSE-pw</wsse:Password></wsse:UsernameToken>' +
+    '</wsse:Security></soapenv:Header><soapenv:Body><Ping/></soapenv:Body></soapenv:Envelope>'
+
+  function wsseResponseJson(echo = false): string {
+    return JSON.stringify({
+      protocol: 'soap',
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'text/xml' },
+      // An echo service returns the envelope it received.
+      body: echo ? `<Echo><![CDATA[${WSSE_ENVELOPE}]]></Echo>` : '<Ok/>',
+      actualRequest: {
+        method: 'POST',
+        url: 'https://soap.test',
+        headers: { 'Content-Type': 'text/xml', Authorization: 'Bearer act-ual-token-123' },
+        body: WSSE_ENVELOPE,
+      },
+    })
+  }
+
+  it('masks the WS-Security password and credential headers in response_json.actualRequest too', async () => {
+    const created = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'wsse-actual',
+      response_json: wsseResponseJson(),
+      request_json: JSON.stringify({
+        configured: { method: 'POST', url: '{{base}}', headers: [] },
+        sent: { method: 'POST', url: 'https://soap.test', headers: {}, body: WSSE_ENVELOPE },
+      }),
+    })) as { success: boolean; data: { id: string } }
+    expect(created.success).toBe(true)
+    const row = testDb
+      .prepare('SELECT response_json, request_json FROM saved_responses WHERE id = ?')
+      .get(created.data.id) as { response_json: string; request_json: string }
+    expect(row.response_json).not.toContain('ex4mple-WSSE-pw')
+    expect(row.response_json).not.toContain('act-ual-token-123')
+    expect(row.request_json).not.toContain('ex4mple-WSSE-pw')
+    const parsed = JSON.parse(row.response_json) as {
+      body: string
+      actualRequest: { headers: Record<string, string>; body: string }
+    }
+    expect(parsed.actualRequest.body).toContain('<wsse:Username>bob</wsse:Username>')
+    expect(parsed.actualRequest.headers.Authorization).toBe('••••••')
+    expect(parsed.actualRequest.headers['Content-Type']).toBe('text/xml')
+    expect(parsed.body).toBe('<Ok/>')
+  })
+
+  it('an echoed envelope in the example response body loses the password value too', async () => {
+    const created = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'wsse-echo',
+      response_json: wsseResponseJson(true),
+    })) as { data: { id: string } }
+    const row = testDb
+      .prepare('SELECT response_json FROM saved_responses WHERE id = ?')
+      .get(created.data.id) as { response_json: string }
+    expect(row.response_json).not.toContain('ex4mple-WSSE-pw')
+  })
+
+  it('a clean example is stored byte-for-byte (no needless rewrite)', async () => {
+    const created = (await harness.invoke('savedResponse:create', {
+      owner_type: 'saved_request',
+      owner_id: 'sr-1',
+      name: 'clean',
+      response_json: snapshot,
+    })) as { data: { id: string; response_json: string } }
+    expect(created.data.response_json).toBe(snapshot)
+  })
+
+  it('project file / git export masks an example row written before the rule (legacy plaintext)', async () => {
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO saved_responses (id, project_id, owner_type, owner_id, name, protocol, method, url, status_code, response_json, created_at, request_json)
+         VALUES ('legacy-1', ?, 'saved_request', 'sr-1', 'old', 'soap', 'POST', 'https://soap.test', 200, ?, ?, ?)`,
+      )
+      .run(
+        projectId,
+        wsseResponseJson(true),
+        now,
+        JSON.stringify({ sent: { method: 'POST', headers: {}, body: WSSE_ENVELOPE } }),
+      )
+    const { exportProjectData } = await import('../../../src/main/ipc/save.handler')
+    const { stripLocalSecrets } = await import('../../../src/main/lib/local-secrets')
+    const raw = exportProjectData(projectId)
+    // The faithful DB dump (Duplicate Project) is unchanged …
+    expect(JSON.stringify(raw.savedResponses)).toContain('ex4mple-WSSE-pw')
+    // … every file / git boundary strips it.
+    const file = JSON.stringify(stripLocalSecrets(raw))
+    expect(file).not.toContain('ex4mple-WSSE-pw')
+    expect(file).toContain('legacy-1')
+  })
+
+  it('Postman export (v2.1 response[]) masks a legacy example row too', async () => {
+    const now = Date.now()
+    testDb
+      .prepare(
+        `INSERT INTO saved_responses (id, project_id, owner_type, owner_id, name, protocol, method, url, status_code, response_json, created_at, request_json)
+         VALUES ('legacy-pm', ?, 'endpoint', 'ep-1', 'old echo', 'http', 'GET', 'https://x', 200, ?, ?, ?)`,
+      )
+      .run(
+        projectId,
+        wsseResponseJson(true),
+        now,
+        JSON.stringify({ sent: { method: 'POST', headers: {}, body: WSSE_ENVELOPE } }),
+      )
+    const { exportAsPostman } = await import('../../../src/main/ipc/import-export.handler')
+    const json = exportAsPostman(projectId)
+    expect(json).toContain('old echo')
+    expect(json).not.toContain('ex4mple-WSSE-pw')
+  })
+
   it('stores NULL request_json when the renderer sends none or garbage', async () => {
     const none = (await harness.invoke('savedResponse:create', {
       owner_type: 'saved_request',

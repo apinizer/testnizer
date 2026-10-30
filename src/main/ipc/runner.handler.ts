@@ -87,6 +87,7 @@ import { isCredentialHeaderName } from '../lib/credential-headers'
 import { MASKED_VALUE } from '../db/saved-response.repo'
 import {
   authSecretValues,
+  collectCredentialValues,
   maskBodyText,
   maskRunResult,
   scrubberFor,
@@ -1386,7 +1387,9 @@ function recordStep(
   )
   ctx.results.push(result)
   const didPass = endpointDidPass(result)
-  const skipped = (result.skipped ?? 0) > 0
+  // The shared rule: a critical row that stopped the run is a failure even
+  // when it never executed (UNSUPPORTED) — peer review of issue #304.
+  const skipped = isSkippedStep(result)
   const primary = countsTowardRunVerdict(result)
 
   // Assertions are tallied HERE, next to the endpoint counters, so both obey
@@ -1903,6 +1906,17 @@ async function runEndpointStep(
       // (or one synthesised by a misconfigured importer) doesn't
       // land on disk in the history table.
       const sanitizedRunnerUrl = stripUrlCredentials(resolvedOptions.url)
+      // The body below is masked (and clipped) BEFORE `addHistory`, so its
+      // collector never sees the credentials in it. Collect them here, from
+      // the complete secured body (a `<wsse:Password>` typed into the
+      // envelope, a JSON `"password"`), so an echoed response loses them too
+      // — Send hands `addHistory` the unmasked body and gets this for free.
+      const bodySecrets = resolvedOptions.body
+        ? collectCredentialValues({
+            body: { content: (resolvedOptions.body as RequestBody).content ?? '' },
+          })
+        : []
+      const historySecrets = [...authSecrets, ...liveSecretValues(ctx.scopes), ...bodySecrets]
       historyRepo.addHistory({
         workspace_id: options.workspaceId,
         project_id: options.projectId,
@@ -1930,7 +1944,7 @@ async function runEndpointStep(
                 type: (resolvedOptions.body as RequestBody).type,
                 content: maskBodyText(
                   (resolvedOptions.body as RequestBody).content ?? '',
-                  scrubberFor(secretDb(), [...authSecrets, ...liveSecretValues(ctx.scopes)]),
+                  scrubberFor(secretDb(), historySecrets),
                 ).slice(0, 4096),
               }
             : undefined,
@@ -1948,7 +1962,7 @@ async function runEndpointStep(
             auth: requestOptions.auth,
           },
         }),
-        extra_secrets: [...authSecrets, ...liveSecretValues(ctx.scopes)],
+        extra_secrets: historySecrets,
         response_snapshot: JSON.stringify({
           status: response.status,
           statusText: response.statusText,
@@ -3099,7 +3113,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
       totalAssertions,
       passedAssertions,
       failedAssertions,
-      results.reduce((acc, r) => acc + (r.skipped || 0), 0),
+      results.reduce((acc, r) => acc + (isSkippedStep(r) ? r.skipped || 0 : 0), 0),
       avgRespTime,
       JSON.stringify(results),
       startedAt,

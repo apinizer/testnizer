@@ -282,8 +282,13 @@ function buildSecurityHeader(
   // prefixed envelope that prefix is already in scope (it is declared on the
   // root); a default-namespace envelope has no prefix to borrow — an
   // unprefixed attribute is in no namespace at all — so one is declared here,
-  // on the Security element itself.
-  const mustUnderstand = layout.prefix
+  // on the Security element itself. The same happens when the envelope's own
+  // prefix is `wsse` / `wsu`: Security rebinds both to the WS-Security
+  // namespaces, so a borrowed `wsse:mustUnderstand` would land in the wrong
+  // namespace (peer review of issue #298 / issue #299). `soapenv` is always
+  // free on Security — only this engine's own tokens sit inside it.
+  const borrow = layout.prefix && !SECURITY_PREFIXES.has(layout.prefix)
+  const mustUnderstand = borrow
     ? `${layout.prefix}:mustUnderstand="1"`
     : `xmlns:${DEFAULT_NS_ENV_PREFIX}="${layout.ns}" ${DEFAULT_NS_ENV_PREFIX}:mustUnderstand="1"`
 
@@ -301,8 +306,14 @@ function buildSecurityHeader(
 export const SOAP11_ENV_NS = 'http://schemas.xmlsoap.org/soap/envelope/'
 export const SOAP12_ENV_NS = 'http://www.w3.org/2003/05/soap-envelope'
 
-/** Prefix declared on wsse:Security for `mustUnderstand` when the envelope has none. */
+/**
+ * Prefix declared on wsse:Security for `mustUnderstand` when the envelope's
+ * own prefix cannot be borrowed (none, or one Security rebinds).
+ */
 const DEFAULT_NS_ENV_PREFIX = 'soapenv'
+
+/** The prefixes `<wsse:Security>` declares on itself — never borrowable from the envelope. */
+const SECURITY_PREFIXES = new Set(['wsse', 'wsu'])
 
 /** One element tag found by the scanner. */
 interface TagInfo {
@@ -550,12 +561,15 @@ function ensureBodyWsuId(
   }
   const bodyId = genId('Body')
   const wsuInScope = namespaceOf('wsu', body.open, rootDecls)
+  // `wsu` bound to anything else — on this tag or on the root, e.g. a
+  // `<wsu:Envelope>` whose SOAP prefix is `wsu` — must not be rebound here: on
+  // `<wsu:Body>` that would move the Body element itself out of the SOAP
+  // namespace. A fresh prefix is used instead.
   const insert =
     wsuInScope === WSU_NS
       ? ` wsu:Id="${bodyId}"`
-      : attrs.has('xmlns:wsu')
-        ? // `wsu` is bound to something else on this very tag — use a fresh prefix.
-          ` xmlns:wsuid="${WSU_NS}" wsuid:Id="${bodyId}"`
+      : wsuInScope !== undefined || attrs.has('xmlns:wsu')
+        ? ` xmlns:wsuid="${WSU_NS}" wsuid:Id="${bodyId}"`
         : ` xmlns:wsu="${WSU_NS}" wsu:Id="${bodyId}"`
   const at = body.open.start + 1 + body.open.qname.length
   return { envelope: envelope.slice(0, at) + insert + envelope.slice(at), bodyId }
@@ -658,8 +672,12 @@ function applyEncryptionToBody(envelope: string, config: EncryptConfig): Promise
       return
     }
 
-    const targetContent = envelope.slice(body.contentStart, body.contentEnd).trim()
-    if (!targetContent) {
+    // The EXACT Body content — whitespace text nodes included. A signature
+    // computed before encryption covers those bytes; trimming them here meant
+    // the decrypted Body no longer matched its digest (peer review of issue
+    // #298). Trim only to decide whether there is anything to encrypt.
+    const targetContent = envelope.slice(body.contentStart, body.contentEnd)
+    if (!targetContent.trim()) {
       reject(new Error(`${bodyName} is empty — nothing to encrypt`))
       return
     }
@@ -689,9 +707,12 @@ function applyEncryptionToBody(envelope: string, config: EncryptConfig): Promise
         reject(err ?? new Error('xml-encryption returned empty result'))
         return
       }
-      // Wrap as EncryptedData (xml-encryption returns full <xenc:EncryptedData>)
+      // Wrap as EncryptedData (xml-encryption returns full <xenc:EncryptedData>).
+      // Spliced in without surrounding text: whatever sits outside the
+      // EncryptedData element survives decryption and would end up in the
+      // restored Body next to the signed bytes.
       const replaced =
-        envelope.slice(0, body.contentStart) + encryptedXml + envelope.slice(body.contentEnd)
+        envelope.slice(0, body.contentStart) + encryptedXml.trim() + envelope.slice(body.contentEnd)
       resolve(replaced)
       // suppress unused targetXpath warning while custom-xpath encryption is unimplemented
       void targetXpath

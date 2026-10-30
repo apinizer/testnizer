@@ -192,6 +192,14 @@ async function run(options: Record<string, unknown>): Promise<NonNullable<Exec['
   return res.data!
 }
 
+function historyRow(): Record<string, number> {
+  return testDb
+    .prepare(
+      'SELECT passed_endpoints, failed_endpoints, skipped_tests FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 1',
+    )
+    .get(projectId) as Record<string, number>
+}
+
 const ran = (rows: Row[]): string[] =>
   rows.filter((r) => r.statusText !== 'NOT_RUN').map((r) => r.endpointName)
 
@@ -306,6 +314,71 @@ describe('issue #304 — a failing critical request stops the run', () => {
 
     expect(received).toEqual(['/b'])
     expect(data.stopReason).toBeUndefined()
+    // Neutral everywhere: not failed, counted as skipped.
+    expect(data.failedEndpoints).toBe(0)
+    expect(data.passedEndpoints).toBe(1)
+    const { summarizeRun } = await import('../../../src/shared/runner-summary')
+    expect(summarizeRun(data.results as never)).toMatchObject({ failed: 0, skipped: 1, passed: 1 })
+    const h = historyRow()
+    expect(h).toMatchObject({ failed_endpoints: 0, skipped_tests: 1 })
+  })
+
+  // Peer review of issue #304: the unsupported critical row stopped the run but
+  // kept `skipped: 1`, so it counted as neither passed nor failed — the run's
+  // failed count stayed 0 and History showed a green run under a
+  // "critical request … failed" line.
+  it('(e3) a critical unsupported row that stops the run counts as FAILED everywhere', async () => {
+    const a = seedEndpoint({
+      name: 'Socket',
+      url: 'ws://127.0.0.1:1/ws',
+      critical: true,
+      protocol: 'websocket',
+    })
+    const b = seedEndpoint({ name: 'B', url: `${base}/b` })
+    const data = await run({ endpointIds: [a, b] })
+
+    expect(data.stopReason).toBe('criticalFailed')
+    expect(data.results[0].stoppedRun).toBe(true)
+    // Live counters.
+    expect(data.failedEndpoints).toBe(1)
+    expect(data.passedEndpoints).toBe(0)
+    // Shared summary (renderer results + dot + HTML export counters).
+    const { summarizeRun } = await import('../../../src/shared/runner-summary')
+    const { isSkippedStep, endpointDidPass } = await import('../../../src/shared/runner-verdict')
+    const s = summarizeRun(data.results as never)
+    expect(s.failed).toBe(1)
+    expect(s.passed).toBe(0)
+    // The NOT_RUN row the stop left behind stays neutral.
+    expect(s.skipped).toBe(1)
+    expect(s.passed + s.failed + s.skipped).toBe(s.total)
+    expect(isSkippedStep(data.results[0])).toBe(false)
+    // The in-app row badge agrees (red Error, not a grey "Unsupported").
+    const { statusBadge } = await import('../../../src/shared/runner-summary')
+    expect(statusBadge(data.results[0] as never)?.tone).toBe('error')
+    expect(endpointDidPass(data.results[0] as never)).toBe(false)
+    // Persisted runner_history — what the History list colours by.
+    expect(historyRow()).toMatchObject({
+      failed_endpoints: 1,
+      passed_endpoints: 0,
+      skipped_tests: 1,
+    })
+    // HTML report: the row is not painted neutral grey, and the header counts it.
+    const res = (await harness.invoke('runner:export', {
+      format: 'html',
+      results: data.results,
+    })) as { success: boolean; data: string }
+    expect(res.data).not.toContain('- UNSUPPORTED')
+    expect(res.data).toContain('- Error')
+    expect(res.data).toContain('- NOT RUN')
+  })
+
+  it('a critical config-error row already fails (pinned)', async () => {
+    const a = seedEndpoint({ name: 'Broken', url: '', critical: true })
+    const b = seedEndpoint({ name: 'B', url: `${base}/b` })
+    const data = await run({ endpointIds: [a, b] })
+    expect(data.stopReason).toBe('criticalFailed')
+    expect(data.failedEndpoints).toBe(1)
+    expect(historyRow()).toMatchObject({ failed_endpoints: 1 })
   })
 
   it('a saved request carries the flag in its metadata', async () => {

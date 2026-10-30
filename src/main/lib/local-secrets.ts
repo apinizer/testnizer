@@ -34,6 +34,10 @@
  *      and are what makes a teammate's Pull work. Project settings never
  *      left the machine before they moved to the project row, so a literal
  *      credential there must not start travelling now.
+ *   6. Saved examples (`saved_responses`): the wire request they carry
+ *      (`request_json.sent`, `response_json.actualRequest`) is masked by the
+ *      one example rule (`saved-example-mask.ts`) — credential headers and
+ *      the `<wsse:Password>` in a SOAP envelope.
  *
  * Blank is '' and never a missing key or NULL: `environment_variables.value`,
  * `mock_mcp_servers.bearer_token` and `mock_servers.auth_config` are NOT NULL.
@@ -45,6 +49,7 @@
  * credential" (fail-closed).
  */
 
+import { maskSavedExample } from './saved-example-mask'
 import { HISTORY_MASK, isCredentialArgName } from '../../shared/credential-headers'
 import { createScrubber, type Scrubber } from './sensitive-scrub'
 import { decryptSecret, isEncryptedSecret } from './secure-storage'
@@ -60,6 +65,7 @@ export interface SecretBearingExport {
   mockEndpoints?: Row[]
   mockMcpServers?: Row[]
   certificates?: Row[]
+  savedResponses?: Row[]
 }
 
 /** The two certificate columns that hold `encryptSecret` output (issue #177). */
@@ -429,6 +435,12 @@ export function stripLocalSecrets<T extends SecretBearingExport>(data: T): T {
     out.mockMcpServers = data.mockMcpServers.map((r) =>
       'bearer_token' in r ? { ...r, bearer_token: '' } : r,
     )
+  }
+  // Saved examples: the wire request in `request_json.sent` and
+  // `response_json.actualRequest` — masked on write since the peer review of
+  // issue #298, but a row written before that still holds the credential.
+  if (Array.isArray(data.savedResponses)) {
+    out.savedResponses = data.savedResponses.map((r) => maskSavedExample(r))
   }
   if (Array.isArray(data.certificates)) {
     out.certificates = data.certificates.map((r) => {

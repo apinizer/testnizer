@@ -498,6 +498,13 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
+    // The workspace / project this Send STARTED in, read in the same
+    // synchronous block as the envelope and the tab: a project switch during
+    // the inheritance lookup below must not send A's request with B's ids
+    // (B's cookie jar, client certificate and History — peer review of issue
+    // #298). HTTP Send snapshots the workspace store the same way.
+    const { activeWorkspaceId: originWorkspaceId, activeProjectId: originProjectId } =
+      useWorkspaceStore.getState()
 
     // Issue #195: a History mask left in a credential field is never sent.
     const masked = soapMaskedSendError({
@@ -546,7 +553,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     // header for it (the envelope carries the credential).
     const sendTab = tabsStore.tabs.find((t) => t.id === activeTabId)
     const inheritance = await resolveInheritance({
-      projectId: useWorkspaceStore.getState().activeProjectId,
+      projectId: originProjectId,
       endpointId: sendTab?.endpointId,
       savedRequestId: sendTab?.savedRequestId,
       testSuiteItemId: sendTab?.testSuiteItemId,
@@ -559,7 +566,6 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
     try {
-      const ws = useWorkspaceStore.getState()
       const result = await window.api?.request?.send({
         method: 'POST',
         url: resolvedUrl,
@@ -569,8 +575,8 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         _protocol: 'soap',
         _wsSecurity: resolvedWsSecurity,
         _requestId: requestId,
-        _workspaceId: ws.activeWorkspaceId || undefined,
-        _projectId: ws.activeProjectId || undefined,
+        _workspaceId: originWorkspaceId || undefined,
+        _projectId: originProjectId || undefined,
       })
 
       if (result?.success && result.data) {
