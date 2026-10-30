@@ -437,18 +437,37 @@ describe('sse.engine — HTTP error enrichment', () => {
   })
 
   it('describeSseError formats known statuses, transport failures and unknown shapes', () => {
-    expect(describeSseError({ status: 401, message: 'Unauthorized' })).toEqual({
-      message: 'HTTP 401 Unauthorized — check Authorization header / token',
+    // Issue #253: the shared connection-error format — what happened (+ HTTP
+    // status) + host:port, then the next step; `info` is what the renderer
+    // words in the active locale.
+    const unauthorized = describeSseError({ status: 401, message: 'Unauthorized' }, 'http://h.test/s')
+    expect(unauthorized).toEqual({
+      message:
+        'Authentication failed (HTTP 401) — h.test:80. Check the credentials: Authorization header, token or username and password',
       httpStatus: 401,
+      info: {
+        kind: 'unauthorized',
+        target: 'h.test:80',
+        httpStatus: 401,
+        message: 'Authentication failed (HTTP 401) — h.test:80',
+        hint: 'Check the credentials: Authorization header, token or username and password',
+      },
     })
     expect(describeSseError({ status: 418, message: 'I\'m a teapot' })).toEqual({
-      message: "HTTP 418 I'm a teapot",
+      message: "Unexpected HTTP response (HTTP 418): I'm a teapot. Check the server logs and the URL",
       httpStatus: 418,
+      info: {
+        kind: 'http-status',
+        httpStatus: 418,
+        detail: "I'm a teapot",
+        message: "Unexpected HTTP response (HTTP 418): I'm a teapot",
+        hint: 'Check the server logs and the URL',
+      },
     })
     expect(describeSseError({ message: 'connect ECONNREFUSED 127.0.0.1:9' }).message).toMatch(
-      /Connection refused/,
+      /^Connection refused — 127\.0\.0\.1:9\. /,
     )
-    expect(describeSseError({}).message).toBe('SSE connection error')
+    expect(describeSseError({}).message).toBe('Connection failed')
   })
 })
 

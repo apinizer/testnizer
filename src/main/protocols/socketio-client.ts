@@ -23,7 +23,12 @@ export interface SioClient {
   readonly willReconnect: boolean
   onceConnect(cb: () => void): void
   /** The handshake failed: transport error, timeout, or the server's middleware refused it. */
-  onceConnectError(cb: (message: string) => void): void
+  /**
+   * The raw failure (issue #253): the engine classifies it — socket.io-client
+   * keeps the real cause in `description` / `description.error`, and a
+   * middleware refusal carries `.data`.
+   */
+  onceConnectError(cb: (err: unknown) => void): void
   onDisconnect(cb: (reason: string) => void): void
   /** Every received event, with its arguments (a trailing server-ack callback may be among them). */
   onAny(cb: (event: string, args: unknown[]) => void): void
@@ -129,7 +134,7 @@ function createV4Client(opts: SioClientOptions): SioClient {
       return socket.active
     },
     onceConnect: (cb) => void socket.once('connect', cb),
-    onceConnectError: (cb) => void socket.once('connect_error', (err) => cb(err.message)),
+    onceConnectError: (cb) => void socket.once('connect_error', (err) => cb(err)),
     onDisconnect: (cb) => void socket.on('disconnect', (reason) => cb(reason)),
     onAny: (cb) => void socket.onAny((event: string, ...args: unknown[]) => cb(event, args)),
     onReconnectAttempt: (cb) => void socket.io.on('reconnect_attempt', cb),
@@ -235,14 +240,22 @@ function createV2Client(opts: SioClientOptions): SioClient {
     onceConnectError: (cb) => {
       // A refused handshake arrives as `error` (the middleware's message), a
       // transport failure / timeout as `connect_error`.
+      // The refusal is given the v4 shape (an Error with `.data`) so it
+      // classifies as "rejected"; a transport Error is passed as it is.
       let fired = false
-      const fire = (data: unknown): void => {
+      const fire = (data: unknown, refused: boolean): void => {
         if (fired || socket.connected) return
         fired = true
-        cb(v2ErrorMessage(data))
+        if (!refused && data instanceof Error) cb(data)
+        else
+          cb(
+            Object.assign(new Error(v2ErrorMessage(data)), {
+              ...(refused ? { data: data && typeof data === 'object' ? data : undefined } : {}),
+            }),
+          )
       }
-      socket.once('connect_error', fire)
-      socket.once('error', fire)
+      socket.once('connect_error', (data: unknown) => fire(data, false))
+      socket.once('error', (data: unknown) => fire(data, true))
     },
     onDisconnect: (cb) => void socket.on('disconnect', (reason) => cb(String(reason))),
     onAny: (cb) => {

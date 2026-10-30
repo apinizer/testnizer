@@ -12,7 +12,7 @@ import {
 } from './wsse.engine'
 import { resolveWsseKeyMaterial } from '../lib/wsse-key-material'
 import { applyDefaultUserAgent } from '../lib/user-agent'
-import { classifyTransportError } from '../lib/error-classifier'
+import { classifyTransportError, formatConnectionError } from '../lib/error-classifier'
 import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
 import { executeViaCurl, shouldUseCurlSidecar } from './curl-shim'
 
@@ -474,8 +474,10 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
         raw,
       )
     ) {
+      // With the next step (issue #253): a status error used to carry it in
+      // the message ("HTTP 404 Not Found — check the URL").
       const classified = classifyTransportError(err)
-      throw new Error(`WSDL fetch failed: ${classified.message}`)
+      throw new Error(`WSDL fetch failed: ${formatConnectionError(classified)}`)
     }
     throw new Error(`WSDL parse error: ${raw}`)
   }

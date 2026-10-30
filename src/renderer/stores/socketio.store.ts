@@ -3,6 +3,7 @@ import type { KeyValuePair } from '../types'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
+import { connectErrorText } from '../lib/connection-error'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
@@ -610,7 +611,8 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
         for (const run of early.splice(0)) run()
       } else {
         unsubscribe()
-        const message = res.error ?? 'Connection failed'
+        // Issue #253: `errorInfo` → the active locale's text with host:port.
+        const message = connectErrorText(res, 'Connection failed')
         // A user Cancel cleared the pending id first: the rejection it causes
         // is not an error to show.
         patchTab(ownerTabId, (sl) =>

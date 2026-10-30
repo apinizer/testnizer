@@ -110,6 +110,7 @@ import {
 } from '../lib/mcp-send-scripts'
 import type { McpCallOutcome } from '../../shared/mcp-response'
 import { t } from '../lib/i18n'
+import { connectErrorText } from '../lib/connection-error'
 
 export type { McpTransport, McpTool } from '../types/mcp'
 
@@ -1748,7 +1749,8 @@ export const useMcpStore = create<McpStore>((set, get) => ({
       const unauthorized = !!res.unauthorized
       patchTab(ownerTabId, (s) => ({
         connectionState: 'error',
-        errorMessage: res.error ?? t('mcp.error.connectionFailed'),
+        // Issue #253: `errorInfo` → the active locale's text with host:port.
+        errorMessage: connectErrorText(res, t('mcp.error.connectionFailed')),
         _pendingConnectId: undefined,
         unauthorized,
         ...(unauthorized

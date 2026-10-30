@@ -4292,6 +4292,49 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.eras.notifyHint':
       'Send tools/list_changed to 2026-07-28 listeners and legacy SSE sessions',
     'mockMcp.eras.notified': 'tools/list_changed sent',
+    // ── Connection errors (issue #253): mirror of CONNECTION_ERROR_TEXT_EN in src/shared/connection-error.ts ──
+    'connError.refused.what': 'Connection refused',
+    'connError.refused.hint': 'Check that the server is running',
+    'connError.dns.what': 'DNS lookup failed',
+    'connError.dns.hint': 'Check the host name in the URL',
+    'connError.timeout.what': 'Connection timed out',
+    'connError.timeout.hint':
+      'Check the host and port; if the server is slow, raise the connect timeout in Settings',
+    'connError.unreachable.what': 'Host unreachable',
+    'connError.unreachable.hint': 'Check the network connection, VPN or proxy settings',
+    'connError.reset.what': 'Connection reset',
+    'connError.reset.hint': 'Check the URL scheme (ws/wss, http/https) and the server logs',
+    'connError.bad-port.what': 'Port not allowed',
+    'connError.bad-port.hint': 'This port is blocked for web connections; use another port',
+    'connError.invalid-url.what': 'Invalid URL',
+    'connError.invalid-url.hint': 'Check the scheme, host and port in the URL',
+    'connError.tls-untrusted.what': 'TLS certificate not trusted',
+    'connError.tls-untrusted.hint':
+      'Import the CA certificate in Settings or turn off SSL verification',
+    'connError.tls-expired.what': 'TLS certificate expired',
+    'connError.tls-expired.hint': 'Renew the server certificate or turn off SSL verification',
+    'connError.tls-hostname.what': 'TLS hostname mismatch',
+    'connError.tls-hostname.hint':
+      'Use the host name on the certificate or turn off SSL verification',
+    'connError.tls.what': 'TLS error',
+    'connError.tls.hint': 'Check the URL scheme and the server TLS settings',
+    'connError.unauthorized.what': 'Authentication failed',
+    'connError.unauthorized.hint':
+      'Check the credentials: Authorization header, token or username and password',
+    'connError.forbidden.what': 'Access denied',
+    'connError.forbidden.hint': 'Use credentials that have access to this resource',
+    'connError.not-found.what': 'Endpoint not found',
+    'connError.not-found.hint': 'Check the path in the URL',
+    'connError.http-status.what': 'Unexpected HTTP response',
+    'connError.http-status.hint': 'Check the server logs and the URL',
+    'connError.rejected.what': 'Server rejected the connection',
+    'connError.rejected.hint': 'Check the auth data and the settings the server expects',
+    'connError.closed.what': 'Connection closed',
+    'connError.closed.hint': 'Check the server logs and the connection settings',
+    'connError.aborted.what': 'Connection aborted',
+    'connError.spawn-failed.what': 'Could not start the server command',
+    'connError.spawn-failed.hint': 'Check that the command is installed and on PATH',
+    'connError.unknown.what': 'Connection failed',
   },
 
   tr: {
@@ -8597,6 +8640,51 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.eras.notifyHint':
       'tools/list_changed bildirimini 2026-07-28 dinleyicilerine ve eski SSE oturumlarına gönder',
     'mockMcp.eras.notified': 'tools/list_changed gönderildi',
+    // ── Connection errors (issue #253): Türkçe ──
+    'connError.refused.what': 'Bağlantı reddedildi',
+    'connError.refused.hint': 'Sunucunun çalıştığını kontrol edin',
+    'connError.dns.what': 'DNS çözümlemesi başarısız',
+    'connError.dns.hint': 'URL’deki ana makine adını kontrol edin',
+    'connError.timeout.what': 'Bağlantı zaman aşımına uğradı',
+    'connError.timeout.hint':
+      'Ana makineyi ve portu kontrol edin; sunucu yavaşsa Ayarlar’dan bağlantı zaman aşımını artırın',
+    'connError.unreachable.what': 'Ana makineye ulaşılamıyor',
+    'connError.unreachable.hint': 'Ağ bağlantısını, VPN ya da proxy ayarlarını kontrol edin',
+    'connError.reset.what': 'Bağlantı sıfırlandı',
+    'connError.reset.hint': 'URL şemasını (ws/wss, http/https) ve sunucu günlüklerini kontrol edin',
+    'connError.bad-port.what': 'Port kullanılamaz',
+    'connError.bad-port.hint': 'Bu port web bağlantılarına kapalı; başka bir port kullanın',
+    'connError.invalid-url.what': 'Geçersiz URL',
+    'connError.invalid-url.hint': 'URL’deki şemayı, ana makineyi ve portu kontrol edin',
+    'connError.tls-untrusted.what': 'TLS sertifikasına güvenilmiyor',
+    'connError.tls-untrusted.hint':
+      'CA sertifikasını Ayarlar’dan içe aktarın ya da SSL doğrulamasını kapatın',
+    'connError.tls-expired.what': 'TLS sertifikasının süresi dolmuş',
+    'connError.tls-expired.hint': 'Sunucu sertifikasını yenileyin ya da SSL doğrulamasını kapatın',
+    'connError.tls-hostname.what': 'TLS ana makine adı uyuşmuyor',
+    'connError.tls-hostname.hint':
+      'Sertifikadaki ana makine adını kullanın ya da SSL doğrulamasını kapatın',
+    'connError.tls.what': 'TLS hatası',
+    'connError.tls.hint': 'URL şemasını ve sunucunun TLS ayarlarını kontrol edin',
+    'connError.unauthorized.what': 'Kimlik doğrulama başarısız',
+    'connError.unauthorized.hint':
+      'Kimlik bilgilerini kontrol edin: Authorization başlığı, token ya da kullanıcı adı ve parola',
+    'connError.forbidden.what': 'Erişim reddedildi',
+    'connError.forbidden.hint': 'Bu kaynağa erişimi olan kimlik bilgileri kullanın',
+    'connError.not-found.what': 'Uç nokta bulunamadı',
+    'connError.not-found.hint': 'URL’deki yolu kontrol edin',
+    'connError.http-status.what': 'Beklenmeyen HTTP yanıtı',
+    'connError.http-status.hint': 'Sunucu günlüklerini ve URL’yi kontrol edin',
+    'connError.rejected.what': 'Sunucu bağlantıyı reddetti',
+    'connError.rejected.hint':
+      'Kimlik doğrulama verisini ve sunucunun beklediği ayarları kontrol edin',
+    'connError.closed.what': 'Bağlantı kapandı',
+    'connError.closed.hint': 'Sunucu günlüklerini ve bağlantı ayarlarını kontrol edin',
+    'connError.aborted.what': 'Bağlantı iptal edildi',
+    'connError.spawn-failed.what': 'Sunucu komutu başlatılamadı',
+    'connError.spawn-failed.hint':
+      'Komutun kurulu olduğunu ve PATH üzerinde bulunduğunu kontrol edin',
+    'connError.unknown.what': 'Bağlantı kurulamadı',
   },
 }
 

@@ -42,6 +42,7 @@ import {
   type MqttWillProperties,
 } from '../../shared/mqtt'
 import { bytesToBase64, decodeBinary, isBinaryContentType } from '../../shared/realtime'
+import { connectTimeoutError, toConnectionError } from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -300,16 +301,18 @@ export function mqttConnect(o: MqttConnectOptions): Promise<MqttConnectResult> {
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
     let client: MqttClient
+    // Issue #253: connect failures carry what happened + host:port + next step.
+    const failure = (err: unknown): Error => toConnectionError(err, { protocol: 'mqtt', url })
     try {
       client = mqttConnectClient(url, opts)
     } catch (e) {
-      reject(new Error(reasonText(e)))
+      reject(failure(e))
       return
     }
     if (o.pendingId) pendingConnects.set(o.pendingId, client)
 
     let settled = false
-    const fail = (message: string): void => {
+    const fail = (error: Error): void => {
       if (settled) return
       settled = true
       clearTimeout(timer)
@@ -317,16 +320,23 @@ export function mqttConnect(o: MqttConnectOptions): Promise<MqttConnectResult> {
       client.removeAllListeners()
       client.on('error', () => {})
       client.end(true)
-      reject(new Error(message))
+      reject(error)
     }
     // A second behind MQTT.js's own connack timer, whose error is clearer.
     const timer = setTimeout(
-      () => fail(`MQTT connection timeout (${Math.round(settings.connectionTimeout / 100) / 10}s)`),
+      () =>
+        fail(
+          connectTimeoutError(
+            `MQTT connection timeout (${Math.round(settings.connectionTimeout / 100) / 10}s)`,
+            { protocol: 'mqtt', url },
+          ),
+        ),
       settings.connectionTimeout + 1000,
     )
 
-    const onError = (err: Error): void => fail(reasonText(err))
-    const onClose = (): void => fail('Connection closed before the broker accepted it')
+    const onError = (err: Error): void => fail(failure(err))
+    const onClose = (): void =>
+      fail(failure(new Error('Connection closed before the broker accepted it')))
     client.once('error', onError)
     client.once('close', onClose)
 

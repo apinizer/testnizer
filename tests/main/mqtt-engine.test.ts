@@ -250,7 +250,7 @@ describe('issue #284 — MQTT engine (3.1.1, Aedes)', () => {
     const r = recorder()
     await expect(
       mqttConnect({ url: 'mqtt://127.0.0.1:1', version: 4, onEvent: r.onEvent }),
-    ).rejects.toThrow(/ECONNREFUSED|closed/)
+    ).rejects.toThrow(/Connection refused|closed/i) // issue #253: "Connection refused — host:port"
   })
 
   it('a bare host:port gets mqtt://', async () => {

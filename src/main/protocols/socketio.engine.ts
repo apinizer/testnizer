@@ -1,4 +1,5 @@
 import { createSioClient, type SioClient } from './socketio-client'
+import { toConnectionError } from '../lib/error-classifier'
 import {
   DEFAULT_SIO_SETTINGS,
   bytesToBase64,
@@ -304,11 +305,12 @@ export async function socketIOConnect(options: {
       resolve(info)
     })
 
-    socket.onceConnectError((message) => {
+    socket.onceConnectError((err) => {
       if (opened) return
       if (options.pendingId) pendingConnects.delete(options.pendingId)
       socket.disconnect()
-      reject(new Error(message))
+      // Issue #253: what happened + host:port + next step (was "websocket error").
+      reject(toConnectionError(err, { protocol: 'socketio', url: options.url }))
     })
   })
 }

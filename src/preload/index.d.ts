@@ -552,6 +552,13 @@ import type {
   MqttWireWill,
 } from '../shared/mqtt'
 import type { MockServerKind } from '../shared/mock-kind'
+import type { ConnectionErrorInfo } from '../shared/connection-error'
+
+/**
+ * A realtime `*:connect` reply (issue #253): a failed connect also carries the
+ * classified `errorInfo` the renderer words in the active locale.
+ */
+type ConnectResult<T> = IpcResult<T> & { errorInfo?: ConnectionErrorInfo }
 import type {
   AiApprovalDecision,
   AiChatStreamEvent,
@@ -777,10 +784,12 @@ interface WsEventPayload {
   attempt?: number
   /** `open` after a reconnection. */
   reconnected?: boolean
+  /** `error` only (issue #253): the classified failure; `data` is its English text. */
+  errorInfo?: ConnectionErrorInfo
 }
 
 interface WsApi {
-  connect(options: WsConnectOptions): Promise<IpcResult<WsConnectionInfo>>
+  connect(options: WsConnectOptions): Promise<ConnectResult<WsConnectionInfo>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   /** `opts.binary`: `message` is base64 / hex text sent as a binary frame (issue #282). */
@@ -1243,11 +1252,13 @@ interface SseEventPayload {
   closed?: 'ended' | 'failed'
   /** `error` only, never with `closed`: the server ended the response and the client reconnects — not a failure (issue #226). */
   streamEnded?: true
+  /** `error` only (issue #253): the classified failure; `data` is its English text. */
+  errorInfo?: ConnectionErrorInfo
   timestamp: number
 }
 
 interface SseApi {
-  connect(options: SseConnectPayload): Promise<IpcResult<SseConnectionInfo>>
+  connect(options: SseConnectPayload): Promise<ConnectResult<SseConnectionInfo>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   onEvent(callback: (event: SseEventPayload) => void): () => void
@@ -1886,7 +1897,7 @@ interface McpApi {
   /** `unauthorized` is set when the server answered HTTP 401 (issue #141). */
   connect(
     options: McpConnectOptions,
-  ): Promise<IpcResult<McpConnectResult> & { unauthorized?: boolean }>
+  ): Promise<ConnectResult<McpConnectResult> & { unauthorized?: boolean }>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   listTools(connectionId: string): Promise<IpcResult<McpToolDto[]>>
@@ -1996,7 +2007,7 @@ interface SocketIOClosedPayload {
 }
 
 interface SocketIOApi {
-  connect(options: SocketIOConnectOptions): Promise<IpcResult<{ connectionId: string }>>
+  connect(options: SocketIOConnectOptions): Promise<ConnectResult<{ connectionId: string }>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   emit(connectionId: string, eventName: string, data: unknown): Promise<IpcResult<boolean>>
@@ -2076,7 +2087,7 @@ interface MqttClosedPayload {
 }
 
 interface MqttApi {
-  connect(options: MqttConnectRequest): Promise<IpcResult<MqttConnectResponse>>
+  connect(options: MqttConnectRequest): Promise<ConnectResult<MqttConnectResponse>>
   cancelConnect(pendingId: string): Promise<IpcResult<{ canceled: boolean }>>
   disconnect(connectionId: string): Promise<IpcResult<boolean>>
   publish(connectionId: string, message: MqttWirePublish): Promise<IpcResult<boolean>>
