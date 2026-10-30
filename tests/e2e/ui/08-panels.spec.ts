@@ -25,6 +25,9 @@ uiTest.describe('Side panels', () => {
   uiTest('APIs panel has search and new dropdown', async ({ window }) => {
     await navigateSidebar(window, 'apis')
     await expect(window.getByTestId('new-dropdown-btn')).toBeVisible()
-    await expect(window.getByPlaceholder(/Search|search/i)).toBeVisible()
+    // Scoped to the tree's own search box: a protocol tab left open by an
+    // earlier spec in the shared Electron instance (e.g. the Socket.IO log's
+    // "Search messages") also matches a bare placeholder query.
+    await expect(window.getByTestId('tree-search')).toBeVisible()
   })
 })

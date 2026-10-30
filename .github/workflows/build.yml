@@ -205,15 +205,17 @@ jobs:
   #
   # Scope split (workers:1 makes the full ~165-spec suite too slow to gate every
   # push):
-  #   • push / pull_request → CURATED SUBSET (28 specs): the 27 numbered
-  #     `NN-*.spec.ts` screen specs (00-26) directly under tests/e2e/ui/ +
+  #   • push / pull_request / plain dispatch → CURATED SUBSET (~54 specs): the
+  #     numbered `NN-*.spec.ts` screen specs directly under tests/e2e/ui/ +
   #     inventory.spec.ts (verified: 0 tur1/flows specs leak in). These
   #     are the breadth specs that open every APIs/Request/Response tab, every
   #     protocol editor, every modal, Tools, Runner, Mock and sidebar page — i.e.
   #     one mount of every screen, which is exactly the render-regression net.
-  #   • schedule (nightly) / workflow_dispatch → FULL `--project=ui`: the subset
-  #     PLUS the deep flow suites tests/e2e/ui/flows/ (16 specs) and
-  #     tests/e2e/ui/tur1/ (121 specs) that exercise multi-step user journeys.
+  #   • schedule (nightly, default branch only) / dispatch with full_e2e=true →
+  #     FULL `--project=ui`: the subset PLUS the deep flow suites
+  #     tests/e2e/ui/flows/ (17 specs) and tests/e2e/ui/tur1/ (134 specs) that
+  #     exercise multi-step user journeys. A long-lived release branch gets the
+  #     full sweep only through a full_e2e dispatch (nightly runs on main).
   #
   # Excluded from tag pushes so the release path (build-* → release) is never
   # gated on or slowed by this job; release keeps its own per-platform smoke.
