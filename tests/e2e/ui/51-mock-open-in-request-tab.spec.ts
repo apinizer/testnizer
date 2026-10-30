@@ -30,7 +30,11 @@ import { getActiveProjectId, listSavedRequestsByProject } from '../helpers/ui/as
 import { pressModShortcut } from '../helpers/ui/keyboard'
 import { treeClearSearch, treeOpenNode } from '../helpers/ui/tree'
 
-const SHOTS = '/private/tmp/claude-501/-Users-mhy-IdeaProjects-testnizer/080c60f4-ae3a-433a-9eda-a394ab175de1/scratchpad/shots'
+// Screenshots land in the test output dir; TESTNIZER_SHOTS_DIR redirects them for manual review.
+const shot = (name: string): string =>
+  process.env.TESTNIZER_SHOTS_DIR
+    ? `${process.env.TESTNIZER_SHOTS_DIR}/${name}`
+    : uiTest.info().outputPath(name)
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
 type IpcResult<T> = { success: boolean; data?: T; error?: string }
@@ -110,7 +114,7 @@ uiTest.describe('Issue #303 — mock endpoint opens in a request tab', () => {
         }
       })
 
-      await window.screenshot({ path: `${SHOTS}/303-1-mock-url-bar.png` })
+      await window.screenshot({ path: shot('303-1-mock-url-bar.png') })
 
       const openBtn = bar.getByTestId('mock-endpoint-open-in-http')
       await expect(openBtn).toBeEnabled()
@@ -133,7 +137,7 @@ uiTest.describe('Issue #303 — mock endpoint opens in a request tab', () => {
       await expect(window.locator('.view-lines:visible').filter({ hasText: /"ok"/ }).first()).toBeVisible({
         timeout: 10_000,
       })
-      await window.screenshot({ path: `${SHOTS}/303-2-client-tab-response.png` })
+      await window.screenshot({ path: shot('303-2-client-tab-response.png') })
 
       // Send again by hand — still the mock's answer.
       await window.getByTestId('send-btn').click()
@@ -147,7 +151,7 @@ uiTest.describe('Issue #303 — mock endpoint opens in a request tab', () => {
       const modal = window.getByTestId('endpoint-save-modal')
       await expect(modal).toBeVisible({ timeout: 8_000 })
       await modal.locator('input').first().fill(reqName)
-      await window.screenshot({ path: `${SHOTS}/303-3-save-as.png` })
+      await window.screenshot({ path: shot('303-3-save-as.png') })
       await modal.getByRole('button', { name: /Save|Update/i }).click()
       await expect(modal).toBeHidden({ timeout: 20_000 })
 
@@ -175,7 +179,7 @@ uiTest.describe('Issue #303 — mock endpoint opens in a request tab', () => {
       await treeOpenNode(window, reqName)
       await expect(window.getByTestId('url-method')).toHaveText(/POST/, { timeout: 10_000 })
       await expect(window.getByTestId('url-input')).toHaveValue(mockUrl)
-      await window.screenshot({ path: `${SHOTS}/303-4-reopened-from-tree.png` })
+      await window.screenshot({ path: shot('303-4-reopened-from-tree.png') })
     } finally {
       await treeClearSearch(window).catch(() => {})
       await closeAllTabs(window).catch(() => {})

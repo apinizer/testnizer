@@ -47,11 +47,14 @@ env:
 
 jobs:
   # ── PR opened / edited / reopened (not yet merged) → in-review ──────────────
+  # An edit to an already merged PR (action 'edited', state 'closed') must not
+  # push its issues back from needs-verification to in-review.
   # Skipped for fork PRs: GITHUB_TOKEN is read-only there and can't edit issues.
   pr-open:
     if: >-
       github.event_name == 'pull_request' &&
       github.event.action != 'closed' &&
+      github.event.pull_request.state == 'open' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
