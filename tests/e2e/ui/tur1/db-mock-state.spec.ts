@@ -41,8 +41,8 @@ uiTest.describe('Tur1 — DB mock state [MST-272]', () => {
    * After stopping and restarting the server, state resets:
    *   • Third hit:  counter is 1 again (reset on restart).
    *
-   * NEEDS HOOK: The response script textarea has no data-testid; we work around
-   * by finding it as the last Monaco editor instance in the response panel.
+   * The script editor has no data-testid; it is located through its
+   * "Pre-response script" label block.
    */
   uiTest('MST-272 state counter increments across requests and resets on restart', async ({ window }) => {
     const port = randomMockPort()
@@ -53,26 +53,20 @@ uiTest.describe('Tur1 — DB mock state [MST-272]', () => {
     await addMockEndpoint(window, { method: 'GET', path: '/counter' })
     await addMockResponse(window, { status: 200 })
 
-    // Inject the state-counter script into the response script Monaco editor.
-    // The script editor is the LAST Monaco instance in the workbench.
-    const scriptEditors = window.locator('.monaco-editor')
-    const scriptEditorCount = await scriptEditors.count()
-    const scriptEditor = scriptEditors.nth(scriptEditorCount - 1)
-
-    if (await scriptEditor.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await scriptEditor.click()
-      const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
-      await window.keyboard.press(`${mod}+KeyA`)
-      await window.keyboard.press('Backspace')
-      // The script increments a counter stored in the server-wide `state` object.
-      // The mock engine makes `state` and `response` available to scripts.
-      await window.keyboard.insertText(
-        `state.counter = (state.counter || 0) + 1; response.body = JSON.stringify({ count: state.counter });`,
-      )
-      await window.waitForTimeout(500)
-    } else {
-      console.warn('NEEDS HOOK: data-testid on response script editor in MockServerEditor for MST-272')
-    }
+    // Inject the state-counter script into the "Pre-response script (JS)" Monaco
+    // editor (found through its label — the editor itself has no testid).
+    const scriptBlock = window.locator('div.mt-2').filter({ hasText: /Pre-response script|Yanıt öncesi/i }).last()
+    const scriptEditor = scriptBlock.locator('.monaco-editor').first()
+    await expect(scriptEditor).toBeVisible({ timeout: 5_000 })
+    await scriptEditor.click()
+    const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+    await window.keyboard.press(`${mod}+KeyA`)
+    await window.keyboard.press('Backspace')
+    // `state` is the server-wide mutable object; setJson() writes the response.
+    await window.keyboard.insertText(
+      `state.counter = (state.counter || 0) + 1; setJson({ count: state.counter });`,
+    )
+    await window.waitForTimeout(500)
 
     await startMockServer(window)
     const url = await getMockEndpointUrl(window)
@@ -95,20 +89,8 @@ uiTest.describe('Tur1 — DB mock state [MST-272]', () => {
       return res?.data?.body ?? ''
     }, url)
 
-    if (body1 && body2) {
-      // If scripts run, counter should be 1 then 2.
-      try {
-        const parsed1 = JSON.parse(body1) as { count?: number }
-        const parsed2 = JSON.parse(body2) as { count?: number }
-        if (parsed1.count !== undefined && parsed2.count !== undefined) {
-          expect(parsed2.count).toBeGreaterThan(parsed1.count)
-        } else {
-          console.warn('MST-272: response body does not contain count — script may not have run')
-        }
-      } catch {
-        console.warn('MST-272: response body is not JSON — script may not have run:', body1)
-      }
-    }
+    expect(JSON.parse(body1)).toEqual({ count: 1 })
+    expect(JSON.parse(body2)).toEqual({ count: 2 })
 
     // Stop and restart to confirm state reset.
     await stopMockServer(window)
@@ -123,17 +105,8 @@ uiTest.describe('Tur1 — DB mock state [MST-272]', () => {
       return res?.data?.body ?? ''
     }, url)
 
-    if (body3) {
-      try {
-        const parsed3 = JSON.parse(body3) as { count?: number }
-        if (parsed3.count !== undefined) {
-          // After restart, counter should reset (start from 1 again).
-          expect(parsed3.count).toBe(1)
-        }
-      } catch {
-        // Script may not persist → acceptable if not implemented.
-      }
-    }
+    // After restart the server-wide state is gone: the counter starts over.
+    expect(JSON.parse(body3)).toEqual({ count: 1 })
 
     await stopMockServer(window)
   })

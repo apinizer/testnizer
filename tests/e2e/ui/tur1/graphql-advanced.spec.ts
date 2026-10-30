@@ -12,10 +12,9 @@
  *   - Auth header (MST-130): graphql-server is open; test verifies the header row
  *     is carried through by doing a successful query while the header is present.
  *
- * Needs hook:
- *   - MST-131 subscription events list: if the store doesn't emit demo events, the
- *     subscription log will be empty. Test accepts either demo events or "Subscribed"
- *     badge as success (real graphql-ws is a future server addition).
+ * Known gap: no graphql-ws test server exists, so MST-131 only asserts the
+ * Run -> Subscribe action switch (deterministic, server-independent); a real
+ * subscribe/stream/unsubscribe round-trip needs a graphql-ws fixture server.
  */
 import http from 'node:http'
 import net from 'node:net'

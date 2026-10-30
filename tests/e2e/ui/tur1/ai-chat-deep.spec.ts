@@ -13,19 +13,10 @@
  * max tokens from the Settings section reach the request body and a
  * `finish_reason: 'length'` stop shows the "Answer truncated" note.
  *
- * NOTE on data-testids: AiChatEditor.tsx has no data-testid attributes.
- * All UI interactions here use placeholder-text and role-based selectors
- * (same approach as 25-ai-chat.spec.ts).
- * needs hook: add data-testid="ai-chat-editor" to the root div in AiChatEditor.tsx
- * needs hook: add data-testid="ai-provider-select" to ProviderSelect's <select>
- * needs hook: add data-testid="ai-model-input" to the model <input>
- * needs hook: add data-testid="ai-url-input" to the endpoint URL <input>
- * needs hook: add data-testid="ai-api-key" to the API key <input>
- * needs hook: add data-testid="ai-send-btn" to the Send button
- * needs hook: add data-testid="ai-cancel-btn" to the Stop/Cancel button
- * needs hook: add data-testid="ai-clear-btn" to the Clear button
- * needs hook: add data-testid="ai-chat-message" to each message bubble
- * needs hook: add data-testid="ai-error-message" to the error banner
+ * NOTE on selectors: AiChatEditor has `ai-chat-editor`, `ai-settings-toggle`,
+ * `ai-settings-body` and `ai-api-key`; the rest (provider dropdown, model/URL
+ * inputs, Send/Stop, error text) is addressed by placeholder / role / text like
+ * 25-ai-chat.spec.ts — every lookup is a hard assertion (no "not found → pass").
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
@@ -152,6 +143,42 @@ async function startToolCallServer(port: number): Promise<ToolCallServer> {
   }
 }
 
+// ─── Inline hanging LLM (MST-154 cancel) ─────────────────────────────────────
+// Streams one chunk and then never finishes, so the Stop button is guaranteed
+// to be on screen until the client cancels (the shared fake LLM answers
+// instantly, which made the old cancel test race its own assertion).
+
+interface HangingLlm {
+  url: string
+  close: () => Promise<void>
+}
+
+async function startHangingLlm(): Promise<HangingLlm> {
+  const server = http.createServer(async (req, res) => {
+    if (req.method === 'POST' && req.url === '/v1/chat/completions') {
+      for await (const _chunk of req) void _chunk
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'partial-hang-reply ' } }] })}\n\n`)
+      return // never ends
+    }
+    res.writeHead(404)
+    res.end()
+  })
+  await new Promise<void>((resolve, reject) => {
+    server.listen(0, '127.0.0.1', () => resolve())
+    server.on('error', reject)
+  })
+  const { port } = server.address() as { port: number }
+  return {
+    url: `http://127.0.0.1:${port}/v1/chat/completions`,
+    close: () =>
+      new Promise((resolve) => {
+        server.closeAllConnections()
+        server.close(() => resolve())
+      }),
+  }
+}
+
 // ─── Helper: open AI Chat tab and configure it ───────────────────────────────
 
 async function openAiChatTab(
@@ -223,105 +250,77 @@ uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 153, 154]', () => {
   // ── MST-152: Provider/model switch ────────────────────────────────────────
   uiTest('MST-152 provider selection changes the endpoint URL pre-fill', async ({ window }) => {
     const { llm } = getTestServerUrls()
-    await openAiChatTab(window, `${llm}/v1/chat/completions`)
+    const customUrl = `${llm}/v1/chat/completions`
+    await openAiChatTab(window, customUrl)
 
-    // The provider/model section is collapsed by default if settingsExpanded
-    // starts false.  Click the settings section header to expand if needed.
-    const settingsHeader = window.getByText(/AI Chat settings|Settings/i).first()
-    const chevronDown = window.locator('button').filter({ has: window.locator('svg') }).first()
-    // Expand settings if the provider select is not visible
-    const urlInput = window.getByPlaceholder(/chat completions|Endpoint URL|https:\/\/\.\.\./i)
-    if (!(await urlInput.isVisible().catch(() => false))) {
-      // Try clicking the collapsible toggle
-      await settingsHeader.click().catch(() => chevronDown.click())
+    const body = window.getByTestId('ai-settings-body')
+    await expect(body).toBeVisible({ timeout: 10_000 })
+    const urlInput = body.getByPlaceholder(/chat completions|Endpoint URL|https:\/\/\.\.\./i)
+    const modelInput = body.getByPlaceholder('model-id')
+    await expect(urlInput).toHaveValue(customUrl)
+
+    // The provider picker is a custom dropdown: first button in the settings body.
+    const pickProvider = async (label: RegExp) => {
+      await body.getByRole('button').first().click()
+      // Option buttons carry the avatar letter in their name ("A Anthropic"); the
+      // dropdown is portaled to <body>, so it is the last match.
+      await window.getByRole('button', { name: label }).last().click()
     }
 
-    // The provider select is rendered as a custom component — select by option text
-    // needs hook: add data-testid="ai-provider-select" to ProviderSelect <select>
-    // For now, use the select by looking for known provider option labels
-    const providerSelect = window.locator('select').first()
+    // Anthropic → its default endpoint is pre-filled and the model follows.
+    const modelBefore = await modelInput.inputValue()
+    await pickProvider(/Anthropic/)
+    await expect(urlInput).toHaveValue('https://api.anthropic.com/v1/messages')
+    await expect(modelInput).not.toHaveValue(modelBefore)
 
-    if (await providerSelect.isVisible().catch(() => false)) {
-      // selectOption label'ı string ister — option value'larını okuyup regex'le seç.
-      const pickOption = async (re: RegExp) => {
-        const options = await providerSelect.locator('option').all()
-        for (const opt of options) {
-          const label = (await opt.textContent()) ?? ''
-          if (re.test(label)) {
-            const value = await opt.getAttribute('value')
-            if (value !== null) await providerSelect.selectOption(value)
-            return true
-          }
-        }
-        return false
-      }
-      // Switch to a different provider and verify the URL field changes
-      await pickOption(/Anthropic|Gemini|Ollama/i)
-      await window.waitForTimeout(300)
-      const newUrl = await urlInput.inputValue().catch(() => '')
-      // URL must have changed (or at least the field exists)
-      expect(typeof newUrl).toBe('string')
-      // Switch back to openai so subsequent tests work
-      await pickOption(/OpenAI/i).catch(() => false)
-      await urlInput.fill(`${llm}/v1/chat/completions`)
-    } else {
-      // needs hook: provider select has no data-testid — IPC-level test instead
-      // Verify that the AI Chat tab opened and is interactive
-      await expect(urlInput).toBeVisible({ timeout: 10_000 })
-    }
+    // Custom keeps whatever URL is there; put the local stub URL back for later tests.
+    await pickProvider(/Custom/)
+    await expect(urlInput).toHaveValue('https://api.anthropic.com/v1/messages')
+    await urlInput.fill(customUrl)
+    await expect(urlInput).toHaveValue(customUrl)
   })
 
   uiTest('MST-152 model input value is preserved after provider stays same', async ({ window }) => {
     const { llm } = getTestServerUrls()
     await openAiChatTab(window, `${llm}/v1/chat/completions`)
 
-    // Find the model input field (identified by placeholder "model-id")
-    const modelInput = window.getByPlaceholder('model-id')
-    if (!(await modelInput.isVisible().catch(() => false))) {
-      // Settings collapsed — skip: no testid to expand reliably
-      // needs hook: data-testid on the settings toggle button
-      return
-    }
+    // The settings section is expanded by default.
+    const modelInput = window.getByTestId('ai-settings-body').getByPlaceholder('model-id')
+    await expect(modelInput).toBeVisible({ timeout: 10_000 })
 
     const customModel = `gpt-4o-${uid().slice(0, 8)}`
     await modelInput.fill(customModel)
     await window.waitForTimeout(200)
 
     // Verify the value stuck (not cleared by a re-render)
-    const stored = await modelInput.inputValue()
-    expect(stored).toBe(customModel)
+    await expect(modelInput).toHaveValue(customModel)
   })
 
   // ── MST-154: Stream cancel ────────────────────────────────────────────────
   uiTest('MST-154 cancel button appears during streaming and stops it', async ({ window }) => {
-    const { llm } = getTestServerUrls()
-
-    // Use a slow-streaming fake LLM — the existing fake-llm doesn't support
-    // delay, so we test with the real server but trigger cancel immediately.
-    await openAiChatTab(window, `${llm}/v1/chat/completions`)
-
-    const prompt = window.getByPlaceholder(/Ask anything/i)
-    const sendBtn = window.getByRole('button', { name: /^Send$|^Gönder$/i })
-
-    await prompt.fill(`CancelTest-${uid()}`)
-    await sendBtn.click()
-
-    // The Stop/Cancel button appears while streaming
-    // needs hook: add data-testid="ai-cancel-btn" to the Stop button
-    const stopBtn = window.getByRole('button', { name: /Stop|Cancel|Durdur/i })
-
-    // It may appear very briefly — try to catch it.
+    const hanging = await startHangingLlm()
     try {
-      await expect(stopBtn.first()).toBeVisible({ timeout: 5_000 })
-      await stopBtn.first().click()
-      // After cancellation, Send button should re-appear
+      await openAiChatTab(window, hanging.url)
+
+      const prompt = window.getByPlaceholder(/Ask anything/i)
+      const sendBtn = window.getByRole('button', { name: /^Send$|^Gönder$/i })
+
+      await prompt.fill(`CancelTest-${uid()}`)
+      await sendBtn.click()
+
+      // The stream stays open, so Stop is on screen (and the first chunk rendered).
+      const stopBtn = window.getByRole('button', { name: /^Stop$|^Cancel$|^Durdur$/i })
+      await expect(stopBtn).toBeVisible({ timeout: 10_000 })
+      await expect(window.getByText(/partial-hang-reply/).first()).toBeVisible({ timeout: 10_000 })
+
+      await stopBtn.click()
+
+      // Cancelled: Send is back, Stop is gone, the partial answer is kept.
       await expect(sendBtn).toBeVisible({ timeout: 10_000 })
-    } catch {
-      // Streaming finished before we could cancel — that's also valid.
-      // The response text should still appear.
-      await expect(window.getByText(/E2E stub reply|stub/i).first()).toBeVisible({
-        timeout: 15_000,
-      })
+      await expect(stopBtn).toBeHidden({ timeout: 10_000 })
+      await expect(window.getByText(/partial-hang-reply/).first()).toBeVisible()
+    } finally {
+      await hanging.close()
     }
   })
 
@@ -336,7 +335,6 @@ uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 153, 154]', () => {
     await sendBtn.click()
 
     // An error message or error indicator must appear
-    // needs hook: add data-testid="ai-error-message" to the error banner/div
     await expect(
       window.getByText(/error|fail|could not|connect|ECONNREFUSED/i).first(),
     ).toBeVisible({ timeout: 20_000 })

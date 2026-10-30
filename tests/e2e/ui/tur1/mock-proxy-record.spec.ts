@@ -9,8 +9,8 @@
  * http-echo server, the request is issued through the renderer's request IPC
  * (same path the UI uses). Mock config (proxyEnabled / proxyTarget /
  * proxyRecord) is driven via the mock IPC bridge instead of the Settings-tab
- * form: those checkboxes carry no data-testid (see the NEEDS HOOK notes in
- * mock-proxy.spec.ts) so UI form-filling is brittle under parallel workers.
+ * form (the checkboxes are reachable by label — see mock-proxy.spec.ts MST-169
+ * for the UI path) so this spec stays about the recorder, not form filling.
  * `mock:server:create` + `mock:server:update` is the same code the form calls.
  *
  * After the proxied hit we poll `mock:endpoint:list` for the recorded endpoint;

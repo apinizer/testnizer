@@ -38,8 +38,6 @@ uiTest.describe('Tur1 — Scheduled tasks deep [MST-180]', () => {
    *   2. Trigger a runNow via IPC.
    *   3. Poll runner history until a record with source='Scheduler' appears.
    *   4. Assert the task detail shows the endpoint IDs it was created with.
-   *
-   * NEEDS HOOK: window.api.scheduler.runNow(taskId) IPC (if not yet exposed).
    */
   uiTest('MST-180 scheduler runNow creates history entry', async ({ window }) => {
     const tag = uid()
@@ -94,35 +92,24 @@ uiTest.describe('Tur1 — Scheduled tasks deep [MST-180]', () => {
       })
       .toBe(true)
 
-    // Trigger runNow if the IPC is exposed.
+    // Trigger the task now (window.api.scheduler.runNow is exposed by the preload).
     const runNowResult = await window.evaluate(async (id) => {
       const w = window as unknown as Window & {
-        api?: {
-          scheduler?: {
-            runNow?: (id: string) => Promise<{ success: boolean; error?: string }>
-          }
-        }
+        api: { scheduler: { runNow: (id: string) => Promise<{ success: boolean; error?: string }> } }
       }
-      if (!w.api?.scheduler?.runNow) return { skipped: true }
-      const res = await w.api.scheduler.runNow(id)
-      return { skipped: false, success: res?.success }
+      return w.api.scheduler.runNow(id)
     }, taskId)
-
-    if ((runNowResult as { skipped?: boolean }).skipped) {
-      console.warn('NEEDS HOOK: window.api.scheduler.runNow IPC not exposed — skipping history assertion')
-    } else {
-      expect((runNowResult as { success: boolean }).success).toBe(true)
-      // Poll until a Scheduler history row appears.
-      await expect
-        .poll(
-          async () => {
-            const rows = await getRunnerHistory(window, projectId)
-            return rows.some((r) => r.source === 'Scheduler')
-          },
-          { timeout: 30_000, intervals: [1_000] },
-        )
-        .toBe(true)
-    }
+    expect(runNowResult.success, runNowResult.error).toBe(true)
+    // Poll until a Scheduler history row appears.
+    await expect
+      .poll(
+        async () => {
+          const rows = await getRunnerHistory(window, projectId)
+          return rows.some((r) => r.source === 'Scheduler')
+        },
+        { timeout: 30_000, intervals: [1_000] },
+      )
+      .toBe(true)
 
     // Confirm task detail shows the expected name (resolved via scheduler.list).
     const detail = await getScheduledTaskDetail(window, projectId, taskId)

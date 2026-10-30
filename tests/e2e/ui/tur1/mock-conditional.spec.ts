@@ -139,9 +139,6 @@ uiTest.describe('Tur1 — Mock conditional [MST-162..168]', () => {
   /**
    * MST-163 — Response delay
    * A 500 ms delay must make the round-trip take at least 400 ms.
-   *
-   * NEEDS HOOK: mock-response-delay testid on the delay input in ResponseEditor
-   * (currently the delayMs input has no data-testid).
    */
   uiTest('MST-163 response delay input persists and slows responses', async ({ window }) => {
     const port = randomMockPort()
@@ -151,17 +148,10 @@ uiTest.describe('Tur1 — Mock conditional [MST-162..168]', () => {
     await addMockEndpoint(window, { method: 'GET', path: '/slow' })
     await addMockResponse(window, { status: 200 })
 
-    // Set delay to 500ms via the unlabeled number input for delayMs.
-    // The input follows the "Delay ms:" label — find it by proximity.
-    const delayInput = window
-      .getByText(/Delay\s*ms/i)
-      .locator('xpath=following::input[@type="number"][1]')
-    if (await delayInput.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await delayInput.fill('500')
-      await delayInput.blur()
-    } else {
-      console.warn('NEEDS HOOK: data-testid="mock-response-delay" on delayMs input')
-    }
+    const delayInput = window.getByTestId('mock-response-delay')
+    await expect(delayInput).toBeVisible({ timeout: 5_000 })
+    await delayInput.fill('500')
+    await delayInput.blur()
     await window.waitForTimeout(400)
     await startMockServer(window)
     const url = await getMockEndpointUrl(window)
@@ -171,9 +161,7 @@ uiTest.describe('Tur1 — Mock conditional [MST-162..168]', () => {
     const elapsed = Date.now() - before
 
     expect(status).toBe(200)
-    if (await delayInput.isVisible({ timeout: 1_000 }).catch(() => false)) {
-      expect(elapsed).toBeGreaterThanOrEqual(400)
-    }
+    expect(elapsed).toBeGreaterThanOrEqual(400)
     await stopMockServer(window)
   })
 
@@ -233,18 +221,10 @@ uiTest.describe('Tur1 — Mock conditional [MST-162..168]', () => {
     await expect(window.getByText(/\/ping/i).first()).toBeVisible({ timeout: 10_000 })
 
     // Click Clear and confirm logs disappear.
-    const clearBtn = window.getByRole('button', { name: /^Clear$/i })
-    if (await clearBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await clearBtn.click()
-      await window.waitForTimeout(400)
-      // After clear: "0 entries" or "No logs" should appear.
-      const empty =
-        (await window.getByText(/No logs|0 entries/i).isVisible().catch(() => false)) ||
-        !(await window.getByText('/ping').isVisible().catch(() => false))
-      expect(empty).toBe(true)
-    } else {
-      console.warn('NEEDS HOOK: data-testid on Clear button in LogsTab (mock editor)')
-    }
+    await expect(window.getByTestId('mock-log-count')).toContainText(/^[12] /)
+    await window.getByRole('button', { name: /^Clear$|^Temizle$/ }).click()
+    await expect(window.getByTestId('mock-log-count')).toContainText(/^0 /, { timeout: 5_000 })
+    await expect(window.getByTestId('mock-log-row')).toHaveCount(0)
     await stopMockServer(window)
   })
 
@@ -277,16 +257,13 @@ uiTest.describe('Tur1 — Mock conditional [MST-162..168]', () => {
     // Fill the response body Monaco editor with the template.
     // mock-response-body is the wrapper div; find the monaco editor inside it.
     const bodyEditor = window.getByTestId('mock-response-body').locator('.monaco-editor')
-    if (await bodyEditor.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await bodyEditor.click()
-      const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
-      await window.keyboard.press(`${mod}+KeyA`)
-      await window.keyboard.press('Backspace')
-      await window.keyboard.insertText(`{"msg":"{{mockBodyVar}}"}`)
-      await window.waitForTimeout(500)
-    } else {
-      console.warn('NEEDS HOOK: mock-response-body Monaco accessible testid for MST-165')
-    }
+    await expect(bodyEditor).toBeVisible({ timeout: 5_000 })
+    await bodyEditor.click()
+    const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+    await window.keyboard.press(`${mod}+KeyA`)
+    await window.keyboard.press('Backspace')
+    await window.keyboard.insertText(`{"msg":"{{mockBodyVar}}"}`)
+    await window.waitForTimeout(500)
 
     await startMockServer(window)
     const url = await getMockEndpointUrl(window)
@@ -304,19 +281,8 @@ uiTest.describe('Tur1 — Mock conditional [MST-162..168]', () => {
       return res?.data?.body ?? ''
     }, url)
 
-    if (responseBody) {
-      // If env template substitution works, the body should not contain {{mockBodyVar}}.
-      // It may or may not be substituted depending on feature maturity.
-      const isResolved = responseBody.includes(varValue)
-      const isTemplate = responseBody.includes('{{mockBodyVar}}')
-      if (!isResolved && !isTemplate) {
-        console.warn('MST-165: response body is empty — mock body template may need verification')
-      } else if (isTemplate) {
-        console.warn('NEEDS HOOK: MST-165 — mock engine template substitution not yet implemented')
-      } else {
-        expect(responseBody).toContain(varValue)
-      }
-    }
+    expect(responseBody).toContain(varValue)
+    expect(responseBody).not.toContain('{{mockBodyVar}}')
     await stopMockServer(window)
   })
 

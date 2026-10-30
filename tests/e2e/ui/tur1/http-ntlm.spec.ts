@@ -118,14 +118,7 @@ uiTest.describe('Tur1 — NTLM auth smoke [MST-035]', () => {
   uiTest('MST-035a NTLM auth type is selectable in UI', async ({ window }) => {
     await window.getByTestId('req-tab-auth').click()
     // The auth type picker must expose an NTLM option
-    const ntlmOption = window.getByTestId('auth-type-ntlm')
-    // If NTLM is present as a data-testid option or role=button
-    const hasNtlm = await ntlmOption.isVisible().catch(async () => {
-      // fallback: check by button text
-      return window.getByRole('button', { name: /NTLM/i }).first().isVisible().catch(() => false)
-    })
-    // needs-hook: data-testid="auth-type-ntlm" must exist on the auth type selector button
-    expect(hasNtlm).toBe(true)
+    await expect(window.getByTestId('auth-type-ntlm')).toBeVisible()
   })
 
   uiTest('MST-035b NTLM credentials reach main process engine without crash', async ({ window }) => {

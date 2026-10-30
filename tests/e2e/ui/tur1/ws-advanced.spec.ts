@@ -7,13 +7,12 @@
  *   - No subprotocol negotiation — MST-116 uses a spec-internal mini server
  *   - No binary framing in echo — MST-117 asserts contentType badge in log
  *
- * Needs hook:
- *   - MST-116 (subprotocol): ws-echo has no Sec-WebSocket-Protocol header handling.
- *     A minimal inline WS server is started in beforeAll.
- *   - MST-117 (binary frame): ui-side binary contentType badge needs to exist in
- *     WsMessageLog. Tests assert the badge text "binary" (currently coded in
- *     WsMessageLog.tsx msg.contentType display).  If the badge is absent, this
- *     test is marked "needs hook: binary badge UI".
+ * Inline servers:
+ *   - MST-116 (subprotocol): ws-echo has no Sec-WebSocket-Protocol handling, so
+ *     a minimal inline WS server negotiates the subprotocol.
+ *   - MST-117 (binary frame): an inline server echoes frames back as binary;
+ *     the test asserts the received row carries the "binary" content-type badge
+ *     (WsMessageLog.tsx renders msg.contentType as the row badge).
  */
 import http from 'node:http'
 import { WebSocketServer } from 'ws'
@@ -201,8 +200,10 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
       await fillMonaco(window, 'ws-composer', 'binary-mst117')
       await window.getByTestId('ws-send').click()
 
-      // Look for a received message in the log (direction=received or badge=binary/text)
-      await expect(window.getByTestId('ws-message').first()).toBeVisible({ timeout: 10_000 })
+      // The echoed frame is binary: its row (not the sent text row) shows the badge.
+      await expect(
+        window.getByTestId('ws-message').filter({ hasText: /binary/i }).first(),
+      ).toBeVisible({ timeout: 10_000 })
 
       await window.getByTestId('ws-disconnect').click()
     } finally {

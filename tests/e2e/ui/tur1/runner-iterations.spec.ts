@@ -81,9 +81,9 @@ uiTest.describe('Tur1 — Runner iterations [MST-174, MST-175, MST-176, MST-182]
    * Load iteration data rows (JSON) via IPC and confirm the runner uses them.
    * The data file has 3 rows → the runner produces 3 iterations.
    *
-   * NOTE: The IterationDataPicker UI has no data-testid for direct file injection;
-   * we use the window.api.runner path to inject rows before the run starts.
-   * NEEDS HOOK: runner-iteration-data-textarea on IterationDataPicker for UI path.
+   * NOTE: this test drives the iteration COUNT only; the data-file injection UI
+   * (IterationDataPicker) has no testid, a src hook request in
+   * docs/e2e/needs-hooks.md.
    */
   uiTest('MST-175 data file JSON rows drive iteration count', async ({ window }) => {
     const suiteName = `DataFile175-${uid()}`
@@ -95,9 +95,6 @@ uiTest.describe('Tur1 — Runner iterations [MST-174, MST-175, MST-176, MST-182]
     await runSuiteFromContextMenu(window, suiteName)
     await waitRunnerConfigReady(window)
 
-    // Assert the iteration data file fixture exists (the UI would let the user
-    // browse to it). For now confirm the runner can start and complete.
-    // The data injection path requires a testid on IterationDataPicker (NEEDS HOOK).
     const iterInput = window.getByTestId('runner-iterations')
     await iterInput.fill('3')
     await iterInput.blur()

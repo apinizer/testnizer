@@ -36,23 +36,16 @@ uiTest.describe('Tur1 — HTTP UX errors + misc [MST-054..058]', () => {
   uiTest('MST-054 bulk header edit paste applies multiple headers at once', async ({ window }) => {
     await window.getByTestId('req-tab-headers').click()
 
-    // Try to toggle bulk edit mode
-    const bulkBtn = window.getByTestId('kv-bulk-toggle')
-    if (await bulkBtn.isVisible().catch(() => false)) {
-      await kvToggleBulkEdit(window)
-      await kvFillBulk(window, 'X-Bulk-1: value-one\nX-Bulk-2: value-two\nX-Bulk-3: value-three')
-      // Switch back to table mode
-      await kvToggleBulkEdit(window)
+    await expect(window.getByTestId('kv-bulk-toggle')).toBeVisible()
+    await kvToggleBulkEdit(window)
+    await kvFillBulk(window, 'X-Bulk-1: value-one\nX-Bulk-2: value-two\nX-Bulk-3: value-three')
+    // Switch back to table mode
+    await kvToggleBulkEdit(window)
 
-      // Headers must appear as rows
-      await expect(window.getByTestId('kv-row-0')).toBeVisible({ timeout: 5_000 })
-      // At least one header key visible — kv-key IS the <input>, not a wrapper
-      const firstKey = await window.getByTestId('kv-row-0').getByTestId('kv-key').inputValue().catch(() => '')
-      expect(firstKey.length).toBeGreaterThan(0)
-    } else {
-      // needs-hook: data-testid="kv-bulk-toggle" must be present in the headers KeyValueTable
-      expect(true).toBe(true)
-    }
+    // Headers must appear as rows (kv-key IS the <input>, not a wrapper)
+    await expect(window.getByTestId('kv-row-0')).toBeVisible({ timeout: 5_000 })
+    await expect(window.getByTestId('kv-row-0').getByTestId('kv-key')).toHaveValue('X-Bulk-1')
+    await expect(window.getByTestId('kv-row-2').getByTestId('kv-key')).toHaveValue('X-Bulk-3')
   })
 
   // MST-055: Path params :id vs query preview
@@ -65,15 +58,10 @@ uiTest.describe('Tur1 — HTTP UX errors + misc [MST-054..058]', () => {
     const urlValue = await window.getByTestId('url-input').inputValue()
     expect(urlValue).toMatch(/:userId|userId/)
 
-    // If path params are extracted as separate rows they must differ from query rows
-    // needs-hook: path params in Params tab need data-testid="path-param-section" or similar
-    const pathSection = window.getByTestId('path-param-section')
-    const hasPathSection = await pathSection.isVisible().catch(() => false)
-    if (hasPathSection) {
-      await expect(pathSection).toBeVisible()
-    }
-    // Pass regardless — path param UI is a soft check
-    expect(true).toBe(true)
+    // Path variables get their own table, separate from the query params table.
+    const pathSection = window.getByTestId('path-variables')
+    await expect(pathSection).toBeVisible()
+    await expect(pathSection.getByTestId('path-var-row-userId')).toBeVisible()
   })
 
   // MST-056: Network unreachable error UX
@@ -81,18 +69,11 @@ uiTest.describe('Tur1 — HTTP UX errors + misc [MST-054..058]', () => {
     await fillUrl(window, UNREACHABLE_HOST)
     await clickSend(window)
 
-    // Either response-error panel appears or status shows a connection error
-    await Promise.race([
-      waitForResponseError(window, 20_000),
-      window.getByText(/network|connect|unreachable|refused|ECONNREFUSED|ETIMEDOUT/i)
-        .first()
-        .waitFor({ timeout: 20_000 }),
-    ]).catch(() => {
-      // timeout — still a pass if no crash occurred
-    })
-
-    // Critical: the app must not have crashed (window is still alive)
-    await expect(window.getByTestId('send-btn')).toBeVisible({ timeout: 5_000 })
+    await waitForResponseError(window, 40_000)
+    await expect(window.getByTestId('response-error')).toContainText(
+      /network|connect|unreachable|refused|ECONNREFUSED|ETIMEDOUT|timed? ?out|EHOSTUNREACH/i,
+    )
+    await expect(window.getByTestId('send-btn')).toBeVisible()
   })
 
   // MST-057: DNS failure error UX
@@ -100,17 +81,11 @@ uiTest.describe('Tur1 — HTTP UX errors + misc [MST-054..058]', () => {
     await fillUrl(window, DNS_FAIL_HOST)
     await clickSend(window)
 
-    await Promise.race([
-      waitForResponseError(window, 20_000),
-      window.getByText(/ENOTFOUND|ECONNREFUSED|DNS|resolve|not found|network/i)
-        .first()
-        .waitFor({ timeout: 20_000 }),
-    ]).catch(() => {
-      // timeout — pass if no crash
-    })
-
-    // App must still be alive
-    await expect(window.getByTestId('send-btn')).toBeVisible({ timeout: 5_000 })
+    await waitForResponseError(window, 40_000)
+    await expect(window.getByTestId('response-error')).toContainText(
+      /ENOTFOUND|DNS|resolve|not found|getaddrinfo/i,
+    )
+    await expect(window.getByTestId('send-btn')).toBeVisible()
   })
 
   // MST-058: Method badge colours
@@ -119,36 +94,16 @@ uiTest.describe('Tur1 — HTTP UX errors + misc [MST-054..058]', () => {
     const methodPicker = window.getByTestId('url-method')
     await methodPicker.click()
 
-    const menu = window.getByTestId('new-dropdown-menu').or(
-      window.locator('[role="menu"], [role="listbox"]').first(),
-    )
-
-    // Check that method option buttons are visible
+    // Every method option renders a MethodBadge with a non-transparent colour.
     for (const method of ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']) {
       const opt = window.getByTestId(`url-method-option-${method}`)
-      if (await opt.isVisible().catch(() => false)) {
-        // Badge/option must be visible (colour check is visual; we just assert presence)
-        await expect(opt).toBeVisible()
-      }
+      await expect(opt).toBeVisible()
+      const color = await opt
+        .getByText(method, { exact: true })
+        .evaluate((el: Element) => (globalThis as typeof globalThis & Window).getComputedStyle(el).color)
+      expect(color).not.toBe('')
+      expect(color).not.toBe('rgba(0, 0, 0, 0)')
     }
-
-    // Close picker
     await window.keyboard.press('Escape')
-    await window.waitForTimeout(200)
-
-    // Each method badge in the tree must have a background-color set
-    // needs-hook: MethodBadge must expose data-testid="method-badge" with data-method attr
-    const badges = window.getByTestId('method-badge')
-    const badgeCount = await badges.count()
-    if (badgeCount > 0) {
-      const firstBadge = badges.first()
-      const bg = await firstBadge.evaluate(
-        (el: Element) => (globalThis as typeof globalThis & Window).getComputedStyle(el).backgroundColor,
-      ).catch(() => '')
-      // Background must not be transparent
-      expect(bg).not.toBe('')
-      expect(bg).not.toBe('rgba(0, 0, 0, 0)')
-      expect(bg).not.toBe('transparent')
-    }
   })
 })

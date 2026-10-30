@@ -3,11 +3,22 @@
  * MST-194 P1 Collection pre-request + test scripts
  * MST-195 P1 Project variables scope
  * MST-197 P1 Proxy direct/system/custom (UI persist only — no real proxy)
- * MST-198 P2 Updater events (mock/IPC)
- * MST-199 P2 Diagnostics export/reveal/licenses
- * MST-200 P2 SSL verify global + request override
+ * MST-198 P2 Updater check IPC
+ * MST-199 P2 Diagnostics export/reveal/licenses   (skipped — no such UI in src)
+ * MST-200 P2 SSL verify global toggle
+ *
+ * Where the features live:
+ *  - project-level auth / scripts: the Project Detail modal (nav-settings) →
+ *    `project-detail-tab-{authorization,preRequest,tests}`, persisted by
+ *    "Save Changes" under settings key `project.<id>.settings`.
+ *  - global SSL verification + proxy: the Settings modal (Cmd+,), persisted by
+ *    "Save" via `settings:setAll` (`sslVerification`, `proxy`).
+ *
+ * The ui project shares ONE Electron instance and these values are worker-global
+ * (a leftover bearer/proxy/SSL-off would poison later specs), so every test
+ * restores what it changed in `finally`.
  */
-import { expect } from '@playwright/test'
+import { expect, type Page } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
   dismissOverlays,
@@ -16,8 +27,66 @@ import {
 } from '../../helpers/ui/bootstrap'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
 import { getActiveProjectId } from '../../helpers/ui/assert-ipc'
+import { createProjectIpc } from '../../helpers/ui/db-extra'
+import { getDefaultWorkspaceId } from '../../helpers/ui/db-flow'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+async function getSetting(page: Page, key: string): Promise<unknown> {
+  return page.evaluate(async (k) => {
+    const w = window as unknown as Window & {
+      api: { settings: { get: (key: string) => Promise<{ success: boolean; data?: unknown }> } }
+    }
+    return (await w.api.settings.get(k)).data
+  }, key)
+}
+
+async function setSetting(page: Page, key: string, value: unknown): Promise<void> {
+  const res = await page.evaluate(
+    async ({ k, v }) => {
+      const w = window as unknown as Window & {
+        api: {
+          settings: { set: (key: string, value: unknown) => Promise<{ success: boolean; error?: string }> }
+        }
+      }
+      return w.api.settings.set(k, v)
+    },
+    { k: key, v: value },
+  )
+  expect(res.success, res.error).toBe(true)
+}
+
+interface ProjectSettingsShape {
+  auth?: { type?: string; bearerToken?: string }
+  preScript?: string
+  testScript?: string
+}
+
+async function openProjectDetail(window: Page, tab: string) {
+  await window.getByTestId('nav-settings').click()
+  const modal = window.getByTestId('project-detail-modal')
+  await expect(modal).toBeVisible({ timeout: 8_000 })
+  await modal.getByTestId(`project-detail-tab-${tab}`).click()
+  return modal
+}
+
+async function saveProjectDetail(window: Page) {
+  const modal = window.getByTestId('project-detail-modal')
+  await modal.getByRole('button', { name: /Save Changes|Değişiklikleri Kaydet/i }).click()
+  await expect(modal).toBeHidden({ timeout: 8_000 })
+}
+
+/** Replace the content of the (only) Monaco editor in the open Project Detail pane. */
+async function typeIntoPaneMonaco(window: Page, text: string) {
+  const modal = window.getByTestId('project-detail-modal')
+  const editor = modal.locator('.monaco-editor').first()
+  await expect(editor).toBeVisible({ timeout: 10_000 })
+  await editor.click()
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await window.keyboard.press(`${mod}+KeyA`)
+  await window.keyboard.press('Backspace')
+  await window.keyboard.insertText(text)
+}
 
 uiTest.describe('Tur1 — Settings Advanced [MST-193..200]', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -29,138 +98,58 @@ uiTest.describe('Tur1 — Settings Advanced [MST-193..200]', () => {
   // -------------------------------------------------------------------------
   // MST-193 — Collection-level auth inheritance
   // -------------------------------------------------------------------------
-  uiTest('MST-193 collection-level auth UI opens and persists selected type', async ({ window }) => {
-    // Open Project Detail / Collection Auth (via Settings or project tab context).
-    // Try the collection/project detail tab via icon sidebar → settings.
-    await navigateSidebar(window, 'settings')
-    await window.waitForTimeout(300)
+  uiTest('MST-193 project-level auth UI persists the selected type + token', async ({ window }) => {
+    const projectId = await getActiveProjectId(window)
+    const key = `project.${projectId}.settings`
+    const original = await getSetting(window, key)
+    const token = `tok-${uid()}`
+    try {
+      const modal = await openProjectDetail(window, 'authorization')
+      await modal.locator('select').first().selectOption('bearer')
+      await modal.getByPlaceholder(/^eyJ/).fill(token)
+      await saveProjectDetail(window)
 
-    // Look for collection auth section.
-    const collAuth = window
-      .getByTestId('collection-auth-section')
-      .or(window.getByText(/Collection Auth|Koleksiyon Yetkilendirme/i).first())
+      const saved = (await getSetting(window, key)) as ProjectSettingsShape
+      expect(saved.auth?.type).toBe('bearer')
+      expect(saved.auth?.bearerToken).toBe(token)
 
-    if (!(await collAuth.isVisible().catch(() => false))) {
-      // Try opening project detail tab directly.
-      const projectDetailTab = window.getByTestId('project-detail-tab')
-        .or(window.getByRole('button', { name: /Project Settings|Proje Ayarları/i }))
-      if (await projectDetailTab.isVisible().catch(() => false)) {
-        await projectDetailTab.click()
-        await window.waitForTimeout(300)
-      } else {
-        console.log('MST-193: collection-auth-section not found — needs data-testid hook or project detail tab')
-        return
-      }
-    }
-
-    // Select Bearer auth from collection-level dropdown.
-    const authSelect = window
-      .getByTestId('collection-auth-type')
-      .or(window.getByLabel(/Auth Type|Yetkilendirme Türü/i).first())
-    if (await authSelect.isVisible().catch(() => false)) {
-      await authSelect.selectOption('bearer').catch(async () => {
-        await authSelect.click()
-        await window.getByRole('option', { name: /Bearer/i }).click()
-      })
-      // Save.
-      await window.getByRole('button', { name: /Save|Kaydet/i }).first().click()
-      await window.waitForTimeout(400)
-
-      // Reopen and verify persisted.
-      const saved = await authSelect.inputValue().catch(async () =>
-        window.evaluate(async () => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const bw = (window as any) as {
-            api?: {
-              project?: {
-                getSettings?: () => Promise<{ success: boolean; data?: { auth?: { type?: string } } }>
-              }
-            }
-          }
-          const res = await bw.api?.project?.getSettings?.()
-          return res?.data?.auth?.type ?? ''
-        }),
-      )
-      if (typeof saved === 'string') {
-        expect(saved).toMatch(/bearer|Bearer/)
-      }
-    } else {
-      console.log('MST-193: collection-auth-type not found — needs data-testid hook')
+      // Reopen: the pane shows what was persisted.
+      const reopened = await openProjectDetail(window, 'authorization')
+      await expect(reopened.locator('select').first()).toHaveValue('bearer')
+      await expect(reopened.getByPlaceholder(/^eyJ/)).toHaveValue(token)
+      await window.keyboard.press('Escape')
+      await expect(reopened).toBeHidden({ timeout: 5_000 })
+    } finally {
+      await dismissOverlays(window)
+      await setSetting(window, key, original ?? {})
     }
   })
 
   // -------------------------------------------------------------------------
   // MST-194 — Collection pre-request + test scripts
   // -------------------------------------------------------------------------
-  uiTest('MST-194 collection-level pre-request and test scripts persist', async ({ window }) => {
+  uiTest('MST-194 project-level pre-request and test scripts persist', async ({ window }) => {
+    const projectId = await getActiveProjectId(window)
+    const key = `project.${projectId}.settings`
+    const original = await getSetting(window, key)
     const preScript = `// pre-${uid()}`
     const testScript = `// test-${uid()}`
+    try {
+      await openProjectDetail(window, 'preRequest')
+      await typeIntoPaneMonaco(window, preScript)
+      await window
+        .getByTestId('project-detail-modal')
+        .getByTestId('project-detail-tab-tests')
+        .click()
+      await typeIntoPaneMonaco(window, testScript)
+      await saveProjectDetail(window)
 
-    await navigateSidebar(window, 'settings')
-    await window.waitForTimeout(300)
-
-    // Look for pre-request scripts section in project/collection settings.
-    const scriptsSection = window
-      .getByTestId('collection-scripts-section')
-      .or(window.getByText(/Pre-Request Script|Collection Scripts/i).first())
-
-    if (!(await scriptsSection.isVisible().catch(() => false))) {
-      console.log('MST-194: collection-scripts-section not found — needs data-testid hook')
-      return
-    }
-
-    // Fill pre-request script.
-    const preEditor = window.getByTestId('collection-pre-script-editor')
-    if (await preEditor.isVisible().catch(() => false)) {
-      await preEditor.locator('.monaco-editor').click()
-      const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
-      await window.keyboard.press(`${mod}+KeyA`)
-      await window.keyboard.press('Backspace')
-      await window.keyboard.insertText(preScript)
-    }
-
-    // Fill test script.
-    const testEditor = window.getByTestId('collection-test-script-editor')
-    if (await testEditor.isVisible().catch(() => false)) {
-      await testEditor.locator('.monaco-editor').click()
-      const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
-      await window.keyboard.press(`${mod}+KeyA`)
-      await window.keyboard.press('Backspace')
-      await window.keyboard.insertText(testScript)
-    }
-
-    // Save.
-    await window.getByRole('button', { name: /Save|Kaydet/i }).first().click()
-    await window.waitForTimeout(500)
-
-    // IPC: verify scripts persisted.
-    const projectId = await getActiveProjectId(window)
-    const settings = await window.evaluate(async (pid) => {
-      const w = window as unknown as Window & {
-        api?: {
-          project?: {
-            getSettings?: (id: string) => Promise<{
-              success: boolean
-              data?: {
-                preRequestScript?: string
-                testScript?: string
-              }
-            }>
-          }
-        }
-      }
-      return w.api?.project?.getSettings?.(pid)
-    }, projectId)
-
-    if (settings?.data) {
-      if (settings.data.preRequestScript !== undefined) {
-        expect(settings.data.preRequestScript).toContain(preScript)
-      }
-      if (settings.data.testScript !== undefined) {
-        expect(settings.data.testScript).toContain(testScript)
-      }
-    } else {
-      console.log('MST-194: project.getSettings IPC not exposed — needs hook')
+      const saved = (await getSetting(window, key)) as ProjectSettingsShape
+      expect(saved.preScript).toContain(preScript)
+      expect(saved.testScript).toContain(testScript)
+    } finally {
+      await dismissOverlays(window)
+      await setSetting(window, key, original ?? {})
     }
   })
 
@@ -169,65 +158,63 @@ uiTest.describe('Tur1 — Settings Advanced [MST-193..200]', () => {
   // -------------------------------------------------------------------------
   uiTest('MST-195 project variables are scoped and do not leak to other projects', async ({ window }) => {
     const projectId = await getActiveProjectId(window)
+    const workspaceId = await getDefaultWorkspaceId(window)
+    const otherProjectId = await createProjectIpc(window, workspaceId, `Scope-${uid()}`)
     const varKey = `projVar_${uid().replace(/-/g, '_')}`
     const varVal = `proj-val-${uid()}`
 
-    // Set a project variable via IPC or settings UI.
-    const setRes = await window.evaluate(
-      async ({ pid, key, val }) => {
+    const created = await window.evaluate(
+      async ({ wid, pid, k, v }) => {
         const w = window as unknown as Window & {
-          api?: {
-            project?: {
-              setVariable?: (p: { projectId: string; key: string; value: string }) => Promise<{
-                success: boolean
-                error?: string
-              }>
+          api: {
+            globalVariable: {
+              create: (p: unknown) => Promise<{ success: boolean; data?: { id: string }; error?: string }>
             }
           }
         }
-        return w.api?.project?.setVariable?.({ projectId: pid, key, value: val })
+        return w.api.globalVariable.create({
+          workspace_id: wid,
+          project_id: pid,
+          key: k,
+          value: v,
+          initial_value: v,
+        })
       },
-      { pid: projectId, key: varKey, val: varVal },
+      { wid: workspaceId, pid: projectId, k: varKey, v: varVal },
     )
-
-    if (setRes === undefined) {
-      console.log('MST-195: project.setVariable IPC not exposed — checking UI path')
-      // Try via Settings UI instead.
-      await navigateSidebar(window, 'settings')
-      const varSection = window.getByTestId('project-variables-section')
-      if (!(await varSection.isVisible().catch(() => false))) {
-        console.log('MST-195: project-variables-section not found — needs data-testid hook')
-        return
-      }
-      return
-    }
-
-    if (!setRes?.success) {
-      console.log(`MST-195: project.setVariable failed: ${setRes?.error}`)
-      return
-    }
-
-    // Read back and verify.
-    const getRes = await window.evaluate(
-      async ({ pid, key }) => {
-        const w = window as unknown as Window & {
-          api?: {
-            project?: {
-              getVariables?: (id: string) => Promise<{
-                success: boolean
-                data?: Array<{ key: string; value: string }>
-              }>
+    expect(created.success, created.error).toBe(true)
+    const varId = created.data?.id ?? ''
+    try {
+      const list = (pid: string) =>
+        window.evaluate(async (p) => {
+          const w = window as unknown as Window & {
+            api: {
+              globalVariable: {
+                listByProject: (id: string) => Promise<{
+                  success: boolean
+                  data?: Array<{ key: string; value: string }>
+                }>
+              }
             }
           }
-        }
-        return w.api?.project?.getVariables?.(pid)
-      },
-      { pid: projectId, key: varKey },
-    )
+          return (await w.api.globalVariable.listByProject(p)).data ?? []
+        }, pid)
 
-    if (getRes?.data) {
-      const found = getRes.data.find((v: { key: string }) => v.key === varKey)
-      expect(found?.value).toBe(varVal)
+      const own = await list(projectId)
+      expect(own.find((v) => v.key === varKey)?.value).toBe(varVal)
+      const other = await list(otherProjectId)
+      expect(other.find((v) => v.key === varKey)).toBeUndefined()
+    } finally {
+      await window.evaluate(async ({ id, other }) => {
+        const w = window as unknown as Window & {
+          api: {
+            globalVariable: { delete: (id: string) => Promise<unknown> }
+            project: { delete: (id: string) => Promise<unknown> }
+          }
+        }
+        await w.api.globalVariable.delete(id)
+        await w.api.project.delete(other)
+      }, { id: varId, other: otherProjectId })
     }
   })
 
@@ -235,179 +222,89 @@ uiTest.describe('Tur1 — Settings Advanced [MST-193..200]', () => {
   // MST-197 — Proxy direct/system/custom (UI persist only)
   // -------------------------------------------------------------------------
   uiTest('MST-197 proxy mode selection persists (UI assert only)', async ({ window }) => {
-    // Open Settings modal.
-    await pressModShortcut(window, ',')
-    await expect(window.getByTestId('settings-modal')).toBeVisible({ timeout: 8_000 })
+    const original = await getSetting(window, 'proxy')
+    try {
+      await pressModShortcut(window, ',')
+      const modal = window.getByTestId('settings-modal')
+      await expect(modal).toBeVisible({ timeout: 8_000 })
 
-    const modal = window.getByTestId('settings-modal')
-
-    // Look for proxy section.
-    const proxySection = modal.getByTestId('proxy-settings')
-      .or(modal.getByText(/Proxy/i).first())
-
-    if (!(await proxySection.isVisible().catch(() => false))) {
-      console.log('MST-197: proxy-settings section not visible — try navigating to Network tab')
-      // Some UIs put proxy under a tab inside settings.
-      const networkTab = modal.getByRole('button', { name: /Network|Ağ/i })
-      if (await networkTab.isVisible().catch(() => false)) {
-        await networkTab.click()
-        await window.waitForTimeout(200)
-      }
-    }
-
-    // Try setting "Custom" proxy.
-    const proxyMode = modal
-      .getByTestId('proxy-mode')
-      .or(modal.getByLabel(/Proxy Mode/i).first())
-
-    if (await proxyMode.isVisible().catch(() => false)) {
-      await proxyMode.selectOption('custom').catch(async () => {
-        await modal.getByRole('button', { name: /Custom|Özel/i }).click()
-      })
-
-      // Custom host/port fields should appear.
-      const hostInput = modal.getByTestId('proxy-host').or(modal.getByPlaceholder(/proxy.*host|127\.0\.0\.1/i))
-      if (await hostInput.isVisible().catch(() => false)) {
-        await hostInput.fill('127.0.0.1')
-        const portInput = modal.getByTestId('proxy-port').or(modal.getByPlaceholder(/port|8080/i))
-        if (await portInput.isVisible().catch(() => false)) {
-          await portInput.fill('8080')
-        }
-      }
-
-      // Save.
-      await modal.getByRole('button', { name: /Save|Kaydet/i }).click()
+      await modal.getByLabel(/Proxy Settings|Proxy Ayarları/i).selectOption('custom')
+      await modal.getByLabel(/^Host$|^Sunucu$/i).fill('127.0.0.1')
+      await modal.getByLabel(/^Port$/i).fill('8080')
+      await modal.getByRole('button', { name: /^Save$|^Kaydet$/i }).click()
       await expect(modal).toBeHidden({ timeout: 5_000 })
 
-      // Reopen and verify.
-      await pressModShortcut(window, ',')
-      await expect(window.getByTestId('settings-modal')).toBeVisible({ timeout: 8_000 })
-      const reopenedModal = window.getByTestId('settings-modal')
-      const networkTab2 = reopenedModal.getByRole('button', { name: /Network|Ağ/i })
-      if (await networkTab2.isVisible().catch(() => false)) await networkTab2.click()
-      const proxyModeReopen = reopenedModal.getByTestId('proxy-mode')
-        .or(reopenedModal.getByLabel(/Proxy Mode/i).first())
-      if (await proxyModeReopen.isVisible().catch(() => false)) {
-        const val = await proxyModeReopen.inputValue().catch(() => '')
-        expect(val).toMatch(/custom|Custom/)
-      }
-    } else {
-      console.log('MST-197: proxy-mode control not found — needs data-testid hook')
-    }
+      const saved = (await getSetting(window, 'proxy')) as { mode?: string; host?: string; port?: number }
+      expect(saved.mode).toBe('custom')
+      expect(saved.host).toBe('127.0.0.1')
+      expect(saved.port).toBe(8080)
 
-    await window.keyboard.press('Escape')
+      // Reopen: the form reflects the persisted value.
+      await pressModShortcut(window, ',')
+      await expect(modal).toBeVisible({ timeout: 8_000 })
+      await expect(modal.getByLabel(/Proxy Settings|Proxy Ayarları/i)).toHaveValue('custom')
+      await expect(modal.getByLabel(/^Host$|^Sunucu$/i)).toHaveValue('127.0.0.1')
+    } finally {
+      await dismissOverlays(window)
+      // A leftover custom proxy would break every later spec's requests.
+      await setSetting(window, 'proxy', original ?? { mode: 'system' })
+    }
   })
 
   // -------------------------------------------------------------------------
-  // MST-198 — Updater events (P2)
+  // MST-198 — Updater check IPC (the in-app update card has its own specs:
+  // shell-updater-ready-card.spec.ts, shell-updater.spec.ts)
   // -------------------------------------------------------------------------
   uiTest('MST-198 updater check-for-update IPC returns a result', async ({ window }) => {
     const res = await window.evaluate(async () => {
       const w = window as unknown as Window & {
-        api?: {
-          updater?: {
-            checkForUpdates?: () => Promise<{ success: boolean; data?: unknown; error?: string }>
-          }
-        }
+        api: { updater: { check: () => Promise<{ success: boolean; data?: unknown; error?: string }> } }
       }
-      return w.api?.updater?.checkForUpdates?.()
+      return w.api.updater.check()
     })
-
-    if (res === undefined) {
-      console.log('MST-198: updater.checkForUpdates IPC not exposed — needs hook')
-      return
-    }
-    // Result may be success:false in test (no release server) but must not throw.
+    // success:false is fine here (no release server in the test env) — but the
+    // IPC must answer with the {success} envelope instead of throwing.
     expect(typeof res.success).toBe('boolean')
   })
 
   // -------------------------------------------------------------------------
-  // MST-199 — Diagnostics export/reveal/licenses (P2)
+  // MST-199 — Diagnostics export/reveal/licenses
   // -------------------------------------------------------------------------
-  uiTest('MST-199 diagnostics section is accessible in settings', async ({ window }) => {
-    await pressModShortcut(window, ',')
-    await expect(window.getByTestId('settings-modal')).toBeVisible({ timeout: 8_000 })
-    const modal = window.getByTestId('settings-modal')
-
-    // Look for a "Diagnostics" or "About" tab/section.
-    const diagTab = modal
-      .getByRole('button', { name: /Diagnostics|Teşhis|About|Hakkında/i })
-      .first()
-    if (await diagTab.isVisible().catch(() => false)) {
-      await diagTab.click()
-      await window.waitForTimeout(300)
-    }
-
-    // At minimum an "Export Logs" or "Open Log File" action should be present.
-    const logBtn = modal.getByRole('button', { name: /Export Logs|Log File|License/i }).first()
-    if (await logBtn.isVisible().catch(() => false)) {
-      // Just verify it's clickable without crashing.
-      await expect(logBtn).toBeEnabled()
-    } else {
-      console.log('MST-199: diagnostics buttons not found — needs data-testid hooks or Diagnostics tab')
-    }
-
-    await window.keyboard.press('Escape')
-  })
+  // Feature does not exist: there is no diagnostics / export-logs / open-log-file /
+  // licenses UI in src (the About pane/modal only shows version info; covered by
+  // about-i18n.spec.ts). Visible skip instead of a soft pass; a src feature
+  // request, not a missing testid.
+  uiTest.skip('MST-199 diagnostics export/reveal/licenses — no diagnostics UI exists in src (feature request)', async () => {})
 
   // -------------------------------------------------------------------------
-  // MST-200 — SSL verify global toggle + request override (P2)
+  // MST-200 — SSL verify global toggle
   // -------------------------------------------------------------------------
   uiTest('MST-200 SSL verify global toggle persists', async ({ window }) => {
-    await pressModShortcut(window, ',')
-    await expect(window.getByTestId('settings-modal')).toBeVisible({ timeout: 8_000 })
-    const modal = window.getByTestId('settings-modal')
+    const original = await getSetting(window, 'sslVerification')
+    try {
+      await pressModShortcut(window, ',')
+      const modal = window.getByTestId('settings-modal')
+      await expect(modal).toBeVisible({ timeout: 8_000 })
 
-    const sslToggle = modal
-      .getByTestId('ssl-verify-toggle')
-      .or(modal.getByLabel(/SSL.*Verif|Sertifika Doğrula/i).first())
-
-    if (!(await sslToggle.isVisible().catch(() => false))) {
-      // Check under a "Network" or "Security" tab.
-      for (const tab of [/Network|Ağ/i, /Security|Güvenlik/i]) {
-        const btn = modal.getByRole('button', { name: tab })
-        if (await btn.isVisible().catch(() => false)) {
-          await btn.click()
-          await window.waitForTimeout(200)
-          break
-        }
-      }
-    }
-
-    if (await sslToggle.isVisible().catch(() => false)) {
-      // Capture current state.
-      const wasChecked = await sslToggle.isChecked().catch(() => null)
-
-      // Toggle.
-      await sslToggle.click()
-      await window.waitForTimeout(200)
-
-      const isNowChecked = await sslToggle.isChecked().catch(() => null)
-      if (wasChecked !== null && isNowChecked !== null) {
-        expect(isNowChecked).toBe(!wasChecked)
-      }
-
-      // Save.
-      await modal.getByRole('button', { name: /Save|Kaydet/i }).click()
+      const sslToggle = modal.getByLabel(/SSL Certificate Verification|SSL Sertifika Doğrulaması/i)
+      const wasChecked = await sslToggle.isChecked()
+      await sslToggle.setChecked(!wasChecked)
+      await expect(sslToggle).toBeChecked({ checked: !wasChecked })
+      await modal.getByRole('button', { name: /^Save$|^Kaydet$/i }).click()
       await expect(modal).toBeHidden({ timeout: 5_000 })
 
-      // Verify via IPC.
-      const settings = await window.evaluate(async () => {
-        const w = window as unknown as Window & {
-          api?: {
-            settings?: {
-              get?: () => Promise<{ success: boolean; data?: { sslVerify?: boolean } }>
-            }
-          }
-        }
-        return w.api?.settings?.get?.()
-      })
-      if (settings?.data?.sslVerify !== undefined && wasChecked !== null) {
-        expect(settings.data.sslVerify).toBe(!wasChecked)
-      }
-    } else {
-      console.log('MST-200: ssl-verify-toggle not found — needs data-testid hook')
-      await window.keyboard.press('Escape')
+      expect(await getSetting(window, 'sslVerification')).toBe(!wasChecked)
+
+      // Reopen: toggle shows the persisted value.
+      await pressModShortcut(window, ',')
+      await expect(modal).toBeVisible({ timeout: 8_000 })
+      await expect(
+        modal.getByLabel(/SSL Certificate Verification|SSL Sertifika Doğrulaması/i),
+      ).toBeChecked({ checked: !wasChecked })
+    } finally {
+      await dismissOverlays(window)
+      // SSL verification OFF would leak into later specs (and is a security default).
+      await setSetting(window, 'sslVerification', original ?? true)
     }
   })
 })

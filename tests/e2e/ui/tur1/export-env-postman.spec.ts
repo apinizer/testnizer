@@ -84,10 +84,7 @@ uiTest.describe('Tur1 — Postman environment export/import [MST-098]', () => {
     const content = fs.readFileSync(path.join(FIXTURES, 'postman-env-sample.json'), 'utf8')
     const result = await importPostmanEnvIpc(window, content)
 
-    if (result.error) {
-      console.warn(`MST-098: env import error — ${result.error}`)
-      return
-    }
+    expect(result.error, 'env import must succeed').toBeUndefined()
 
     // postman-env-sample.json has 3 variables (baseUrl, apiKey, userId)
     const projectId = await getActiveProjectId(window)
@@ -108,10 +105,7 @@ uiTest.describe('Tur1 — Postman environment export/import [MST-098]', () => {
   uiTest('MST-098 imported Postman env contains baseUrl variable', async ({ window }) => {
     const content = fs.readFileSync(path.join(FIXTURES, 'postman-env-sample.json'), 'utf8')
     const result = await importPostmanEnvIpc(window, content)
-    if (result.error) {
-      console.warn(`MST-098: env import error — ${result.error}`)
-      return
-    }
+    expect(result.error, 'env import must succeed').toBeUndefined()
 
     const projectId = await getActiveProjectId(window)
     await expect

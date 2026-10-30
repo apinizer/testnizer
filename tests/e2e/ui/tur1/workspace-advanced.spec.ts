@@ -23,55 +23,11 @@ uiTest.describe('Tur1 — Workspace Advanced [MST-013, MST-014, MST-015]', () =>
   // -------------------------------------------------------------------------
   // MST-013 — ProjectHome search/filter
   // -------------------------------------------------------------------------
-  uiTest('MST-013 ProjectHome search filters project cards', async ({ window }) => {
-    await dismissOverlays(window)
-
-    const projA = `SearchA ${uid()}`
-    const projB = `SearchB ${uid()}`
-    const uniqueSuffix = uid()
-    const projUnique = `UniqueProj ${uniqueSuffix}`
-
-    // Create two regular projects and one unique.
-    await goToProjectHome(window)
-    await createProject(window, projA)
-    await goToProjectHome(window)
-    await createProject(window, projB)
-    await goToProjectHome(window)
-    await createProject(window, projUnique)
-    await goToProjectHome(window)
-
-    // Look for a search input on Project Home.
-    const searchInput = window
-      .getByTestId('project-search')
-      .or(window.getByPlaceholder(/Search.*project|Proje ara/i).first())
-
-    if (!(await searchInput.isVisible().catch(() => false))) {
-      console.log('MST-013: project-search input not found — needs data-testid hook')
-      return
-    }
-
-    // Filter by uniqueSuffix — only projUnique should be visible.
-    await searchInput.fill(uniqueSuffix)
-    await window.waitForTimeout(300)
-
-    await expect(window.getByTestId('project-card').filter({ hasText: projUnique })).toHaveCount(1, {
-      timeout: 8_000,
-    })
-    // projA and projB should NOT match the unique suffix.
-    await expect(window.getByTestId('project-card').filter({ hasText: projA })).toHaveCount(0, {
-      timeout: 5_000,
-    })
-
-    // Clear search → all visible again.
-    await searchInput.fill('')
-    await window.waitForTimeout(300)
-    await expect(window.getByTestId('project-card').filter({ hasText: projA })).toHaveCount(1, {
-      timeout: 8_000,
-    })
-
-    // Return to canonical project to avoid pollution.
-    await ensureCanonicalProject(window)
-  })
+  // Feature does not exist: ProjectHome (components/layout/ProjectHome.tsx) renders
+  // the project cards with no search / filter input (its only <input> is the
+  // inline rename box). Visible skip, not a soft pass — src feature request:
+  // add a search box with data-testid="project-search" to ProjectHome.tsx.
+  uiTest.skip('MST-013 ProjectHome search filters project cards — no search input in ProjectHome (feature request: data-testid="project-search")', async () => {})
 
   // -------------------------------------------------------------------------
   // MST-014 — Local/git save-mode selection persists
@@ -81,52 +37,46 @@ uiTest.describe('Tur1 — Workspace Advanced [MST-013, MST-014, MST-015]', () =>
 
     const localProj = `LocalMode ${uid()}`
 
-    // Create project and check for save-mode selector (Step 1 or 2 of the wizard).
     await goToProjectHome(window)
     await window.getByTestId('home-new-project').click()
-    await expect(window.getByTestId('new-project-modal')).toBeVisible()
+    const modal = window.getByTestId('new-project-modal')
+    await expect(modal).toBeVisible()
 
-    // Step 1: Look for save-mode / source options.
-    const localModeBtn = window
-      .getByTestId('new-project-mode-local')
-      .or(window.getByRole('button', { name: /Local|Yerel/i }).first())
-    const gitModeBtn = window
-      .getByTestId('new-project-mode-git')
-      .or(window.getByRole('button', { name: /Git/i }).first())
-
-    if (await localModeBtn.isVisible().catch(() => false)) {
-      await localModeBtn.click()
-    } else {
-      console.log('MST-014: new-project-mode-local not found — testing defaults only')
-    }
-
-    // Proceed.
+    // Step 1 (source) → step 2 (names) → step 3 (storage / save mode).
     await window.getByTestId('new-project-next').click()
     await window.getByTestId('new-project-display-name').fill(localProj)
     await window.getByTestId('new-project-name').fill(localProj.replace(/\s+/g, '-').toLowerCase())
     await window.getByTestId('new-project-next').click()
+
+    // Default is Local: the git fields are not shown.
+    const repoUrl = modal.getByPlaceholder('https://github.com/', { exact: false })
+    await expect(modal.getByText(/Save Mode|Kayıt Modu/i)).toBeVisible()
+    await expect(repoUrl).toBeHidden()
+
+    // Selecting Git reveals the repository fields; switching back to Local hides them.
+    await modal.getByText(/^Git$/).click()
+    await expect(repoUrl).toBeVisible()
+    await modal.getByText(/^Local$|^Yerel$/).click()
+    await expect(repoUrl).toBeHidden()
+
     await window.getByTestId('new-project-create').click()
-    await expect(window.getByTestId('new-project-modal')).toBeHidden({ timeout: 30_000 })
+    await expect(modal).toBeHidden({ timeout: 30_000 })
     await expect(window.getByTestId('nav-apis')).toBeVisible({ timeout: 15_000 })
 
-    // Verify save mode in IPC.
+    // The chosen save mode is what got persisted.
     const projectId = await getActiveProjectId(window, localProj)
     const proj = await window.evaluate(async (pid) => {
       const w = window as unknown as Window & {
-        api?: {
-          project?: {
-            get?: (id: string) => Promise<{ success: boolean; data?: { save_mode?: string } }>
+        api: {
+          project: {
+            get: (id: string) => Promise<{ success: boolean; data?: { save_mode?: string } }>
           }
         }
       }
-      return w.api?.project?.get?.(pid)
+      return w.api.project.get(pid)
     }, projectId)
-
-    if (proj?.data?.save_mode !== undefined) {
-      expect(proj.data.save_mode).toMatch(/local|Local/)
-    } else {
-      console.log('MST-014: project.get IPC or save_mode field not available — DB-level verify skipped')
-    }
+    expect(proj.success).toBe(true)
+    expect(proj.data?.save_mode).toBe('local')
 
     await ensureCanonicalProject(window)
   })

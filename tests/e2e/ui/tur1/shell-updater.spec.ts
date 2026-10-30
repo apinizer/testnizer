@@ -7,8 +7,9 @@
  * sending IPC events directly from main to the renderer via
  * `app.evaluate(webContents.send)` and assert the renderer UI responds.
  *
- * When a data-testid hook is missing from the renderer the test falls back to
- * an IPC-level assertion and notes "needs hook" in the assertion comment.
+ * The update card has real hooks (data-testid="updater-notification",
+ * "updater-install-now", "updater-install-on-quit"); the full card flow lives in
+ * shell-updater-ready-card.spec.ts.
  */
 import { test, expect, _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
 import path from 'node:path'
@@ -56,90 +57,43 @@ test.describe('Tur1 — Shell auto-updater [MST-230, MST-231, MST-232]', () => {
       app = launched.app
       const window = launched.window
 
-      // Subscribe to updater events in the renderer via IPC bridge
-      const eventReceived = await window.evaluate(() => {
-        return new Promise<Record<string, unknown>>((resolve) => {
-          const w = window as unknown as Window & {
-            api?: {
-              updater?: { onEvent: (cb: (e: unknown) => void) => () => void }
-            }
-          }
-          const unsub = w.api?.updater?.onEvent((ev) => {
-            unsub?.()
-            resolve(ev as Record<string, unknown>)
-          })
-          // Timeout safety — resolve with empty if no event in 5 s
-          setTimeout(() => resolve({ type: '__timeout__' }), 5000)
+      // Subscribe in the renderer BEFORE the event is sent from main, so the
+      // IPC transport is really exercised (the old version awaited the
+      // subscription first and only ever hit its own 5 s timeout).
+      await window.evaluate(() => {
+        const w = window as unknown as Window & {
+          __updaterEvents?: Array<Record<string, unknown>>
+          api: { updater: { onEvent: (cb: (e: unknown) => void) => () => void } }
+        }
+        w.__updaterEvents = []
+        w.api.updater.onEvent((ev) => {
+          w.__updaterEvents!.push(ev as Record<string, unknown>)
         })
       })
 
-      // Inject the update-available event from main
       await sendUpdaterEvent(app, {
         type: 'available',
         version: '99.0.0-test',
         releaseNotes: 'Test release notes',
       })
 
-      // Give the renderer a tick to process
-      await window.waitForTimeout(300)
-
-      // The renderer IPC subscription should have caught the event
-      // (needs hook: data-testid="updater-notification" for full UI assertion)
-      // IPC-level assertion: the event arrived with the right shape
-      // We re-inject and capture synchronously here for reliability
-      const captured = await window.evaluate(async () => {
-        return new Promise<Record<string, unknown>>((resolve) => {
-          const w = window as unknown as Window & {
-            api?: {
-              updater?: { onEvent: (cb: (e: unknown) => void) => () => void }
-            }
-          }
-          let unsub: (() => void) | undefined
-          unsub = w.api?.updater?.onEvent((ev) => {
-            unsub?.()
-            resolve(ev as Record<string, unknown>)
-          })
-          setTimeout(() => resolve({ type: '__timeout__' }), 3000)
-        })
-      })
-
-      await sendUpdaterEvent(app, {
-        type: 'available',
-        version: '99.0.0-test',
-      })
-
-      // Wait for capture
-      await window.waitForTimeout(400)
-
-      // Check if the updater notification UI appeared
-      const notificationVisible = await window
-        .getByTestId('updater-notification')
-        .isVisible()
-        .catch(() => false)
-      const updateBannerVisible = await window
-        .locator('[data-testid*="update"]')
-        .first()
-        .isVisible()
-        .catch(() => false)
-
-      // At minimum, the Zustand store should reflect update-available state
-      const storeState = await window.evaluate(() => {
-        // Check if the updater store was updated (via DOM or store inspection)
-        const body = document.body.innerText
-        // The UI may show a version badge or button
-        return {
-          hasUpdateText: /99\.0\.0|update available|new version/i.test(body),
-          bodySnapshot: body.slice(0, 500),
-        }
-      })
-
-      // IPC-level pass: event type validated
-      // needs hook: data-testid="updater-notification" to assert UI banner
-      if (!notificationVisible && !updateBannerVisible && !storeState.hasUpdateText) {
-        console.log(
-          'MST-230: Update notification UI not detected — needs hook: data-testid="updater-notification". IPC transport confirmed via onEvent subscription.',
+      await expect
+        .poll(
+          () =>
+            window.evaluate(
+              () =>
+                (window as unknown as Window & { __updaterEvents?: Array<Record<string, unknown>> })
+                  .__updaterEvents ?? [],
+            ),
+          { timeout: 5_000 },
         )
-      }
+        .toContainEqual(expect.objectContaining({ type: 'available', version: '99.0.0-test' }))
+
+      // Background-download model: an available version is silent — the user is
+      // only asked once it is downloaded. The ready card itself is covered by
+      // shell-updater-ready-card.spec.ts (data-testid="updater-notification").
+      await expect(window.getByTestId('updater-notification')).toHaveCount(0)
+      await expect(window.getByRole('dialog')).toHaveCount(0)
 
       // The app should remain alive and functional after the event
       await expect(window.getByTestId('nav-apis')).toBeVisible({ timeout: 5_000 })
@@ -179,19 +133,14 @@ test.describe('Tur1 — Shell auto-updater [MST-230, MST-231, MST-232]', () => {
       await sendUpdaterEvent(app, { type: 'downloaded' })
       await window.waitForTimeout(500)
 
-      // Check for "restart to install" or "install" UI elements
-      const installBtn = window.getByRole('button', { name: /install|restart|relaunch/i }).first()
-      const installVisible = await installBtn.isVisible().catch(() => false)
-
-      const deferBtn = window.getByRole('button', { name: /later|defer|remind/i }).first()
-      const deferVisible = await deferBtn.isVisible().catch(() => false)
-
-      // needs hook: data-testid="updater-install-btn" / "updater-defer-btn"
-      if (!installVisible && !deferVisible) {
-        console.log(
-          'MST-231: Updater install/defer buttons not detected via role — needs hook: data-testid="updater-install-btn". IPC event transport confirmed.',
-        )
-      }
+      // The ready card offers "Restart & install" and "Install on quit"
+      // (data-testid hooks exist; the full card flow incl. Skip/✕ is in
+      // shell-updater-ready-card.spec.ts).
+      const card = window.getByTestId('updater-notification')
+      await expect(card).toBeVisible({ timeout: 5_000 })
+      await expect(card).toContainText('99.0.0-test')
+      await expect(window.getByTestId('updater-install-now')).toBeVisible()
+      await expect(window.getByTestId('updater-install-on-quit')).toBeVisible()
 
       // App must still be responsive
       await expect(window.getByTestId('nav-apis')).toBeVisible({ timeout: 5_000 })
@@ -231,16 +180,12 @@ test.describe('Tur1 — Shell auto-updater [MST-230, MST-231, MST-232]', () => {
       await sendUpdaterEvent(app, { type: 'downloaded' })
       await window.waitForTimeout(500)
 
-      // Try to dismiss any update modal via Escape
-      await window.keyboard.press('Escape')
-      await window.waitForTimeout(300)
-
-      // Or click a defer/later button if present
-      const deferBtn = window.getByRole('button', { name: /later|defer|remind|close/i }).first()
-      if (await deferBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await deferBtn.click()
-        await window.waitForTimeout(300)
-      }
+      // Defer = the ✕ on the ready card (same as "Install on quit"): it closes
+      // the card and does not block the workspace.
+      const card = window.getByTestId('updater-notification')
+      await expect(card).toBeVisible({ timeout: 5_000 })
+      await card.getByRole('button', { name: /install on quit|çıkışta/i }).first().click()
+      await expect(card).toHaveCount(0)
 
       // App must remain fully functional
       await expect(window.getByTestId('nav-apis')).toBeVisible({ timeout: 5_000 })

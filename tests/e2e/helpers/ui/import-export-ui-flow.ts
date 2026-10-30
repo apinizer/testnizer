@@ -1,43 +1,34 @@
-import fs from 'node:fs'
 import path from 'node:path'
-import { expect, type Page } from '@playwright/test'
-import { finishImportWizard, openImportDropdown } from './import-flow'
+import type { ElectronApplication } from '@playwright/test'
 
 const FIXTURES = path.resolve(__dirname, '../../../fixtures/import-export')
 
-/** Stub the native file dialog so ImportModal reads fixture content via UI. */
-export async function stubImportOpenFile(page: Page, fixtureFile: string): Promise<void> {
-  const content = fs.readFileSync(path.join(FIXTURES, fixtureFile), 'utf8')
-  const filePath = path.join(FIXTURES, fixtureFile)
-  await page.evaluate(
-    ({ content, filePath }) => {
-      const w = window as Window & {
-        api?: { importExport?: { openFile?: () => Promise<{ success: boolean; data?: { content: string; filePath: string } }> } }
-      }
-      if (!w.api?.importExport) throw new Error('importExport API missing')
-      w.api.importExport.openFile = async () => ({ success: true, data: { content, filePath } })
-    },
-    { content, filePath },
-  )
-}
-
-/** Walk the import wizard: pick file (stubbed) → folder name → Import. */
-export async function importFixtureViaUiWizard(
-  page: Page,
-  formatName: RegExp | string,
+/**
+ * Make the native open-file dialog return an import fixture, so the real
+ * `import:openFile` IPC (and the ImportModal that calls it) runs end to end.
+ *
+ * The dialog is patched in the MAIN process: a renderer-side stub of
+ * `window.api.importExport.openFile` is a no-op in the production build
+ * (contextBridge objects are frozen), so the click would hit the real OS
+ * dialog. Returns a restore function — call it in `finally`.
+ */
+export async function stubImportOpenFile(
+  app: ElectronApplication,
   fixtureFile: string,
-  folderName: string,
-): Promise<void> {
-  await stubImportOpenFile(page, fixtureFile)
-  await openImportDropdown(page, formatName)
-  const modal = page.getByTestId('import-modal')
-  await modal.getByRole('button', { name: /Click to select a/i }).click()
-  await expect(modal.getByText(/Ready to import|typeMismatch|mismatch|error/i).first()).toBeVisible({
-    timeout: 15_000,
-  })
-  const mismatch = modal.getByText(/mismatch|environment|not a collection/i)
-  if (await mismatch.isVisible().catch(() => false)) return
-  await modal.getByPlaceholder('Folder name').fill(folderName)
-  await modal.getByRole('button', { name: /^Import$/i }).click()
-  await finishImportWizard(page)
+): Promise<() => Promise<void>> {
+  const filePath = path.join(FIXTURES, fixtureFile)
+  await app.evaluate(({ dialog }, p) => {
+    const d = dialog as unknown as Record<string, unknown>
+    if (!d.__origImportStub) d.__origImportStub = d.showOpenDialog
+    d.showOpenDialog = async () => ({ canceled: false, filePaths: [p] })
+  }, filePath)
+  return async () => {
+    await app.evaluate(({ dialog }) => {
+      const d = dialog as unknown as Record<string, unknown>
+      if (d.__origImportStub) {
+        d.showOpenDialog = d.__origImportStub
+        delete d.__origImportStub
+      }
+    })
+  }
 }

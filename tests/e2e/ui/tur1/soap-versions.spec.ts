@@ -99,21 +99,14 @@ uiTest.describe('Tur1 — SOAP versions [MST-110]', () => {
       soapAction: 'urn:test',
     })
 
-    // If soap IPC isn't available, skip gracefully
-    if (!result || result.error?.includes('is not a function') || result.error?.includes('api.soap')) {
-      // needs-hook: window.api.soap.send must be exposed via preload bridge
-      expect(true).toBe(true)
-      return
-    }
-
-    if (result.success && result.data?.status === 200) {
-      // Check actual request headers reflected by the server
-      const actualReqHeaders = result.data.actualRequest?.headers ?? {}
-      const contentType = Object.entries(actualReqHeaders).find(([k]) =>
-        k.toLowerCase() === 'content-type',
-      )?.[1] ?? ''
-      expect(contentType).toMatch(/text\/xml/i)
-    }
+    expect(result.success, result.error).toBe(true)
+    expect(result.data?.status).toBe(200)
+    // Actual request headers reflected by the engine
+    const actualReqHeaders = result.data?.actualRequest?.headers ?? {}
+    const contentType = Object.entries(actualReqHeaders).find(([k]) =>
+      k.toLowerCase() === 'content-type',
+    )?.[1] ?? ''
+    expect(contentType).toMatch(/text\/xml/i)
   })
 
   uiTest('MST-110b SOAP 1.2 send uses application/soap+xml Content-Type', async ({ window }) => {
@@ -124,39 +117,25 @@ uiTest.describe('Tur1 — SOAP versions [MST-110]', () => {
       soapAction: 'urn:test12',
     })
 
-    if (!result || result.error?.includes('is not a function') || result.error?.includes('api.soap')) {
-      // needs-hook: window.api.soap.send must be exposed
-      expect(true).toBe(true)
-      return
-    }
-
-    if (result.success && result.data?.status === 200) {
-      const actualReqHeaders = result.data.actualRequest?.headers ?? {}
-      const contentType = Object.entries(actualReqHeaders).find(([k]) =>
-        k.toLowerCase() === 'content-type',
-      )?.[1] ?? ''
-      expect(contentType).toMatch(/application\/soap\+xml/i)
-    }
+    expect(result.success, result.error).toBe(true)
+    expect(result.data?.status).toBe(200)
+    const actualReqHeaders = result.data?.actualRequest?.headers ?? {}
+    const contentType = Object.entries(actualReqHeaders).find(([k]) =>
+      k.toLowerCase() === 'content-type',
+    )?.[1] ?? ''
+    expect(contentType).toMatch(/application\/soap\+xml/i)
   })
 
   uiTest('MST-110c UI Manual SOAP version selector shows SOAP 1.1 and 1.2 options', async ({ window }) => {
     await openNewDropdownItem(window, /SOAP/i)
     await window.getByRole('button', { name: /^Manual$/i }).click()
 
-    const versionSelect = window.locator('select').filter({ hasText: /SOAP/i }).first()
-    const visible = await versionSelect.isVisible().catch(() => false)
-
-    if (visible) {
-      const options = await versionSelect.locator('option').allTextContents()
-      const has11 = options.some((o) => o.includes('1.1'))
-      const has12 = options.some((o) => o.includes('1.2'))
-      expect(has11 && has12).toBe(true)
-    } else {
-      // Check if options are rendered differently (buttons/radio)
-      const soap11 = await window.getByText(/SOAP 1\.1/i).first().isVisible().catch(() => false)
-      const soap12 = await window.getByText(/SOAP 1\.2/i).first().isVisible().catch(() => false)
-      expect(soap11 || soap12).toBe(true)
-    }
+    // SoapManualForm renders the version as a native <select> (value soap11 / soap12).
+    const versionSelect = window.locator('select', { has: window.locator('option[value="soap11"]') })
+    await expect(versionSelect).toBeVisible()
+    const options = await versionSelect.locator('option').allTextContents()
+    expect(options.some((o) => o.includes('1.1'))).toBe(true)
+    expect(options.some((o) => o.includes('1.2'))).toBe(true)
   })
 
   uiTest('MST-110d SOAP 1.1 namespace used in generated envelope', async ({ window }) => {
@@ -164,10 +143,7 @@ uiTest.describe('Tur1 — SOAP versions [MST-110]', () => {
     await window.getByRole('button', { name: /^Manual$/i }).click()
 
     // Select SOAP 1.1
-    const select = window.locator('select').filter({ hasText: /soap/i }).first()
-    if (await select.isVisible().catch(() => false)) {
-      await select.selectOption('soap11')
-    }
+    await window.locator('select', { has: window.locator('option[value="soap11"]') }).selectOption('soap11')
 
     await window.getByRole('button', { name: /Generate Envelope/i }).click()
     // Poll rather than sleep 300ms and read once: Monaco needs longer than that
@@ -184,10 +160,7 @@ uiTest.describe('Tur1 — SOAP versions [MST-110]', () => {
     await window.getByRole('button', { name: /^Manual$/i }).click()
 
     // Select SOAP 1.2
-    const select = window.locator('select').filter({ hasText: /soap/i }).first()
-    if (await select.isVisible().catch(() => false)) {
-      await select.selectOption('soap12')
-    }
+    await window.locator('select', { has: window.locator('option[value="soap11"]') }).selectOption('soap12')
 
     await window.getByRole('button', { name: /Generate Envelope/i }).click()
     await expect

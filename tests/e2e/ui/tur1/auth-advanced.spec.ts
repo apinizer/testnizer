@@ -142,7 +142,7 @@ test('MST-003 password change and disable', async () => {
 // ---------------------------------------------------------------------------
 // MST-004 — Password recover via OS auth (Touch ID / Windows Hello)
 // Skipped: requires real OS biometric hardware or a mock injection that is
-// not yet available in the test infra. Needs hook: expose
+// not yet available in the test infra. Src hook request: expose
 // `auth.osAuthMock(enabled)` to bypass native prompt in test mode.
 // ---------------------------------------------------------------------------
 test.skip('MST-004 password recover via OS auth — needs mock infra', async () => {

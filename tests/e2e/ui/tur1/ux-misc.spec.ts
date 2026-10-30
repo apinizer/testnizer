@@ -1,5 +1,5 @@
 /**
- * MST-201 P2 Profile modal display name persist
+ * MST-201 P2 Profile modal display name persist (skipped — no such feature)
  * MST-202 P2 About modal version + EULA link
  * MST-203 P2 Enterprise modal content
  * MST-206 P1 Keyboard shortcuts matrix
@@ -13,6 +13,7 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
+  closeAllTabs,
   dismissOverlays,
   ensureCanonicalProject,
   navigateSidebar,
@@ -20,6 +21,7 @@ import {
 } from '../../helpers/ui/bootstrap'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
 import { fillUrl } from '../../helpers/ui/request-flow'
+import { createProject, goToProjectHome } from '../../helpers/ui/workspace-flow'
 import { localHttpBin } from '../../helpers/test-servers'
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
@@ -33,119 +35,64 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
   // -------------------------------------------------------------------------
   // MST-201 — Profile modal display name persist
   // -------------------------------------------------------------------------
-  uiTest('MST-201 profile modal opens and display name field is present', async ({ window }) => {
-    // Profile modal typically opens from header avatar or user menu.
-    const avatarBtn = window
-      .getByTestId('header-user-avatar')
-      .or(window.getByTestId('header-profile-btn'))
-      .or(window.getByRole('button', { name: /Profile|Profil/i }))
-
-    if (!(await avatarBtn.isVisible().catch(() => false))) {
-      console.log('MST-201: header-user-avatar not found — needs data-testid hook')
-      return
-    }
-    await avatarBtn.click()
-
-    const modal = window
-      .getByTestId('profile-modal')
-      .or(window.getByRole('dialog').filter({ hasText: /Profile|Profil/i }))
-    await expect(modal).toBeVisible({ timeout: 8_000 })
-
-    const displayNameInput = modal.getByTestId('profile-display-name')
-      .or(modal.getByLabel(/Display Name|Görünen Ad/i).first())
-    if (await displayNameInput.isVisible().catch(() => false)) {
-      const newName = `TestUser ${uid()}`
-      await displayNameInput.fill(newName)
-      await modal.getByRole('button', { name: /Save|Kaydet/i }).click()
-      await expect(modal).toBeHidden({ timeout: 5_000 })
-
-      // Reopen and verify persisted.
-      await avatarBtn.click()
-      await expect(window.getByTestId('profile-modal').or(window.getByRole('dialog')).filter({ hasText: /Profile|Profil/i })).toBeVisible({ timeout: 5_000 })
-      const val = await displayNameInput.inputValue().catch(() => '')
-      expect(val).toBe(newName)
-    } else {
-      console.log('MST-201: profile-display-name input not found — needs data-testid hook')
-    }
-
-    await window.keyboard.press('Escape')
-  })
+  // Feature does not exist: ProfileModal.tsx shows the user's name read-only plus
+  // change-password / sign-out; there is no editable display-name field (and the
+  // entry avatar lives only on ProjectHome without a testid). Visible skip
+  // (feature request), not a soft pass.
+  uiTest.skip('MST-201 profile display name persist — Profile modal has no editable display name (feature request)', async () => {})
 
   // -------------------------------------------------------------------------
   // MST-202 — About modal: version number and EULA link
   // -------------------------------------------------------------------------
   uiTest('MST-202 about modal shows app version and EULA link', async ({ window }) => {
-    // About modal opens from Help menu, "?" button, or user dropdown.
-    const aboutBtn = window
-      .getByTestId('about-btn')
-      .or(window.getByTestId('header-about'))
-      .or(window.getByRole('button', { name: /About|Hakkında/i }).first())
+    // Settings modal (Cmd+,) → footer "About" button → About modal.
+    await pressModShortcut(window, ',')
+    const settings = window.getByTestId('settings-modal')
+    await expect(settings).toBeVisible({ timeout: 8_000 })
+    await settings.getByRole('button', { name: /^About$|^Hakkında$/i }).click()
 
-    if (!(await aboutBtn.isVisible().catch(() => false))) {
-      // Try "?" footer button.
-      const footerHelp = window.getByTestId('footer-help')
-        .or(window.getByRole('button', { name: /\?/ }))
-      if (await footerHelp.isVisible().catch(() => false)) {
-        await footerHelp.click()
-      } else {
-        console.log('MST-202: about/help button not found — needs data-testid hook')
-        return
-      }
-    } else {
-      await aboutBtn.click()
-    }
-
-    const modal = window
-      .getByTestId('about-modal')
-      .or(window.getByRole('dialog').filter({ hasText: /About|Hakkında/i }))
-
+    const modal = window.getByTestId('about-modal')
     await expect(modal).toBeVisible({ timeout: 8_000 })
 
-    // Version string (e.g. "v1.4.x" or "1.4.x").
-    await expect(modal.getByText(/v?\d+\.\d+\.\d+/).first()).toBeVisible({ timeout: 5_000 })
+    // Version string, e.g. "Version 1.6.0".
+    await expect(modal.getByText(/(Version|Sürüm)\s+\d+\.\d+\.\d+/)).toBeVisible({ timeout: 5_000 })
 
-    // EULA link.
-    const eulaLink = modal.getByRole('link', { name: /EULA|License Agreement|Lisans/i })
-      .or(modal.getByTestId('about-eula-link'))
-    if (await eulaLink.isVisible().catch(() => false)) {
-      await expect(eulaLink).toBeVisible()
-    } else {
-      console.log('MST-202: EULA link not found in About modal — needs data-testid hook')
-    }
+    // EULA button opens the read-only legal document modal.
+    await modal.getByRole('button', { name: /End User License Agreement|Son Kullanıcı Lisans Sözleşmesi/i }).click()
+    const legal = window
+      .getByRole('dialog')
+      .filter({ hasText: /End User License Agreement|Son Kullanıcı Lisans Sözleşmesi/i })
+      .last()
+    await expect(legal).toBeVisible({ timeout: 5_000 })
+    await expect(legal.getByText(/license/i).first()).toBeVisible()
 
     await window.keyboard.press('Escape')
+    await window.keyboard.press('Escape')
+    await expect(modal).toBeHidden({ timeout: 5_000 })
   })
 
   // -------------------------------------------------------------------------
   // MST-203 — Enterprise modal content
   // -------------------------------------------------------------------------
   uiTest('MST-203 enterprise modal opens and shows contact info', async ({ window }) => {
-    const enterpriseBtn = window
-      .getByTestId('enterprise-btn')
-      .or(window.getByRole('button', { name: /Enterprise|Kurumsal/i }).first())
+    await window.getByTestId('footer-enterprise').click()
 
-    if (!(await enterpriseBtn.isVisible().catch(() => false))) {
-      console.log('MST-203: enterprise-btn not found — needs data-testid hook')
-      return
-    }
-    await enterpriseBtn.click()
-
-    const modal = window
-      .getByTestId('enterprise-modal')
-      .or(window.getByRole('dialog').filter({ hasText: /Enterprise|Kurumsal/i }))
+    const modal = window.getByTestId('enterprise-modal')
     await expect(modal).toBeVisible({ timeout: 8_000 })
 
-    // Should contain contact or pricing info.
-    await expect(modal.getByText(/.+/).first()).toBeVisible()
+    // Contact e-mail is rendered as a mailto link.
+    await expect(modal.getByRole('link', { name: 'info@testnizer.com' })).toHaveAttribute(
+      'href',
+      'mailto:info@testnizer.com',
+    )
     await window.keyboard.press('Escape')
+    await expect(modal).toBeHidden({ timeout: 5_000 })
   })
 
   // -------------------------------------------------------------------------
   // MST-206 — Keyboard shortcuts matrix
   // -------------------------------------------------------------------------
   uiTest('MST-206 core keyboard shortcuts open correct modals/actions', async ({ window }) => {
-    const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
-
     // Cmd+K → command palette
     await pressModShortcut(window, 'k')
     await expect(window.getByTestId('command-palette')).toBeVisible({ timeout: 8_000 })
@@ -158,72 +105,72 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
     await window.keyboard.press('Escape')
     await expect(window.getByTestId('settings-modal')).toBeHidden({ timeout: 3_000 })
 
-    // Cmd+T → new HTTP tab
-    await window.keyboard.press(`${mod}+KeyT`)
-    await window.waitForTimeout(400)
-    // A new unsaved tab or the URL bar should appear.
-    const urlBar = window.getByTestId('url-input')
-    if (await urlBar.isVisible().catch(() => false)) {
-      await expect(urlBar).toBeVisible()
-    } else {
-      console.log('MST-206: Cmd+T did not open a new tab — may need keyboard-shortcut registration')
-    }
+    // Cmd+T → new tab (same assertion as 02-keyboard-shortcuts.spec.ts)
+    const tabs = window.locator('[data-testid="endpoint-tab"]')
+    const tabsBefore = await tabs.count()
+    await pressModShortcut(window, 't')
+    await expect(tabs).toHaveCount(tabsBefore + 1, { timeout: 5_000 })
 
-    // Cmd+W → close active tab (should prompt unsaved if dirty, or just close)
-    await window.keyboard.press(`${mod}+KeyW`)
-    await window.waitForTimeout(400)
-    // After Cmd+W the tab should close or unsaved dialog appears — either is valid.
-    // We just ensure the app doesn't crash.
-    await expect(window.getByTestId('workbench')).toBeVisible()
+    // Cmd+W → closes the (clean, empty) tab that Cmd+T just opened
+    await pressModShortcut(window, 'w')
+    await expect(tabs).toHaveCount(tabsBefore, { timeout: 5_000 })
 
-    // Escape should dismiss any open overlay.
-    await window.keyboard.press('Escape')
-
-    // Cmd+Shift+S → Save As / Save Project
+    // Cmd+Shift+S → Save Project modal
     await pressModShortcut(window, 's', { shift: true })
-    await window.waitForTimeout(400)
-    // May open endpoint-save-modal or a project export — close if open.
+    await expect(window.getByTestId('save-modal')).toBeVisible({ timeout: 8_000 })
     await window.keyboard.press('Escape')
-    await window.waitForTimeout(200)
+    await expect(window.getByTestId('save-modal')).toBeHidden({ timeout: 3_000 })
   })
 
   // -------------------------------------------------------------------------
   // MST-208 — Resizable panel persist (P2)
   // -------------------------------------------------------------------------
   uiTest('MST-208 resizable divider drag changes panel width', async ({ window }) => {
-    await openHttpRequestTab(window)
+    // The APIs-tree divider (EdgeResizeHandle target="left"): a role=separator with
+    // the "Drag to resize" title, persisted under `ui.leftPanelWidth` on mouse-up.
+    const leftPanel = window.getByTestId('left-panel')
+    const divider = window.getByRole('separator', { name: /Drag to resize|Boyutlandırmak için sürükleyin/i }).first()
+    await expect(divider).toBeVisible()
 
-    // Find the resizable divider between request and response panes.
-    const divider = window
-      .getByTestId('resizable-divider')
-      .or(window.locator('[data-panel-resize-handle-id]').first())
-      .or(window.locator('.resize-handle').first())
+    const before = (await leftPanel.boundingBox())!.width
+    const divBox = (await divider.boundingBox())!
+    const y = divBox.y + divBox.height / 2
+    const x = divBox.x + divBox.width / 2
 
-    if (!(await divider.isVisible().catch(() => false))) {
-      console.log('MST-208: resizable-divider not found — needs data-testid hook')
-      return
+    const drag = async (dx: number) => {
+      await window.mouse.move(x, y)
+      await window.mouse.down()
+      await window.mouse.move(x + dx / 2, y, { steps: 4 })
+      await window.mouse.move(x + dx, y, { steps: 4 })
+      await window.mouse.up()
     }
+    const persistedWidth = () =>
+      window.evaluate(async () => {
+        const w = window as unknown as Window & {
+          api: { settings: { get: (k: string) => Promise<{ data?: unknown }> } }
+        }
+        return (await w.api.settings.get('ui.leftPanelWidth')).data
+      })
 
-    // Get initial bounding box of the request pane.
-    const reqPane = window.getByTestId('request-pane').or(window.locator('[data-testid="req-pane"]'))
-    const beforeBox = await reqPane.boundingBox().catch(() => null)
-
-    // Drag divider to the right by 80px.
-    const divBox = await divider.boundingBox()
-    if (!divBox) {
-      console.log('MST-208: divider has no bounding box')
-      return
-    }
-    await window.mouse.move(divBox.x + divBox.width / 2, divBox.y + divBox.height / 2)
-    await window.mouse.down()
-    await window.mouse.move(divBox.x + divBox.width / 2 + 80, divBox.y + divBox.height / 2)
-    await window.mouse.up()
-    await window.waitForTimeout(300)
-
-    // Width should have changed.
-    const afterBox = await reqPane.boundingBox().catch(() => null)
-    if (beforeBox && afterBox) {
-      expect(Math.abs(afterBox.width - beforeBox.width)).toBeGreaterThan(10)
+    try {
+      await drag(80)
+      await expect
+        .poll(async () => Math.round((await leftPanel.boundingBox())!.width - before), { timeout: 5_000 })
+        .toBe(80)
+      // Committed on mouse-up, so it survives a restart.
+      await expect.poll(persistedWidth, { timeout: 5_000 }).toBe(Math.round(before) + 80)
+    } finally {
+      // Worker-shared window: put the panel back where it was.
+      const nowBox = (await divider.boundingBox())!
+      const nowX = nowBox.x + nowBox.width / 2
+      await window.mouse.move(nowX, y)
+      await window.mouse.down()
+      await window.mouse.move(nowX - 40, y, { steps: 4 })
+      await window.mouse.move(nowX - 80, y, { steps: 4 })
+      await window.mouse.up()
+      await expect
+        .poll(async () => Math.round((await leftPanel.boundingBox())!.width - before), { timeout: 5_000 })
+        .toBe(0)
     }
   })
 
@@ -231,36 +178,26 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
   // MST-209 — Sidebar page tab filtering
   // -------------------------------------------------------------------------
   uiTest('MST-209 sidebar navigation filters workbench content', async ({ window }) => {
-    // Switch to each sidebar page and verify distinct content appears.
-    for (const [page, expectedText] of [
-      ['apis', /APIs|Tree|New Request/i],
-      ['tests', /Test|Suite|Runner/i],
-      ['mocks', /Mock|Server/i],
-      ['history', /History|Geçmiş/i],
-      ['tools', /JWT|JSONPath|Hash|UUID/i],
-    ] as const) {
-      await navigateSidebar(window, page as 'apis' | 'tests' | 'mocks' | 'history' | 'tools')
-      await window.waitForTimeout(300)
+    const panel = window.getByTestId('left-panel')
+    // One signature element per page; the others must NOT be present on it.
+    const signature = {
+      apis: panel.getByTestId('tree-search'),
+      tests: panel.getByTitle(/New Test Suite|Yeni Test Paketi/i).first(),
+      mocks: panel.getByTestId('mock-new'),
+      history: panel.getByText(/^History$|^Geçmiş$/).first(),
+      tools: panel.getByText(/^Tools$|^Araçlar$/).first(),
+    } as const
+    const pages = Object.keys(signature) as Array<keyof typeof signature>
 
-      // Sidebar nav item should be active (aria-current or data-active).
-      const navItem = window.getByTestId(`nav-${page}`)
-      const isActive =
-        (await navItem.getAttribute('data-active').catch(() => null)) === 'true' ||
-        (await navItem.getAttribute('aria-current').catch(() => null)) !== null ||
-        (await navItem.evaluate((el) => el.classList.toString()).catch(() => '')).includes('active')
-      // At minimum the item click doesn't crash.
-      expect(typeof isActive).toBe('boolean')
-
-      const panel = window.getByTestId('left-panel').or(window.getByTestId('sidebar-content'))
-      if (await panel.isVisible().catch(() => false)) {
-        // Content area should change. We just check text is present.
-        const hasText = await panel.getByText(expectedText).first().isVisible().catch(() => false)
-        if (!hasText) {
-          console.log(`MST-209: sidebar page "${page}" — expected text not found; may need testids`)
-        }
+    for (const page of pages) {
+      await navigateSidebar(window, page)
+      await expect(signature[page], `${page} panel content`).toBeVisible({ timeout: 8_000 })
+      // Active page is the one that owns the highlighted nav item's panel: no other
+      // page's signature element may be rendered at the same time.
+      for (const other of pages.filter((p) => p !== page)) {
+        await expect(signature[other], `${other} content must be hidden on ${page}`).toBeHidden()
       }
     }
-    // Return to APIs.
     await navigateSidebar(window, 'apis')
   })
 
@@ -269,28 +206,35 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
   // -------------------------------------------------------------------------
   uiTest('MST-210 15+ tabs render without crash and tab strip is scrollable', async ({ window }) => {
     const TAB_COUNT = 15
-    for (let i = 0; i < TAB_COUNT; i++) {
-      await openHttpRequestTab(window)
-      await window.waitForTimeout(50)
-    }
-
-    // All tabs or a scroll button must be present.
     const tabs = window.getByTestId('endpoint-tab')
-    const count = await tabs.count()
-    expect(count).toBeGreaterThanOrEqual(1)
+    const before = await tabs.count()
+    try {
+      for (let i = 0; i < TAB_COUNT; i++) {
+        await openHttpRequestTab(window)
+      }
+      await expect(tabs).toHaveCount(before + TAB_COUNT, { timeout: 10_000 })
 
-    // Scroll buttons or overflow indicator.
-    const scrollLeft = window
-      .getByTestId('tab-scroll-left')
-      .or(window.getByRole('button', { name: /scroll.*left|◀/i }))
-    const scrollRight = window
-      .getByTestId('tab-scroll-right')
-      .or(window.getByRole('button', { name: /scroll.*right|▶/i }))
-    const hasScrollControl =
-      (await scrollLeft.isVisible().catch(() => false)) ||
-      (await scrollRight.isVisible().catch(() => false))
-    if (!hasScrollControl && count < TAB_COUNT) {
-      console.log('MST-210: tab scroll controls not found and fewer tabs than expected — needs hook')
+      // The strip has no scroll buttons (issue #241: wheel scrolls sideways) — the
+      // overflowing tabs must be reachable by scrolling the strip, with the active
+      // (newest) tab kept in view.
+      const strip = window.getByTestId('tab-strip')
+      const metrics = await strip.evaluate((el) => ({
+        scrollWidth: el.scrollWidth,
+        clientWidth: el.clientWidth,
+      }))
+      expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth)
+
+      const stripBox = (await strip.boundingBox())!
+      const lastBox = (await tabs.last().boundingBox())!
+      expect(lastBox.x + lastBox.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 1)
+      expect(lastBox.x).toBeGreaterThanOrEqual(stripBox.x - 1)
+
+      // Wheel scroll moves the strip back to the first tab.
+      await strip.hover()
+      await window.mouse.wheel(-5000, 0)
+      await expect.poll(() => strip.evaluate((el) => el.scrollLeft), { timeout: 5_000 }).toBe(0)
+    } finally {
+      await closeAllTabs(window)
     }
 
     // App must remain responsive.
@@ -301,37 +245,21 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
   // MST-211 — Empty states (tree/history/mock)
   // -------------------------------------------------------------------------
   uiTest('MST-211 empty state messages shown in fresh contexts', async ({ window }) => {
-    // History empty state.
-    await navigateSidebar(window, 'history')
-    await window.waitForTimeout(300)
-    const historyPanel = window.getByTestId('history-panel').or(window.getByTestId('history-list'))
-    if (await historyPanel.isVisible().catch(() => false)) {
-      const empty = historyPanel.getByText(/No history|Geçmiş yok|Empty/i)
-      // Only assert if no history rows at all.
-      const rows = historyPanel.getByTestId('history-item')
-      const rowCount = await rows.count()
-      if (rowCount === 0) {
-        await expect(empty.first()).toBeVisible({ timeout: 5_000 })
-      }
-    } else {
-      console.log('MST-211: history-panel not found')
-    }
+    // A brand-new project has no history rows and no mock servers, whatever the
+    // shared canonical project accumulated from earlier specs.
+    await goToProjectHome(window)
+    await createProject(window, `Empty ${uid()}`)
+    try {
+      await navigateSidebar(window, 'history')
+      await expect(window.getByText('No history yet.')).toBeVisible({ timeout: 8_000 })
+      await expect(window.getByTestId('history-entry')).toHaveCount(0)
 
-    // Mocks empty state.
-    await navigateSidebar(window, 'mocks')
-    await window.waitForTimeout(300)
-    const mocksPanel = window.getByTestId('mocks-panel').or(window.getByTestId('mock-servers-panel'))
-    if (await mocksPanel.isVisible().catch(() => false)) {
-      const mockItems = mocksPanel.getByTestId('mock-server-item')
-      if ((await mockItems.count()) === 0) {
-        const emptyMock = mocksPanel.getByText(/No mock|Mock yok|Empty/i)
-        if (!(await emptyMock.isVisible().catch(() => false))) {
-          console.log('MST-211: mocks empty state text not found — needs data-testid hook')
-        }
-      }
+      await navigateSidebar(window, 'mocks')
+      await expect(window.getByText(/No mock servers yet/i).first()).toBeVisible({ timeout: 8_000 })
+    } finally {
+      await navigateSidebar(window, 'apis')
+      await ensureCanonicalProject(window)
     }
-
-    await navigateSidebar(window, 'apis')
   })
 
   // -------------------------------------------------------------------------
@@ -367,46 +295,25 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
       return fileMenu.submenu.items.map((i) => ({ label: i.label, type: i.type }))
     })
 
-    if (!menuItems || menuItems.length === 0) {
-      console.log('MST-214: File menu not found in Menu.getApplicationMenu() — needs native menu registration')
-      return
-    }
+    expect(menuItems.length, 'File menu registered on Menu.getApplicationMenu()').toBeGreaterThan(0)
 
     const labels = menuItems.map((m: { label: string }) => m.label)
-    // Expect at minimum New Tab or Import to be present.
-    const hasNewTab = labels.some((l: string) => /New Tab|New Request|Yeni Sekme/i.test(l))
-    const hasImport = labels.some((l: string) => /Import/i.test(l))
-    const hasSave = labels.some((l: string) => /Save|Kaydet/i.test(l))
+    const newTabItem = menuItems.find((m: { label: string }) => /New Tab/i.test(m.label))
+    expect(newTabItem, `File menu has "New Tab" (items: ${labels.join(' | ')})`).toBeTruthy()
+    expect(labels.some((l: string) => /Import/i.test(l)), 'File menu has Import').toBe(true)
+    expect(labels.some((l: string) => /^Save\b/i.test(l)), 'File menu has Save').toBe(true)
 
-    if (!hasNewTab) console.log('MST-214: "New Tab" item not found in File menu')
-    if (!hasImport) console.log('MST-214: "Import" item not found in File menu')
-    if (!hasSave) console.log('MST-214: "Save" item not found in File menu')
-
-    // At least one of the expected items must exist.
-    expect(hasNewTab || hasImport || hasSave).toBe(true)
-
-    // Click a file menu item via app.evaluate (triggers IPC just like user click).
-    if (hasNewTab) {
-      const newTabItem = menuItems.find((m: { label: string }) => /New Tab|New Request|Yeni Sekme/i.test(m.label))
-      if (newTabItem) {
-        await app.evaluate(async ({ Menu }, label) => {
-          const menu = Menu.getApplicationMenu()
-          const fileMenu = menu?.items.find((m) => m.label === 'File' || m.label === 'Dosya')
-          const item = fileMenu?.submenu?.items.find((i) => i.label === label)
-          item?.click()
-        }, newTabItem.label)
-        await window.waitForTimeout(500)
-        // A brand-new tab opens on the protocol-picker welcome surface (no URL
-        // bar yet) whose first tile is the "HTTP" protocol button. Accept that
-        // tile or a URL bar — both prove the New Tab command opened a fresh tab.
-        await expect(
-          window
-            .getByTestId('url-input')
-            .or(window.getByRole('button', { name: 'HTTP', exact: true }).first())
-            .first(),
-        ).toBeVisible({ timeout: 8_000 })
-      }
-    }
+    // Click the New Tab item via the main process (same path as a user click:
+    // menu → `menu:newTab` IPC → renderer opens a tab).
+    const tabs = window.locator('[data-testid="endpoint-tab"]')
+    const tabsBefore = await tabs.count()
+    await app.evaluate(async ({ Menu }, label) => {
+      const menu = Menu.getApplicationMenu()
+      const fileMenu = menu?.items.find((m) => m.label === 'File' || m.label === 'Dosya')
+      const item = fileMenu?.submenu?.items.find((i) => i.label === label)
+      item?.click()
+    }, newTabItem!.label)
+    await expect(tabs).toHaveCount(tabsBefore + 1, { timeout: 8_000 })
   })
 
   // -------------------------------------------------------------------------
