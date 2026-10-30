@@ -13,6 +13,15 @@ import { isMac } from './platform'
  */
 export type ShortcutToken = 'Mod' | 'Ctrl' | 'Alt' | 'Shift' | string
 
+/**
+ * Toggle the Console panel. Bound in `keyboard-shortcuts.ts`; the footer
+ * tooltip, the palette, the cheatsheet and Settings -> Shortcuts render it.
+ */
+export const TOGGLE_CONSOLE_SHORTCUT: readonly ShortcutToken[] = ['Mod', 'Alt', 'C']
+/** Next / previous tab — bound in `keyboard-shortcuts.ts` like the Console chord. */
+export const NEXT_TAB_SHORTCUT: readonly ShortcutToken[] = ['Mod', 'Alt', 'Right']
+export const PREV_TAB_SHORTCUT: readonly ShortcutToken[] = ['Mod', 'Alt', 'Left']
+
 const ARROWS: Record<string, string> = { Right: '→', Left: '←', Up: '↑', Down: '↓' }
 
 function keyLabel(key: string): string {

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, type ComponentType } from
 import { createPortal } from 'react-dom'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { formatShortcut } from '../../lib/shortcut-format'
+import { isCloseTabKey } from '../../lib/shortcut-chords'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
@@ -1068,7 +1069,8 @@ export default function Workbench() {
         })
         return
       }
-      if (e.key === 'w' || e.key === 'W') {
+      // Physical W on macOS: Option turns Cmd+Option+W into "∑" (issue #257).
+      if (isCloseTabKey(e)) {
         const force = e.altKey
         const currentId = useTabsStore.getState().activeTabId
         if (!currentId) return

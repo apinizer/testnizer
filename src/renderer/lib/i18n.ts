@@ -1247,6 +1247,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'shortcuts.prevTab': 'Previous tab',
     'shortcuts.focusUrl': 'Focus URL bar',
     'shortcuts.toggleSidebar': 'Toggle sidebar',
+    'shortcuts.toggleConsole': 'Toggle console',
     'shortcuts.openSettings': 'Open settings',
     'shortcuts.search': 'Search',
 
@@ -1413,9 +1414,9 @@ const translations: Record<Locale, Record<string, string>> = {
     // Collection Runner
     'runner.title': 'Collection Runner',
     'runner.unsavedRunItems':
-      '{count} open request(s) have unsaved edits and will run their last saved version: {names}. Save them (Ctrl+S) and re-run to include the changes.',
+      '{count} open request(s) have unsaved edits and will run their last saved version: {names}. Save them ({shortcut}) and re-run to include the changes.',
     'runner.orphanedRunItems':
-      '{names}: this request no longer exists in the collection, so the run cannot include your edits. Save it from its tab (Ctrl+S) to choose a new place.',
+      '{names}: this request no longer exists in the collection, so the run cannot include your edits. Save it from its tab ({shortcut}) to choose a new place.',
     'runner.runCollection': 'Run Collection',
     'runner.stop': 'Stop',
     'runner.exportJson': 'Export JSON',
@@ -3186,6 +3187,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.action.nextTab': 'Switch to next tab',
     'command.action.prevTab': 'Switch to previous tab',
     'command.action.toggleSidebar': 'Toggle sidebar',
+    'command.action.toggleConsole': 'Toggle console',
     'command.action.send': 'Send request',
     'command.action.save': 'Save',
     'command.action.saveEndpoint': 'Save endpoint',
@@ -3217,11 +3219,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.shortcut.saveProject': 'Save project (export)',
     'command.shortcut.newTab': 'New tab',
     'command.shortcut.closeTab': 'Close current tab',
+    'command.shortcut.nextTab': 'Next tab',
+    'command.shortcut.prevTab': 'Previous tab',
     'command.shortcut.focusUrl': 'Focus URL input',
     'command.shortcut.newItem': 'New item',
     'command.shortcut.import': 'Open import',
     'command.shortcut.importCurl': 'Import cURL',
     'command.shortcut.toggleSidebar': 'Toggle sidebar',
+    'command.shortcut.toggleConsole': 'Toggle console',
     'command.shortcut.settings': 'Open settings',
     'command.shortcut.formatBody': 'Format request body',
 
@@ -5630,6 +5635,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'shortcuts.prevTab': 'Önceki sekme',
     'shortcuts.focusUrl': 'URL barına odaklan',
     'shortcuts.toggleSidebar': 'Kenar çubuğunu aç/kapat',
+    'shortcuts.toggleConsole': 'Konsolu aç/kapat',
     'shortcuts.openSettings': 'Ayarları aç',
     'shortcuts.search': 'Ara',
 
@@ -5795,9 +5801,9 @@ const translations: Record<Locale, Record<string, string>> = {
     // Collection Runner
     'runner.title': 'Koleksiyon Çalıştırıcısı',
     'runner.unsavedRunItems':
-      '{count} açık istekte kaydedilmemiş değişiklik var; son kaydedilen sürümleri çalıştırılacak: {names}. Değişikliklerin dahil olması için kaydedip (Ctrl+S) yeniden çalıştırın.',
+      '{count} açık istekte kaydedilmemiş değişiklik var; son kaydedilen sürümleri çalıştırılacak: {names}. Değişikliklerin dahil olması için kaydedip ({shortcut}) yeniden çalıştırın.',
     'runner.orphanedRunItems':
-      '{names}: bu istek artık koleksiyonda yok, bu yüzden çalıştırma değişikliklerinizi içeremez. Yeni bir yer seçmek için sekmesinden kaydedin (Ctrl+S).',
+      '{names}: bu istek artık koleksiyonda yok, bu yüzden çalıştırma değişikliklerinizi içeremez. Yeni bir yer seçmek için sekmesinden kaydedin ({shortcut}).',
     'runner.runCollection': 'Koleksiyonu Çalıştır',
     'runner.stop': 'Durdur',
     'runner.exportJson': 'JSON Dışarı Aktar',
@@ -7578,6 +7584,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.action.nextTab': 'Sonraki sekmeye geç',
     'command.action.prevTab': 'Önceki sekmeye geç',
     'command.action.toggleSidebar': 'Kenar çubuğunu aç/kapat',
+    'command.action.toggleConsole': 'Konsolu aç/kapat',
     'command.action.send': 'İsteği gönder',
     'command.action.save': 'Kaydet',
     'command.action.saveEndpoint': 'Uç noktayı kaydet',
@@ -7609,11 +7616,14 @@ const translations: Record<Locale, Record<string, string>> = {
     'command.shortcut.saveProject': 'Projeyi kaydet (dışa aktar)',
     'command.shortcut.newTab': 'Yeni sekme',
     'command.shortcut.closeTab': 'Aktif sekmeyi kapat',
+    'command.shortcut.nextTab': 'Sonraki sekme',
+    'command.shortcut.prevTab': 'Önceki sekme',
     'command.shortcut.focusUrl': 'URL alanına odaklan',
     'command.shortcut.newItem': 'Yeni öğe',
     'command.shortcut.import': 'İçe aktarmayı aç',
     'command.shortcut.importCurl': 'cURL içe aktar',
     'command.shortcut.toggleSidebar': 'Kenar çubuğunu aç/kapat',
+    'command.shortcut.toggleConsole': 'Konsolu aç/kapat',
     'command.shortcut.settings': 'Ayarları aç',
     'command.shortcut.formatBody': 'İstek gövdesini biçimlendir',
 

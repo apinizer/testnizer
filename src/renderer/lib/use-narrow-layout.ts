@@ -1,19 +1,28 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useUIStore } from '../stores/ui.store'
-import { editorWidthWithPanelOpen, narrowLayoutFor } from './narrow-layout'
+import { narrowLayoutFor, narrowLayoutForRow } from './narrow-layout'
 
 /**
- * Report an element's own content width through ResizeObserver
- * (`entry.contentRect.width`). Does nothing without ResizeObserver.
+ * Report an element's width through ResizeObserver. `'content'` reads
+ * `entry.contentRect.width`; `'border'` reads the border box
+ * (`borderBoxSize[0].inlineSize`, falling back to `contentRect.width` where a
+ * ResizeObserver does not report it). Does nothing without ResizeObserver.
  */
-function observeWidth(el: Element, onWidth: (width: number) => void): () => void {
+function observeWidth(
+  el: Element,
+  onWidth: (width: number) => void,
+  box: 'content' | 'border' = 'content',
+): () => void {
   if (typeof ResizeObserver === 'undefined') return () => {}
   const ro = new ResizeObserver((entries) => {
     for (const entry of entries) {
-      if (entry.target === el) onWidth(entry.contentRect.width)
+      if (entry.target !== el) continue
+      const border = box === 'border' ? entry.borderBoxSize?.[0]?.inlineSize : undefined
+      onWidth(border ?? entry.contentRect.width)
     }
   })
-  ro.observe(el)
+  if (box === 'border') ro.observe(el, { box: 'border-box' })
+  else ro.observe(el)
   return () => ro.disconnect()
 }
 
@@ -38,17 +47,20 @@ interface AutoCollapseState {
 function evaluateAutoCollapse(st: AutoCollapseState): void {
   if (st.row === null) return
   const ui = useUIStore.getState()
-  const narrow = narrowLayoutFor(
-    editorWidthWithPanelOpen(st.row, ui.rightPanelWidth),
-  ).collapseRightPanel
+  const narrow = narrowLayoutForRow(st.row, ui.rightPanelWidth).collapseRightPanel
   if (narrow === st.narrow) return
   st.narrow = narrow
   ui.setRightPanelNarrowCollapsed(narrow)
 }
 
-export function useRightPanelAutoCollapse(rowRef: RefObject<HTMLElement | null>): void {
+/**
+ * Returns the row's last measured width (0 until measured / without
+ * ResizeObserver) — the right panel clamps its RENDERED width to it.
+ */
+export function useRightPanelAutoCollapse(rowRef: RefObject<HTMLElement | null>): number {
   const panelWidth = useUIStore((s) => s.rightPanelWidth)
   const state = useRef<AutoCollapseState>({ row: null, narrow: null })
+  const [rowWidth, setRowWidth] = useState(0)
 
   useEffect(() => {
     const el = rowRef.current
@@ -57,6 +69,7 @@ export function useRightPanelAutoCollapse(rowRef: RefObject<HTMLElement | null>)
     const stop = observeWidth(el, (width) => {
       st.row = width
       evaluateAutoCollapse(st)
+      setRowWidth(width)
     })
     return () => {
       stop()
@@ -70,18 +83,24 @@ export function useRightPanelAutoCollapse(rowRef: RefObject<HTMLElement | null>)
   useEffect(() => {
     evaluateAutoCollapse(state.current)
   }, [panelWidth])
+
+  return rowWidth
 }
 
 /**
  * Compact URL bar (issue #251): true while the bar's OWN width is under
  * `URL_BAR_COMPACT_BELOW`. Stays false without ResizeObserver.
+ *
+ * Measured on the BORDER box: compact mode narrows the bar's padding, so a
+ * content-box decision moved its own input (600 px bar: 576 content ->
+ * compact -> 584 content -> wide -> ...) and flipped on every callback.
  */
 export function useCompactUrlBar(ref: RefObject<HTMLElement | null>): boolean {
   const [compact, setCompact] = useState(false)
   useEffect(() => {
     const el = ref.current
     if (!el) return
-    return observeWidth(el, (width) => setCompact(narrowLayoutFor(width).compactUrlBar))
+    return observeWidth(el, (width) => setCompact(narrowLayoutFor(width).compactUrlBar), 'border')
   }, [ref])
   return compact
 }

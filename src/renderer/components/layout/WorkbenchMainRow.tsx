@@ -11,7 +11,7 @@ import RightPanel from './RightPanel'
  */
 export default function WorkbenchMainRow({ children }: { children: ReactNode }) {
   const rowRef = useRef<HTMLDivElement>(null)
-  useRightPanelAutoCollapse(rowRef)
+  const rowWidth = useRightPanelAutoCollapse(rowRef)
   return (
     <div
       ref={rowRef}
@@ -25,7 +25,7 @@ export default function WorkbenchMainRow({ children }: { children: ReactNode }) 
       <EdgeResizeHandle target="right" />
 
       {/* Right: Postman-style tabbed panel (Variables / Code / ...) */}
-      <RightPanel />
+      <RightPanel rowWidth={rowWidth} />
     </div>
   )
 }

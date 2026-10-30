@@ -10,8 +10,9 @@
  *       EdgeResizeHandle + RightPanel (Workbench renders it with
  *       data-testid="workbench-main-row") — with ResizeObserver and reads the
  *       width from `entry.contentRect.width` (NOT clientWidth/offsetWidth).
- *     - narrow = narrowLayoutFor(editorWidthWithPanelOpen(rowWidth,
- *       ui.rightPanelWidth)).collapseRightPanel. Re-evaluated on every
+ *     - narrow = narrowLayoutForRow(rowWidth, ui.rightPanelWidth)
+ *       .collapseRightPanel (a measured row narrower than the panel is narrow,
+ *       see narrow-layout-review-251.test.tsx). Re-evaluated on every
  *       observer callback AND when ui.rightPanelWidth changes.
  *     - It writes `useUIStore.setRightPanelNarrowCollapsed(narrow)` ONLY when
  *       `narrow` differs from the value it last computed (a CROSSING). So a

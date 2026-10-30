@@ -4,6 +4,12 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 import { useCompactUrlBar } from '../../lib/use-narrow-layout'
+import {
+  URL_BAR_COMPACT_METHOD_MIN_PX,
+  URL_BAR_COMPACT_PAD_X_PX,
+  URL_BAR_COMPACT_SEND_GAP_PX,
+  URL_FIELD_MIN_PX,
+} from '../../lib/narrow-layout'
 import MethodBadge from '../shared/MethodBadge'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import { handleUrlBarPaste } from './url-bar-paste'
@@ -92,7 +98,7 @@ export default function UrlBar() {
         alignItems: 'center',
         gap: 0,
         // Compact (#251): every px of chrome goes to the URL field.
-        padding: compact ? '0 8px' : '0 12px',
+        padding: compact ? `0 ${URL_BAR_COMPACT_PAD_X_PX}px` : '0 12px',
         flexShrink: 0,
       }}
     >
@@ -115,7 +121,7 @@ export default function UrlBar() {
             borderRadius: '8px 0 0 8px',
             cursor: 'pointer',
             userSelect: 'none',
-            minWidth: compact ? 76 : 90,
+            minWidth: compact ? URL_BAR_COMPACT_METHOD_MIN_PX : 90,
             height: 32,
           }}
         >
@@ -199,11 +205,12 @@ export default function UrlBar() {
           }
         }}
         placeholder={t('urlBar.enterUrl')}
+        // Issue #251: the URL never shrinks to a sliver (it was ~30 px at 1024 px).
+        // On the outer flex item, so Send / the overflow menu can never overlap it.
+        fieldMinWidth={URL_FIELD_MIN_PX}
         style={{
           ...BASE_INP,
           flex: 1,
-          // Issue #251: the URL never shrinks to a sliver (it was ~30 px at 1024 px).
-          minWidth: 160,
           height: 32,
           fontWeight: 400,
           borderRadius: '0 8px 8px 0',
@@ -217,7 +224,7 @@ export default function UrlBar() {
         style={{
           position: 'relative',
           display: 'flex',
-          marginLeft: compact ? 6 : 8,
+          marginLeft: compact ? URL_BAR_COMPACT_SEND_GAP_PX : 8,
           flexShrink: 0,
         }}
       >

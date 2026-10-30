@@ -3,6 +3,7 @@ import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import RunnerVariables from '../runner/RunnerVariables'
 import GenerateCodePane from './GenerateCodePane'
 import { useTranslation } from '../../lib/i18n'
+import { rightPanelRenderedWidth } from '../../lib/narrow-layout'
 
 interface RightPanelTabIcon {
   id: 'variables' | 'code'
@@ -21,7 +22,7 @@ const TABS: RightPanelTabIcon[] = [
  * [Variables | Code | ...]
  * Collapsible via a thin icon rail. Used inside the Workbench.
  */
-export default function RightPanel() {
+export default function RightPanel({ rowWidth = 0 }: { rowWidth?: number }) {
   const { t } = useTranslation()
   // Preference OR the narrow-editor auto-collapse (issues #251 / #257).
   const collapsed = useUIStore(selectRightPanelCollapsed)
@@ -62,7 +63,9 @@ export default function RightPanel() {
     <div
       data-testid="right-panel"
       className="flex shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--white)]"
-      style={{ width }}
+      // Never more than leaves the URL bar its room (issue #251); the stored
+      // preference itself is untouched.
+      style={{ width: rightPanelRenderedWidth(rowWidth, width) }}
     >
       {/* Tab bar */}
       <div

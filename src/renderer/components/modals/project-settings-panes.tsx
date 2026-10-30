@@ -4,7 +4,12 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyMaterialField from '../shared/KeyMaterialField'
 import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
-import { formatShortcut } from '../../lib/shortcut-format'
+import {
+  formatShortcut,
+  NEXT_TAB_SHORTCUT,
+  PREV_TAB_SHORTCUT,
+  TOGGLE_CONSOLE_SHORTCUT,
+} from '../../lib/shortcut-format'
 import { useNumberDraft } from '../../lib/number-draft'
 import { isActiveProxy, type ProxySetting } from '../../../shared/request-settings'
 import { AppearanceLinkPane, ProjectTimeoutInput, SettingScopeNote } from './SettingScopeNote'
@@ -1091,10 +1096,11 @@ export function ShortcutsPane() {
     { action: t('shortcuts.saveRequest'), keys: formatShortcut(['Mod', 'S']) },
     { action: t('shortcuts.newTab'), keys: formatShortcut(['Mod', 'T']) },
     { action: t('shortcuts.closeTab'), keys: formatShortcut(['Mod', 'W']) },
-    { action: t('shortcuts.nextTab'), keys: formatShortcut(['Mod', 'Alt', 'Right']) },
-    { action: t('shortcuts.prevTab'), keys: formatShortcut(['Mod', 'Alt', 'Left']) },
+    { action: t('shortcuts.nextTab'), keys: formatShortcut(NEXT_TAB_SHORTCUT) },
+    { action: t('shortcuts.prevTab'), keys: formatShortcut(PREV_TAB_SHORTCUT) },
     { action: t('shortcuts.focusUrl'), keys: formatShortcut(['Mod', 'L']) },
     { action: t('shortcuts.toggleSidebar'), keys: formatShortcut(['Mod', 'B']) },
+    { action: t('shortcuts.toggleConsole'), keys: formatShortcut(TOGGLE_CONSOLE_SHORTCUT) },
     { action: t('shortcuts.openSettings'), keys: formatShortcut(['Mod', ',']) },
     { action: t('shortcuts.search'), keys: formatShortcut(['Mod', 'K']) },
   ]

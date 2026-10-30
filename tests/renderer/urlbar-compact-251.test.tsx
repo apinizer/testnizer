@@ -4,7 +4,10 @@
  *
  * CONTRACT — `UrlBar.tsx`:
  *   - root element carries `data-testid="url-bar"` and is observed with
- *     ResizeObserver (`entry.contentRect.width`, the bar's OWN width).
+ *     ResizeObserver on its BORDER box (`borderBoxSize[0].inlineSize`, falling
+ *     back to `contentRect.width` — what this file's fake observer reports);
+ *     compact mode's own padding change must not flip the decision
+ *     (narrow-layout-review-251.test.tsx).
  *     compact = narrowLayoutFor(width).compactUrlBar  (lib/narrow-layout.ts,
  *     via `useCompactUrlBar(ref)` in lib/use-narrow-layout.ts). Without a
  *     ResizeObserver the bar stays in the wide layout.

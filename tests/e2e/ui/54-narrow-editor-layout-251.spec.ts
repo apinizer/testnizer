@@ -212,6 +212,37 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
         // The user's explicit click wins over the auto collapse.
         await expect(window.getByTestId('right-panel')).toBeVisible({ timeout: 5_000 })
         expect(await persistedRightPanelCollapsed(window)).toBe(false)
+
+        // Review of #251: with the panel opened by hand the editor is only a
+        // few hundred px wide. The URL's minimum sits on its outer flex item,
+        // and the panel is RENDERED no wider than leaves the compact URL bar
+        // its budget (URL_BAR_MIN_BUDGET, never under the 240 px panel
+        // minimum; the stored width is untouched) — so the input keeps its
+        // floor, never runs under Send, and Send / the overflow button stay
+        // inside the bar. At 1024 px (row ~641) the minimum wins: the editor
+        // gets 641 - 240 - 5 = 396 px, enough for this default-font EN bar.
+        const url = await boxOf(window, 'url-input')
+        const send = await boxOf(window, 'send-btn')
+        expect(url.width, 'URL input width').toBeGreaterThanOrEqual(159)
+        expect(url.x + url.width, 'URL input runs under Send').toBeLessThanOrEqual(send.x + 1)
+        expect(overlaps(url, send), 'Send overlaps the URL input').toBe(false)
+        // boundingBox ignores clipping: Send must also lie inside the bar, not be
+        // pushed past the editor column's overflow-hidden edge by the floor.
+        const bar = await boxOf(window, 'url-bar')
+        expect(send.x + send.width, 'Send pushed out of the URL bar').toBeLessThanOrEqual(
+          bar.x + bar.width + 1,
+        )
+        const more = window.getByTestId('url-more-btn')
+        if (await more.isVisible()) {
+          const mb = await boxOf(window, 'url-more-btn')
+          expect(mb.x + mb.width, 'overflow button pushed out of the URL bar').toBeLessThanOrEqual(
+            bar.x + bar.width + 1,
+          )
+        }
+        const spill = await window
+          .getByTestId('url-bar')
+          .evaluate((el) => el.scrollWidth - el.clientWidth)
+        expect(spill, 'URL bar content overflows the bar').toBeLessThanOrEqual(1)
       } finally {
         await setContentSize(app, window, original.width, original.height)
         await setRightPanelOpen(window, wasOpen).catch(() => {})

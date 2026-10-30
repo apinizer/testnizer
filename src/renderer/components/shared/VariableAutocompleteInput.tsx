@@ -45,6 +45,13 @@ interface VariableAutocompleteInputProps {
    * coloured overlay is drawn — it would show the text in clear.
    */
   type?: 'text' | 'password'
+  /**
+   * Minimum width of the OUTER flex item (the wrapper), in px. A `minWidth`
+   * in `style` lands on the inner input only, and the wrapper — the element
+   * the parent flex row actually shrinks — would still go below it and let
+   * the input spill over its siblings. Default 0.
+   */
+  fieldMinWidth?: number
   'aria-label'?: string
   'aria-describedby'?: string
 }
@@ -65,6 +72,7 @@ export default function VariableAutocompleteInput({
   autoComplete,
   onPaste,
   type = 'text',
+  fieldMinWidth = 0,
   'aria-label': ariaLabel,
   'aria-describedby': ariaDescribedBy,
 }: VariableAutocompleteInputProps) {
@@ -399,7 +407,7 @@ export default function VariableAutocompleteInput({
           display: 'flex',
           flex: (inputStyle as React.CSSProperties).flex ?? undefined,
           width: className?.includes('w-full') ? '100%' : (inputStyle as React.CSSProperties).width,
-          minWidth: 0,
+          minWidth: fieldMinWidth,
         }}
       >
         <input
