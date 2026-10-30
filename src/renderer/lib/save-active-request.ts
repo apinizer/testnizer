@@ -12,6 +12,7 @@
 import { useTabsStore } from '../stores/tabs.store'
 import { useRequestStore } from '../stores/request.store'
 import { useSoapStore } from '../stores/soap.store'
+import { isManualSoapMeta } from '../../shared/soap-transport'
 import { useWebSocketStore } from '../stores/websocket.store'
 import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
@@ -472,6 +473,10 @@ function restoreWsSecurity(raw: unknown): void {
   }
 }
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v)
+}
+
 function applyProtocolMetadata(protocol: string, metadata: unknown): void {
   if (!metadata || typeof metadata !== 'object') return
   const meta = metadata as Record<string, unknown>
@@ -489,17 +494,15 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     const rawXml = str(s.rawXml) ?? (req.body?.type === 'xml' ? req.body.content || '' : '')
     const wsdlUrl = str(s.wsdlUrl)
     const operationName = str(s.operationName ?? s.selectedOperation)
-    // Explicit mode when present; older rows have none — a request with no
-    // WSDL and no selected operation can only have been built manually.
-    const manual = s.mode === 'manual' || (s.mode === undefined && !wsdlUrl && !operationName)
+    // Explicit mode when present; older rows have none (shared rule — the
+    // Runner classifies the row with the same `isManualSoapMeta`).
+    const manual = isManualSoapMeta(s)
     const soap = useSoapStore.getState()
-
-    if (manual) {
-      // No `soap` meta → loadFromEndpoint takes the raw-XML branch, so no
-      // synthetic WSDL is fabricated and the Manual form + raw body render.
-      soap.loadFromEndpoint({ url: endpointUrl, body: { type: 'xml', content: rawXml } })
-      soap.setMode('manual')
-      restoreWsSecurity(s.wsSecurity)
+    // The Manual form fields, restored in BOTH modes: Send falls back to the
+    // manual action when the WSDL operation has none (`soapVersionAndAction`),
+    // so leaving them out read whatever the tab cache held (issue #298
+    // follow-up).
+    const restoreManualFields = (): void => {
       const action = str(s.manualSoapAction)
       if (action !== undefined) soap.setManualSoapAction(action)
       const version = str(s.manualSoapVersion)
@@ -508,6 +511,15 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
       if (opName !== undefined) soap.setManualOperationName(opName)
       const opNs = str(s.manualOperationNamespace)
       if (opNs !== undefined) soap.setManualOperationNamespace(opNs)
+    }
+
+    if (manual) {
+      // No `soap` meta → loadFromEndpoint takes the raw-XML branch, so no
+      // synthetic WSDL is fabricated and the Manual form + raw body render.
+      soap.loadFromEndpoint({ url: endpointUrl, body: { type: 'xml', content: rawXml } })
+      soap.setMode('manual')
+      restoreWsSecurity(s.wsSecurity)
+      restoreManualFields()
       return
     }
 
@@ -523,10 +535,22 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
         portName: str(s.portName ?? s.selectedPort),
         operationName,
         endpointUrl,
+        // The operation's action and the document's version (issue #298
+        // follow-up): dropped here before, so a reopened SOAP 1.2 / `urn:Op`
+        // row Sent as SOAP 1.1 with `SOAPAction: ""` while Run sent the saved
+        // values. Legacy rows may also carry the operation's example/schema.
+        soapAction: str(s.soapAction),
+        soapVersion:
+          s.soapVersion === 'soap12' || s.soapVersion === 'soap11' ? s.soapVersion : undefined,
+        exampleRequest: str(s.exampleRequest),
+        exampleResponse: str(s.exampleResponse),
+        ...(isPlainObject(s.inputSchema) ? { inputSchema: s.inputSchema } : {}),
+        ...(isPlainObject(s.outputSchema) ? { outputSchema: s.outputSchema } : {}),
       },
     })
     soap.setMode('wsdl')
     restoreWsSecurity(s.wsSecurity)
+    restoreManualFields()
     return
   }
 

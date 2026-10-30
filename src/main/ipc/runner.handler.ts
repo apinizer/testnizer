@@ -40,11 +40,7 @@ import {
   resolveHttpTimeout,
   resolveMcpTimeout,
 } from '../../shared/request-settings'
-import {
-  soapTransportFromMeta,
-  withSoapTransportHeaders,
-  type SoapTransportMeta,
-} from '../../shared/soap-transport'
+import { soapTransportForRow, withSoapTransportHeaders } from '../../shared/soap-transport'
 import {
   projectAuthToAuthConfig,
   resolveEffectiveAuth,
@@ -260,7 +256,7 @@ export function buildRequestFromEndpoint(
     headers?: KeyValuePair[]
     body?: RequestBody
     auth?: AuthConfig
-    metadata?: { soap?: SoapTransportMeta }
+    metadata?: { soap?: unknown }
   }>(endpoint.request_schema, {})
   // Timeout / redirects / SSL as Ctrl+S wrote them (issue #185) — the same
   // reader the tab-open paths use.
@@ -272,16 +268,18 @@ export function buildRequestFromEndpoint(
   // SOAP requests (issue #124 follow-up): Send derives Content-Type /
   // SOAPAction from the SOAP version + action; the Runner used to post the
   // envelope as plain application/xml with no action. Same rule, one helper.
+  // Issue #298 follow-up: ALWAYS, like Send — a row whose `metadata.soap`
+  // carries no action / version (or that has no `metadata.soap` at all) gets
+  // the version / action Send derives for it (`soapTransportForRow`: SOAP 1.1
+  // + `SOAPAction: ""` by default); it used to go out with neither header.
   let headers = schema.headers
   if (endpoint.protocol === 'soap') {
-    const transport = soapTransportFromMeta(schema.metadata?.soap)
-    if (transport) {
-      headers = withSoapTransportHeaders(
-        schema.headers,
-        transport.version,
-        transport.action,
-      ) as KeyValuePair[]
-    }
+    const transport = soapTransportForRow(schema.metadata?.soap, schema.headers)
+    headers = withSoapTransportHeaders(
+      schema.headers,
+      transport.version,
+      transport.action,
+    ) as KeyValuePair[]
   }
 
   return {

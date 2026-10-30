@@ -57,6 +57,8 @@ const { useEnvironmentStore } = await import('../../../src/renderer/stores/envir
 const { useResponseStore } = await import('../../../src/renderer/stores/response.store')
 const { useTabsStore } = await import('../../../src/renderer/stores/tabs.store')
 const { useWorkspaceStore } = await import('../../../src/renderer/stores/workspace.store')
+const { restoreProtocolFromMetadata } =
+  await import('../../../src/renderer/lib/save-active-request')
 
 const ENVELOPE = `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tem="http://tempuri.org/">
    <soapenv:Header/>
@@ -460,5 +462,193 @@ describe('SOAP Headers tab reaches the wire on Send AND Run', () => {
     const { s, r } = await bothPaths({ type: 'none' })
     expect(r.headers['content-type']).toBe('text/xml; charset=utf-8')
     expect(pick(s)).toEqual(pick(r))
+  })
+})
+
+// ─── transport headers for rows without a saved action / version ───────
+
+/**
+ * Issue #298 follow-up. Run added Content-Type / SOAPAction only when
+ * `metadata.soap` carried an action or a version (`soapTransportFromMeta`
+ * returned null otherwise); Send always adds them. And Send's restore dropped
+ * the saved operation's action / version, so a reopened SOAP 1.2 row Sent as
+ * 1.1 with `SOAPAction: ""`. Send here opens the row through the REAL editor
+ * restore (request store + `restoreProtocolFromMetadata`, or the raw-XML load
+ * the tree uses for a row without metadata) — nothing is hand-set on the SOAP
+ * store — then both paths' wire headers are compared.
+ */
+describe('SOAP transport headers: Send ≡ Run whatever the row saved', () => {
+  let tabSeq = 0
+
+  function seedRow(soapMeta: Record<string, unknown> | undefined, headers: Row[]): string {
+    const id = crypto.randomUUID()
+    const now = Date.now()
+    const schema = JSON.stringify({
+      method: 'POST',
+      url: `${base}/svc`,
+      params: [],
+      headers,
+      body: { type: 'xml', content: ENVELOPE },
+      auth: { type: 'none' },
+      assertions: [],
+      // `metadata.soap` as Ctrl+S writes it (absent: an imported / pre-metadata row).
+      ...(soapMeta ? { metadata: { soap: soapMeta } } : {}),
+    })
+    testDb
+      .prepare(
+        `INSERT INTO endpoints
+          (id, project_id, folder_id, name, protocol, method, path, status,
+           request_schema, sort_order, created_at, updated_at)
+         VALUES (?, ?, NULL, 'Add', 'soap', 'POST', '/svc', 'developing', ?, 0, ?, ?)`,
+      )
+      .run(id, projectId, schema, now, now)
+    return id
+  }
+
+  /** Open the row the way the tree does, then Send. */
+  async function sendRow(endpointId: string): Promise<Received> {
+    const row = testDb
+      .prepare('SELECT request_schema FROM endpoints WHERE id = ?')
+      .get(endpointId) as { request_schema: string }
+    const schema = JSON.parse(row.request_schema) as {
+      url: string
+      headers: Row[]
+      body: { type: string; content?: string }
+      metadata?: unknown
+    }
+    // A fresh tab id and an empty SOAP tab cache: no earlier test's manual
+    // action can leak into this tab.
+    const tabId = `soap-row-${++tabSeq}`
+    useSoapStore.setState({ _tabStates: new Map(), _currentTabId: null } as never)
+    useTabsStore.setState({
+      tabs: [
+        {
+          id: tabId,
+          name: 'Add',
+          protocol: 'soap',
+          method: 'POST',
+          url: schema.url,
+          isDirty: false,
+          endpointId,
+        } as never,
+      ],
+      activeTabId: tabId,
+    })
+    const req = useRequestStore.getState()
+    req.switchToTab(tabId)
+    req.loadFromEndpoint({
+      method: 'POST',
+      url: schema.url,
+      params: [],
+      headers: schema.headers as never,
+      body: schema.body as never,
+      auth: { type: 'none' } as never,
+      preScript: '',
+      postScript: '',
+      assertions: [],
+    } as never)
+    useRequestStore.setState({ withheldCredentials: [], unloaded: false })
+    if (schema.metadata) {
+      restoreProtocolFromMetadata('soap', schema.metadata)
+    } else {
+      // TreeView: a SOAP row without metadata opens Manual over the raw XML.
+      useSoapStore.getState().switchToTab(tabId)
+      useSoapStore.getState().loadFromEndpoint({
+        url: schema.url,
+        body: schema.body,
+        headers: schema.headers,
+        soap: undefined,
+      })
+    }
+    useSoapStore.setState({ withheldCredentials: [] })
+    const before = received.length
+    await useSoapStore.getState().sendSoap()
+    expect(useResponseStore.getState().response?.error).toBeUndefined()
+    expect(received.length).toBe(before + 1)
+    return received[received.length - 1]
+  }
+
+  const transport = (w: Received) => ({
+    contentType: w.headers['content-type'],
+    soapAction: w.headers['soapaction'],
+  })
+
+  async function both(soapMeta: Record<string, unknown> | undefined, headers: Row[] = []) {
+    const id = seedRow(soapMeta, headers)
+    const s = await sendRow(id)
+    const r = await run(id)
+    return { s: transport(s), r: transport(r) }
+  }
+
+  const wsdlMeta = {
+    mode: 'wsdl',
+    wsdlUrl: 'http://example.test/calc?wsdl',
+    selectedService: 'Calculator',
+    selectedPort: 'CalculatorSoap',
+    selectedOperation: 'Add',
+    bodyMode: 'raw',
+    endpointUrl: '',
+    rawXml: ENVELOPE,
+  }
+
+  it('WSDL row with no soapAction / soapVersion → SOAP 1.1 text/xml + SOAPAction "" on both', async () => {
+    const { s, r } = await both({ ...wsdlMeta, endpointUrl: `${base}/svc` })
+    expect(s).toEqual({ contentType: 'text/xml; charset=utf-8', soapAction: '""' })
+    expect(r).toEqual(s)
+  })
+
+  it('WSDL row saved as SOAP 1.2 with an action → the same 1.2 Content-Type on both', async () => {
+    const { s, r } = await both({
+      ...wsdlMeta,
+      endpointUrl: `${base}/svc`,
+      soapVersion: 'soap12',
+      soapAction: 'urn:Add',
+    })
+    expect(r).toEqual({
+      contentType: 'application/soap+xml; charset=utf-8; action="urn:Add"',
+      soapAction: undefined,
+    })
+    expect(s).toEqual(r)
+  })
+
+  it('WSDL operation without an action falls back to the saved manual action on both', async () => {
+    const { s, r } = await both({
+      ...wsdlMeta,
+      endpointUrl: `${base}/svc`,
+      manualSoapAction: 'urn:fallback',
+      manualSoapVersion: 'soap11',
+    })
+    expect(s).toEqual({ contentType: 'text/xml; charset=utf-8', soapAction: '"urn:fallback"' })
+    expect(r).toEqual(s)
+  })
+
+  it('legacy row (no mode; operationName / soapAction / exampleRequest) → the saved action on both', async () => {
+    const { s, r } = await both({
+      operationName: 'Add',
+      soapAction: 'http://tempuri.org/Add',
+      soapVersion: 'soap11',
+      endpointUrl: `${base}/svc`,
+      exampleRequest: ENVELOPE,
+    })
+    expect(r).toEqual({
+      contentType: 'text/xml; charset=utf-8',
+      soapAction: '"http://tempuri.org/Add"',
+    })
+    expect(s).toEqual(r)
+  })
+
+  it('row with no metadata and no transport headers → text/xml + SOAPAction "" on both', async () => {
+    const { s, r } = await both(undefined)
+    expect(s).toEqual({ contentType: 'text/xml; charset=utf-8', soapAction: '""' })
+    expect(r).toEqual(s)
+  })
+
+  it('row with no metadata whose stored Content-Type is SOAP 1.2 → no SOAPAction added on either', async () => {
+    const ct = 'application/soap+xml; charset=utf-8; action="urn:Add"'
+    const { s, r } = await both(undefined, [
+      { id: 'h-ct', key: 'Content-Type', value: ct, enabled: true },
+    ])
+    expect(r).toEqual({ contentType: ct, soapAction: undefined })
+    expect(s).toEqual(r)
   })
 })

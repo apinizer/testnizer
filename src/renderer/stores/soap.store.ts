@@ -32,7 +32,11 @@ import { useRequestStore } from './request.store'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SOAP, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
-import { withSoapTransportHeaders } from '../../shared/soap-transport'
+import {
+  soapTransportFromHeaders,
+  soapVersionAndAction,
+  withSoapTransportHeaders,
+} from '../../shared/soap-transport'
 import { isWsSecurityEnabled, resolveWsSecurityVariables } from '../../shared/soap-wsse'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
@@ -256,28 +260,6 @@ const STORAGE_KEY = 'testnizer-soap'
 const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState, persistableSoap)
 
 /**
- * Inverse of `soapTransportHeaders`: recover version + action from a stored
- * header list (SOAP 1.1 `SOAPAction: "…"`, SOAP 1.2 `Content-Type: …; action="…"`).
- */
-function soapTransportFromHeaders(
-  headers: Array<{ key: string; value: string; enabled: boolean }> | undefined,
-): { version?: 'soap11' | 'soap12'; action?: string } {
-  const out: { version?: 'soap11' | 'soap12'; action?: string } = {}
-  for (const h of headers ?? []) {
-    const key = h.key.trim().toLowerCase()
-    if (key === 'soapaction') {
-      out.version = 'soap11'
-      out.action = h.value.trim().replace(/^"|"$/g, '')
-    } else if (key === 'content-type' && /application\/soap\+xml/i.test(h.value)) {
-      out.version = 'soap12'
-      const m = /action="([^"]*)"/i.exec(h.value)
-      if (m) out.action = m[1]
-    }
-  }
-  return out
-}
-
-/**
  * Where Send posts a SOAP request, with which version and action — ONE
  * helper for `sendSoap` and Generate Code (issue #280), so the snippet cannot
  * drift from the request. In Manual mode the form's Endpoint URL is
@@ -309,8 +291,15 @@ export function soapSendTarget(
   const endpointUrl = manualMode
     ? s.endpointUrl || port?.endpointUrl || s.parsedWsdl?.endpointUrl || ''
     : port?.endpointUrl || s.parsedWsdl?.endpointUrl || s.endpointUrl || ''
-  const version = op ? (s.parsedWsdl?.soapVersion ?? 'soap11') : s.manualSoapVersion
-  return { op, endpointUrl, version, action: op?.soapAction || s.manualSoapAction || '' }
+  // Version + action: the shared rule the Runner applies to the saved row
+  // (`soapTransportForRow`, issue #298 follow-up) — one source, no drift.
+  const { version, action } = soapVersionAndAction({
+    op,
+    wsdlVersion: s.parsedWsdl?.soapVersion,
+    manualSoapAction: s.manualSoapAction,
+    manualSoapVersion: s.manualSoapVersion,
+  })
+  return { op, endpointUrl, version, action }
 }
 
 export const useSoapStore = create<SoapStore>((set, get) => ({
