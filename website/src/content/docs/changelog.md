@@ -481,7 +481,7 @@ your machine.**
   placeholders and hints, one date and time format across Runs, History,
   AI Chat and logs, and default request names recognised in both languages.
 
-**Tests:** the suite grew to 8837 tests in 652 files, and the full UI end-to-end suite runs 847 specs. New end-to-end specs
+**Tests:** the suite grew to 9842 tests in 724 files, and the full UI end-to-end suite runs 879 specs. New end-to-end specs
 cover Postman import (account data dumps and artifacts, Native Git v3 folders,
 `.zip` archives, collection variables), Postman v3 export, cURL paste, the
 Generate Code variants, MQTT, WebSocket and Socket.IO parity, an upgrade-data
