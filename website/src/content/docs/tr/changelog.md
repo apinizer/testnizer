@@ -517,7 +517,7 @@ paneli geliyor; Electron 44 — ve secret'lar makinenizde kalıyor.**
   sığmadığında sıra formun üstüne geçer; her alan ve Start / Schedule / Save
   alt çubuğu en küçük pencerede de bütün kalır.
 
-**Testler:** süit 741 dosyada 9932 teste ulaştı ve tam UI uçtan uca süiti 884
+**Testler:** süit 751 dosyada 10142 teste ulaştı ve tam UI uçtan uca süiti 884
 spec koşturuyor. Yeni uçtan uca spec'ler Postman import'unu (hesap veri
 dökümleri ve artifact'lar, Native Git v3 klasörleri, `.zip` arşivleri,
 koleksiyon değişkenleri), Postman v3 export'unu, cURL yapıştırmayı, Generate
