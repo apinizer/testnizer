@@ -85,7 +85,7 @@ export function registerEnvironmentHandlers(): void {
 
   ipcMain.handle(
     'environment:setActiveForProject',
-    async (_event, projectId: string, environmentId: string) => {
+    async (_event, projectId: string, environmentId: string | null) => {
       try {
         envRepo.setActiveEnvironmentForProject(projectId, environmentId)
         return { success: true, data: true }

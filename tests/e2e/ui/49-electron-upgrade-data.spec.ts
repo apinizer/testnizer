@@ -132,6 +132,14 @@ const CHANGE_RULES: ChangeRule[] = [
     reason: 'issue #239: the Mock MCP bearer token is sealed at rest',
     accept: sealedFrom,
   },
+  {
+    table: 'environments',
+    column: 'is_active',
+    reason:
+      'issue #307 follow-up: a project with environments but none active gets the one older builds showed as active (first in list order), once',
+    accept: (a, b, row) =>
+      (a === 0 || a === '0') && (b === 1 || b === '1') && typeof row.project_id === 'string',
+  },
   ...(['history', 'runner_history'] as const).map(
     (table): ChangeRule => ({
       table,

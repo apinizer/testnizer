@@ -294,7 +294,8 @@ interface EnvironmentApi {
     payload: { name?: string; is_active?: boolean },
   ): Promise<IpcResult<Environment | undefined>>
   setActive(workspaceId: string, environmentId: string): Promise<IpcResult<boolean>>
-  setActiveForProject(projectId: string, environmentId: string): Promise<IpcResult<boolean>>
+  /** `null` = "No environment": no environment of the project stays active. */
+  setActiveForProject(projectId: string, environmentId: string | null): Promise<IpcResult<boolean>>
   delete(id: string): Promise<IpcResult<boolean>>
   /** Issue #281: copy the variables into the project variables; conflicts keep the local value. */
   moveToProjectVariables(id: string): Promise<IpcResult<{ moved: string[]; conflicts: string[] }>>
