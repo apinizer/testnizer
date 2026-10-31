@@ -1,152 +1,122 @@
 ---
 title: Socket.IO
-description: Socket.IO sunucularına (istemci v2, v3 veya v4) bağlanın, birden çok argümanlı ve onaylı olay gönderin, dinlenecek olayları seçin ve çift yönlü zaman çizelgesini izleyin.
+description: Socket.IO sunucularına bağlanın, JSON yüküyle event emit edin, event adlarına abone olun ve çift yönlü zaman çizelgesini izleyin.
 order: 8
 section: Protokoller
 ---
 
 Testnizer, Node ana sürecinde çalışan resmi `socket.io-client` kütüphanesi
 tarafından desteklenen yerleşik bir Socket.IO istemcisi içerir. Renderer,
-olayları IPC üzerinden alır ve kendisi hiçbir zaman açık bir soket tutmaz.
+event'leri IPC üzerinden alır ve kendisi hiçbir zaman açık bir soket tutmaz.
 
 ## Ne zaman kullanılır
 
-Socket.IO düz WebSocket **değildir**. WebSocket'in (HTTP long-polling yedeğiyle)
-üzerinde kendi protokolünü çalıştırır ve adlandırılmış olaylar, namespace'ler,
-onaylar (acknowledgement) ve otomatik yeniden bağlanma ekler. Sunucunuz arka uçta
-`socket.io` kullanıyorsa **WebSocket** editörü çalışmaz — bunu kullanın.
+Socket.IO **düz** WebSocket değildir. WebSocket üzerinde kendi protokolünü
+çalıştırır (HTTP long-polling fallback'i ile) ve adlandırılmış event'ler,
+namespace'ler, ack'lar ve otomatik yeniden bağlanma ekler. Sunucunuz arka
+uçta `socket.io` kullanıyorsa **WebSocket** editörü çalışmayacaktır — bunu
+kullanın.
 
 ## Socket.IO sekmesi açma
 
-**+ Yeni** → **Socket.IO**'ya tıklayın. Editörün üstünde bir bağlantı çubuğu, altında
-istek sekmeleri (**Mesaj**, **Parametreler**, **Başlıklar**, **Olaylar**,
-**Ayarlar**) ve en altta olay zaman çizelgesi bulunur.
+**+ Yeni** → **Socket.IO** tıklayın. Editör üstte bir bağlantı çubuğu, solda
+emit / subscribe paneli ve sağda bir event zaman çizelgesi ile açılır.
 
 ## Bağlanma
 
 | Alan | Zorunlu | Notlar |
 |---|---|---|
-| **URL** | evet | Sunucu kaynağı, ör. `http://localhost:3000` veya `https://api.example.com`. Sorgu parametreleri sorguda kalır |
-| **Namespace** | hayır | Varsayılan `/`. Namespace'li sunucular için `/admin`, `/chat` vb. ayarlayın; yola eklenir, hiçbir zaman sorgunun içine değil |
-| **Bearer token** | hayır | El sıkışma sırasında `auth` yükünün içinde gönderilir (`auth: { token: '...' }`) |
+| **URL** | evet | Sunucu kökü, örn. `http://localhost:3000` veya `https://api.example.com` |
+| **Namespace** | hayır | Varsayılan `/`. Namespace'li sunucular için `/admin`, `/chat` vb. olarak ayarlayın |
+| **Bearer token** | hayır | El sıkışma sırasında `auth` payload'ı içinde gönderilir (`auth: { token: '...' }`) |
 
-**Parametreler** el sıkışmaya sorgu parametreleri ekler; **Başlıklar** ise `auth` yükü
-yerine `Authorization` header'ına bakan sunucular için el sıkışmayla birlikte gönderilir.
+**Connect**'e tıklayın. Testnizer:
 
-**Bağlan**'a tıklayın. Testnizer:
+1. Socket.IO bağlantısını kurar (tercih edilen transport: WebSocket, fallback
+   olarak HTTP polling).
+2. Sunucu bağlantıyı ack'leyene kadar 10 saniye bekler.
+3. `connect` üzerine durum **Connected**'a değişir ve emit / subscribe paneli
+   aktif hale gelir.
+4. `connect_error` üzerine durum **Error**'a değişir ve sunucudan gelen mesaj
+   Connect butonunun yanında gösterilir.
 
-1. Socket.IO bağlantısını kurar (tercih edilen taşıma: WebSocket, yedek olarak HTTP
-   polling — Ayarlar'dan değiştirilebilir).
-2. Sunucunun bağlantıyı onaylamasını bekler (Ayarlar'daki **El sıkışma zaman aşımı**,
-   varsayılan 10 saniye).
-3. `connect` olduğunda durum **Bağlandı**'ya döner ve Mesaj sekmesi etkinleşir.
-4. `connect_error` olduğunda durum **Hata**'ya döner ve sunucudan gelen mesaj Bağlan
-   düğmesinin yanında gösterilir (örneğin el sıkışmayı reddeden bir `io.use(...)`
-   middleware'inin metni).
+Otomatik yeniden bağlanma varsayılan olarak **devre dışıdır** — test
+araçları bağlantı hatalarını gizlemek yerine görünür kılmalıdır. Soket
+düşerse Connect'e tekrar manuel olarak tıklayın.
 
-El sıkışma sırasında **İptal** onu temiz biçimde iptal eder. **Sunucu** bağlantıyı
-kapatırsa (örneğin istemciyi atarsa) sekme **Bağlantı kesildi** durumuna geçer,
-yapılandırmasını ve zaman çizelgesini korur ve yeniden bağlanana kadar bir gönderim
-"Not connected" ile başarısız olur.
+## Event emit etme
 
-## Ayarlar ve istemci sürümü
+**Emit Event** paneli şunları alır:
 
-| Ayar | Varsayılan | Notlar |
-|---|---|---|
-| **İstemci sürümü** | v4 | **v4**, **v3** veya **v2** — aşağıya bakın |
-| **El sıkışma yolu** | `/socket.io` | Sunucunun `path` seçeneği |
-| **Taşıma** | Önce WebSocket, sonra polling | Ya da **Yalnız WebSocket** / **Yalnız polling** |
-| **Sunucu sertifikasını doğrula** | Açık | `https://` sunucuları için, hem polling hem WebSocket taşımasında geçerli |
-| **El sıkışma zaman aşımı (ms)** | 10 000 | |
-| **Yeniden bağlanma denemesi** | 0 | 0 yeniden bağlanma yok demektir |
-| **Yeniden bağlanma aralığı (ms)** | 1 000 | |
+- **Event adı** — herhangi bir string, örn. `chat:message` veya `subscribe`
+- **Payload** — JSON; ayrıştırılır ve event verisi olarak gönderilir.
+  Ayrıştırma başarısız olursa, ham string olduğu gibi gönderilir.
 
-**İstemci sürümü.** Socket.IO 3 ve 4 sunucuları aynı protokolü konuşur; bu yüzden
-**v3 ve v4 aynı istemciyi kullanır**. Socket.IO 2 sunucusu için **v2**'yi seçin:
-Testnizer o zaman 2.x istemcisini kullanır. Socket.IO 2 sunucusunda **el sıkışma
-`auth`'u yoktur**; bu yüzden v2 seçiliyken bearer token, bu tür sunucuların okuduğu
-**`token` sorgu parametresi** (`socket.handshake.query.token`) olarak gönderilir.
-Sunucu ve proxy günlükleri sorgu parametrelerini kaydedebilir; bu yolla gönderilen
-bir token bu günlüklere düşebilir. Ayarlar bağlıyken kilitlidir ve bir sonraki
-Bağlan'da geçerli olur.
+**Emit**'e tıklayın. Event giden bir event olarak (`↑`) zaman çizelgesinde
+hemen görünür. Değişkenler (`{{userId}}`, `{{token}}`) hem event adında
+hem de payload'da çözülür.
 
-Otomatik yeniden bağlanma varsayılan olarak **kapalıdır** — test araçları bağlantı
-hatalarını örtmek yerine görünür kılmalıdır. Beklenmedik bir kopmadan sonra
-Testnizer'ın yeniden denemesi için **Yeniden bağlanma denemesi**'ni artırın; her
-deneme zaman çizelgesinde bir bağlantı satırı olarak görünür.
+## Event'lere abone olma
 
-## Olay gönderme
+Testnizer, bağlantı açılır açılmaz sunucunun yaydığı **her event'i otomatik
+olarak yakalar** — gelen event'lerin görünmesi için önceden abone olmanız
+gerekmez. **Subscribe** alanı, yakalanan akışın üzerinde çalışan bir
+**UI filtresidir**:
 
-**Mesaj** sekmesi şunları alır:
+- Hiçbir abonelik yokken, alınan her event gelen event olarak (`↓`) zaman
+  çizelgesine akar.
+- **Subscribe** alanına bir event adı yazıp Enter'a basın (veya `+` tıklayın).
+  En az bir abonelik aktif olduğunda zaman çizelgesi yalnızca adı aktif bir
+  abonelikle eşleşen event'leri gösterir. Eşleşmeyen önceki event'ler hâlâ
+  kayıtta tutulur ve filtreyi kaldırdığınızda yeniden görünür hale gelir.
+- Bir aboneliği kaldırmak için yanındaki `×` tıklayın. Tüm abonelikler
+  temizlendiğinde zaman çizelgesi her event'i göstermeye geri döner.
 
-- **Olay adı** — herhangi bir dize, ör. `chat:message` veya `subscribe`
-- **Argümanlar** — bir Socket.IO olayı birden çok argüman taşıyabilir. Her
-  argümanın kendi **biçimi** vardır: **Metin**, **JSON**, **Base64** veya
-  **Onaltılık**. Base64 ve onaltılık argümanlar ikili olarak gönderilir. Daha fazlası
-  için **Argüman ekle**'yi kullanın
-- **Onay (ack)** — sunucudan olayı onaylamasını ister; yanıtı zaman çizelgesinde bir
-  "Onay" satırı olarak görünür
-- **Kaydet** — olay adını, argümanları ve Onay ayarını sağdaki bölmede **kayıtlı
-  mesaj** olarak saklar (yüklemek için tıklayın, yeniden adlandırmak için çift tıklayın)
+Bu sayede henüz abone olmadığınız için erken bir event'i kaçırmazsınız — el
+sıkışmanın hemen ardından bir defalık `ready` veya `welcome` event'i yayan
+sunucular için işe yarar. Hiçbir şey almayı tamamen durdurmak için üstteki
+**Disconnect**'e tıklayın.
 
-**Gönder**'e tıklayın (ya da bağlıyken olay adı alanında Enter'a basın). Olay,
-zaman çizelgesinde hemen giden olay olarak görünür. Değişkenler (`{{userId}}`,
-`{{token}}`) olay adında ve argümanlarda çözülür.
-
-## Olayları dinleme
-
-**Olaylar** sekmesi zaman çizelgesinde neyin gösterileceğini belirler:
-
-- **Tüm olayları dinle** — sunucunun gönderdiği her olay gösterilir.
-- Aksi halde yalnızca eklediğiniz ve açtığınız olaylar gösterilir. Bir **olay adı**
-  yazın, **Olay ekle**'ye tıklayın ve satırındaki anahtarla dinleyip dinlemeyeceğinizi
-  belirleyin. Postman'in Socket.IO isteği de böyle çalışır.
-
-Hiç dinleyicisi olmayan ve **Tüm olayları dinle** kapalı bir istek, hiçbir şeyin
-dinlenmediğini söyleyen bir bildirim gösterir; böylece eksik bir `welcome` olayı
-gizem olmaz. Testnizer'ın eski bir sürümünde kaydedilmiş bir isteğin dinleyici ayarı
-yoktur ve siz değiştirene kadar her olayı göstermeye devam eder.
-
-## Olay zaman çizelgesi
+## Event zaman çizelgesi
 
 | Sütun | Açıklama |
 |---|---|
-| Yön | Gönderdiğiniz olaylar için yukarı ok; alınanlar için aşağı ok; bağlantı olayları için radyo simgesi |
-| Olay | Olay adı |
-| Zaman damgası | Gönderme / alma anının yerel saati |
-| Yük | Güzel basılmış JSON ya da JSON değilse ham dize |
+| Yön | Gönderdiğiniz emit'ler için `↑`; sunucudan alınan event'ler için `↓` |
+| Event | Event adı |
+| Zaman damgası | Emit / receive yerel saati |
+| Payload | Pretty-print edilmiş JSON, JSON değilse ham string |
 
-Tam yükü genişletmek için bir satıra tıklayın. Araç çubuğunda **arama**, bir
-**filtre** (Tümü, Gönderilen, Alınan, Bağlantı), **kopyala**, **kayıtlı mesaj olarak
-kaydet**, **iki satır arasındaki süreyi karşılaştır**, ikili argümanlar için
-**Hexdump** görünümü ve **Temizle** bulunur. Alınan olaylar yalnızca bellekte
-tutulur; diske yazılmaz.
+Tam payload'ı genişletmek için herhangi bir satıra tıklayın. Bağlantıyı
+kesmeden zaman çizelgesini temizlemek için **Clear**'e tıklayın.
 
-## Header'lar ve kimlik doğrulama
+## Header'lar ve auth
 
-Socket.IO kimlik doğrulaması genellikle el sıkışmanın `auth` yükünden geçer
-(long-polling yedeğinde de korunduğu için header'lara tercih edilir). Testnizer'ın
-**Bearer token** alanı `auth: { token: '<değer>' }` olarak gönderilir — standart
-`socket.io` middleware kalıplarının (`io.use(...)`) beklediği biçim budur. Socket.IO
-2 sunucusunda yukarıda anlatıldığı gibi sorguda gider.
+Socket.IO kimlik doğrulaması genellikle el sıkışmanın `auth` payload'ı
+üzerinden akar (long-polling fallback'inde de çalıştığı için header'lara
+tercih edilir). Testnizer'ın **Bearer token** alanı `auth: { token: '<value>' }`
+olarak gönderilir — bu, standart `socket.io` middleware kalıplarının
+(`io.use(...)`) beklediği formattır.
 
-Yazılan bir token, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz; ortamda
-saklamak için bunun yerine bir `{{değişken}}` (gizli bir değişken) kullanın.
+Bunun yerine HTTP header'larına (örn. `Authorization`) bakan sunucular için
+Testnizer ayrıca WebSocket upgrade el sıkışmasında özel header'ları da
+destekler — bunlar `socket.io-client`'ın `extraHeaders` seçeneği üzerinden
+sağlanır. Ekstra header'ların long-polling fallback'inde gönderilmediğini
+unutmayın çünkü tarayıcı WebSocket spec'i tüm ortamlarda orada özel
+header'lara izin vermez.
 
-## Çok sekmeli yalıtım ve ömür
+## Çoklu sekme yalıtımı
 
-Her Socket.IO sekmesi kendi bağlantısını, namespace'ini, dinleyicilerini ve zaman
-çizelgesini taşır. Birden çok sunucuyu, aynı sunucudaki birden çok namespace'i ya da
-tek bir sunucuyu farklı auth token'larıyla test etmek için birden çok sekme açın —
-sekmeler arasında hiçbir durum geçmez.
-
-Bağlantı sekmesine aittir: **sekmeyi kapatmak bağlantıyı keser** (ya da süren el
-sıkışmayı iptal eder); **projeden ayrılmak** da (proje değiştirmek ya da Ana sayfaya
-dönmek) keser. Aynı kural WebSocket ve MQTT sekmeleri için de geçerlidir.
+Her Socket.IO sekmesi kendi bağlantısını, namespace'ini, aboneliklerini ve
+zaman çizelgesini korur. Birden çok sunucuyu, aynı sunucuda birden çok
+namespace'i veya tek bir sunucuyu farklı auth token'ları altında test etmek
+için birden çok sekme açın — durum sekmeler arasında geçmez.
 
 ## Testnizer'ın yapmadıkları
 
-- **Varsayılan olarak otomatik yeniden bağlanma yok.** Bu bir ayardır; denemeleri
-  artırmadıkça kapalıdır.
-- **Alınan olayların kalıcı saklanması yok.** Zaman çizelgesi sekme başına bellektedir;
-  kayıtlı mesajlar aldıklarınızı değil, oluşturduklarınızı tutar.
+- **Otomatik yeniden bağlanma yok.** Protokol testi için araçlar bağlantı
+  düşmelerini gizlemek yerine ortaya çıkarmalıdır.
+- **Emit edilen event'lerin kalıcı depolanması yok.** Zaman çizelgesi sekme
+  başına bellektedir. Sekmeyi kapatmak temizler.
+- **İkili payload editörü yok.** Giden payload'lar JSON veya string'dir;
+  `Buffer` veya `ArrayBuffer` göndermeniz gerekiyorsa, bunun yerine script
+  güdümlü bir akış kullanın.

@@ -12,8 +12,8 @@ const principles = [
     body: 'contextIsolation is on. nodeIntegration is off. The preload script exposes only an audited <code>window.api</code> surface — no raw <code>fetch</code>, <code>axios</code>, or <code>require</code> from the UI thread.',
   },
   {
-    title: 'Stored secrets use the OS keychain',
-    body: 'Secret-type variables, mock server tokens and passwords, Mock MCP bearer tokens, certificate passphrases, git tokens and AI Chat API keys are encrypted with Electron <code>safeStorage</code> — Keychain on macOS, DPAPI on Windows, libsecret on Linux. Where no OS keychain exists (for example Linux without libsecret), most of them are stored unencrypted. Credentials you type into a request\'s Auth tab are stored with the request, not encrypted — use <code>{{secretVar}}</code> references. MCP OAuth tokens stay in memory only.',
+    title: 'Secrets pass through OS keychain',
+    body: 'Passphrases, basic-auth passwords, bearer tokens, OAuth refresh tokens, and certificate keys all go through Electron <code>safeStorage</code> — Keychain on macOS, DPAPI on Windows, libsecret on Linux. Only encrypted blobs touch SQLite. Raw values never write to disk.',
   },
   {
     title: 'Zero telemetry by design',
@@ -101,19 +101,16 @@ const claims = [
         <p>
           XML signing and encryption use Node's native <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">crypto</code>
           plus <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-crypto</code> and
-          <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-encryption</code>. Both run in the main process. Private keys are loaded from disk into memory on demand and used for the single operation.
+          <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-encryption</code>. Both run in the main process. Private keys are loaded from disk into memory on demand, used for the single operation, and zeroed when the request completes.
         </p>
         <p>
           JWT verification runs against an HS / RS / ES algorithm catalogue inside the same main process — there is no helper service, no online verification step, no shared secret pool.
         </p>
         <p>
-          Secret-type environment and global variables (current and initial value), HTTP mock server tokens, passwords and API keys, Mock MCP bearer tokens, certificate passphrases, git access tokens and AI Chat API keys are encrypted with Electron's <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">safeStorage</code> API. On macOS that delegates to Keychain. On Windows, DPAPI. On Linux, libsecret. If no OS keychain is available (for example Linux without libsecret), most of these values are stored without encryption on your computer; AI Chat API keys are then not saved at all.
+          Stored secrets — basic-auth passwords, bearer tokens, OAuth refresh tokens, certificate passphrases — pass through Electron's <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">safeStorage</code> API. On macOS that delegates to Keychain. On Windows, DPAPI. On Linux, libsecret. The raw plaintext never writes to your project's SQLite database; only the OS-encrypted blob does.
         </p>
         <p>
-          Credentials you type into a request's or folder's Auth tab are part of that request or folder. They are stored in the local SQLite database as plain text (not encrypted at rest) and travel with exports and git, the same as in Postman or Bruno; use <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">&#123;&#123;secretVar&#125;&#125;</code> references to keep real values out of them. Literal credentials are not kept in the renderer's browser storage, and MCP OAuth tokens and HTTP OAuth 2.0 access tokens live in main-process memory only.
-        </p>
-        <p>
-          Master password gating is opt-in. When enabled, Testnizer stores a salted scrypt hash of the password and checks it at launch. It is a login gate only: it does not encrypt the database or any other local data, so use full-disk encryption for that.
+          Master password gating is opt-in. When enabled, the app derives a key with PBKDF2-SHA256 (120,000 iterations) and uses it to envelope-encrypt the entire SQLite database before save.
         </p>
       </div>
     </div>

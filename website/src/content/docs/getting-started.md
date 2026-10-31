@@ -17,16 +17,6 @@ launch).
 
 If you want to verify the integrity of the installer before running it, see [Verifying releases](/docs/build-from-source).
 
-### System requirements
-
-Testnizer 1.6.0 runs on Electron 44, which sets the floor on macOS:
-**macOS 13 (Ventura) or later**. On macOS 11 or 12, Testnizer 1.4.10 or later
-does not offer the 1.6.0 update and keeps working as it is; do not install it by
-hand on those versions. Windows and Linux (x64 and arm64) are unchanged. Your
-database, encrypted secrets, settings and open tabs carry over to 1.6.0
-unchanged, and the first start of a new build keeps a [database
-backup](#restoring-a-backup-after-an-update).
-
 ## First launch
 
 Testnizer opens to a Welcome screen. There is no account creation, no cloud
@@ -63,29 +53,13 @@ OS's user-data directory:
 
 Inside that folder you'll find:
 
-- `testnizer.db` — workspaces, projects, environments, history, certificates (secret-type variable values, mock tokens and certificate passphrases are stored in it encrypted with the OS keychain)
-- `settings.json` — UI preferences, keyboard shortcuts, theme (credential-named settings and AI Chat API keys are keychain-encrypted)
-- `backups/` — copies of the database taken before an update (see below)
+- `data.db` — workspaces, projects, environments, history, certificates
+- `secrets/` — OS-keychain-encrypted blobs for tokens and passphrases
+- `settings.json` — UI preferences, keyboard shortcuts, theme
 
-The database is portable. Copy `testnizer.db` to another machine running
-Testnizer and your collections come with it. (Encrypted secrets are tied to the
-OS keychain, so those need re-entering on a new machine.)
-
-### Restoring a backup after an update
-
-The first time a new version starts, Testnizer copies the database to
-`backups/testnizer.db.<version>-<build>.<timestamp>` before updating it. The 3
-newest copies are kept. If the disk has less free space than about twice the
-database size plus 50 MB, no copy is taken (and none is deleted) and Testnizer
-tells you once. To go back to one:
-
-1. Quit Testnizer. If the new version itself is the problem, install the
-   previous version first; a newer version updates the restored copy again.
-2. In the data folder, move `testnizer.db`, `testnizer.db-wal` and
-   `testnizer.db-shm` (the last two may be missing) somewhere else. Do not leave
-   the `-wal` / `-shm` files next to the restored copy.
-3. Copy the backup you want into the data folder and rename it to
-   `testnizer.db`, then start Testnizer.
+The database is portable. Copy `data.db` to another machine running Testnizer
+and your collections come with it. (Encrypted secrets are tied to the OS
+keychain, so those need re-entering on a new machine.)
 
 ## What's next
 

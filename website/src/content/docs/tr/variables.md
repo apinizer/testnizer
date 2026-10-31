@@ -13,55 +13,38 @@ olanak tanır.
 
 ## Değişken kapsam hiyerarşisi
 
-Testnizer `{{değişken}}` yer tutucularını üç kapsamdan çözümler. Aynı anahtar
-birden fazla kapsamda bulunduğunda, daha spesifik kapsam kazanır. En düşükten en
-yükseğe öncelik:
+Testnizer değişkenleri dört kapsam kullanarak çözümler. Aynı anahtar birden fazla
+kapsamda bulunduğunda, daha spesifik kapsam kazanır. En düşükten en yükseğe öncelik:
 
-1. **Globaller** — projenin kendi değişken listesi; **Ortamlar** → **Globaller**
-   altından açılır. Hangi ortam aktif olursa olsun projedeki her istek bunları
-   görür ve proje ile birlikte kaydedilir (Git, dışa aktarma). Globaller
-   **projeye özeldir**: aynı çalışma alanındaki başka bir proje bunları görmez;
-   ne Gönder'de ne de Çalıştır'da. Bu liste hem Postman'in *globals* hem de
-   *collection variables* karşılığıdır — Testnizer projesi, Postman koleksiyonuna
-   denk gelir — bu yüzden `pm.globals` ve `pm.collectionVariables` aynı
-   değişkenleri okur ve yazar. Bir değişken **sır** olarak işaretlenebilir; bkz.
-   [Sırlar ve hassas değişkenler](#sırlar-ve-hassas-değişkenler).
+1. **Global değişkenler** — tüm çalışma alanına ve içindeki her projeye uygulanır.
+   Çalışma zamanında `pm.globals.set()` / `pm.globals.get()` ile ayarlanır ve
+   okunur. Ortamlar arasında hiç farklılık göstermeyen değerler için kullanışlıdır,
+   örneğin paylaşılan bir API sürüm dizesi.
 
-2. **Ortam değişkenleri** — şu anda aktif ortamdan çekilir. Ortam oluşturma ve
+2. **Koleksiyon değişkenleri** — tek bir projeye kapsamlıdır (Testnizer, betik
+   API terimi olarak "koleksiyon"u proje kapsamı için kullanır). `pm.collectionVariables.set()`
+   ile ayarlanır. Projeye ait ancak ortama göre farklılık göstermemesi gereken
+   temel yollar ve paylaşılan test verileri için uygundur.
+
+3. **Ortam değişkenleri** — şu anda aktif ortamdan çekilir. Ortam oluşturma ve
    yönetme hakkında bilgi için [Ortamlar ve değişkenler](/tr/docs/environments)
-   sayfasına bakın. Hazırlık ve üretim arasında farklılık gösteren değerleri
-   koymak için en yaygın yerdir. Aynı adlı bir Global'e göre ortam değişkeni
-   önceliklidir.
+   sayfasına bakın. Bunlar, hazırlık ve üretim arasında farklılık gösteren
+   değerleri koymak için en yaygın yerdir.
 
-3. **Yerel değişkenler** — yalnızca tek bir istek yürütmesi süresince yaşar.
+4. **Yerel değişkenler** — yalnızca tek bir istek yürütmesi süresince yaşar.
    Ön istek veya test betiğinde `pm.variables.set()` ile ayarlanır. Yanıt
    alındıktan sonra otomatik olarak temizlenir.
 
-**Çözümleme örneği.** `baseUrl`'nin iki yerde tanımlandığını varsayalım:
+**Çözümleme örneği.** `baseUrl`'nin üç yerde tanımlandığını varsayalım:
 
 | Kapsam | Değer |
 |---|---|
-| Globaller | `https://prod.api.example.com` |
+| Global | `https://prod.api.example.com` |
+| Koleksiyon | `https://staging.api.example.com` |
 | Ortam (aktif: Staging) | `https://staging-v2.api.example.com` |
 
-Bir istek `{{baseUrl}}` kullandığında, Testnizer bunu
-`https://staging-v2.api.example.com` olarak çözümler, çünkü ortam kapsamı daha
-yüksek önceliğe sahiptir. `baseUrl` tanımlamayan bir ortama geçerseniz aynı yer
-tutucu Global değere döner.
-
-Gönder, Collection Runner, Test Suite'ler, Zamanlayıcı ve mock sunucular aynı
-Globalleri ve aynı ortamları okur; yani Gönder'de çözülen bir istek Çalıştır'da
-da çözülür.
-
-### Bir ortamı Globaller'e taşıma
-
-Koleksiyon değişkeni kullanan Postman koleksiyonları Testnizer'a Global olarak
-gelir. Değerleri gerçekten tüm projeye ait olan bir ortamınız varsa
-**Ortamlar**'ı açın, ortamı seçin ve **Globallere taşı**'yı seçin: değişkenleri
-Globaller'e kopyalanır, Globaller'de zaten olan bir değişken kendi değerini korur
-ve ardından ortamın silinip silinmeyeceği sorulur (soru, kaybolacak değerleri
-adıyla belirtir). Önceki bir içe aktarmayla oluşan ortamlar otomatik olarak
-taşınmaz.
+Bir istek `{{baseUrl}}` kullandığında, Testnizer bunu `https://staging-v2.api.example.com`
+olarak çözümler, çünkü üç arasında ortam kapsamı en yüksek önceliğe sahiptir.
 
 ---
 
@@ -86,11 +69,8 @@ renkle vurgulanır, böylece Gönder'e tıklamadan önce bunları fark edebilirs
 https://{{baseUrl}}/{{version}}/users
 ```
 
-`baseUrl` ve `version`'ı bağımsız olarak çözümler. Bir değişkenin değeri de
-`{{başkaDeğişken}}` içerebilir: çözümleme hiçbir şey değişmeyene kadar (en fazla
-10 geçiş) tekrarlanır; bu yüzden `fullUrl = {{baseUrl}}/{{version}}` gibi
-zincirli başvurular çalışır. Döngüsel bir başvuru 10 geçiş sınırında durur ve
-çözülmemiş son yer tutucu metinde kalır.
+`baseUrl` ve `version`'ı bağımsız olarak çözümler. Değişkenler birbirine referans
+veremez (döngüsel veya zincirli çözümleme desteklenmez).
 
 ### Betiklerde değişken yönetimi
 
@@ -108,9 +88,8 @@ pm.environment.set('userId', body.data.id)
 // Yalnızca bu yürütme için geçerli olan yerel bir değişken yaz
 pm.variables.set('requestId', '12345')
 
-// Globaller: pm.collectionVariables ve pm.globals aynı proje genelindeki listedir
+// Koleksiyon düzeyinde (proje düzeyinde) okuma/yazma
 pm.collectionVariables.set('sharedCounter', 1)
-pm.globals.get('sharedCounter')   // 1
 ```
 
 ---
@@ -121,18 +100,13 @@ Dinamik değer fonksiyonları, istek her gönderildiğinde yeni bir değer üret
 Bunları URL'lerde, başlıklarda veya gövde alanlarında doğrudan `{{$fonksiyonAdı}}`
 sözdizimi ile kullanın.
 
-Testnizer, **Postman'in 118 dinamik değişkeninin tamamını** destekler
-(`{{$guid}}`, `{{$randomUUID}}`, `{{$timestamp}}`, `{{$isoTimestamp}}`,
-`{{$randomInt}}`, `{{$randomEmail}}`, `{{$randomFullName}}`, `{{$randomIP}}` ve
-diğerleri). Değerler Postman ve Newman'in kullandığı üreteç tablosundan geldiği
-için çıktı biçimleri Postman ile aynıdır. Bir alana `{{$` yazdığınızda otomatik
-tamamlama bunları listeler. Yaygın birkaçı:
-
 | Fonksiyon | Döndürür | Örnek çıktı |
 |---|---|---|
 | `{{$randomInt}}` | 0–1000 arasında rastgele tamsayı | `742` |
+| `{{$randomInt(1,100)}}` | Verilen aralıkta rastgele tamsayı | `37` |
+| `{{$randomFloat}}` | 0.0–1.0 arasında rastgele ondalık | `0.4821` |
 | `{{$randomBoolean}}` | `true` veya `false` | `true` |
-| `{{$guid}}` / `{{$randomUUID}}` | Sürüm 4 UUID | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
+| `{{$randomUUID}}` | Sürüm 4 UUID | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
 | `{{$timestamp}}` | Saniye cinsinden Unix epoch | `1715000000` |
 | `{{$isoTimestamp}}` | ISO 8601 tarih-saat | `2024-05-06T14:30:00.000Z` |
 | `{{$randomEmail}}` | Sentetik e-posta adresi | `alice.smith@example.com` |
@@ -140,23 +114,11 @@ tamamlama bunları listeler. Yaygın birkaçı:
 | `{{$randomLastName}}` | Soyad | `Chen` |
 | `{{$randomFullName}}` | Tam ad | `Sarah Okafor` |
 | `{{$randomPhoneNumber}}` | Telefon numarası | `+1-555-0147` |
-| `{{$randomAlphaNumeric}}` | Tek bir alfanümerik karakter | `x` |
+| `{{$randomAlphaNumeric}}` | 8 karakterlik alfanümerik dize | `x4Kp9mQr` |
 | `{{$randomHexColor}}` | Onaltılık renk kodu | `#a3c4e8` |
 | `{{$randomIP}}` | IPv4 adresi | `192.168.14.23` |
 | `{{$randomLoremWord}}` | Tek lorem ipsum sözcüğü | `pariatur` |
 | `{{$randomLoremParagraph}}` | Lorem ipsum paragrafı | `Lorem ipsum dolor sit amet…` |
-
-Testnizer, Postman'de bulunmayan birkaç biçim de ekler:
-
-| Fonksiyon | Döndürür |
-|---|---|
-| `{{$randomInt(1,100)}}` | Verilen aralıkta rastgele tamsayı |
-| `{{$randomString}}` / `{{$randomString(12)}}` | Rastgele alfanümerik dize (8 karakter veya verdiğiniz uzunluk) |
-| `{{$randomName}}` | Rastgele tam ad |
-| `{{$datetime(YYYY-MM-DD)}}` | Geçerli yerel tarih/saat; `YYYY MM DD HH mm ss` yerine konur |
-
-Testnizer'ın tanımadığı bir ad, Postman'de olduğu gibi yazdığınız hâliyle bırakılır
-(`{{$notAFunction}}` olduğu gibi gönderilir).
 
 ### Betiklerde dinamik değerler
 
@@ -187,37 +149,21 @@ tasarlanmıştır — URL, başlıklar, sorgu parametreleri ve gövde metni.
 
 ## Sırlar ve hassas değişkenler
 
-Herhangi bir ortam değişkeni veya Global, oluşturulurken veya düzenlenirken
-**sır** olarak işaretlenebilir. Değer (geçerli ve başlangıç), yerel veritabanında
-Electron `safeStorage` ile şifrelenir — macOS'ta Keychain, Windows'ta DPAPI,
-Linux'ta libsecret. Yalnızca sır değerler şifrelenir; adlar okunabilir kalır.
-Anahtarlık kullanılamıyorsa (bazı Linux kurulumları) değerler şifrelenmeden saklanır,
-ortam yöneticisi bunu söyler ve anahtarlık oluşunca sonraki açılışta şifrelenirler.
-Başka bir bilgisayarda ya da işletim sistemi anahtarlığı sıfırlanmadan önce
-şifrelenmiş bir değer çözülemez: alan, değeri yeniden girmenizi ister.
+Herhangi bir ortam değişkeni oluşturulurken veya düzenlenirken **sır** olarak
+işaretlenebilir. Sır değişkenler, macOS'ta işletim sistemi anahtarlığı ve Windows
+Kimlik Bilgisi Yöneticisi tarafından desteklenen `electron-store` üzerinden saklanır.
 
 Sır değişkenlerin davranışı:
 
-- Değer; Ortamlar panelinde, Konsol'da, Geçmiş'te ve Runner sonuçlarında maskelenir.
+- Değer, Ortamlar panelinde, konsolda ve istek geçmişi görüntüleyicisinde
+  yıldız işaretleriyle maskelenir.
 - `pm.environment.get('secretKey')`, betikler içinde gerçek değeri döndürür,
   böylece Authorization başlıklarında kullanabilirsiniz.
-- Sır değerler bu bilgisayarda kalır. Her proje dosyasına, Git commit'ine veya
-  push'una ve dışa aktarıma **boş değer** olarak yazılır — ad taşınır, değer
-  taşınmaz — ve bir pull ya da içe aktarma yerel değerinizin üzerine yazmaz
-  (Postman dışa aktarması değişkeni boş değerli `type: secret` olarak işaretler).
-- Bir sır değişkene yazan betik (`pm.environment.set`, `pm.globals.set`,
-  `pm.collectionVariables.set` veya `pm.vault.set`) yeni değeri sızdırmaz:
-  Çalıştır sırasında sonuçlarda, Geçmiş'te ve Konsol'da maskelenir; Gönder'de ise
-  istek çıkmadan önce kaydedilir, böylece Geçmiş ve Konsol da maskeler.
-- `pm.vault`, Postman'in sır deposunun adıdır. Testnizer'da bu, **sır
-  Globaller**'dir: `await pm.vault.set('apiKey', değer)` bir sır Global oluşturur
-  veya günceller, `await pm.vault.get('apiKey')` yalnızca sır olanları okur ve
-  `await pm.vault.unset('apiKey')` bir sır Global'i siler. Bkz.
-  [Betikler](/tr/docs/scripts#pmvault-ve-pmrequire).
-- Bir isteğin **Auth** sekmesine doğrudan yazdığınız kimlik bilgileri sır değişken
-  *değildir*: yerel veritabanında düz metin olarak saklanır ve istekle birlikte
-  taşınır. Gerçek değeri bir sır değişkene koyun ve `{{secretVar}}` olarak
-  başvurun.
+- `pm.environment.toObject()`, sır anahtarların `"***"` ile değiştirildiği bir
+  nesne döndürür. Sır değerleri okumak için bu yönteme güvenmeyin.
+- Sır değerler hiçbir zaman dışa aktarılan koleksiyon dosyalarına yazılmaz. Sır
+  değişkene referans veren bir koleksiyonu dışa aktarırsanız, dışa aktarma yalnızca
+  değişken adını içerir.
 
 Ortam oluşturma ve düzenleme kılavuzu için
 [Ortamlar ve değişkenler](/tr/docs/environments) sayfasına bakın.

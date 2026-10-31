@@ -32,20 +32,6 @@ Sorgu parametreleri şu şekillerde girilebilir:
 
 URL'deki kodlanmış karakterler Params tablosunda otomatik olarak çözülür.
 
-**Yol değişkenleri.** URL yolundaki bir `:ad` bölümü (`/users/:id`), Parametreler
-sekmesinin altındaki **Yol Değişkenleri** tablosuna bir satır ekler. Değeri girin;
-Gönder, Çalıştır, Kod Oluştur ve cURL dışa aktarma bunu, ön istek scriptinden sonra
-ve `{{değişkenler}}` çözülmeden önce yerine koyar. Değeri olmayan bir `:ad`
-eskisi gibi olduğu gibi gönderilir. Postman dışa aktarması bunları `url.variable[]`
-olarak geri yazar.
-
-**cURL komutu yapıştırma.** Bir `curl` komutunu (bash, Windows CMD veya
-PowerShell) doğrudan URL çubuğuna yapıştırın; Testnizer isteğin tamamını doldurur
-— metod, URL, parametreler, header'lar, gövde, auth ve ayarlar. Bir toast algılanan
-kabuğu gösterir, aktarılamayanları listeler ve **Geri al** sunar. Düz bir URL metin
-olarak yapıştırılır. Ayrıştırıcının neleri anladığı için bkz.
-[cURL](/tr/docs/import-formats#curl).
-
 ## Auth sekmesi
 
 | Şema | Testnizer'ın yaptığı |
@@ -94,15 +80,6 @@ Araç çubuğunda content-type seçici bulunan Monaco editörü:
 Dosya satırları yerel işletim sistemi dosya seçiciyi açar; dosya adı ve MIME türü
 parça header'larında gönderilir.
 
-**Göreli** bir dosya yolu (örneğin içe aktarılmış bir Postman koleksiyonundaki
-`data/upload.json`) projenin **Çalışma dizini**nden okunur: bunu **Proje Ayarları →
-Genel → Çalışma dizini** altında bu bilgisayardaki mutlak bir klasöre ayarlayın.
-Mutlak yol olduğu gibi kullanılır. İstekte göreli bir yol varsa ve çalışma dizini
-ayarlı değilse Gönder, ayarın adını veren bir mesajla başarısız olur. Çalışma
-dizini bilgisayara özgü bir ayardır: projeyle birlikte kaydedilmez ve Git'e
-gönderilmez, çünkü bir makinedeki klasör başka bir makinede anlam taşımaz. Gönder,
-Collection Runner, Test Suite'ler ve zamanlanmış çalıştırmaların hepsi için geçerlidir.
-
 ### x-www-form-urlencoded
 
 URL-encoded anahtar-değer tablosu. Değerler gönderilmeden önce yüzde olarak kodlanır.
@@ -110,8 +87,7 @@ URL-encoded anahtar-değer tablosu. Değerler gönderilmeden önce yüzde olarak
 ### binary
 
 Tüm istek gövdesi diskten tek bir dosyadır. Testnizer, dosya uzantısına göre
-`Content-Type` ayarlar (gerekirse Headers sekmesinde geçersiz kılın). Göreli yol,
-yukarıda anlatıldığı gibi projenin [Çalışma dizini](#form-data)ne göre çözülür.
+`Content-Type` ayarlar (gerekirse Headers sekmesinde geçersiz kılın).
 
 ## Ön istek scripti
 
@@ -161,7 +137,7 @@ geçmişe kaydedilir.
 
 | Sekme | İçerik |
 |---|---|
-| **Body** | Monaco editörü — JSON otomatik biçimlendirilir, XML güzel basılır, görüntüler satır içinde önizlenir; PDF, ses ve video satır içi bir çerçevede oynatılır |
+| **Body** | Monaco editörü — JSON otomatik biçimlendirilir, XML güzel basılır, görüntüler satır içinde önizlenir |
 | **Headers** | Arama özellikli yanıt header tablosu |
 | **Cookies** | Yanıt tarafından ayarlanan cookie'ler, domain/path/bayraklarıyla birlikte |
 | **Console** | Ham istek + ham yanıt (yönlendirmeleri veya beklenmeyen header'ları hata ayıklarken kullanışlı) |
@@ -195,61 +171,17 @@ token'lar) kendi sütunlarında sarılır ve kopyalamak için seçilebilir kalı
 
 ## Kod snippet oluşturma
 
-Etkin sekmedeki istek için yapıştırmaya hazır bir snippet oluşturmak üzere yanıt
-çubuğundaki **Kod**'a tıklayın (ya da sağ panelin **Kod** bölmesini açın).
+Yapıştırmaya hazır snippet oluşturmak için istek araç çubuğundaki `</>` simgesine tıklayın:
 
-Bir **Dil** seçin, ardından onun **Varyant**larından birini seçin ve o varyantın
-dikkate aldığı ayarlar için **Seçenekler**'i açın. 20 dil ve 36 varyant vardır:
+- **cURL**
+- **JavaScript (fetch)**
+- **JavaScript (axios)**
+- **Python (requests)**
+- **Go (net/http)**
+- **Java (OkHttp)**
 
-| Dil | Varyantlar |
-|---|---|
-| cURL | bash, CMD, PowerShell |
-| C | libcurl |
-| C# | HttpClient, RestSharp |
-| Dart | http, dio |
-| Go | net/http |
-| HTTP | HTTP/1.1 |
-| Java | OkHttp, Unirest |
-| JavaScript | Fetch, XHR, jQuery |
-| Kotlin | OkHttp |
-| NodeJS | Axios, Native, Request, Unirest |
-| Objective-C | NSURLSession |
-| OCaml | Cohttp |
-| PHP | cURL, Guzzle, HTTP_Request2, pecl_http |
-| PowerShell | Invoke-RestMethod |
-| Python | Requests, http.client |
-| R | httr, RCurl |
-| Ruby | Net::HTTP |
-| Rust | reqwest |
-| Shell | wget, HTTPie |
-| Swift | URLSession |
-
-**Seçenekler** varyanta göre değişir; girinti boyutu ve karakteri, **İstek
-gövdesini kırp**, **Yönlendirmeleri izle**, **İstek zaman aşımı**, **async/await
-kullan** ve **İskelet kodu ekle** bunlar arasındadır. cURL varyantlarında
-**Çok satırlı**, **Uzun seçenek adları** (`--header`) ve **Sessiz mod** (`-s`)
-vardır. Yönlendirmeyi kapatmış ya da kendi zaman aşımı olan bir istek bunu
-snippet'e taşır. **Varsayılanlara dön** seçenekleri sıfırlar. Seçim oturum boyunca
-kalır.
-
-Snippet'in içeriği:
-
-- Mevcut header'lar, sorgu parametreleri (varsa `#fragment`'ten önce URL'ye
-  eklenir), yol değişkenleri ve gövde; form-data metin ve dosya parçaları, binary
-  gövdeler ve GraphQL `{query, variables}` JSON gövdesi dahil
-- Gerçekte gönderilecek auth; bir klasörden ya da projeden **miras alınan auth**
-  dahil, header olarak ya da dilin kendi API'si ile
-- Gövdenin ima ettiği `Content-Type`, siz bir tane ayarlamadıysanız
-- `{{değişkenler}}` mevcut değerlerine çözülür. **Sır** bir değişken `{{ad}}`
-  yer tutucusu olarak kalır; kopyalanan metin o zaman gerçek değerleri
-  içereceğinden **Gizli değerleri dahil et**'i yalnızca doğrudan çalışan bir komut
-  için işaretleyin. Panel, çözülemeyen değişkenleri listeler
-
-Kod Oluştur **HTTP, GraphQL ve SOAP** sekmelerini kapsar: bir GraphQL sekmesi JSON
-gövdeli POST'u, bir SOAP sekmesi ise zarf ve `SOAPAction` ya da SOAP 1.2
-`Content-Type` ile POST'u üretir. WebSocket, Socket.IO, MQTT, MCP, gRPC, SSE veya
-AI Chat sekmesinde bölme, eski bir HTTP isteği göstermek yerine kod oluşturmanın
-kullanılamadığını söyler.
+Snippet'ler mevcut header'ları, auth'u ve gövdeyi içerir — değişkenler oluşturma
+anındaki mevcut değerlerine çözülür.
 
 ## Yönlendirmeleri takip et
 

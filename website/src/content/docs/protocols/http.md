@@ -33,19 +33,6 @@ Query parameters can be entered:
 
 Encoded characters in the URL are decoded in the Params table automatically.
 
-**Path variables.** A `:name` segment in the URL path (`/users/:id`) adds a row
-to the **Path Variables** table under Params. Fill in the value and Send, Run,
-Generate Code and the cURL export all substitute it, after the pre-request
-script and before `{{variables}}` resolve. A `:name` with no value is sent
-literally, as before. A Postman export writes them back as `url.variable[]`.
-
-**Paste a cURL command.** Paste a `curl` command (bash, Windows CMD or
-PowerShell) straight into the URL bar and Testnizer fills the whole request —
-method, URL, params, headers, body, auth and settings. A toast shows the shell it
-detected, lists anything it could not carry over, and offers **Undo**. A plain
-URL pastes as text. See [cURL](/docs/import-formats#curl) for what the parser
-understands.
-
 ## Auth tab
 
 | Scheme | What Testnizer does |
@@ -94,16 +81,6 @@ A Monaco editor with a content-type chooser in the toolbar:
 File rows open the native OS file picker; the file name and MIME type are
 sent in the part headers.
 
-A file path that is **relative** (for example `data/upload.json`, as in an
-imported Postman collection) is read from the project's **Working directory**:
-set it in **Project Settings → General → Working directory** to an absolute
-folder on this computer. An absolute path is used as it is. If a request has a
-relative path and no working directory is set, Send fails with a message that
-names the setting. The working directory is a per-computer setting: it is not
-saved with the project or pushed to Git, because a folder on one machine means
-nothing on another. It applies to Send, the Collection Runner, Test Suites and
-scheduled runs alike.
-
 ### x-www-form-urlencoded
 
 URL-encoded key-value table. Values are percent-encoded before sending.
@@ -112,8 +89,7 @@ URL-encoded key-value table. Values are percent-encoded before sending.
 
 The entire request body is a single file from disk. Testnizer sets
 `Content-Type` based on the file extension (override it in the Headers tab
-if needed). A relative path resolves against the project's
-[Working directory](#form-data) as described above.
+if needed).
 
 ## Pre-request script
 
@@ -164,7 +140,7 @@ are persisted to history.
 
 | Tab | Contents |
 |---|---|
-| **Body** | Monaco editor — JSON auto-formatted, XML pretty-printed, images previewed inline; PDF, audio and video play in an inline frame |
+| **Body** | Monaco editor — JSON auto-formatted, XML pretty-printed, images previewed inline |
 | **Headers** | Response header table with search |
 | **Cookies** | Cookies set by the response, with domain/path/flags |
 | **Console** | Raw request + raw response (useful when debugging redirects or unexpected headers) |
@@ -198,60 +174,18 @@ own column and stay selectable for copying.
 
 ## Code snippet generation
 
-Click **Code** in the response bar (or open the **Code** pane of the right panel)
-to generate a ready-to-paste snippet for the request in the active tab.
+Click the `</>` icon in the request toolbar to generate a ready-to-paste
+snippet:
 
-Pick a **Language**, then one of its **Variants**, and open **Options** for the
-settings that variant honours. There are 20 languages and 36 variants:
+- **cURL**
+- **JavaScript (fetch)**
+- **JavaScript (axios)**
+- **Python (requests)**
+- **Go (net/http)**
+- **Java (OkHttp)**
 
-| Language | Variants |
-|---|---|
-| cURL | bash, CMD, PowerShell |
-| C | libcurl |
-| C# | HttpClient, RestSharp |
-| Dart | http, dio |
-| Go | net/http |
-| HTTP | HTTP/1.1 |
-| Java | OkHttp, Unirest |
-| JavaScript | Fetch, XHR, jQuery |
-| Kotlin | OkHttp |
-| NodeJS | Axios, Native, Request, Unirest |
-| Objective-C | NSURLSession |
-| OCaml | Cohttp |
-| PHP | cURL, Guzzle, HTTP_Request2, pecl_http |
-| PowerShell | Invoke-RestMethod |
-| Python | Requests, http.client |
-| R | httr, RCurl |
-| Ruby | Net::HTTP |
-| Rust | reqwest |
-| Shell | wget, HTTPie |
-| Swift | URLSession |
-
-**Options** vary by variant and can include indent size and type, **Trim request
-body**, **Follow redirects**, **Request timeout**, **Use async/await** and
-**Include boilerplate**. The cURL variants have **Multi-line**, **Long option
-names** (`--header`) and **Silent mode** (`-s`). A request that turns redirects
-off, or has its own timeout, carries that into the snippet. **Reset to defaults**
-restores the options. The selection lasts for the session.
-
-What the snippet contains:
-
-- The current headers, query parameters (merged into the URL before any
-  `#fragment`), path variables and body, including form-data text and file
-  parts, binary bodies and a GraphQL `{query, variables}` JSON body
-- The auth that would actually be sent, including **auth inherited** from a
-  folder or the project, as a header or the language's own API
-- The `Content-Type` the body implies, unless you set one
-- `{{variables}}` resolved to their current values. A **secret** variable stays
-  as a `{{name}}` placeholder; tick **Include secret values** only for a
-  ready-to-run command, because the copied text then holds the real values. The
-  panel lists variables that could not be resolved
-
-Generate Code covers **HTTP, GraphQL and SOAP** tabs: a GraphQL tab produces the
-POST with its JSON body, and a SOAP tab the POST with the envelope and the
-`SOAPAction` or SOAP 1.2 `Content-Type`. For a WebSocket, Socket.IO, MQTT, MCP,
-gRPC, SSE or AI Chat tab the pane says that code generation is not available,
-rather than showing a stale HTTP request.
+Snippets include the current headers, auth, and body — variables resolved
+to their current values at generation time.
 
 ## Follow redirects
 

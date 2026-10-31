@@ -8,8 +8,7 @@ section: Guides
 Environments hold the values that change between runs — base URLs, auth tokens,
 test user IDs. Testnizer scopes environments to the **project**, which makes
 them simpler to reason about than Postman's three-tier (global / collection /
-environment) model: a project has its **environments** and one list of
-**Globals** that every environment shares.
+environment) model.
 
 ## Project-scoped environments
 
@@ -42,43 +41,22 @@ for your personal override (`baseUrl: http://localhost:3000`).
 Resolution order:
 
 1. Environment variables (active environment)
-2. Globals (the project's own list, see [Globals](#globals))
+2. Global variables (configured in **Settings → Globals**)
 3. Dynamic variables (built-in, see below)
 4. Literal — `{{...}}` left in place if no match
 
-## Globals
-
-Open **Environments** (the environment selector's **Manage Environments**) and
-pick **Globals** to edit the project's variables that apply whichever
-environment is active. An environment variable of the same name wins. Globals
-are saved with the project, so they travel with Git and export, and they can be
-marked **secret** like any other variable.
-
-Globals are where Postman *collection variables* and *globals* land when you
-import a Postman collection, and what `pm.collectionVariables` and
-`pm.globals` read and write in a script. They belong to one project: another
-project in the same workspace has its own list. **Export Globals** saves the
-list as a Postman globals file (secret values are left empty).
-
-To turn an existing environment into Globals, select it and choose **Move to
-Globals**: the variables are copied, a name Globals already has keeps its
-value, and you are asked whether to delete the environment afterwards.
-
 ## Dynamic variables
 
-Built-in helpers, prefixed with `$`. Testnizer supports all 118 of Postman's
-dynamic variables with the same output, for example:
+Built-in helpers, prefixed with `$`:
 
-- `{{$guid}}` / `{{$randomUUID}}` — a v4 UUID
-- `{{$randomInt}}` — random integer, 0–1000
+- `{{$randomInt}}` — random 32-bit integer
+- `{{$randomUuid}}` — RFC 4122 v4 UUID
 - `{{$timestamp}}` — Unix epoch seconds
 - `{{$isoTimestamp}}` — ISO 8601 UTC
 - `{{$randomEmail}}`, `{{$randomFirstName}}`, `{{$randomLastName}}` — fake data
-
-plus Testnizer's own `{{$randomInt(1,100)}}`, `{{$randomString(12)}}` and
-`{{$datetime(YYYY-MM-DD)}}`. A `{{$name}}` Testnizer does not know is left as
-written. The full list with example output is in the
-[Variables reference](/docs/variables#dynamic-values).
+- `{{$base64:hello}}` — Base64-encode a literal
+- `{{$jwt.decode:<token>:claim}}` — extract a claim from a JWT (handy for
+  asserting against a value the auth server returns)
 
 Dynamic variables resolve fresh on every request — useful for cache-busting
 query parameters or unique idempotency keys.
@@ -90,7 +68,7 @@ In a pre-request or post-response script:
 ```js
 pm.environment.set('userId', 12345)
 pm.environment.get('baseUrl')
-pm.variables.set('correlationId', require('uuid').v4())
+pm.variables.set('correlationId', pm.variables.get('$randomUuid'))
 ```
 
 Setters write to the **current value** of the active environment. Writes from a
@@ -104,29 +82,23 @@ need for a token-fetch script entirely).
 
 The recommended pattern:
 
-1. Mark tokens, passwords and API keys as **secret**
-2. Put placeholders in **initial value** (`{{authToken}}` defaults to
-   `"<paste-here>"` or empty) for anything that is not secret
-3. Each developer fills their own **current value** locally
-4. Commit the project to Git — the **name** of a secret variable travels, its
-   **value** is written empty (and a pull never overwrites yours). A pull tells
-   you how many secret values are still empty on your machine
-
-Values of variables that are *not* marked secret travel with the project file,
-current values included, so mark anything sensitive as secret.
+1. Put placeholder values in **initial value** (`{{authToken}}` defaults to
+   `"<paste-here>"` or empty)
+2. Each developer fills their **current value** locally
+3. Commit the project to Git — only initial values travel; current values are
+   stored in a separate, gitignored file
 
 This is how production-quality teams ship Testnizer projects without
 accidentally pushing a real bearer token to the repo.
 
-## Secrets at rest
+## Secrets in the OS keychain
 
-Secret values are encrypted in the local database with the OS keychain (Keychain,
-DPAPI, libsecret) through Electron `safeStorage`; see
-[Secrets and sensitive variables](/docs/variables#secrets-and-sensitive-variables)
-for what happens where no keychain exists. Certificate passphrases and git tokens
-go through the same keychain.
+For long-lived credentials (OAuth refresh tokens, certificate passphrases),
+prefer the **Certificate manager** or per-request auth fields rather than
+environment variables. Those values pass through the OS keychain and never
+write plaintext to disk.
 
-Credentials you type directly into a request's **Auth** tab are different: they are
-stored as plain text in the local database and are part of the request, so they
-travel with exports and Git. Reference a secret variable (`{{secretVar}}`) instead
-of typing the real value there.
+Environment "current values" are stored in plaintext within your project
+directory — convenient for development, not appropriate for production
+credentials. Always use the keychain-backed paths for tokens that grant
+production access.

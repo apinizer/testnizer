@@ -14,7 +14,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
         your local device. This policy explains what little does leave your machine, and why.
       </p>
       <p class="mt-3 text-xs text-text-soft">
-        Effective date: 2026-05-07 &nbsp;·&nbsp; Last updated: 2026-10-27 &nbsp;·&nbsp; Applies to: all versions of Testnizer
+        Effective date: 2026-05-07 &nbsp;·&nbsp; Applies to: all versions of Testnizer
       </p>
     </div>
   </section>
@@ -76,9 +76,9 @@ import BaseLayout from '../layouts/BaseLayout.astro'
             <li>
               Outbound traffic from the Software is limited to:
               <ol class="mt-2 ml-5 space-y-1 list-decimal list-outside">
-                <li>The API requests <strong class="text-text">you</strong> explicitly send (HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MQTT, MCP) — these go directly from your device to the target you specify and never pass through us. A Socket.IO version 2 connection has no handshake authentication, so its token is sent as a <code>token</code> query parameter, which the server&#39;s and any proxy&#39;s logs may record.</li>
+                <li>The API requests <strong class="text-text">you</strong> explicitly send — these go directly from your device to the target you specify and never pass through us.</li>
                 <li>A periodic version check against the GitHub Releases feed for auto-update.</li>
-                <li><strong class="text-text">AI Chat:</strong> if you use the AI Chat feature, prompts and responses travel directly between your device and the AI provider you selected. We never receive this content and do not proxy or relay it. See Section 6.</li>
+                <li><strong class="text-text">AI Chat:</strong> if you use the AI Chat feature, prompts and responses travel directly between your device and the AI provider you selected. We do not see, proxy, or store this content. See Section 6.</li>
                 <li>Optional crash telemetry, <strong class="text-text">only</strong> if you supply a <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> environment variable (off by default). See Section 5.</li>
               </ol>
             </li>
@@ -124,16 +124,10 @@ import BaseLayout from '../layouts/BaseLayout.astro'
               </thead>
               <tbody class="divide-y divide-border">
                 <tr><td class="px-4 py-2.5 font-medium text-text">Database (SQLite)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/testnizer.db</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Settings</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/settings.json</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Database backups taken before an update</td><td class="px-4 py-2.5 text-text-muted"><code>&lt;userData&gt;/backups/</code>. The first time a new version of Testnizer starts, it copies the database there before updating it; the 3 newest copies are kept and older ones are deleted. Before a copy is kept, its secret values are encrypted the same way as in the database, also when the database was written by a version that did not yet encrypt them; if the operating system keychain is unavailable, they stay unencrypted, as in the database. Copies stay on your computer and are never written to project files, git, exports or diagnostics.</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Encrypted secrets: git access tokens, certificate passphrases and keystore passwords, keystores saved to the Keystore library, one-time-password (OTP) secrets, and credential-named settings such as a proxy password</td><td class="px-4 py-2.5 text-text-muted">In the database or <code>&lt;userData&gt;/settings.json</code>, encrypted via Electron <code>safeStorage</code> (macOS Keychain, Windows DPAPI, libsecret on Linux). If <code>safeStorage</code> is unavailable on your system (for example Linux without libsecret), these values are stored without encryption on your computer. Two exceptions are never written unencrypted: AI Chat API keys (below) and remembered keystore passwords.</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Secret-type variables (current and initial value), HTTP mock server tokens, passwords and API keys, and Mock MCP bearer tokens</td><td class="px-4 py-2.5 text-text-muted">In <code>&lt;userData&gt;/testnizer.db</code>, encrypted via Electron <code>safeStorage</code> (the same OS keychain as above). Only the secret values are encrypted; variable names, user names and the rest of a mock&#39;s auth settings stay readable. If <code>safeStorage</code> is unavailable on your system (for example Linux without libsecret), these values are stored without encryption on your computer, and they are encrypted on a later launch once the keychain is available. A value encrypted on one computer cannot be decrypted on another one, or after the OS keychain is reset; Testnizer then treats it as empty until you enter it again. They leave your computer only if you send a request that uses them. The <strong class="text-text">secret</strong> flag on an environment or global variable, and mock server tokens, passwords and API keys, are written as empty values to every project file, git commit or push, and export, so those never carry them.</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Credentials typed into an Auth tab</td><td class="px-4 py-2.5 text-text-muted">In <code>&lt;userData&gt;/testnizer.db</code> as <strong class="text-text">plain text</strong> — they are <strong class="text-text">not</strong> encrypted at rest. Anyone who can read your user profile or disk can read them, so use full-disk encryption and your operating system&#39;s account protection. Auth you type into a request or folder is part of that request or folder and does travel with exports and git; use <code>&#123;&#123;variable&#125;&#125;</code> references (for example to a secret-type variable) to keep the real value out of them. The same holds for the MQTT password and the Socket.IO token: they are saved with the request (project file, git, export) unless you use a <code>&#123;&#123;secretVar&#125;&#125;</code> reference.</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">Received stream data: SSE events, WebSocket, Socket.IO and MQTT messages, MCP notifications and the raw message log</td><td class="px-4 py-2.5 text-text-muted">The live message lists in the tab are held in memory only while the app is running; they are never written to the database or to disk and are gone when you quit the app. History keeps a record per connection, not per message: for SSE, WebSocket and Socket.IO it stores the connection attempt (URL, headers and options with credentials masked, status, duration, connection id) and never the messages or events. For MQTT it stores only the connection (broker URL, client id, MQTT version, user name, whether a password was set, settings and subscriptions), never the password and never the messages. For MCP it stores each tool call, resource read, prompt fetch and input response with its result (a result over 500,000 characters is not stored), with credentials masked.</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Settings</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/config.json</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">Secrets (passwords, tokens, certificates)</td><td class="px-4 py-2.5 text-text-muted">OS keychain via Electron <code>safeStorage</code> (macOS Keychain, Windows DPAPI, libsecret on Linux)</td></tr>
                 <tr><td class="px-4 py-2.5 font-medium text-text">Logs (if any)</td><td class="px-4 py-2.5 font-mono text-text-muted">&lt;userData&gt;/logs/</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat provider API keys</td><td class="px-4 py-2.5 text-text-muted">In <code>&lt;userData&gt;/settings.json</code>, one key per provider, encrypted via <code>safeStorage</code>. If encryption is unavailable on your system, the key is kept in memory only for the current session and is not written to disk.</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat tab state &amp; saved AI Chat requests</td><td class="px-4 py-2.5 text-text-muted">Local application storage and the database. Saved requests contain the provider, model, endpoint URL, system prompt, custom headers with literal credential values removed, and generation settings; they never contain the API key, and never "Run tools without asking".</td></tr>
-                <tr><td class="px-4 py-2.5 font-medium text-text">AI Chat conversations</td><td class="px-4 py-2.5 text-text-muted">The local database only. Each AI Chat request keeps a list of conversations — prompts, responses, MCP tool-call arguments, tool results (each capped at 32,000 characters) and per-message metrics (status, timings, token counts) — so they survive a restart. They are deleted with their request or project, and they are never written to project files, git checkouts, exports or duplicated projects.</td></tr>
+                <tr><td class="px-4 py-2.5 font-medium text-text">AI provider configs &amp; keys</td><td class="px-4 py-2.5 text-text-muted">Encrypted in <code>config.json</code> via <code>safeStorage</code></td></tr>
               </tbody>
             </table>
           </div>
@@ -143,15 +137,6 @@ import BaseLayout from '../layouts/BaseLayout.astro'
             <strong class="text-text">Windows</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">%APPDATA%\Testnizer</code> ·
             <strong class="text-text">Linux</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">~/.config/Testnizer</code>
           </p>
-          <h3 class="font-medium text-text mt-6 mb-2">3.1 Mock servers</h3>
-          <p>Testnizer can run mock servers (HTTP, SSE, AI and MCP mocks) on your own computer.</p>
-          <ul class="mt-2 space-y-1.5 list-disc list-outside ml-5">
-            <li>They run inside the app and, by default, listen on <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">127.0.0.1</code>, so only your own computer can reach them. They listen on all network interfaces (<code class="text-xs bg-bg-muted px-1 py-0.5 rounded">0.0.0.0</code>, reachable from your network) only if you change a server's bind address yourself; the editor then shows a warning.</li>
-            <li>The requests a mock server receives are kept in an in-memory log of the latest 500 entries per server, shown in its Logs tab. The log is never written to disk; it is discarded when the server is restarted or the app is closed.</li>
-            <li>In the HTTP mock log, credential headers and query/body fields, and the credential values the request carried, are masked. The MCP mock log holds the JSON-RPC messages the server received and answered, not HTTP headers.</li>
-            <li>Mock server configuration (endpoints, responses, auth settings) is stored in the local database. Mock auth tokens, passwords and API keys are stored as described in the table above and are written as empty values to project files, git and exports.</li>
-            <li>Nothing a mock server receives is sent to us or to anyone else.</li>
-          </ul>
           <p class="mt-3">
             You are the sole controller of this data. There is no cloud sync. You may inspect,
             edit, export, or delete it at any time by manipulating the files directly or by using
@@ -226,30 +211,25 @@ import BaseLayout from '../layouts/BaseLayout.astro'
             provider of your choice from within the application. The application ships with presets for:
           </p>
           <ul class="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 list-disc list-outside ml-5 sm:grid-cols-3">
-            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Cohere',
+            {['OpenAI', 'Anthropic', 'Groq', 'Google (Gemini)', 'Azure OpenAI', 'Cohere',
               'Mistral', 'Perplexity', 'Together AI', 'OpenRouter', 'Fireworks AI', 'DeepSeek',
-              'xAI (Grok)', 'Cerebras', 'DeepInfra', 'Custom (any OpenAI-compatible endpoint, including local)'].map((p) => (
+              'xAI (Grok)', 'Ollama (local — no outbound)'].map((p) => (
               <li>{p}</li>
             ))}
           </ul>
           <p class="mt-4">
             When you use AI Chat, the prompts you submit and the responses returned travel{' '}
             <strong class="text-text">directly from your machine to the AI provider's API endpoint</strong>,
-            authenticated with the API key you supplied. Testnizer does not proxy or relay this
-            content, and we never receive it. Nothing leaves your machine except the request to the
-            provider you selected. On your own device, the prompts and responses are shown in the
-            in-app Console log (held in memory, not sent anywhere), and AI Chat conversations — including
-            tool-call arguments and tool results — are stored in the local database (Section 3), never in
-            project files or git. It is a direct connection
-            between your device and the provider you selected.
+            authenticated with the API key you supplied. Testnizer does not proxy, relay, intercept,
+            log, or store this content at any point — it is a peer-to-peer connection between your
+            device and the provider you selected.
           </p>
           <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
             <li>We have no access to your prompts or model responses.</li>
             <li>The AI provider you selected sees your prompts, responses, and IP. Each provider has its own privacy policy, retention policy, and training-data policy. <strong class="text-text">Review the privacy policy of the provider you select before sending sensitive data.</strong></li>
             <li>Data sent to AI providers may be retained or used to improve their models, entirely outside our control.</li>
-            <li>You can run AI Chat <strong class="text-text">fully offline</strong> by selecting the <strong class="text-text">Custom</strong> provider and entering the URL of a locally-hosted, OpenAI-compatible endpoint. No outbound traffic leaves your machine in that case. The AI mock server built into Testnizer (Section 3.1) is such an endpoint: point the Custom provider at its OpenAI-compatible URL to use AI Chat fully offline.</li>
-            <li><strong class="text-text">MCP servers as tools:</strong> if you enable MCP servers in an AI Chat request's Tools tab, the arguments the model chooses for a tool call are sent to that MCP server and the tool's result is sent back to the AI provider as part of the conversation. Every tool call asks for your approval unless you turn on "Run tools without asking" for that tab (a per-tab setting on this computer, never saved with the request). A local (stdio) server is started only after you explicitly trust its command on this computer.</li>
-            <li>Your API keys are stored locally, encrypted via <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code> (the OS keychain; Section 3), one key per provider. They are never written to saved requests or exported project files, and are sent only to the provider they belong to.</li>
+            <li>You can run AI Chat <strong class="text-text">fully offline</strong> by selecting the <strong class="text-text">Ollama</strong> preset (or any locally-hosted endpoint). No outbound traffic leaves your machine in that case.</li>
+            <li>Your API keys are stored locally, encrypted via the OS keychain (Section 3), and sent only to the provider they belong to.</li>
           </ul>
           <p class="mt-3 text-xs text-text-soft">
             <strong>Lawful basis (GDPR Art. 6(1)(a)):</strong> explicit opt-in by the user. With respect
@@ -371,8 +351,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
           <h2 class="text-base font-semibold text-text mb-3">11. Security</h2>
           <p>The Software employs the following defensive practices:</p>
           <ul class="mt-3 space-y-2 list-disc list-outside ml-5">
-            <li><strong class="text-text">Local secret encryption.</strong> AI Chat API keys, git access tokens, certificate passphrases and keystore passwords, saved keystores, one-time-password secrets, and credential-named settings such as a proxy password are encrypted at rest via Electron <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code>, which delegates to the OS keychain. If the keychain is unavailable on your system, AI Chat keys and remembered keystore passwords are not saved at all; the other values are then stored without encryption. Secret-type variables, mock server tokens, passwords and API keys, and Mock MCP bearer tokens are encrypted the same way (stored without encryption while the keychain is unavailable, and encrypted on a later launch once it is), and are blanked in project files, git and exports (Section 3). Credentials typed into an Auth tab are <strong class="text-text">not</strong> encrypted at rest: they sit in the local database as plain text.</li>
-            <li><strong class="text-text">No stream messages on disk.</strong> The messages and events received over SSE, WebSocket, Socket.IO and MQTT, and MCP notifications, are kept in memory only and are not written to disk; History records the connection, not the messages (Section 3). MCP tool, resource and prompt results are recorded in History, masked.</li>
+            <li><strong class="text-text">Local secret encryption.</strong> Passwords, API keys, OAuth tokens, and client certificates are encrypted at rest via Electron <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">safeStorage</code>, which delegates to the OS keychain. Plain-text secrets are never written to disk.</li>
             <li><strong class="text-text">Renderer hardening.</strong> The Renderer process runs with <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">contextIsolation: true</code>, <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">nodeIntegration: false</code>, and a strict CSP of <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">connect-src 'self'</code>, which means the UI cannot make outbound network calls.</li>
             <li><strong class="text-text">Process separation.</strong> The UI cannot directly access the filesystem, child processes, or network. All such operations are mediated by typed IPC channels with input validation in the Main process.</li>
             <li><strong class="text-text">No telemetry by default.</strong> Crash data does not leave your machine unless you opt in (Section 5).</li>

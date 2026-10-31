@@ -67,10 +67,9 @@ const chai       = require('chai')               // the Chai assertion library
 ### pm scopes — environment / globals / collectionVariables / variables
 
 Each scope exposes the same setter/getter surface. `environment` is the active
-environment, `globals` and `collectionVariables` are **one scope** — the
-project's [Globals](/docs/environments#globals) (a Testnizer project is the
-Postman collection) — and `pm.variables` is a merged read view plus a
-**request-local** scratch scope that is **not** persisted.
+environment, `globals` are project-wide, `collectionVariables` share the project
+environment, and `pm.variables` is a merged read view plus a **request-local**
+scratch scope that is **not** persisted.
 
 ```js
 pm.environment.get('baseUrl')          // → string | undefined
@@ -89,14 +88,10 @@ The same methods exist on `pm.globals`, `pm.collectionVariables`, and
 pm.globals.set('apiVersion', 'v2')
 pm.collectionVariables.set('nextPageToken', body.nextPage)
 
-const baseUrl = pm.variables.get('baseUrl')   // resolved local → data → environment → Globals
+const baseUrl = pm.variables.get('baseUrl')   // resolved local → environment → global
 pm.variables.set('tempSig', sig)              // request-local only, not persisted
 pm.variables.toObject()                       // merged snapshot
 ```
-
-`pm.collectionVariables.set(...)` and `pm.globals.set(...)` therefore write the
-same project variable, and a script that writes a **secret** variable is masked
-in the Run results, History and Console.
 
 Writes from a **pre-request** script are visible to the request URL, headers,
 and body. Writes from a **test** script are **persisted** to the matching scope
@@ -154,9 +149,6 @@ pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token })
 
 ### pm.response (tests only)
 
-`pm.response` is not defined in a pre-request script, exactly as in Postman, so
-the usual `if (pm.response) { … }` guard works on both Send and Run.
-
 The full Postman/Newman response surface:
 
 ```js
@@ -212,20 +204,6 @@ pm.test('user has id and email', function () {
   pm.expect(body.email).to.match(/@/)
 })
 ```
-
-A test can also take a Node-style callback. The test then waits for `done()` —
-it fails on `done(error)`, on a throw, or if `done` is not called within 5
-seconds (an `async` callback is awaited as before):
-
-```js
-pm.test('token is returned', function (done) {
-  pm.expect(pm.response.json()).to.have.property('token')
-  done()
-})
-```
-
-`pm.test.skip(name, fn)` records a skipped test without running it, and
-`pm.test.index()` returns how many tests the script has registered so far.
 
 The **complete Chai BDD API** ([chaijs.com/api/bdd](https://www.chaijs.com/api/bdd/))
 is available, including:
@@ -345,29 +323,6 @@ Two scoping rules, identical on Send and Run:
 - It attaches **no project client certificate** (mTLS) — see
   [Certificates](/docs/certificates).
 
-### pm.vault and pm.require
-
-Postman's vault holds secrets. In Testnizer it is the **secret Globals** — the
-project's [Globals](/docs/environments#globals) that are marked secret. All three
-methods are asynchronous:
-
-```js
-await pm.vault.set('apiKey', 'sk-live-…')   // create or update a secret Global
-const key = await pm.vault.get('apiKey')    // reads only secret Globals
-await pm.vault.unset('apiKey')              // deletes a secret Global
-```
-
-`pm.vault.get` returns `undefined` for a variable that is not secret, and
-`pm.vault.unset` leaves a plain variable alone. A value written with
-`pm.vault.set` is available to `{{apiKey}}` and `pm.globals.get` at once, is
-stored encrypted, and is masked in the Run results, History and Console.
-
-`pm.require('@team/package')` (Postman's package library loader) is **not
-supported**: it throws `pm.require is not supported in Testnizer: <name>`. Use
-the built-in [`require()` libraries](#built-in-require-libraries) instead. When
-you import a Postman collection, the import report names every script that uses
-`pm.vault` or `pm.require`.
-
 ### pm.execution
 
 ```js
@@ -418,22 +373,14 @@ wired into the same runtime.
 
 - **`insomnia.response.status` is the NUMERIC status code** (e.g. `200`), not the
   reason text — the reverse of `pm.response.status`.
-- **`insomnia.baseEnvironment` and `insomnia.collectionVariables`** map to the
-  project's [Globals](/docs/environments#globals).
-
-`insomnia.environment` follows Insomnia's own rule: the active environment *is*
-the base environment when no sub-environment is selected. So with **no
-environment selected** in Testnizer, `insomnia.environment.get/set` read and
-write the Globals; with an environment selected it is `pm.environment`.
+- **`insomnia.baseEnvironment` and `insomnia.collectionVariables`** map to
+  Postman **collection** variables.
 
 ```js
-insomnia.environment.set('token', 'abc')      // Globals, or the selected environment
-insomnia.baseEnvironment.get('apiKey')        // → Globals
+insomnia.environment.set('token', 'abc')
+insomnia.baseEnvironment.get('apiKey')        // → collection variable
 if (insomnia.response.status === 200) { … }   // numeric code
 ```
-
-An Insomnia collection's base environment is imported into the Globals for the
-same reason — see [Insomnia](/docs/import-formats#insomnia-v4-and-v5).
 
 ### bru / req / res
 
@@ -496,42 +443,6 @@ script is guaranteed: it still runs when the run stops early on an error or a
 manual Stop. In the results, script rows appear with a **SCRIPT** chip, and a
 script that threw is reported as an error. See
 [Setup, Flow and Teardown](/docs/cli-and-automation#setup-flow-and-teardown).
-
-#### Run fail script — alert on a red run
-
-A third slot, **Run fail script**, runs **once per run, after teardown and the
-run teardown script, only when the run verdict is failed** (setup + flow, the
-same verdict the results show). It does not run on a green run, when only a
-teardown step failed, or after **Stop now**; its own failures are reported as a
-row but never change the verdict. It is the one script with `pm.run`:
-
-- `pm.run.summary` — `{ passed, failed, skipped, errors, duration, stopReason }`
-  of the finished run (read-only);
-- `pm.run.exportHtml()` / `pm.run.exportJson()` — the **same** report as the
-  **Export HTML / Export JSON** buttons, secrets masked.
-
-There is no built-in mail client: post the report to your mail or chat API with
-`pm.sendRequest`, and keep the key in a secret variable (`alertWebhookKey`),
-not in the script:
-
-```js
-const s = pm.run.summary
-await pm.sendRequest({
-  url: 'https://hooks.example.com/testnizer-alerts',
-  method: 'POST',
-  header: {
-    'Content-Type': 'application/json',
-    Authorization: 'Bearer ' + pm.environment.get('alertWebhookKey'),
-  },
-  body: {
-    mode: 'raw',
-    raw: JSON.stringify({
-      text: `Run failed: ${s.failed} failed, ${s.passed} passed (${s.stopReason || 'completed'})`,
-      html: pm.run.exportHtml(),
-    }),
-  },
-})
-```
 
 ## Auth inheritance
 

@@ -12,8 +12,8 @@ const principles = [
     body: 'contextIsolation açık. nodeIntegration kapalı. Preload betiği yalnızca denetlenmiş bir <code>window.api</code> yüzeyini açar — arayüz iş parçacığından ham <code>fetch</code>, <code>axios</code> veya <code>require</code> yok.',
   },
   {
-    title: 'Saklanan gizli bilgiler işletim sistemi anahtarlığını kullanır',
-    body: 'Gizli (secret) türündeki değişkenler, mock sunucu token\'ları ve parolaları, Mock MCP bearer token\'ları, sertifika parolaları, git token\'ları ve Yapay Zeka Sohbet API anahtarları Electron <code>safeStorage</code> ile şifrelenir — macOS\'ta Keychain, Windows\'ta DPAPI, Linux\'ta libsecret. İşletim sistemi anahtarlığı olmayan sistemlerde (örneğin libsecret olmayan Linux) çoğu şifrelenmeden saklanır. Bir isteğin Auth sekmesine yazdığınız kimlik bilgileri istekle birlikte saklanır, şifrelenmez — <code>{{secretVar}}</code> başvurularını kullanın. MCP OAuth token\'ları yalnızca bellekte kalır.',
+    title: 'Gizli bilgiler işletim sistemi anahtarlığından geçer',
+    body: 'Parola ifadeleri, temel kimlik doğrulama parolaları, taşıyıcı token\'lar, OAuth yenileme token\'ları ve sertifika anahtarlarının tamamı Electron <code>safeStorage</code> üzerinden geçer — macOS\'ta Keychain, Windows\'ta DPAPI, Linux\'ta libsecret. SQLite\'a yalnızca şifreli bloblar dokunur. Ham değerler asla diske yazılmaz.',
   },
   {
     title: 'Tasarım gereği sıfır telemetri',
@@ -101,19 +101,16 @@ const claims = [
         <p>
           XML imzalama ve şifreleme, Node'un yerel <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">crypto</code>
           modülünü artı <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-crypto</code> ve
-          <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-encryption</code> kullanır. Her ikisi de ana süreçte çalışır. Özel anahtarlar talep üzerine diskten belleğe yüklenir ve tek işlem için kullanılır.
+          <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">xml-encryption</code> kullanır. Her ikisi de ana süreçte çalışır. Özel anahtarlar talep üzerine diskten belleğe yüklenir, tek işlem için kullanılır ve istek tamamlandığında sıfırlanır.
         </p>
         <p>
           JWT doğrulaması aynı ana süreç içindeki bir HS / RS / ES algoritma kataloğuna karşı çalışır — yardımcı servis yok, çevrimiçi doğrulama adımı yok, paylaşılan gizli havuz yok.
         </p>
         <p>
-          Gizli (secret) türündeki ortam ve global değişkenler (geçerli ve başlangıç değeri), HTTP mock sunucu token'ları, parolaları ve API anahtarları, Mock MCP bearer token'ları, sertifika parolaları, git erişim token'ları ve Yapay Zeka Sohbet API anahtarları Electron'un <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">safeStorage</code> API'si ile şifrelenir. macOS'ta bu Keychain'e devreder. Windows'ta DPAPI. Linux'ta libsecret. İşletim sistemi anahtarlığı kullanılamıyorsa (örneğin libsecret olmayan Linux) bu değerlerin çoğu bilgisayarınızda şifrelenmeden saklanır; Yapay Zeka Sohbet API anahtarları bu durumda hiç kaydedilmez.
+          Saklanan gizli bilgiler — temel kimlik doğrulama parolaları, taşıyıcı token'lar, OAuth yenileme token'ları, sertifika parola ifadeleri — Electron'un <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">safeStorage</code> API'sinden geçer. macOS'ta bu Keychain'e devreder. Windows'ta DPAPI. Linux'ta libsecret. Ham düz metin asla projenizin SQLite veritabanına yazılmaz; yalnızca işletim sistemi şifreli blobu yazılır.
         </p>
         <p>
-          Bir isteğin veya klasörün Auth sekmesine yazdığınız kimlik bilgileri o isteğin veya klasörün parçasıdır. Yerel SQLite veritabanında düz metin olarak durur (diskte şifrelenmez) ve Postman ya da Bruno'da olduğu gibi dışa aktarımlarla ve git ile taşınır; gerçek değerleri bunların dışında tutmak için <code class="rounded bg-bg-muted px-1.5 py-0.5 font-mono text-text">&#123;&#123;secretVar&#125;&#125;</code> başvurularını kullanın. Düz kimlik bilgileri arayüzün tarayıcı depolamasında tutulmaz; MCP OAuth token'ları ve HTTP OAuth 2.0 erişim token'ları yalnızca ana süreç belleğinde yaşar.
-        </p>
-        <p>
-          Ana parola koruması isteğe bağlıdır. Etkinleştirildiğinde Testnizer parolanın tuzlu bir scrypt özetini saklar ve açılışta kontrol eder. Bu yalnızca bir giriş kapısıdır: veritabanını ya da başka yerel verileri şifrelemez; bunun için tam disk şifrelemesi kullanın.
+          Ana parola koruması isteğe bağlıdır. Etkinleştirildiğinde, uygulama PBKDF2-SHA256 (120.000 yineleme) ile bir anahtar türetir ve bunu kaydetmeden önce tüm SQLite veritabanını zarf şifrelemek için kullanır.
         </p>
       </div>
     </div>

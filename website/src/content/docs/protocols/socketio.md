@@ -1,6 +1,6 @@
 ---
 title: Socket.IO
-description: Connect to Socket.IO servers (client v2, v3 or v4), emit events with several arguments and acknowledgements, choose the events to listen to, and watch the bidirectional timeline.
+description: Connect to Socket.IO servers, emit events with JSON payloads, subscribe to event names, and watch the bidirectional timeline.
 order: 8
 section: Protocols
 ---
@@ -19,134 +19,101 @@ one.
 
 ## Opening a Socket.IO tab
 
-Click **+ New** → **Socket.IO**. The editor has a connection bar at the top,
-request tabs under it (**Message**, **Params**, **Headers**, **Events**,
-**Settings**) and the event timeline below.
+Click **+ New** → **Socket.IO**. The editor opens with a connection bar at the
+top, an emit / subscribe panel on the left, and an event timeline on the right.
 
 ## Connecting
 
 | Field | Required | Notes |
 |---|---|---|
-| **URL** | yes | The server origin, e.g. `http://localhost:3000` or `https://api.example.com`. Query parameters stay in the query |
-| **Namespace** | no | Defaults to `/`. Set to `/admin`, `/chat`, etc. for namespaced servers; it goes on the path, never inside the query |
+| **URL** | yes | The server origin, e.g. `http://localhost:3000` or `https://api.example.com` |
+| **Namespace** | no | Defaults to `/`. Set to `/admin`, `/chat`, etc. for namespaced servers |
 | **Bearer token** | no | Sent inside the `auth` payload during the handshake (`auth: { token: '...' }`) |
-
-**Params** add query parameters to the handshake and **Headers** are sent with it,
-for servers that look at an `Authorization` header instead of the `auth` payload.
 
 Click **Connect**. Testnizer:
 
 1. Establishes the Socket.IO connection (preferred transport: WebSocket, with
-   HTTP polling as a fallback — configurable in Settings).
-2. Waits for the server to ack the connection (the **Handshake timeout** in
-   Settings, 10 seconds by default).
-3. On `connect`, the status changes to **Connected** and the Message tab becomes
-   active.
+   HTTP polling as a fallback).
+2. Waits up to 10 seconds for the server to ack the connection.
+3. On `connect`, the status changes to **Connected** and the emit / subscribe
+   panel becomes active.
 4. On `connect_error`, the status changes to **Error** and the message from the
-   server is shown beside the Connect button (for example the text from an
-   `io.use(...)` middleware that refused the handshake).
+   server is shown beside the Connect button.
 
-**Cancel** during the handshake cancels it cleanly. If the **server** closes the
-connection (for example it kicks the client), the tab goes to **Disconnected**,
-keeps its configuration and the timeline, and an emit fails with "Not connected"
-until you connect again.
-
-## Settings and client version
-
-| Setting | Default | Notes |
-|---|---|---|
-| **Client version** | v4 | **v4**, **v3** or **v2** — see below |
-| **Handshake path** | `/socket.io` | The server's `path` option |
-| **Transport** | WebSocket, then polling | Or **WebSocket only** / **Polling only** |
-| **Enable server certificate verification** | On | Applies to `https://` servers, for both the polling and WebSocket transports |
-| **Handshake timeout (ms)** | 10 000 | |
-| **Reconnection attempts** | 0 | 0 means no reconnection |
-| **Reconnection interval (ms)** | 1 000 | |
-
-**Client version.** Socket.IO 3 and 4 servers speak one protocol, so **v3 and v4
-use the same client**. Pick **v2** for a Socket.IO 2 server: Testnizer then uses a
-2.x client. A Socket.IO 2 server has **no handshake `auth`**, so with v2 selected
-the bearer token is sent as the **`token` query parameter**
-(`socket.handshake.query.token`, where such servers read it). Server and proxy
-logs may record query parameters, so a token sent this way can end up in those
-logs. Settings is locked while connected and applies on the next Connect.
-
-Auto-reconnection is **off** by default — testing tools should make connection
-failures visible, not paper over them. Raise **Reconnection attempts** to have
-Testnizer retry after an unexpected drop; each attempt appears as a connection row
-in the timeline.
+Auto-reconnection is **disabled** by default — testing tools should make
+connection failures visible, not paper over them. Click **Connect** again
+manually if the socket drops.
 
 ## Emitting events
 
-The **Message** tab takes:
+The **Emit Event** panel takes:
 
 - **Event name** — any string, e.g. `chat:message` or `subscribe`
-- **Arguments** — a Socket.IO event can carry several. Each argument has its own
-  **format**: **Text**, **JSON**, **Base64** or **Hexadecimal**. Base64 and
-  hexadecimal arguments are sent as binary. Use **Add argument** for more
-- **Ack** — ask the server to acknowledge the event; its reply appears in the
-  timeline as an "Ack" row
-- **Save** — stores the event name, arguments and Ack setting as a **saved
-  message** in the right-hand pane (click to load, double-click to rename)
+- **Payload** — JSON; parsed and sent as the event data. If parsing fails,
+  the raw string is sent as-is.
 
-Click **Emit** (or press Enter in the event name field while connected). The event
-appears in the timeline immediately as an outgoing event. Variables (`{{userId}}`,
-`{{token}}`) resolve in the event name and the arguments.
+Click **Emit**. The event appears in the timeline immediately as an outgoing
+event (`↑`). Variables (`{{userId}}`, `{{token}}`) resolve in both the event
+name and the payload.
 
-## Listening to events
+## Subscribing to events
 
-The **Events** tab controls what the timeline shows:
+Testnizer **captures every event** the server emits the moment the connection
+opens — you do not need to subscribe before incoming events appear. The
+**Subscribe** field is a **UI filter** on top of that captured stream:
 
-- **Listen to all events** — every event the server sends is shown.
-- Otherwise only the events you add and turn on are shown. Type an **event name**,
-  click **Add event**, and use the toggle on its row to listen to it or not. This
-  is how Postman's Socket.IO request works.
+- With no subscriptions, every received event streams into the timeline as
+  an incoming event (`↓`).
+- Type an event name into the **Subscribe** input and press Enter (or click
+  `+`). Once at least one subscription is active, the timeline shows only
+  events whose names match an active subscription. Earlier events that did
+  not match are still recorded and become visible if you remove the filter.
+- Click `×` next to a subscription to remove it. With all subscriptions
+  cleared, the timeline returns to showing every event.
 
-A request with no listener and **Listen to all events** off shows a notice that
-nothing is being listened to, so a missing `welcome` event is not a mystery. A
-request saved by an older Testnizer version has no listener setting and keeps
-showing every event until you change it.
+This means you never miss an early event because you hadn't subscribed yet —
+useful for servers that emit a one-off `ready` or `welcome` event right after
+the handshake. To stop receiving anything at all, click **Disconnect** at
+the top.
 
 ## The event timeline
 
 | Column | Description |
 |---|---|
-| Direction | An up arrow for emits you sent; a down arrow for events received; a radio icon for connection events |
+| Direction | `↑` for emits you sent; `↓` for events received from the server |
 | Event | The event name |
 | Timestamp | Local-clock time of the emit / receive |
 | Payload | Pretty-printed JSON, or the raw string if not JSON |
 
-Click a row to expand the full payload. The toolbar has **search**, a **filter**
-(All, Sent, Received, Connection), **copy**, **save as a saved message**,
-**compare the time between two rows**, a **Hexdump** view for binary arguments and
-**Clear**. Received events are held in memory only; they are not written to disk.
+Click any row to expand the full payload. Click **Clear** to wipe the
+timeline without disconnecting.
 
 ## Headers and auth
 
 Socket.IO authentication usually flows through the `auth` payload of the
 handshake (preferred over headers because it survives long-polling fallback).
-Testnizer's **Bearer token** field is sent as `auth: { token: '<value>' }` — this
-is the format expected by the standard `socket.io` middleware patterns
-(`io.use(...)`). For a Socket.IO 2 server it goes in the query instead, as
-described above.
+Testnizer's **Bearer token** field is sent as `auth: { token: '<value>' }` —
+this is the format expected by the standard `socket.io` middleware patterns
+(`io.use(...)`).
 
-A typed token is not kept after a restart unless the request is saved; use a
-`{{variable}}` (a secret one) to keep it in the environment instead.
+For servers that look at HTTP headers instead (e.g. `Authorization`), Testnizer
+also supports custom headers on the WebSocket upgrade handshake — these are
+provided via the `extraHeaders` option of `socket.io-client`. Note that
+extra headers are not sent on long-polling fallback because the browser
+WebSocket spec doesn't allow custom headers there in all environments.
 
-## Multi-tab isolation and lifetime
+## Multi-tab isolation
 
-Each Socket.IO tab maintains its own connection, namespace, listeners, and
+Each Socket.IO tab maintains its own connection, namespace, subscriptions, and
 timeline. Open multiple tabs to test multiple servers, multiple namespaces on
 the same server, or a single server under different auth tokens — none of the
 state crosses tabs.
 
-A connection belongs to its tab: **closing the tab disconnects** (or cancels a
-handshake in progress), and so does **leaving the project** (switching project or
-going Home). The same rule applies to WebSocket and MQTT tabs.
-
 ## What Testnizer does not do
 
-- **No automatic reconnection by default.** It is a setting, off unless you raise
-  the attempts.
-- **No persistent storage of received events.** The timeline is in memory per
-  tab; saved messages hold what you compose, not what you receive.
+- **No automatic reconnection.** Tooling for protocol testing should expose
+  drops, not hide them.
+- **No persistent storage of emitted events.** The timeline is in-memory per
+  tab. Closing the tab clears it.
+- **No binary payload editor.** Outgoing payloads are JSON or string; if you
+  need to send `Buffer` or `ArrayBuffer`, use a script-driven flow instead.

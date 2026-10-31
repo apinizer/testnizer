@@ -21,11 +21,10 @@ panel, and Node-side engine — not a plugin. See [Protocols overview](/docs/pro
 | WS-Security | UsernameToken, Timestamp, RSA-SHA256 signing, encryption — see [WS-Security](/docs/ws-security) |
 | GraphQL | Query, mutation, subscription, schema introspection |
 | gRPC | Proto load + **server reflection**, all four streaming modes |
-| WebSocket | `wss`, params + custom headers, Text / JSON / XML / HTML / binary composer, saved messages, hexdump, bidirectional timeline |
-| Socket.IO | Client v4 / v3 / v2, namespaces, listeners, Ack, multi-argument emit, saved messages, event timeline |
-| MQTT | 3.1.1 and 5.0, `mqtt(s)://` and `ws(s)://`, topics, QoS, retain, Last Will, saved messages |
+| WebSocket | `wss`, custom headers, JSON composer, bidirectional timeline |
+| Socket.IO | Namespaces, `auth.token`, emit + subscribe, event timeline |
 | SSE | Long-lived streams, named events, `Last-Event-ID` resume |
-| MCP | Streamable HTTP / SSE / stdio; tools, resources, prompts, notifications, OAuth 2.1, security scan |
+| MCP | Streamable HTTP / SSE / stdio; list + invoke tools |
 | AI Chat | Multiple LLM providers + custom URL, streaming, tools bridge |
 
 ## Building requests
@@ -47,7 +46,7 @@ Hawk · AWS Signature.
 See [Environments & variables](/docs/environments).
 
 - **Environments** scoped per project, with a dual **Initial / Current Value** model
-- **Globals** per project — Postman globals and collection variables in one list, with **Move to Globals** for an environment
+- **Global variables** at workspace and project scope
 - `{{variable}}` substitution with chained references
 - **Dynamic values**: `{{$randomInt}}`, `{{$guid}}`, `{{$timestamp}}` and more
 - Inline variable autocomplete
@@ -62,7 +61,7 @@ values themselves resolve `{{variables}}`. See [Scripts & test assertions](/docs
 
 Postman / Insomnia-compatible `pm.*` API in a sandboxed runtime:
 
-- `pm.environment` / `pm.globals` / `pm.variables` / `pm.collectionVariables` get & set, and `pm.vault` for secret Globals
+- `pm.environment` / `pm.globals` / `pm.variables` / `pm.collectionVariables` get & set
 - `pm.test()`, `pm.expect()` (chai-BDD chain), `pm.response`
 - `pm.iterationData`, `pm.execution.skipRequest()` / `setNextRequest()`
 
@@ -87,21 +86,15 @@ validation. See [Mock Server](/docs/mock-server).
 
 See [Import & export](/docs/import-formats).
 
-- Import: **OpenAPI / Swagger**, **Postman** (v1 – v3, folders, `.zip`),
-  **Insomnia**, **HAR**, **cURL** (bash, CMD, PowerShell — or paste into the URL
-  bar), **WSDL**, **RAML**, **SoapUI**, **Testnizer Native** — with auto format
-  detection
-- Export: full project or folder subtree — Testnizer JSON, Postman v2.1 / v3,
-  OpenAPI 3, Insomnia
+- Import: **OpenAPI / Swagger**, **Postman**, **Insomnia**, **HAR**, **cURL**,
+  **WSDL**, **RAML**, **SoapUI**, **Testnizer Native** — with auto format detection
+- Export: full project or folder subtree, lossless round-trip
 
 ## Code generation
 
-Generate a ready-to-paste request snippet in 20 languages and 36 variants —
-**cURL** (bash, CMD, PowerShell), **JavaScript** (Fetch / XHR / jQuery),
-**NodeJS**, **Python**, **Java**, **C#**, **Go**, **PHP**, **Ruby**, **Kotlin**,
-**Swift**, **Rust**, **Dart**, **R**, **C**, **Objective-C**, **OCaml**,
-**PowerShell**, **Shell** (wget / HTTPie) and raw **HTTP** — with per-variant
-options. See [Code snippet generation](/docs/protocols/http#code-snippet-generation).
+Generate a ready-to-paste request snippet in **cURL**, **JavaScript** (fetch /
+axios), **Python** (requests), **Java** (OkHttp), **C#**, **Go**, **PHP**,
+**Ruby**, **Kotlin**, and **Swift**.
 
 ## Built-in tools
 
@@ -154,14 +147,13 @@ custom truststore, and encrypted passphrase storage. See [Certificates](/docs/ce
 
 - Optional **password** protection for local data
 - EULA / privacy consent on first run
-- `contextIsolation` on, `nodeIntegration` off, a sandboxed renderer, web
-  permissions denied by default, strict CSP — the UI never touches the network
-  directly; all traffic goes through the Node main process
+- `contextIsolation` on, `nodeIntegration` off, strict CSP — the UI never touches
+  the network directly; all traffic goes through the Node main process
 - URL credential scrubbing in history. See [Why offline?](/docs/why-offline).
 
 ## Platform
 
-- **Windows, macOS 13 (Ventura) or later, Linux** (x64 + arm64)
+- **Windows, macOS, Linux** (x64 + arm64)
 - **Standalone & 100% offline** — zero external dependencies
 - Local **SQLite** storage, encrypted config
 - **Auto-update** built in
