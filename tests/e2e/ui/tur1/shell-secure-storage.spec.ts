@@ -60,16 +60,15 @@ test.describe('Tur1 — Shell secure storage [MST-227, MST-228, MST-229]', () =>
         }
       })
 
-      // On macOS/Windows safeStorage should be available in built app
-      if (result.available) {
-        expect(result.roundtripOk).toBe(true)
-        expect(result.isBuffer).toBe(true)
-        expect(result.encryptedLength).toBeGreaterThan(0)
-      } else {
-        // On headless Linux or when keyring unavailable — available:false is acceptable
-        // needs-hook: CI Linux may not have libsecret; test still passes as a signal
-        console.log('safeStorage not available on this platform — skipping roundtrip assertion')
-      }
+      // Headless Linux without a keyring has no safeStorage: show that as a
+      // visible skip rather than a pass (the plaintext fallback is covered by
+      // secret-at-rest unit tests).
+      test.skip(!result.available, 'safeStorage unavailable on this platform (no OS keyring)')
+
+      // On macOS/Windows safeStorage is available in the built app
+      expect(result.roundtripOk).toBe(true)
+      expect(result.isBuffer).toBe(true)
+      expect(result.encryptedLength).toBeGreaterThan(0)
     } finally {
       if (app) await app.close().catch(() => {})
       if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true })
@@ -182,20 +181,14 @@ test.describe('Tur1 — Shell secure storage [MST-227, MST-228, MST-229]', () =>
       // Inspect the raw electron-store file — encrypted value should NOT contain the plaintext
       await window.waitForTimeout(300)
       const settingsFile = path.join(userDataDir, 'settings.json')
-      if (fs.existsSync(settingsFile)) {
-        const raw = fs.readFileSync(settingsFile, 'utf-8')
-        // If encryption was available, raw file must not contain the plaintext key
-        // If not available (headless Linux), the plaintext warning was logged and
-        // the value is stored as-is — we skip the assertion in that case.
-        const encAvailable = await app.evaluate(({ safeStorage }) =>
-          safeStorage.isEncryptionAvailable(),
-        )
-        if (encAvailable) {
-          expect(raw).not.toContain(apiKeyPlain)
-          // The stored value should have enc:v1: prefix
-          expect(raw).toContain('enc:v1:')
-        }
-      }
+      expect(fs.existsSync(settingsFile), 'electron-store settings.json was written').toBe(true)
+      const raw = fs.readFileSync(settingsFile, 'utf-8')
+      // Without an OS keyring (headless Linux) the value is stored as-is with a
+      // logged warning — make that a visible skip instead of a silent pass.
+      const encAvailable = await app.evaluate(({ safeStorage }) => safeStorage.isEncryptionAvailable())
+      test.skip(!encAvailable, 'safeStorage unavailable on this platform (no OS keyring)')
+      expect(raw).not.toContain(apiKeyPlain)
+      expect(raw).toContain('enc:v1:')
     } finally {
       if (app) await app.close().catch(() => {})
       if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true })

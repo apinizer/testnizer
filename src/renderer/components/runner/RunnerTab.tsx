@@ -17,8 +17,9 @@ import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { runnerKey } from '../../lib/runner-storage'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
-import { useUIStore } from '../../stores/ui.store'
+import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDateTime } from '../../lib/format-datetime'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
@@ -30,6 +31,7 @@ import { lockDragStyles } from '../../lib/drag-lock'
 import { setRunnerBusy } from '../../lib/runner-activity'
 import { revealRunResult, revealTargetFor, type RunOrigin } from '../../lib/reveal-run-result'
 import { asRunOrigin, runOriginFromSourceLabel } from '../../lib/runner-source-label'
+import { CONFIG_PANE_CLASS, RUNNER_CONFIG_MIN_WIDTH, sequencePaneStyle } from './runner-layout'
 
 /**
  * After a run, refresh the renderer env store from the DB so script-written
@@ -243,13 +245,14 @@ interface RunnerTabProps {
 
 export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProps) {
   // Reactive: the panel titles and toasts follow a language switch at once.
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const treeData = useWorkspaceStore((s) => s.treeData)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   // Share the right-panel collapse flag with the API workbench so the
   // "All variables" toggle behaves identically across screens.
-  const rightPanelCollapsed = useUIStore((s) => s.rightPanelCollapsed)
+  // Same effective value as the APIs page's RightPanel (issues #251 / #257).
+  const rightPanelCollapsed = useUIStore(selectRightPanelCollapsed)
   const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed)
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
@@ -334,6 +337,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // deliberately not persisted, see the run-lifecycle notes.
   const [runPreScript, setRunPreScript] = useState('')
   const [runPostScript, setRunPostScript] = useState('')
+  // Run FAIL script (issue #267) — once after teardown, only on a red run.
+  const [runFailScript, setRunFailScript] = useState('')
   const [runFolderName, setRunFolderName] = useState('')
   // Default radio selection for the RunnerConfig "Choose how to run" block.
   // We bump configRunModeKey whenever a fresh "New Run" lands on the config
@@ -908,6 +913,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           setEnvironmentId(config.environmentId ?? '')
           setRunPreScript(config.runPreScript ?? '')
           setRunPostScript(config.runPostScript ?? '')
+          setRunFailScript(config.runFailScript ?? '')
         }
       }
       const savedConfig = config
@@ -1187,6 +1193,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
             runPreScript: runPreScript.trim() || undefined,
             runPostScript: runPostScript.trim() || undefined,
+            runFailScript: runFailScript.trim() || undefined,
             environmentId: environmentId || undefined,
             workspaceId: activeWorkspaceId || undefined,
             iterationData: iterationData.length > 0 ? iterationData : undefined,
@@ -1232,6 +1239,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     persistResponses,
     runPreScript,
     runPostScript,
+    runFailScript,
     splitByPhase,
   ])
 
@@ -1347,12 +1355,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           // folder it's working with, surface that — otherwise we used to
           // print only the timestamp which made the Scheduled Tasks table
           // unreadable when you had more than a couple of rows.
-          name: `${runFolderName || t('runnerTab.scheduledRunName')} — ${new Date().toLocaleString()}`,
+          name: `${runFolderName || t('runnerTab.scheduledRunName')} — ${formatDateTime(Date.now(), locale)}`,
           endpointIds: mainIds,
           setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
           teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
           runPreScript: runPreScript.trim() || undefined,
           runPostScript: runPostScript.trim() || undefined,
+          runFailScript: runFailScript.trim() || undefined,
           // Carry the run settings the user configured, so the schedule grades
           // the way the run they just set up would.
           stopOnError,
@@ -1386,7 +1395,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       suiteIdForRunner,
       runPreScript,
       runPostScript,
+      runFailScript,
       t,
+      locale,
     ],
   )
 
@@ -1410,6 +1421,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       environmentId,
       runPreScript,
       runPostScript,
+      runFailScript,
     })
     try {
       const res = await window.api?.testSuite?.saveRunConfig?.(
@@ -1437,6 +1449,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     environmentId,
     runPreScript,
     runPostScript,
+    runFailScript,
   ])
 
   const handleSequenceResize = useCallback((dx: number) => {
@@ -1468,10 +1481,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           />
         ) : view === 'config' ? (
           <>
-            {/* Run Sequence (left) — resizable */}
-            <div
-              style={{ width: sequenceWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}
-            >
+            {/* Run Sequence (left) — resizable; shrinks first when the window is
+                narrow so the config column never overflows (G-16). */}
+            <div data-testid="runner-sequence-pane" style={sequencePaneStyle(sequenceWidth)}>
               <RunnerSequence
                 endpoints={endpoints}
                 folderGroups={folderGroups}
@@ -1509,8 +1521,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
               />
             </div>
             <ResizeDivider onDrag={handleSequenceResize} />
-            {/* Config (middle) */}
-            <div className="flex flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+            {/* Config (middle) — keeps a floor; the sequence pane gives way. */}
+            <div
+              data-testid="runner-config-pane"
+              className={CONFIG_PANE_CLASS}
+              style={{ minWidth: RUNNER_CONFIG_MIN_WIDTH }}
+            >
               <RunnerConfig
                 delay={delay}
                 setDelay={setDelay}
@@ -1532,6 +1548,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 setRunPreScript={setRunPreScript}
                 runPostScript={runPostScript}
                 setRunPostScript={setRunPostScript}
+                runFailScript={runFailScript}
+                setRunFailScript={setRunFailScript}
                 onRun={handleRun}
                 onSchedule={handleSchedule}
                 isRunning={isRunning}
@@ -1598,6 +1616,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         >
           <button
             type="button"
+            data-testid="runner-variables-expand"
             onClick={() => setRightPanelCollapsed(false)}
             title={t('runnerTab.showVariables')}
             aria-label={t('runnerTab.showVariablesPanel')}
@@ -1621,6 +1640,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           {/* Collapse button — top-right of the variables panel */}
           <button
             type="button"
+            data-testid="runner-variables-collapse"
             onClick={() => setRightPanelCollapsed(true)}
             title={t('runnerTab.collapsePanel')}
             aria-label={t('runnerTab.collapseVariablesPanel')}

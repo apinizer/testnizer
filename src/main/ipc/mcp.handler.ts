@@ -20,6 +20,7 @@ import {
 // Pure module, not the engine: the handler tests mock `mcp.engine` wholesale.
 import { parseMcpAuth } from '../protocols/mcp-auth'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
+import { connectFailure } from '../lib/error-classifier'
 import { trustStdioServer } from '../lib/mcp-stdio-trust'
 import * as historyRepo from '../db/history.repo'
 import { maskSensitiveHeaders, MASKED_VALUE } from '../db/saved-response.repo'
@@ -622,9 +623,8 @@ export function registerMcpHandlers(): void {
           error: { message: err.message, stack: err.stack },
         })
         // `unauthorized` lets the renderer offer the OAuth 2.1 debugger (issue #141).
-        return isUnauthorized(e)
-          ? { success: false, error: err.message, unauthorized: true }
-          : { success: false, error: err.message }
+        // Issue #253: a classified connect failure also carries `errorInfo`.
+        return isUnauthorized(e) ? { ...connectFailure(e), unauthorized: true } : connectFailure(e)
       }
     },
   )

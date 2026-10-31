@@ -1,33 +1,41 @@
 import { useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
-import { HTTP_STATUS_CODES, type HttpStatus } from '../../lib/tools/http-status'
+import { HTTP_STATUS_CODES, foldSearchText, type HttpStatus } from '../../lib/tools/http-status'
+import { HTTP_STATUS_TR } from '../../lib/tools/http-status-tr'
 import { useTranslation } from '../../lib/i18n'
+import { TONE, type ToneTokens } from './palette'
 
-const CATEGORIES: { id: HttpStatus['category']; color: string }[] = [
-  { id: '1xx', color: '#0066cc' },
-  { id: '2xx', color: '#1a7a4a' },
-  { id: '3xx', color: '#b35a00' },
-  { id: '4xx', color: '#cc2200' },
-  { id: '5xx', color: '#7c1fa6' },
-]
+/** Category tones from the shared Tools palette (theme tokens, G-03). */
+const CATEGORIES: { id: HttpStatus['category']; color: string; tone: ToneTokens }[] = (
+  [
+    ['1xx', TONE.info],
+    ['2xx', TONE.success],
+    ['3xx', TONE.warning],
+    ['4xx', TONE.danger],
+    ['5xx', TONE.accent],
+  ] as const
+).map(([id, tone]) => ({ id, color: tone.fg, tone }))
 
 export default function HttpStatusTool() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [query, setQuery] = useState('')
   const [activeCategory, setActiveCategory] = useState<HttpStatus['category'] | 'all'>('all')
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = foldSearchText(query.trim())
     return HTTP_STATUS_CODES.filter((s) => {
       if (activeCategory !== 'all' && s.category !== activeCategory) return false
       if (!q) return true
+      // Search what the row shows: the English phrase always, the Turkish
+      // name + description in the Turkish UI, the English description in EN.
+      const local = locale === 'tr' ? HTTP_STATUS_TR[s.code] : undefined
+      const haystack = [s.name, local?.name, local ? local.description : s.description]
       return (
         String(s.code).includes(q) ||
-        s.name.toLowerCase().includes(q) ||
-        s.description.toLowerCase().includes(q)
+        haystack.some((text) => text !== undefined && foldSearchText(text).includes(q))
       )
     })
-  }, [query, activeCategory])
+  }, [query, activeCategory, locale])
 
   const groups = useMemo(() => {
     const map = new Map<HttpStatus['category'], HttpStatus[]>()
@@ -100,7 +108,7 @@ export default function HttpStatusTool() {
                 >
                   <span
                     className="rounded px-1.5 py-0.5"
-                    style={{ background: g.color + '20', color: g.color }}
+                    style={{ background: g.tone.bg, color: g.color }}
                   >
                     {g.id}
                   </span>
@@ -108,7 +116,12 @@ export default function HttpStatusTool() {
                 </div>
                 <div>
                   {g.items.map((s) => (
-                    <CodeRow key={s.code} status={s} color={g.color} />
+                    <CodeRow
+                      key={s.code}
+                      status={s}
+                      tone={g.tone}
+                      local={locale === 'tr' ? HTTP_STATUS_TR[s.code] : undefined}
+                    />
                   ))}
                 </div>
               </div>
@@ -159,15 +172,28 @@ function labelForCategory(c: HttpStatus['category'], t: (k: string) => string): 
   }
 }
 
-function CodeRow({ status, color }: { status: HttpStatus; color: string }) {
+function CodeRow({
+  status,
+  tone,
+  local,
+}: {
+  status: HttpStatus
+  tone: ToneTokens
+  /** Turkish name + description (TR UI only); the English phrase stays. */
+  local?: { name: string; description: string }
+}) {
   return (
-    <div className="flex gap-3 border-b px-4 py-2" style={{ borderColor: 'var(--border)' }}>
+    <div
+      className="flex gap-3 border-b px-4 py-2"
+      style={{ borderColor: 'var(--border)' }}
+      data-testid={`http-status-row-${status.code}`}
+    >
       <span
         className="shrink-0 rounded px-2 py-0.5 font-mono text-sm font-semibold"
         style={{
-          background: color + '15',
-          color,
-          border: `1px solid ${color}40`,
+          background: tone.bg,
+          color: tone.fg,
+          border: `1px solid ${tone.border}`,
           minWidth: 48,
           textAlign: 'center',
         }}
@@ -176,10 +202,20 @@ function CodeRow({ status, color }: { status: HttpStatus; color: string }) {
       </span>
       <div className="min-w-0">
         <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          {status.name}
+          <span data-testid={`http-status-name-${status.code}`}>{status.name}</span>
+          {local && (
+            <>
+              <span className="font-normal text-[var(--muted)]"> — </span>
+              <span data-testid={`http-status-local-name-${status.code}`}>{local.name}</span>
+            </>
+          )}
         </div>
-        <div className="text-xs" style={{ color: 'var(--muted)' }}>
-          {status.description}
+        <div
+          className="text-xs"
+          style={{ color: 'var(--muted)' }}
+          data-testid={`http-status-desc-${status.code}`}
+        >
+          {local ? local.description : status.description}
         </div>
       </div>
     </div>

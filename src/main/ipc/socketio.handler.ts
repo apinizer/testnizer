@@ -14,6 +14,7 @@ import {
 } from '../protocols/socketio.engine'
 import { sioDisplayTarget } from '../protocols/socketio-client'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
+import { connectFailure } from '../lib/error-classifier'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import {
@@ -226,7 +227,8 @@ export function registerSocketIOHandlers(): void {
         } catch {
           /* ignore */
         }
-        return { success: false, error: err.message }
+        // Issue #253: a classified connect failure also carries `errorInfo`.
+        return connectFailure(e)
       }
     },
   )

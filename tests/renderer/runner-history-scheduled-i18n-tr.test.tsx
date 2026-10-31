@@ -126,6 +126,7 @@ const ENGLISH: RegExp[] = [
   /\bIterations\b/,
   /\bDuration\b/,
   /\bAll tests\b/,
+  /\bAll requests\b/,
   /\bPassed\b/,
   /\bFailed\b/,
   /\bSkipped\b/,

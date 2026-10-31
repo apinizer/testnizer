@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, Bookmark, Copy, Info, Radio } from 'lucide-react'
 import { useTranslation } from '../../../lib/i18n'
 import { useCopy } from '../../../lib/use-copy'
 import { formatBytes, formatLogTime } from '../../../lib/realtime-format'
+import { formatDateTime } from '../../../lib/format-datetime'
 import type { LogKind } from './use-realtime-log'
 
 const ICON_BTN =
@@ -56,7 +57,7 @@ export default function RealtimeLogRow({
   direction: string
   children?: ReactNode
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const { copied, copy } = useCopy()
   const Icon = kind === 'sent' ? ArrowUp : kind === 'received' ? ArrowDown : Radio
   const iconColor =
@@ -68,7 +69,7 @@ export default function RealtimeLogRow({
   const id = (s: string): string => `${testIdPrefix}-row-${s}`
   const info = [
     sizeBytes !== undefined ? t('rt.log.infoSize').replace('{size}', formatBytes(sizeBytes)) : '',
-    t('rt.log.infoTime').replace('{time}', new Date(timestamp).toLocaleString()),
+    t('rt.log.infoTime').replace('{time}', formatDateTime(timestamp, locale)),
     typeLabel ? t('rt.log.infoType').replace('{type}', typeLabel) : '',
   ]
     .filter(Boolean)
@@ -105,7 +106,12 @@ export default function RealtimeLogRow({
           {preview}
         </span>
         {badge && (
-          <span className="shrink-0 rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--muted)]">
+          // `lang` keeps the upper-casing Turkish in TR ("İKİLİ", not "IKILI").
+          <span
+            lang={locale}
+            data-testid={id('badge')}
+            className="shrink-0 rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] font-medium uppercase text-[var(--muted)]"
+          >
             {badge}
           </span>
         )}

@@ -5,6 +5,7 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { parseRequestSnapshot } from '../../stores/saved-response.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDateTime } from '../../lib/format-datetime'
 import RequestBadge from '../shared/RequestBadge'
 import StatusBadge from '../shared/StatusBadge'
 import ResponsePane from './ResponsePane'
@@ -28,7 +29,7 @@ interface ExampleViewProps {
  * so body/headers/cookies/tests render exactly as they would after Send.
  */
 export default function ExampleView({ tabId, savedResponseId }: ExampleViewProps) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const closeTab = useTabsStore((s) => s.closeTab)
   const [item, setItem] = useState<SavedResponse | null>(null)
   // `actualRequest` from the response snapshot — the Sent view's fallback for
@@ -136,7 +137,7 @@ export default function ExampleView({ tabId, savedResponseId }: ExampleViewProps
         <span className="text-[var(--muted)]">·</span>
         <span className="text-[var(--muted)]">{t('example.banner')}</span>
         <span className="ml-auto text-[var(--muted)]">
-          {t('example.savedAt').replace('{date}', new Date(item.created_at).toLocaleString())}
+          {t('example.savedAt').replace('{date}', formatDateTime(item.created_at, locale))}
         </span>
       </div>
 

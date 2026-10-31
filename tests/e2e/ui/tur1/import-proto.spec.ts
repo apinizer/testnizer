@@ -76,13 +76,7 @@ uiTest.describe('Tur1 — Proto import [MST-082]', () => {
     const folder = `Proto ${uid()}`
     const result = await importProtoIpc(window, 'echo.proto', folder)
 
-    if (result.error) {
-      // Proto loading requires grpc/proto-loader to resolve the file from disk.
-      // In the packaged E2E environment the proto-loader binary may not be
-      // accessible; skip gracefully and report.
-      console.warn(`MST-082: proto import skipped — ${result.error}`)
-      return
-    }
+    expect(result.error, 'proto import must succeed').toBeUndefined()
 
     expect((result.endpointCount ?? 0)).toBeGreaterThan(0)
 
@@ -102,10 +96,7 @@ uiTest.describe('Tur1 — Proto import [MST-082]', () => {
     const folder = `Proto2 ${uid()}`
     const result = await importProtoIpc(window, 'echo.proto', folder)
 
-    if (result.error) {
-      console.warn(`MST-082: proto import skipped — ${result.error}`)
-      return
-    }
+    expect(result.error, 'proto import must succeed').toBeUndefined()
 
     const projectId = await getActiveProjectId(window)
     // Query the DB for endpoint protocol field
@@ -134,10 +125,7 @@ uiTest.describe('Tur1 — Proto import [MST-082]', () => {
     const folder = `Proto3 ${uid()}`
     const result = await importProtoIpc(window, 'echo.proto', folder)
 
-    if (result.error) {
-      console.warn(`MST-082: proto import skipped — ${result.error}`)
-      return
-    }
+    expect(result.error, 'proto import must succeed').toBeUndefined()
 
     // echo.proto has 1 service (EchoService)
     expect((result.folderCount ?? 0)).toBeGreaterThanOrEqual(1)

@@ -444,15 +444,28 @@ export function parseDurationToSeconds(spec: string | number): number | null {
   return Math.floor(value * factor)
 }
 
+/** Unit suffixes for {@link formatDuration}. */
+export interface DurationUnits {
+  d: string
+  h: string
+  m: string
+  s: string
+}
+
+/** Turkish suffixes: `1sa 2dk`, `1g 1sa`, `45sn`. */
+export const DURATION_UNITS_TR: DurationUnits = { d: 'g', h: 'sa', m: 'dk', s: 'sn' }
+
+const DURATION_UNITS_EN: DurationUnits = { d: 'd', h: 'h', m: 'm', s: 's' }
+
 /** `3725` → `'1h 2m'`. Coarse on purpose: two units are enough to read at a glance. */
-export function formatDuration(seconds: number): string {
+export function formatDuration(seconds: number, u: DurationUnits = DURATION_UNITS_EN): string {
   const abs = Math.abs(Math.floor(seconds))
-  if (abs < 60) return `${abs}s`
+  if (abs < 60) return `${abs}${u.s}`
   const units: [number, string][] = [
-    [86400, 'd'],
-    [3600, 'h'],
-    [60, 'm'],
-    [1, 's'],
+    [86400, u.d],
+    [3600, u.h],
+    [60, u.m],
+    [1, u.s],
   ]
   const parts: string[] = []
   let rest = abs

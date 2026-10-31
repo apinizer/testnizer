@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Lock, Eye, EyeOff } from 'lucide-react'
 import { HTTP_CREDENTIALS, useRequestStore } from '../../stores/request.store'
 import { useTabsStore } from '../../stores/tabs.store'
@@ -9,7 +9,14 @@ import { toast } from '../../lib/toast'
 import SoapSecuritySection from '../protocols/SoapSecuritySection'
 import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { useTranslation } from '../../lib/i18n'
-import { hasLiteralAuthCredential } from '../../lib/credential-withhold'
+import { literalAuthCredentials } from '../../lib/credential-withhold'
+import {
+  bindingKey,
+  literalsMatchStored,
+  storedAuthValues,
+  useStoredAuthStore,
+} from '../../lib/stored-auth-credentials'
+import { loadStoredAuthFromRow } from '../../lib/withheld-credentials'
 import type { AuthType } from '../../types'
 
 const AUTH_TYPE_TEST_IDS: Partial<Record<AuthType, string>> = {
@@ -97,8 +104,19 @@ export default function AuthTab() {
   const isSoap = activeTab?.protocol === 'soap'
   // Issues #244 / review #8: the restart hint only while a literal credential
   // of the active type is typed — the rule of the key/value hints. An empty
-  // field or `{{token}}` loses nothing after a restart.
-  const showRestartHint = auth.type !== 'wsse' && hasLiteralAuthCredential(auth, HTTP_CREDENTIALS)
+  // field or `{{token}}` loses nothing after a restart. Issue #261: and not
+  // while every such value is exactly what the bound row stores — the hint
+  // says "unless the request is saved", so it would mislead once saved.
+  const literals = auth.type === 'wsse' ? [] : literalAuthCredentials(auth, HTTP_CREDENTIALS)
+  const stored = useStoredAuthStore((s) => storedAuthValues(s.byTab, activeTab))
+  const showRestartHint = literals.length > 0 && !literalsMatchStored(literals, stored)
+  const binding = bindingKey(activeTab)
+  useEffect(() => {
+    // Learn what the row stores when nothing is known yet (opened from the
+    // tree, restored after a restart). Memory only — never a snapshot.
+    if (activeTab && binding) void loadStoredAuthFromRow(activeTab)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per tab + binding
+  }, [activeTab?.id, binding])
   const hintId = showRestartHint ? RESTART_HINT_ID : undefined
   const [fetchingToken, setFetchingToken] = useState(false)
 

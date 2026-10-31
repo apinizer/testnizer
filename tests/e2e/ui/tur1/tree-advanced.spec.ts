@@ -1,9 +1,9 @@
 /**
  * MST-018 P1 Folder delete cascade
  * MST-020 P1 Duplicate → independent edit
- * MST-027 P1 Module CRUD
+ * MST-027 P1 Module CRUD (skipped — no such feature)
  * MST-029 P1 Suite item Ctrl+S guard (prevents save to APIs tree)
- * MST-024 P2 EndpointCase CRUD
+ * MST-024 P2 EndpointCase CRUD (skipped — no such feature)
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
@@ -17,14 +17,18 @@ import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
 import {
   confirmDelete,
   treeContextAction,
-  treeOpenNode,
   treeSearch,
 } from '../../helpers/ui/tree'
 import {
   createFolder,
+  findSuiteIdByName,
   getActiveProjectId,
+  listEndpointsByProject,
   listSavedRequestsByProject,
+  listSuiteItems,
 } from '../../helpers/ui/assert-ipc'
+import { createTestSuite, addSuiteItem } from '../../helpers/ui/suite-flow'
+import { pressModShortcut } from '../../helpers/ui/keyboard'
 import { createSavedRequestIpc } from '../../helpers/ui/db-flow'
 import { refreshWorkspaceTree } from '../../helpers/ui/import-flow'
 import { localHttpBin } from '../../helpers/test-servers'
@@ -37,6 +41,12 @@ uiTest.describe('Tur1 — Tree Advanced [MST-018, MST-020, MST-024, MST-027, MST
     await dismissOverlays(window)
     await ensureCanonicalProject(window)
     await navigateSidebar(window, 'apis')
+  })
+
+  // MST-029 works inside the Tests module; leave the shared Electron instance
+  // on APIs so the next spec does not open its project on the Tests page.
+  uiTest.afterEach(async ({ window }) => {
+    await navigateSidebar(window, 'apis').catch(() => {})
   })
 
   // -------------------------------------------------------------------------
@@ -151,159 +161,48 @@ uiTest.describe('Tur1 — Tree Advanced [MST-018, MST-020, MST-024, MST-027, MST
   // -------------------------------------------------------------------------
   // MST-027 — Module CRUD (add/rename/delete a module node)
   // -------------------------------------------------------------------------
-  uiTest('MST-027 module create, rename, and delete', async ({ window }) => {
-    const modName = `Mod ${uid()}`
-    const modRenamed = `ModRenamed ${uid()}`
-
-    // Open (+) dropdown and look for "Module" or equivalent item.
-    await window.getByTestId('new-dropdown-btn').click()
-    const menu = window.getByTestId('new-dropdown-menu')
-    await expect(menu).toBeVisible()
-
-    const moduleBtn = menu.getByRole('button', { name: /Module|Modül/i })
-    if (!(await moduleBtn.isVisible().catch(() => false))) {
-      console.log('MST-027: Module option not found in new dropdown — needs data-testid hook')
-      await window.keyboard.press('Escape')
-      return
-    }
-    await moduleBtn.click()
-
-    // Modal or inline input for module name.
-    const nameModal = window.getByTestId('new-module-modal')
-    if (await nameModal.isVisible().catch(() => false)) {
-      await nameModal.locator('input').first().fill(modName)
-      await nameModal.getByRole('button', { name: /Create|Save|OK/i }).click()
-      await expect(nameModal).toBeHidden({ timeout: 10_000 })
-    } else {
-      // Inline rename input in tree.
-      const inp = window.getByTestId('tree-node').locator('input[type="text"]').last()
-      await inp.waitFor({ state: 'visible', timeout: 5_000 })
-      await inp.fill(modName)
-      await inp.press('Enter')
-    }
-
-    // Module visible in tree.
-    await treeSearch(window, modName)
-    await expect(window.getByTestId('tree-node').filter({ hasText: modName })).toHaveCount(1, {
-      timeout: 10_000,
-    })
-
-    // Rename.
-    await treeContextAction(window, modName, /Rename/i)
-    const renameInp = window.getByTestId('tree-node').locator('input[type="text"]').last()
-    await renameInp.waitFor({ state: 'visible', timeout: 5_000 })
-    await renameInp.fill(modRenamed)
-    await renameInp.press('Enter')
-
-    await treeSearch(window, modRenamed)
-    await expect(window.getByTestId('tree-node').filter({ hasText: modRenamed })).toHaveCount(1, {
-      timeout: 8_000,
-    })
-
-    // Delete.
-    await treeContextAction(window, modRenamed, /Delete/i)
-    const typed = await window.getByTestId('delete-confirm-input').isVisible().catch(() => false)
-    await confirmDelete(window, typed)
-
-    await treeSearch(window, modRenamed)
-    await expect(window.getByTestId('tree-node').filter({ hasText: modRenamed })).toHaveCount(0, {
-      timeout: 10_000,
-    })
-  })
+  // Feature does not exist: "module" is only the tree's project-ROOT node type
+  // (workspace.store.ts buildTreeFromDB); the New (+) dropdown (NewDropdown.tsx)
+  // lists protocols + Import and has no Module entry, and the root cannot be
+  // created/deleted from the tree. Folder CRUD is covered by MST-018. Visible
+  // skip (feature request), not a soft pass.
+  uiTest.skip('MST-027 module create/rename/delete — no user-creatable Module in the New dropdown (feature request)', async () => {})
 
   // -------------------------------------------------------------------------
   // MST-029 — Suite item Ctrl+S guard: saving inside a test suite should NOT
   //           open the APIs tree save modal (EndpointSaveModal).
   // -------------------------------------------------------------------------
   uiTest('MST-029 suite item Ctrl+S does not trigger EndpointSaveModal', async ({ window }) => {
-    // Navigate to Tests sidebar.
-    await navigateSidebar(window, 'tests')
+    const suiteName = `Guard029-${uid()}`
+    const url = `${http()}/get?guard=029-${uid()}`
+    const projectId = await getActiveProjectId(window)
+    const endpointsBefore = ((await listEndpointsByProject(window, projectId)) as unknown[]).length
 
-    // Check if a test suite tab / panel is visible.
-    const testsPanel = window
-      .getByTestId('tests-panel')
-      .or(window.getByTestId('suite-editor'))
+    await createTestSuite(window, suiteName)
+    await addSuiteItem(window, suiteName)
+    await fillUrl(window, url)
 
-    if (!(await testsPanel.isVisible().catch(() => false))) {
-      console.log('MST-029: tests-panel / suite-editor not found — needs data-testid hook')
-      return
-    }
-
-    // Open a suite item or the suite runner tab; press Ctrl+S.
-    const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
-    await window.keyboard.press(`${mod}+KeyS`)
-    await window.waitForTimeout(500)
-
-    // EndpointSaveModal must NOT appear.
+    // Ctrl/Cmd+S on a suite-item tab saves in place — it must not ask WHERE to save.
+    await pressModShortcut(window, 's')
     await expect(window.getByTestId('endpoint-save-modal')).toBeHidden({ timeout: 3_000 })
+
+    // The item itself was persisted into the suite…
+    const suiteId = await findSuiteIdByName(window, projectId, suiteName)
+    await expect
+      .poll(async () => (await listSuiteItems(window, suiteId)).some((i) => i.url === url), {
+        timeout: 10_000,
+      })
+      .toBe(true)
+    // …and nothing leaked into the APIs tree.
+    const endpointsAfter = ((await listEndpointsByProject(window, projectId)) as unknown[]).length
+    expect(endpointsAfter).toBe(endpointsBefore)
   })
 
   // -------------------------------------------------------------------------
   // MST-024 — EndpointCase CRUD (P2)
   // -------------------------------------------------------------------------
-  uiTest('MST-024 EndpointCase create, rename, and delete', async ({ window }) => {
-    const baseName = `CaseBase ${uid()}`
-    const caseName = `Case1 ${uid()}`
-    const projectId = await getActiveProjectId(window)
-
-    // Create a saved request to attach cases to.
-    await createSavedRequestIpc(window, {
-      projectId,
-      name: baseName,
-      url: `${http()}/get?case=1`,
-    })
-    await refreshWorkspaceTree(window)
-
-    // Open the endpoint in tree.
-    await treeOpenNode(window, baseName)
-
-    // Look for an "Add Case" or "Cases" action in context menu or request editor.
-    const addCaseBtn = window.getByRole('button', { name: /Add Case|Vaka Ekle/i })
-    if (!(await addCaseBtn.isVisible().catch(() => false))) {
-      // Try context menu on the tree node.
-      await treeSearch(window, baseName)
-      const node = window.getByTestId('tree-node').filter({ hasText: baseName }).first()
-      await node.click({ button: 'right' })
-      const menu = window.locator('[data-context-menu]')
-      const addCaseMenuItem = menu.getByRole('button', { name: /Add Case|Add Variant|Varyant/i })
-      if (!(await addCaseMenuItem.isVisible().catch(() => false))) {
-        console.log('MST-024: Add Case option not found — needs data-testid hook or context menu item')
-        await window.keyboard.press('Escape')
-        return
-      }
-      await addCaseMenuItem.click()
-    } else {
-      await addCaseBtn.click()
-    }
-
-    // Name the case.
-    const caseInput = window.getByTestId('new-case-modal')
-      .locator('input')
-      .first()
-      .or(window.getByTestId('tree-node').locator('input[type="text"]').last())
-    await caseInput.waitFor({ state: 'visible', timeout: 5_000 })
-    await caseInput.fill(caseName)
-    const confirmBtn = window.getByTestId('new-case-modal').getByRole('button', { name: /Save|Create/i })
-    if (await confirmBtn.isVisible().catch(() => false)) {
-      await confirmBtn.click()
-    } else {
-      await caseInput.press('Enter')
-    }
-
-    // Case node appears in tree.
-    await treeSearch(window, caseName)
-    await expect(window.getByTestId('tree-node').filter({ hasText: caseName })).toHaveCount(1, {
-      timeout: 10_000,
-    })
-
-    // Delete case.
-    await treeContextAction(window, caseName, /Delete/i)
-    const typed = await window.getByTestId('delete-confirm-input').isVisible().catch(() => false)
-    await confirmDelete(window, typed)
-
-    await treeSearch(window, caseName)
-    await expect(window.getByTestId('tree-node').filter({ hasText: caseName })).toHaveCount(0, {
-      timeout: 8_000,
-    })
-  })
+  // Feature does not exist: the tree/context menus (TreeNode.tsx) offer Add
+  // Request/Folder, Duplicate, Rename, Delete, Export, Create test suite/mock —
+  // there is no "case"/"variant" concept in src. Visible skip (feature request).
+  uiTest.skip('MST-024 EndpointCase create/rename/delete — no Add Case action exists in src (feature request)', async () => {})
 })

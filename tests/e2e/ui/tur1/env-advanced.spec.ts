@@ -294,14 +294,8 @@ uiTest.describe('Tur1 — Env Advanced [MST-063, MST-064, MST-066, MST-068]', ()
       },
     )
 
-    if (importRes === undefined) {
-      console.log('MST-066: importPostmanEnvironment IPC not exposed — needs hook')
-      return
-    }
-    if (!importRes.success) {
-      console.log(`MST-066: importPostmanEnvironment failed: ${importRes.error}`)
-      return
-    }
+    expect(importRes, 'importExport.importPostmanEnvironment is exposed').toBeDefined()
+    expect(importRes!.success, importRes!.error).toBe(true)
 
     // Verify environment and variables exist in DB.
     const envs = (await listEnvironmentsByProject(window, projectId)) as Array<{
@@ -345,25 +339,13 @@ uiTest.describe('Tur1 — Env Advanced [MST-063, MST-064, MST-066, MST-068]', ()
     // Footer shows envA as active.
     await expect(window.getByTestId('footer-env')).toContainText(envA, { timeout: 5_000 })
 
-    // Quick-switch: click footer env pill → list opens → pick envB.
+    // Footer env pill opens the Environments modal (there is no separate
+    // dropdown): pick envB there and make it active.
     await window.getByTestId('footer-env').click()
-    const dropdown = window
-      .getByTestId('env-quick-switch')
-      .or(window.getByRole('menu').filter({ hasText: envB }))
-    if (await dropdown.isVisible().catch(() => false)) {
-      await dropdown.getByRole('menuitem', { name: envB }).click()
-    } else {
-      // Fallback: footer click opens the env modal, select + set active.
-      const modal = window.getByTestId('environment-modal')
-      if (await modal.isVisible().catch(() => false)) {
-        await selectEnvironmentInModal(window, envB)
-        await setActiveEnvironment(window)
-        await closeEnvModal(window)
-      } else {
-        console.log('MST-068: footer-env click did not open quick-switch or modal — needs hook')
-        return
-      }
-    }
+    await expect(window.getByTestId('environment-modal')).toBeVisible({ timeout: 8_000 })
+    await selectEnvironmentInModal(window, envB)
+    await setActiveEnvironment(window)
+    await closeEnvModal(window)
 
     await expect(window.getByTestId('footer-env')).toContainText(envB, { timeout: 8_000 })
   })

@@ -63,6 +63,15 @@ iterasyon başına değil, run başına bir kez çalışır — ve teardown beti
 teardown isteklerinin garantilendiği şekilde garantilidir: akış erken
 durduğunda da koşar. Sonuçlarda betik satırları bir durum kodu yerine
 **SCRIPT** rozeti taşır ve hata fırlatan bir betik hata olarak raporlanır.
+Üçüncü slot **Run fail script**, teardown'dan sonra yalnız koşu kırmızıysa bir
+kez çalışır — raporu (`pm.run.exportHtml()`) bir e-posta ya da sohbet
+webhook'una göndermek için kullanın; bkz.
+[Run fail script](/tr/docs/scripts#run-fail-script--kırmızı-runda-uyarı).
+
+Koşu sonuçlarındaki, her **All Runs** satırındaki ve planlanmış bir görevin
+geçmişindeki **Export HTML** / **Export JSON** butonları koşu raporunu dosyaya
+kaydeder — sırlar maskeli, başlık sayıları ekranla aynı. Kayıtlı bir koşu
+yeniden çalıştırılmadan dışarı aktarılır.
 
 ### Bir koşuyu durdurmak
 

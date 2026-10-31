@@ -14,6 +14,7 @@ import {
   type JwkSummary,
 } from '../../../lib/tools/jwk'
 import { GREEN, RED } from './shared'
+import { TONE } from '../palette'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared atoms
@@ -182,11 +183,11 @@ export function PemBlock({ title, pem, secret }: { title: string; pem: string; s
 
 export function KindBadge({ secret }: { secret: boolean }) {
   const { t } = useTranslation()
-  const color = secret ? RED : GREEN
+  const tone = TONE[secret ? 'danger' : 'success']
   return (
     <span
       className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
-      style={{ background: `${color}15`, color, border: `1px solid ${color}40` }}
+      style={{ background: tone.bg, color: tone.fg, border: `1px solid ${tone.border}` }}
     >
       {secret ? t('tools.jwk.privateBadge') : t('tools.jwk.publicBadge')}
     </span>

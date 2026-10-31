@@ -20,7 +20,12 @@ import {
   hasUserContentType,
 } from '../../shared/http-auto-headers'
 import { parseSseBody } from '../lib/sse-body-parser'
-import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
+import {
+  classifyTransportError,
+  formatConnectionError,
+  hintForHttpStatus,
+  type ConnectionErrorInfo,
+} from '../lib/error-classifier'
 import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
 import { executeViaCurl, shouldUseCurlSidecar } from './curl-shim'
 import { resolveBodyFilePaths } from '../lib/working-directory'
@@ -125,6 +130,12 @@ interface ApiResponse {
   bodySize?: number
   timing: ResponseTiming
   error?: string
+  /**
+   * A transport failure classified by the ONE connection-error format (issue
+   * #253) — the renderer writes it in the active locale; `error` is its English
+   * one-liner with the next step.
+   */
+  errorInfo?: ConnectionErrorInfo
   cookies?: ResponseCookie[]
   actualRequest?: ActualRequestInfo
   /** Populated when the response Content-Type is `text/event-stream`. */
@@ -1458,14 +1469,17 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
       }
     }
 
-    // Transport-layer failure (DNS / TCP / TLS / abort) — classify into a
-    // human-readable line preserving the raw libuv code for diagnostic value.
+    // Transport-layer failure (DNS / TCP / TLS / abort) — the ONE connection
+    // error format (issue #253): what happened + host:port + the next step,
+    // exactly like the WebSocket / SSE / MCP editors. `errorInfo` lets the
+    // renderer write it in the active locale.
     const classified = classifyTransportError(err)
     return {
       requestId,
       protocol: 'http',
       timing: { total: Math.round(endTime - startTime) },
-      error: classified.message,
+      error: formatConnectionError(classified),
+      errorInfo: classified,
     }
   }
 }

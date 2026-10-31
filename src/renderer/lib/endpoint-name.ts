@@ -7,7 +7,7 @@
 // modal now replace a placeholder name with one derived from the URL. A name
 // the user typed is never touched: only the placeholders listed here qualify.
 
-import { valuesInAllLocales } from './i18n'
+import { t, valuesInAllLocales } from './i18n'
 import type { Protocol } from '../types'
 
 /**
@@ -34,8 +34,48 @@ export const DEFAULT_REQUEST_BY_PROTOCOL: Partial<
   mqtt: { name: 'New MQTT', method: 'GET' },
 }
 
-/** The blank scratch tab's literal name (see `isBlankScratchTab`). */
-const SCRATCH_TAB_NAME = 'New Request'
+/**
+ * The blank scratch tab's name before it was localized (issue #261). Tabs
+ * restored from an older build still carry it, so it stays a scratch name.
+ */
+const LEGACY_SCRATCH_TAB_NAME = 'New Request'
+
+/**
+ * The name a blank scratch tab opens with, in the UI language at call time
+ * ("New Request" / "Yeni İstek"). Every place that opens one uses it.
+ */
+export function defaultRequestTabName(): string {
+  return t('tabStrip.newRequest')
+}
+
+/**
+ * THE rule for "this is the blank scratch tab's name": the scratch name of any
+ * locale (a tab opened in Turkish is still blank after switching to English)
+ * or the legacy literal. Existing tabs are never renamed on a locale switch.
+ * Tree defaults ("New Endpoint" / "Yeni Uç Nokta") are NOT scratch names —
+ * issue #69: a stored request with such a name must open its editor.
+ */
+export function isScratchTabName(name: string | null | undefined): boolean {
+  if (name == null) return false
+  const trimmed = name.trim()
+  if (!trimmed) return false
+  return (
+    trimmed === LEGACY_SCRATCH_TAB_NAME ||
+    valuesInAllLocales('tabStrip.newRequest').includes(trimmed)
+  )
+}
+
+/**
+ * Name + method the APIs tree's "Add Request" creates a `protocol` request
+ * with. HTTP's name is localized ("New Endpoint" / "Yeni Uç Nokta"); the
+ * other protocols keep their table entry; an unknown protocol is HTTP.
+ * `isDefaultRequestName` recognises the names of every locale (issue #201).
+ */
+export function defaultRequestFor(protocol: string): { name: string; method: string } {
+  const entry = DEFAULT_REQUEST_BY_PROTOCOL[protocol as Protocol]
+  if (entry && protocol !== 'http') return entry
+  return { name: t('welcome.newEndpointName'), method: DEFAULT_REQUEST_BY_PROTOCOL.http!.method }
+}
 
 /**
  * i18n keys whose values are used as a new request's name: the "+ New"
@@ -55,7 +95,7 @@ let defaultNames: Set<string> | null = null
 
 function allDefaultNames(): Set<string> {
   if (defaultNames) return defaultNames
-  const names = new Set<string>([SCRATCH_TAB_NAME, 'Untitled'])
+  const names = new Set<string>([LEGACY_SCRATCH_TAB_NAME, 'Untitled'])
   for (const d of Object.values(DEFAULT_REQUEST_BY_PROTOCOL)) if (d) names.add(d.name)
   // Every locale, not only the current one: a request created in Turkish is
   // still a placeholder after the UI is switched to English.
@@ -144,13 +184,13 @@ export function deriveEndpointName(url: string): string | null {
     const raw = segments[i].trim()
     if (!raw || isVariableOnly(raw)) continue
     const name = decodeSegment(raw).trim()
-    if (!name || name === '.' || name === '..' || name === SCRATCH_TAB_NAME) continue
+    if (!name || name === '.' || name === '..' || isScratchTabName(name)) continue
     if (isIdLike(name)) continue
     return name
   }
 
   const host = hostOf(authority)
-  return host && host !== SCRATCH_TAB_NAME ? host : null
+  return host && !isScratchTabName(host) ? host : null
 }
 
 /**

@@ -20,6 +20,7 @@ import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import type { HistoryEntry, ApiResponse } from '../../types'
 import { useTranslation } from '../../lib/i18n'
+import { historyStatusDisplay } from '../../lib/history-status'
 
 /**
  * Postman-style request history list for the left panel — individual requests
@@ -355,14 +356,7 @@ export default function HistoryListPanel() {
                     {shortUrl(entry.url)}
                   </span>
                 )}
-                {entry.status_code != null && (
-                  <span
-                    className="shrink-0 font-medium"
-                    style={{ color: statusColor(entry.status_code), fontSize: 13 }}
-                  >
-                    {entry.status_code}
-                  </span>
-                )}
+                <HistoryStatus entry={entry} t={t} />
                 <span className="shrink-0" style={{ color: 'var(--hint)', fontSize: 13 }}>
                   {formatTime(entry.executed_at, locale)}
                 </span>
@@ -461,9 +455,17 @@ function shortUrl(url: string): string {
   }
 }
 
-function statusColor(code: number): string {
-  if (code >= 200 && code < 300) return 'var(--green)'
-  if (code >= 300 && code < 400) return 'var(--blue)'
-  if (code >= 400 && code < 500) return 'var(--orange)'
-  return 'var(--red)'
+/** Status badge — the shared rule with the Recent endpoints list (G-15). */
+function HistoryStatus({ entry, t }: { entry: HistoryEntry; t: (key: string) => string }) {
+  const status = historyStatusDisplay(entry, t)
+  if (!status) return null
+  return (
+    <span
+      className="shrink-0 whitespace-nowrap font-medium"
+      style={{ color: status.color, fontSize: 13 }}
+      title={status.title}
+    >
+      {status.label}
+    </span>
+  )
 }

@@ -660,69 +660,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
         ],
         "item": [
           {
-            "item": [
-              {
-                "name": "Create post (raw xml)",
-                "request": {
-                  "auth": {
-                    "type": "noauth",
-                  },
-                  "body": {
-                    "mode": "raw",
-                    "options": {
-                      "raw": {
-                        "language": "xml",
-                      },
-                    },
-                    "raw": "<post><title>Hello</title></post>",
-                  },
-                  "header": [
-                    {
-                      "key": "Content-Type",
-                      "value": "application/xml",
-                    },
-                  ],
-                  "method": "POST",
-                  "url": {
-                    "path": [
-                      "posts",
-                    ],
-                    "raw": "{{baseUrl}}/posts",
-                  },
-                },
-              },
-              {
-                "name": "Update post (raw text, PUT)",
-                "request": {
-                  "body": {
-                    "mode": "raw",
-                    "options": {
-                      "raw": {
-                        "language": "text",
-                      },
-                    },
-                    "raw": "plain text body",
-                  },
-                  "header": [
-                    {
-                      "key": "Content-Type",
-                      "value": "text/plain",
-                    },
-                  ],
-                  "method": "PUT",
-                  "url": {
-                    "path": [
-                      "posts",
-                      "1",
-                    ],
-                    "raw": "{{baseUrl}}/posts/1",
-                  },
-                },
-              },
-            ],
-            "name": "Posts",
-          },
-          {
             "event": [
               {
                 "listen": "test",
@@ -831,6 +768,69 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
                 "raw": "{{baseUrl}}/users",
               },
             },
+          },
+          {
+            "item": [
+              {
+                "name": "Create post (raw xml)",
+                "request": {
+                  "auth": {
+                    "type": "noauth",
+                  },
+                  "body": {
+                    "mode": "raw",
+                    "options": {
+                      "raw": {
+                        "language": "xml",
+                      },
+                    },
+                    "raw": "<post><title>Hello</title></post>",
+                  },
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "application/xml",
+                    },
+                  ],
+                  "method": "POST",
+                  "url": {
+                    "path": [
+                      "posts",
+                    ],
+                    "raw": "{{baseUrl}}/posts",
+                  },
+                },
+              },
+              {
+                "name": "Update post (raw text, PUT)",
+                "request": {
+                  "body": {
+                    "mode": "raw",
+                    "options": {
+                      "raw": {
+                        "language": "text",
+                      },
+                    },
+                    "raw": "plain text body",
+                  },
+                  "header": [
+                    {
+                      "key": "Content-Type",
+                      "value": "text/plain",
+                    },
+                  ],
+                  "method": "PUT",
+                  "url": {
+                    "path": [
+                      "posts",
+                      "1",
+                    ],
+                    "raw": "{{baseUrl}}/posts/1",
+                  },
+                },
+              },
+            ],
+            "name": "Posts",
           },
         ],
         "name": "Users",
@@ -1107,68 +1107,6 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
 {
   "endpoints": [
     {
-      "description": null,
-      "folder": "F2",
-      "method": "POST",
-      "name": "Create post (raw xml)",
-      "path": "/posts",
-      "protocol": "http",
-      "request_schema": {
-        "auth": {
-          "type": "none",
-        },
-        "body": {
-          "content": "<post><title>Hello</title></post>",
-          "type": "xml",
-        },
-        "headers": [
-          {
-            "enabled": true,
-            "id": "<id>",
-            "key": "Content-Type",
-            "value": "application/xml",
-          },
-        ],
-        "method": "POST",
-        "params": [],
-        "url": "{{baseUrl}}/posts",
-      },
-      "response_schemas": null,
-      "sort_order": 0,
-      "status": "developing",
-    },
-    {
-      "description": null,
-      "folder": "F2",
-      "method": "PUT",
-      "name": "Update post (raw text, PUT)",
-      "path": "/posts/1",
-      "protocol": "http",
-      "request_schema": {
-        "auth": {
-          "type": "inherit",
-        },
-        "body": {
-          "content": "plain text body",
-          "type": "text",
-        },
-        "headers": [
-          {
-            "enabled": true,
-            "id": "<id>",
-            "key": "Content-Type",
-            "value": "text/plain",
-          },
-        ],
-        "method": "PUT",
-        "params": [],
-        "url": "{{baseUrl}}/posts/1",
-      },
-      "response_schemas": null,
-      "sort_order": 1,
-      "status": "developing",
-    },
-    {
       "description": "Lists users",
       "folder": "F1",
       "method": "GET",
@@ -1224,7 +1162,7 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
         "url": "{{baseUrl}}/{{apiVersion}}/users?page=1&trace=x",
       },
       "response_schemas": null,
-      "sort_order": 2,
+      "sort_order": 0,
       "status": "developing",
     },
     {
@@ -1262,6 +1200,68 @@ exports[`baseline Postman v2.1 — import -> DB -> export > re-importing the exp
         "params": [],
         "preScript": "pm.environment.set('ts', Date.now());",
         "url": "{{baseUrl}}/users",
+      },
+      "response_schemas": null,
+      "sort_order": 1,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F2",
+      "method": "POST",
+      "name": "Create post (raw xml)",
+      "path": "/posts",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "type": "none",
+        },
+        "body": {
+          "content": "<post><title>Hello</title></post>",
+          "type": "xml",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "application/xml",
+          },
+        ],
+        "method": "POST",
+        "params": [],
+        "url": "{{baseUrl}}/posts",
+      },
+      "response_schemas": null,
+      "sort_order": 2,
+      "status": "developing",
+    },
+    {
+      "description": null,
+      "folder": "F2",
+      "method": "PUT",
+      "name": "Update post (raw text, PUT)",
+      "path": "/posts/1",
+      "protocol": "http",
+      "request_schema": {
+        "auth": {
+          "type": "inherit",
+        },
+        "body": {
+          "content": "plain text body",
+          "type": "text",
+        },
+        "headers": [
+          {
+            "enabled": true,
+            "id": "<id>",
+            "key": "Content-Type",
+            "value": "text/plain",
+          },
+        ],
+        "method": "PUT",
+        "params": [],
+        "url": "{{baseUrl}}/posts/1",
       },
       "response_schemas": null,
       "sort_order": 3,

@@ -26,6 +26,7 @@ import {
   Sun,
   SunMoon,
   PanelsTopLeft as TabsIcon,
+  Terminal,
   Wand2,
   X,
 } from 'lucide-react'
@@ -37,8 +38,15 @@ import { useUIStore } from '../stores/ui.store'
 import { openOrReuseRunnerTab } from './open-runner-tab'
 import { runActiveRequest } from './run-active-request'
 import { useEnvironmentStore } from '../stores/environment.store'
-import { isMac } from './platform'
+import {
+  formatShortcut,
+  NEXT_TAB_SHORTCUT,
+  PREV_TAB_SHORTCUT,
+  TOGGLE_CONSOLE_SHORTCUT,
+} from './shortcut-format'
+import { activateAdjacentTab } from './tab-cycle'
 import { makeTabId } from './utils'
+import { defaultRequestTabName } from './endpoint-name'
 import type { ToolProtocol } from '../types'
 
 export const GROUP_LABEL_KEY = {
@@ -63,13 +71,13 @@ export interface CommandAction {
   run: () => void | Promise<void>
 }
 
-/** Pretty shortcut hint shown in the palette (e.g. "Cmd+K" on macOS, "Ctrl+K" elsewhere). */
+/**
+ * Shortcut hint shown in the palette and the cheatsheet ("⌘K" on macOS,
+ * "Ctrl+K" elsewhere) — through the one formatter, like every other surface
+ * (issue #257).
+ */
 export function shortcutLabel(key: string, opts?: { shift?: boolean }): string {
-  const mod = isMac() ? 'Cmd' : 'Ctrl'
-  const parts: string[] = [mod]
-  if (opts?.shift) parts.push('Shift')
-  parts.push(key)
-  return parts.join('+')
+  return formatShortcut(['Mod', ...(opts?.shift ? ['Shift'] : []), key])
 }
 
 /**
@@ -96,7 +104,7 @@ export function useCommandActions(): CommandAction[] {
       run: () => {
         tabs.openTab({
           id: makeTabId(),
-          name: 'New Request',
+          name: defaultRequestTabName(),
           protocol: 'http',
           method: 'GET',
           url: '',
@@ -118,30 +126,20 @@ export function useCommandActions(): CommandAction[] {
     actions.push({
       id: 'nav.nextTab',
       label: t('command.action.nextTab'),
+      shortcut: formatShortcut(NEXT_TAB_SHORTCUT),
       group: 'navigation',
       icon: TabsIcon,
       keywords: ['tab', 'next', 'switch'],
-      run: () => {
-        const s = useTabsStore.getState()
-        if (s.tabs.length === 0) return
-        const idx = s.tabs.findIndex((tab) => tab.id === s.activeTabId)
-        const next = s.tabs[(idx + 1) % s.tabs.length]
-        s.setActiveTab(next.id)
-      },
+      run: () => activateAdjacentTab(1),
     })
     actions.push({
       id: 'nav.prevTab',
       label: t('command.action.prevTab'),
+      shortcut: formatShortcut(PREV_TAB_SHORTCUT),
       group: 'navigation',
       icon: TabsIcon,
       keywords: ['tab', 'previous', 'switch'],
-      run: () => {
-        const s = useTabsStore.getState()
-        if (s.tabs.length === 0) return
-        const idx = s.tabs.findIndex((tab) => tab.id === s.activeTabId)
-        const prev = s.tabs[(idx - 1 + s.tabs.length) % s.tabs.length]
-        s.setActiveTab(prev.id)
-      },
+      run: () => activateAdjacentTab(-1),
     })
     actions.push({
       id: 'nav.toggleSidebar',
@@ -151,6 +149,15 @@ export function useCommandActions(): CommandAction[] {
       icon: Layout,
       keywords: ['sidebar', 'panel', 'toggle'],
       run: () => useUIStore.getState().toggleLeftPanel(),
+    })
+    actions.push({
+      id: 'view.toggleConsole',
+      label: t('command.action.toggleConsole'),
+      shortcut: formatShortcut(TOGGLE_CONSOLE_SHORTCUT),
+      group: 'navigation',
+      icon: Terminal,
+      keywords: ['console', 'log', 'toggle'],
+      run: () => useUIStore.getState().toggleConsolePanel(),
     })
 
     // ── Request ──────────────────────────────────────────────────────
@@ -370,11 +377,17 @@ export function getShortcutEntries(): ShortcutEntry[] {
     { keys: shortcutLabel('S', { shift: true }), descriptionKey: 'command.shortcut.saveProject' },
     { keys: shortcutLabel('T'), descriptionKey: 'command.shortcut.newTab' },
     { keys: shortcutLabel('W'), descriptionKey: 'command.shortcut.closeTab' },
+    { keys: formatShortcut(NEXT_TAB_SHORTCUT), descriptionKey: 'command.shortcut.nextTab' },
+    { keys: formatShortcut(PREV_TAB_SHORTCUT), descriptionKey: 'command.shortcut.prevTab' },
     { keys: shortcutLabel('L'), descriptionKey: 'command.shortcut.focusUrl' },
     { keys: shortcutLabel('N'), descriptionKey: 'command.shortcut.newItem' },
     { keys: shortcutLabel('O'), descriptionKey: 'command.shortcut.import' },
     { keys: shortcutLabel('I'), descriptionKey: 'command.shortcut.importCurl' },
     { keys: shortcutLabel('B'), descriptionKey: 'command.shortcut.toggleSidebar' },
+    {
+      keys: formatShortcut(TOGGLE_CONSOLE_SHORTCUT),
+      descriptionKey: 'command.shortcut.toggleConsole',
+    },
     { keys: shortcutLabel(','), descriptionKey: 'command.shortcut.settings' },
     { keys: shortcutLabel('F', { shift: true }), descriptionKey: 'command.shortcut.formatBody' },
   ]

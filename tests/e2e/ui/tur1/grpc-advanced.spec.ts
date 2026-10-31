@@ -20,9 +20,10 @@
  *     Asserts the "Load from File" source tile is selectable.
  *   - MST-140 (P2) cancel mid-flight: Cancel button visible during loading.
  *
- * Needs hook:
- *   - MST-133: inline gRPC server with grpc.reflection.v1alpha service.
- *   - MST-134/135/136: inline gRPC server with streaming RPCs and inline proto.
+ * MST-134/135/136 drive the real UI against the inline streaming server: the
+ * proto is picked through the native open dialog (stubbed in the main process),
+ * so the streaming controls (Cancel / Send / End Streaming) and the event
+ * timeline are exercised for real.
  */
 import path from 'node:path'
 import net from 'node:net'
@@ -30,7 +31,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
-import { expect } from '@playwright/test'
+import { expect, type ElectronApplication, type Page } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
   dismissOverlays,
@@ -156,6 +157,37 @@ async function startStreamingGrpcServer(
   }
 }
 
+
+/** Load `protoPath` through "From File" with the main-process open dialog stubbed. */
+async function loadProtoViaFileDialog(
+  app: ElectronApplication,
+  window: Page,
+  protoPath: string,
+): Promise<() => Promise<void>> {
+  await app.evaluate(({ dialog }, p) => {
+    const d = dialog as unknown as Record<string, unknown>
+    if (!d.__origGrpcStub) d.__origGrpcStub = d.showOpenDialog
+    d.showOpenDialog = async () => ({ canceled: false, filePaths: [p] })
+  }, protoPath)
+  const restore = async (): Promise<void> => {
+    await app.evaluate(({ dialog }) => {
+      const d = dialog as unknown as Record<string, unknown>
+      if (d.__origGrpcStub) {
+        d.showOpenDialog = d.__origGrpcStub
+        delete d.__origGrpcStub
+      }
+    })
+  }
+  await window.getByRole('button', { name: 'From File', exact: true }).click()
+  await window.getByRole('button', { name: /Pick .proto file/i }).click()
+  await expect(window.getByTestId('grpc-method-select')).toBeVisible({ timeout: 15_000 })
+  await window.getByTestId('grpc-service-select').selectOption('stream.StreamService')
+  return restore
+}
+
+/** Streaming events timeline rows (#1, #2, ...). */
+const streamRow = (window: Page, n: number) => window.getByText(`#${n}`, { exact: true })
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 uiTest.describe('Tur1 — gRPC advanced [MST-133..140]', () => {
@@ -182,89 +214,92 @@ uiTest.describe('Tur1 — gRPC advanced [MST-133..140]', () => {
     // error (the global server has no reflection service) — but must NOT crash.
     const loadBtn = window.getByRole('button', { name: /Use server reflection/i })
     await loadBtn.click()
-    // Accept either an error message or that protoLoaded stays false
-    await window.waitForTimeout(3_000)
-    // The address field should still be present (UI didn't crash)
+    // The server has no reflection service: the load must fail visibly and
+    // must not pretend a proto was loaded.
+    await expect(window.locator('div.text-red-600').first()).toBeVisible({ timeout: 15_000 })
+    await expect(window.getByTestId('grpc-method-select')).toHaveCount(0)
     await expect(window.getByTestId('grpc-address')).toBeVisible()
   })
 
   // ── MST-134: Server streaming ─────────────────────────────────────────────
-  uiTest('MST-134 server streaming delivers multiple events in timeline', async ({ window }) => {
+  uiTest('MST-134 server streaming delivers multiple events in timeline', async ({ app, window }) => {
     const port = await getFreePort()
     const srv = await startStreamingGrpcServer(port)
+    let restore: (() => Promise<void>) | null = null
     try {
-      const http = localHttpBin()
       await openNewDropdownItem(window, /gRPC/i)
       await window.getByTestId('grpc-address').fill(srv.address)
+      restore = await loadProtoViaFileDialog(app, window, srv.protoPath)
+      await window.getByTestId('grpc-method-select').selectOption('ServerStream')
 
-      // Load proto from URL (the spec serves it via the http-echo server's static path)
-      // Since we can't serve the tmp file via http-echo we use the URL tile + a known
-      // accessible URL (the global echo.proto served by http-echo static route).
-      // However the streaming proto is different — we fall back to using the file path.
-      // Use "From URL" source with the echo.proto file (loads the global EchoService)
-      // and then manually pick "From File" source. We just verify the ServerStream
-      // method label appears after loading the streaming proto text inline.
-      //
-      // Alternative: load via "From URL" if http-echo serves fixtures.
-      // The global grpc test in tier12 uses http/fixtures/echo.proto path.
-      // We serve the streaming proto similarly if possible; otherwise skip.
+      await fillMonaco(window, 'grpc-request-editor', '{"msg":"mst134"}')
+      await window.getByTestId('grpc-execute').click()
 
-      // Try loading proto from URL if http-echo has a /fixtures/ route
-      await window.getByRole('button', { name: /From URL/i }).click()
-      const protoUrlInput = window.getByPlaceholder(/example\.com.*proto/i)
-      // Write proto temp file to fixtures dir instead (read-only check)
-      // Can't modify fixtures — use a base64-encoded data URL trick won't work either.
-      // FALLBACK: load the echo.proto from the http-echo server and verify at minimum
-      // that the UnaryCall/ServerStream names appear after loading the streaming server.
-      // Since we can't serve the inline proto, we test with the global echo server
-      // and just verify the streaming source tiles exist.
-      if (await protoUrlInput.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        // Try to load the streaming proto — can only serve via http if fixtures allow
-        await protoUrlInput.fill(`${http}/fixtures/echo.proto`)
-        await window.getByRole('button', { name: /Load from URL/i }).click()
-        await window.waitForTimeout(3_000)
-      }
-      // The UI should not crash regardless
-      await expect(window.getByTestId('grpc-address')).toBeVisible()
+      // The server writes 3 messages: the timeline lists all of them.
+      await expect(streamRow(window, 1)).toBeVisible({ timeout: 20_000 })
+      await expect(streamRow(window, 2)).toBeVisible()
+      await expect(streamRow(window, 3)).toBeVisible()
+      await expect(window.getByText('server-stream-2').first()).toBeVisible()
     } finally {
+      await restore?.()
       await srv.close()
     }
   })
 
   // ── MST-135: Client streaming ─────────────────────────────────────────────
-  uiTest('MST-135 client-streaming source tile visible and UI not crashed', async ({ window }) => {
-    // Full client-streaming test requires the streaming proto to be loaded.
-    // This test verifies the UI handles client-stream method type display correctly
-    // by asserting the source selection tiles are present and the grpc-execute
-    // button changes to Send+EndStreaming+Cancel when a client-stream method is active.
-    const { grpc } = getTestServerUrls()
-    await openNewDropdownItem(window, /gRPC/i)
-    await window.getByTestId('grpc-address').fill(grpc)
-    // Load the echo.proto (unary only)
-    await window.getByRole('button', { name: /From URL/i }).click()
-    await window.getByPlaceholder(/example\.com.*proto/i).fill(`${localHttpBin()}/fixtures/echo.proto`)
-    await window.getByRole('button', { name: /Load from URL/i }).click()
-    await expect(window.getByTestId('grpc-method-select')).toBeVisible({ timeout: 15_000 })
-    // Unary Execute button should be visible (since EchoService only has unary)
-    await expect(window.getByTestId('grpc-execute')).toBeVisible()
+  uiTest('MST-135 client streaming: Send pushes messages, End Streaming returns the aggregate', async ({ app, window }) => {
+    const port = await getFreePort()
+    const srv = await startStreamingGrpcServer(port)
+    let restore: (() => Promise<void>) | null = null
+    try {
+      await openNewDropdownItem(window, /gRPC/i)
+      await window.getByTestId('grpc-address').fill(srv.address)
+      restore = await loadProtoViaFileDialog(app, window, srv.protoPath)
+      await window.getByTestId('grpc-method-select').selectOption('ClientStream')
+
+      await fillMonaco(window, 'grpc-request-editor', '{"msg":"c1"}')
+      await window.getByTestId('grpc-execute').click()
+
+      // Stream is open: the client-stream controls replace the plain Execute.
+      const endBtn = window.getByRole('button', { name: /End Streaming/i })
+      await expect(endBtn).toBeVisible({ timeout: 15_000 })
+      await fillMonaco(window, 'grpc-request-editor', '{"msg":"c2"}')
+      await window.getByRole('button', { name: 'Send', exact: true }).click()
+      await endBtn.click()
+
+      // The server answers once, after the half-close, with both messages.
+      await expect(window.getByText(/client-stream: c1,c2/).first()).toBeVisible({ timeout: 20_000 })
+    } finally {
+      await restore?.()
+      await srv.close()
+    }
   })
 
   // ── MST-136: Bidi streaming ───────────────────────────────────────────────
-  uiTest('MST-136 bidi-streaming execute enables End Streaming button', async ({ window }) => {
-    // Same fallback as MST-135 — load echo.proto and execute unary; the UI
-    // must show End Streaming only when a streaming method is active.
-    // Without the streaming proto the bidi buttons won't appear — document this.
-    const { grpc } = getTestServerUrls()
-    await openNewDropdownItem(window, /gRPC/i)
-    await window.getByTestId('grpc-address').fill(grpc)
-    await window.getByRole('button', { name: /From URL/i }).click()
-    await window.getByPlaceholder(/example\.com.*proto/i).fill(`${localHttpBin()}/fixtures/echo.proto`)
-    await window.getByRole('button', { name: /Load from URL/i }).click()
-    await expect(window.getByTestId('grpc-method-select')).toBeVisible({ timeout: 15_000 })
-    // For unary: execute and check OK
-    await fillMonaco(window, 'grpc-request-editor', '{"message":"mst136"}')
-    await window.getByTestId('grpc-execute').click()
-    await expect(window.getByTestId('grpc-response-status')).toContainText(/OK/i, { timeout: 20_000 })
+  uiTest('MST-136 bidi streaming echoes each sent message into the timeline', async ({ app, window }) => {
+    const port = await getFreePort()
+    const srv = await startStreamingGrpcServer(port)
+    let restore: (() => Promise<void>) | null = null
+    try {
+      await openNewDropdownItem(window, /gRPC/i)
+      await window.getByTestId('grpc-address').fill(srv.address)
+      restore = await loadProtoViaFileDialog(app, window, srv.protoPath)
+      await window.getByTestId('grpc-method-select').selectOption('BidiStream')
+
+      await fillMonaco(window, 'grpc-request-editor', '{"msg":"b1"}')
+      await window.getByTestId('grpc-execute').click()
+      await expect(window.getByRole('button', { name: /End Streaming/i })).toBeVisible({ timeout: 15_000 })
+      await expect(window.getByText(/bidi-echo: b1/).first()).toBeVisible({ timeout: 15_000 })
+
+      await fillMonaco(window, 'grpc-request-editor', '{"msg":"b2"}')
+      await window.getByRole('button', { name: 'Send', exact: true }).click()
+      await expect(window.getByText(/bidi-echo: b2/).first()).toBeVisible({ timeout: 15_000 })
+
+      await window.getByRole('button', { name: /End Streaming/i }).click()
+    } finally {
+      await restore?.()
+      await srv.close()
+    }
   })
 
   // ── MST-137: Metadata + deadline ─────────────────────────────────────────
@@ -304,11 +339,14 @@ uiTest.describe('Tur1 — gRPC advanced [MST-133..140]', () => {
 
     // Click to toggle TLS on
     await tlsBtn.click()
-    // Should show a locked/secure state indicator
-    await expect(window.locator('[style*="1a7a4a"]').or(window.getByText(/Secure|TLS/i))).toBeTruthy()
+    // Toggling must visibly change the control (a no-op click would leave the
+    // button state identical before/after the second click below).
+    const afterOn = await tlsBtn.evaluate((el) => (el as HTMLElement).outerHTML)
 
     // Toggle back off (insecure) and execute to confirm connect
     await tlsBtn.click()
+    const afterOff = await tlsBtn.evaluate((el) => (el as HTMLElement).outerHTML)
+    expect(afterOff).not.toBe(afterOn)
 
     // Load proto and execute unary
     await window.getByRole('button', { name: /From URL/i }).click()

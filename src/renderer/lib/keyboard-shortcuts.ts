@@ -7,12 +7,15 @@ import { useUIStore } from '../stores/ui.store'
 import { useWorkspaceStore } from '../stores/workspace.store'
 import { isMac } from './platform'
 import { makeTabId } from './utils'
+import { defaultRequestTabName } from './endpoint-name'
 import { isRequestLikeTab } from './mark-dirty'
 import { saveActiveRequestInPlace } from './save-active-request'
 import { runActiveRequest } from './run-active-request'
 import { toast } from './toast'
 import { t } from './i18n'
 import { requestMockMcpSave } from './mock-mcp-save-request'
+import { adjacentTabChord, isToggleConsoleChord } from './shortcut-chords'
+import { activateAdjacentTab } from './tab-cycle'
 
 interface ShortcutHandler {
   key: string
@@ -62,6 +65,26 @@ export function useKeyboardShortcuts(): void {
 
       // Only process the rest when modifier key is held.
       if (!isModKey(e)) return
+
+      // Mod+Alt+C — toggle the Console (TOGGLE_CONSOLE_SHORTCUT, the footer
+      // button's tooltip). Its own branch: the table below ignores Alt.
+      if (isToggleConsoleChord(e)) {
+        e.preventDefault()
+        useUIStore.getState().toggleConsolePanel()
+        return
+      }
+
+      // Mod+Alt+Right / Left — next / previous tab (NEXT_TAB_SHORTCUT /
+      // PREV_TAB_SHORTCUT). Fires in inputs and Monaco too, like the other Mod
+      // chords: word jump (Option/Ctrl+Arrow) and line jump (Cmd+Arrow) never
+      // hold Mod AND Alt, and Monaco binds neither Cmd+Option+Arrow nor
+      // Ctrl+Alt+Arrow.
+      const tabStep = adjacentTabChord(e)
+      if (tabStep !== 0) {
+        e.preventDefault()
+        activateAdjacentTab(tabStep)
+        return
+      }
 
       const shortcuts: ShortcutHandler[] = [
         {
@@ -199,7 +222,7 @@ export function useKeyboardShortcuts(): void {
             const id = makeTabId()
             useTabsStore.getState().openTab({
               id,
-              name: 'New Request',
+              name: defaultRequestTabName(),
               protocol: 'http',
               method: 'GET',
               url: '',

@@ -23,11 +23,10 @@
  *     `initialize`, `ask_count` drives the multi-round-trip input card, and a
  *     Mock MCP server with "Legacy clients: Reject" serves 2026-07-28 only.
  *
- * Needs hook:
- *   - MST-147: SSEServerTransport. Uses @modelcontextprotocol/sdk's SSEServerTransport.
- *   - MST-149 error tool: falls back to global HTTP server (which has `echo` and `add`
- *     tools but no failing tool). The spec calls `add` with invalid args (non-numeric)
- *     and verifies the result or error panel shows something.
+ * Fixtures:
+ *   - MST-147: SSE fixture built on @modelcontextprotocol/sdk's SSEServerTransport.
+ *   - MST-149 error tool: the global HTTP server has `echo` and `add` but no
+ *     failing tool, so the spec calls `add` with invalid args (non-numeric).
  */
 import http from 'node:http'
 import path from 'node:path'
@@ -145,14 +144,9 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
   // ── MST-147: SSE transport ────────────────────────────────────────────────
   uiTest('MST-147 MCP SSE transport connects and lists tools', async ({ window }) => {
     const port = await getFreePort()
-    let server: Awaited<ReturnType<typeof startMcpSseServer>> | null = null
-    try {
-      server = await startMcpSseServer(port)
-    } catch {
-      // If SSEServerTransport is not available, note as needs-hook and skip
-      console.warn('[MST-147] SSEServerTransport not available — needs server support')
-      return
-    }
+    // The legacy SSE fixture (v1 SDK SSEServerTransport) must start: a failure
+    // here is a real test-infra failure, not a reason to skip silently.
+    const server: Awaited<ReturnType<typeof startMcpSseServer>> = await startMcpSseServer(port)
     try {
       await openNewDropdownItem(window, /MCP/i)
 

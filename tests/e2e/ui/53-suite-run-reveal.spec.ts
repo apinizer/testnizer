@@ -21,7 +21,11 @@ import { runSuiteFromContextMenu } from '../helpers/ui/suite-flow'
 import { waitRunnerConfigReady, startRunnerTabRun, waitRunnerTabComplete } from '../helpers/ui/runner-flow'
 import { localHttpBin } from '../helpers/test-servers'
 
-const SHOTS = '/private/tmp/claude-501/-Users-mhy-IdeaProjects-testnizer/080c60f4-ae3a-433a-9eda-a394ab175de1/scratchpad/shots'
+// Screenshots land in the test output dir; TESTNIZER_SHOTS_DIR redirects them for manual review.
+const shot = (name: string): string =>
+  process.env.TESTNIZER_SHOTS_DIR
+    ? `${process.env.TESTNIZER_SHOTS_DIR}/${name}`
+    : uiTest.info().outputPath(name)
 const uid = (): string => String(Date.now()).slice(-8)
 
 type IpcResult<T> = { success: boolean; data?: T; error?: string }
@@ -118,7 +122,7 @@ uiTest.describe('Issue #302 — suite run result reveals the item in Tests', () 
 
       const reveal = window.getByTestId(`runner-reveal-${itemId}`)
       await expect(reveal).toBeVisible({ timeout: 10_000 })
-      await window.screenshot({ path: `${SHOTS}/302-1-suite-run-result-reveal-icon.png` })
+      await window.screenshot({ path: shot('302-1-suite-run-result-reveal-icon.png') })
       await reveal.click()
 
       const row = window.locator(`[data-testid="suite-item-row"][data-item-id="${itemId}"]`)
@@ -131,7 +135,7 @@ uiTest.describe('Issue #302 — suite run result reveals the item in Tests', () 
         window.getByTestId(`nav-${id}`).evaluate((el) => getComputedStyle(el).backgroundColor)
       expect(await navColor('tests')).not.toBe(await navColor('apis'))
       expect(await navColor('apis')).toBe('rgba(0, 0, 0, 0)')
-      await window.screenshot({ path: `${SHOTS}/302-2-revealed-in-tests-sidebar.png` })
+      await window.screenshot({ path: shot('302-2-revealed-in-tests-sidebar.png') })
     } finally {
       await closeAllTabs(window).catch(() => {})
       if (suiteId) {

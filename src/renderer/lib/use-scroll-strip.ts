@@ -25,6 +25,13 @@ export function wheelToHorizontal(
   return e.deltaMode === 1 ? e.deltaY * LINE_PX : e.deltaY
 }
 
+/** Scroll the strip's active child into view; `null` strip is a no-op. */
+function revealActive(el: HTMLElement | null): void {
+  const active = el?.querySelector<HTMLElement>('[data-active="true"]')
+  // jsdom has no scrollIntoView; guard so every strip renders in tests.
+  active?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+}
+
 /**
  * Returns a callback ref for the strip element (a callback, so a strip that
  * mounts after the first render — e.g. once a response arrives — still gets
@@ -53,10 +60,20 @@ export function useScrollStrip<T extends HTMLElement = HTMLDivElement>(
   }, [el])
 
   useLayoutEffect(() => {
-    const active = el?.querySelector<HTMLElement>('[data-active="true"]')
-    // jsdom has no scrollIntoView; guard so every strip renders in tests.
-    active?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+    revealActive(el)
   }, [el, activeKey])
+
+  // The strip's width is not final when the active tab changes: opening a
+  // blank "+" tab swaps the editor beside the bar (the right-panel rail
+  // disappears and the strip widens by 40 px), so the scroll above is measured
+  // against a stale width and the new tab ends up clipped at the right edge.
+  // Re-reveal the active tab whenever the strip itself is resized.
+  useEffect(() => {
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => revealActive(el))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [el])
 
   return setEl
 }

@@ -7,6 +7,7 @@ import {
   type SseHttpMethod,
 } from '../protocols/sse.engine'
 import { logEvent } from '../lib/console-logger'
+import { connectFailure } from '../lib/error-classifier'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 
@@ -141,7 +142,8 @@ export function registerSseHandlers(): void {
         throw err
       }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      // Issue #253: a classified connect failure also carries `errorInfo`.
+      return connectFailure(e)
     }
   })
 

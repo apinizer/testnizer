@@ -45,6 +45,31 @@ export interface StoredProjectSettings {
    */
   requestTimeout?: number
   /**
+   * Issue #287: the Certificates pane's "SSL certificate verification" and the
+   * General pane's "Follow redirects" — the project link of
+   * `resolveSslVerification` / `resolveFollowRedirects`. Absent = inherit the
+   * app Settings value.
+   */
+  sslVerification?: boolean
+  followRedirects?: boolean
+  /** TLS protocol / cipher overrides (Certificates pane) — `resolveTlsPayload`. */
+  tls?: {
+    minVersion?: string
+    maxVersion?: string
+    cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
+    ciphersCustom?: string
+  }
+  /**
+   * Machine-local proxy (Proxy pane). `auth.password` is stored ENCRYPTED
+   * (settings handler `SENSITIVE_FIELDS`) — decrypt before use.
+   */
+  proxy?: {
+    mode?: 'system' | 'none' | 'custom'
+    host?: string
+    port?: number
+    auth?: { username: string; password: string }
+  }
+  /**
    * Machine-local folder relative form-data / binary file paths resolve
    * against (`lib/working-directory.ts`, issue #276). Not shared: a folder on
    * one computer means nothing on another.
@@ -112,9 +137,25 @@ export function readSharedProjectSettings(projectId: string): Obj | null {
   }
 }
 
-/** Write the shared part of a settings save; earlier shared keys the save omits are kept. */
+/**
+ * Shared keys a project may hand back to the app Settings (issue #254, "Use
+ * app setting"). For these, `null` in a save is an explicit DELETE marker —
+ * omission keeps meaning "leave it alone", so a reset needs its own value.
+ */
+export const INHERITABLE_SHARED_KEYS = [
+  'requestTimeout',
+  'sslVerification',
+  'followRedirects',
+] as const
+const INHERITABLE = new Set<string>(INHERITABLE_SHARED_KEYS)
+
+/**
+ * Write the shared part of a settings save; earlier shared keys the save omits
+ * are kept. `null` on an inheritable key removes it (the null is never stored).
+ */
 export function writeSharedProjectSettings(projectId: string, shared: Obj): void {
-  const next = { ...(readSharedProjectSettings(projectId) ?? {}), ...shared }
+  const next: Obj = { ...(readSharedProjectSettings(projectId) ?? {}), ...shared }
+  for (const k of INHERITABLE) if (next[k] === null) delete next[k]
   getDb()
     .prepare('UPDATE projects SET shared_settings = ? WHERE id = ?')
     .run(JSON.stringify(next), projectId)
@@ -194,5 +235,37 @@ export async function loadAppDefaultTimeout(): Promise<number | undefined> {
     return typeof raw === 'number' && Number.isFinite(raw) && raw >= 0 ? raw : undefined
   } catch {
     return undefined
+  }
+}
+
+/**
+ * App-wide "SSL certificate verification" and "Follow redirects" (Settings
+ * modal, top-level keys) — the last link of `resolveSslVerification` /
+ * `resolveFollowRedirects` before their `true` default (issue #287). A value
+ * never saved comes back `undefined` (this store has no defaults) and the
+ * resolver's `true` applies — what the settings handler's defaults say too.
+ */
+export async function loadAppNetworkDefaults(): Promise<{
+  sslVerification?: boolean
+  followRedirects?: boolean
+  /**
+   * App Settings proxy (issue #254) — the fallback below the project's own.
+   * As stored: `auth.password` is ENCRYPTED (settings handler
+   * `SENSITIVE_FIELDS`); `inheritedNetworkFor` decrypts it.
+   */
+  proxy?: StoredProjectSettings['proxy']
+}> {
+  try {
+    const store = await getStore()
+    const ssl = store.get('sslVerification')
+    const follow = store.get('followRedirects')
+    const proxy = store.get('proxy')
+    return {
+      ...(typeof ssl === 'boolean' ? { sslVerification: ssl } : {}),
+      ...(typeof follow === 'boolean' ? { followRedirects: follow } : {}),
+      ...(isObj(proxy) ? { proxy: proxy as StoredProjectSettings['proxy'] } : {}),
+    }
+  } catch {
+    return {}
   }
 }

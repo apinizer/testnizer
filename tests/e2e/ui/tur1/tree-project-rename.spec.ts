@@ -4,7 +4,7 @@
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, ensureCanonicalProject } from '../../helpers/ui/bootstrap'
+import { dismissOverlays, ensureCanonicalProject, navigateSidebar } from '../../helpers/ui/bootstrap'
 import { createProject } from '../../helpers/ui/workspace-flow'
 import { treeRenameRoot } from '../../helpers/ui/tree'
 import { getActiveProjectId } from '../../helpers/ui/assert-ipc'
@@ -25,6 +25,10 @@ uiTest.describe('Tur1 — project root rename [issue #126]', () => {
         await window.getByTestId('header-home').click()
         await createProject(window, name)
         id = await getActiveProjectId(window, name)
+        // The sidebar module is app-wide state in the shared Electron instance: an
+        // earlier spec (e.g. tree-advanced MST-029) can leave Tests or Mocks
+        // selected, and the new project then opens there with no APIs tree.
+        await navigateSidebar(window, 'apis')
 
         // Context menu on the root: Rename present, Delete absent.
         await window.getByTestId('tree-node').first().click({ button: 'right' })

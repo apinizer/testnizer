@@ -28,6 +28,7 @@ import {
   type MqttTlsMaterial,
 } from '../protocols/mqtt.engine'
 import { logEvent, logRequestResponse } from '../lib/console-logger'
+import { getConnectionErrorInfo, type ConnectionErrorInfo } from '../lib/error-classifier'
 import * as historyRepo from '../db/history.repo'
 import { loadCertificatesFor } from './request.handler'
 import { onSenderGone, type SenderLike } from '../lib/sender-lifecycle'
@@ -279,7 +280,10 @@ export function registerMqttHandlers(): void {
         /* never propagate history failures */
       }
     }
-    const fail = (message: string): { success: false; error: string } => {
+    const fail = (
+      message: string,
+      errorInfo?: ConnectionErrorInfo,
+    ): { success: false; error: string; errorInfo?: ConnectionErrorInfo } => {
       logRequestResponse({
         protocol: 'mqtt',
         method: 'CONNECT',
@@ -292,7 +296,10 @@ export function registerMqttHandlers(): void {
         secrets,
       })
       history(-1, { error: message })
-      return { success: false, error: message }
+      // Issue #253: a classified connect failure also carries `errorInfo`.
+      return errorInfo
+        ? { success: false, error: message, errorInfo }
+        : { success: false, error: message }
     }
     try {
       if (!url) return fail('Broker URL is required')
@@ -362,7 +369,7 @@ export function registerMqttHandlers(): void {
       history(0, response)
       return { success: true, data: res }
     } catch (e) {
-      return fail((e as Error).message)
+      return fail((e as Error).message, getConnectionErrorInfo(e))
     }
   })
 

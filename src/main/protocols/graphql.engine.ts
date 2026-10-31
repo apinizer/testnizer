@@ -6,7 +6,11 @@ import http from 'http'
 import { createClient, Client } from 'graphql-ws'
 import WebSocket from 'ws'
 import { BrowserWindow } from 'electron'
-import { classifyTransportError } from '../lib/error-classifier'
+import {
+  classifyTransportError,
+  formatConnectionError,
+  type ConnectionErrorInfo,
+} from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -45,6 +49,8 @@ interface GraphqlApiResponse {
   bodySize?: number
   timing: ResponseTiming
   error?: string
+  /** Classified transport failure (issue #253) — localized by the renderer. */
+  errorInfo?: ConnectionErrorInfo
   actualRequest?: {
     method: string
     url: string
@@ -265,12 +271,14 @@ export async function executeQuery(options: GraphqlExecuteOptions): Promise<Grap
     }
   } catch (err) {
     const endTime = performance.now()
+    // The ONE connection-error format, next step included (issue #253).
     const classified = classifyTransportError(err)
     return {
       requestId,
       protocol: 'graphql',
       timing: { total: Math.round(endTime - startTime) },
-      error: classified.message,
+      error: formatConnectionError(classified),
+      errorInfo: classified,
     }
   }
 }

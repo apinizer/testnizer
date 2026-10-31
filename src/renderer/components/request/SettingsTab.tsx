@@ -7,11 +7,25 @@
  * the component, so the engine silently used project/global defaults. Now each
  * control reads/writes the active tab's request state, which `sendRequest`
  * forwards to the HTTP engine.
+ *
+ * Follow redirects and SSL verification are inheritable (issue #287): an
+ * untouched request follows the project → app Settings chain and the switch
+ * shows the inherited value; flipping it makes it this request's own.
  */
 import { useRequestStore } from '../../stores/request.store'
 import { useNumberDraft } from '../../lib/number-draft'
 import { useTranslation } from '../../lib/i18n'
 import CriticalRequestToggle from './CriticalRequestToggle'
+import InheritableToggleRow, { type InheritSource } from './InheritableToggleRow'
+import { useInheritedNetwork } from '../../lib/use-inherited-network'
+import { inheritedFollowRedirects, inheritedSslVerification } from '../../lib/network-settings'
+
+/** Which tier an inherited value comes from (the resolvers' order). */
+function inheritSource(project: boolean | undefined, app: boolean | undefined): InheritSource {
+  if (typeof project === 'boolean') return 'project'
+  if (typeof app === 'boolean') return 'app'
+  return 'default'
+}
 
 export default function SettingsTab() {
   const { t } = useTranslation()
@@ -23,6 +37,7 @@ export default function SettingsTab() {
   const setSslVerification = useRequestStore((s) => s.setSslVerification)
   const setRequestTimeout = useRequestStore((s) => s.setRequestTimeout)
   const setMaxRedirects = useRequestStore((s) => s.setMaxRedirects)
+  const net = useInheritedNetwork()
 
   // Draft-backed so the box can be emptied and retyped. `Number('')` is 0 and
   // finite, so clearing it silently meant "do not follow any redirect".
@@ -35,45 +50,25 @@ export default function SettingsTab() {
 
   return (
     <div className="space-y-5">
-      {/* Follow Redirects */}
-      <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--white)] px-4 py-3">
-        <div>
-          <div className="font-medium" style={{ color: 'var(--text)' }}>
-            {t('settingsTab.followRedirects')}
-          </div>
-          <div style={{ color: 'var(--muted)' }}>{t('settingsTab.followRedirectsHelp')}</div>
-        </div>
-        <label className="relative inline-flex cursor-pointer items-center">
-          <input
-            type="checkbox"
-            checked={followRedirects}
-            onChange={(e) => setFollowRedirects(e.target.checked)}
-            data-testid="settings-follow-redirects"
-            className="peer sr-only"
-          />
-          <div className="peer h-5 w-9 rounded-full bg-[var(--border2)] after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-[var(--accent)] peer-checked:after:translate-x-full" />
-        </label>
-      </div>
-
-      {/* SSL Verification */}
-      <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--white)] px-4 py-3">
-        <div>
-          <div className="font-medium" style={{ color: 'var(--text)' }}>
-            {t('settingsTab.sslVerify')}
-          </div>
-          <div style={{ color: 'var(--muted)' }}>{t('settingsTab.sslVerifyHelp')}</div>
-        </div>
-        <label className="relative inline-flex cursor-pointer items-center">
-          <input
-            type="checkbox"
-            checked={sslVerification}
-            onChange={(e) => setSslVerification(e.target.checked)}
-            data-testid="settings-ssl-verify"
-            className="peer sr-only"
-          />
-          <div className="peer h-5 w-9 rounded-full bg-[var(--border2)] after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-[var(--accent)] peer-checked:after:translate-x-full" />
-        </label>
-      </div>
+      {/* Follow Redirects / SSL Verification — inheritable (issue #287) */}
+      <InheritableToggleRow
+        testId="settings-follow-redirects"
+        label={t('settingsTab.followRedirects')}
+        help={t('settingsTab.followRedirectsHelp')}
+        own={followRedirects}
+        inherited={net ? inheritedFollowRedirects(net) : null}
+        source={inheritSource(net?.project.followRedirects, net?.appFollowRedirects)}
+        onChange={setFollowRedirects}
+      />
+      <InheritableToggleRow
+        testId="settings-ssl-verify"
+        label={t('settingsTab.sslVerify')}
+        help={t('settingsTab.sslVerifyHelp')}
+        own={sslVerification}
+        inherited={net ? inheritedSslVerification(net) : null}
+        source={inheritSource(net?.project.sslVerification, net?.appSslVerification)}
+        onChange={setSslVerification}
+      />
 
       {/* Timeout */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--white)] px-4 py-3">

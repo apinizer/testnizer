@@ -23,8 +23,8 @@ export interface ModePanes {
 
 export type AddKey = (jwk: Jwk, origin: Origin) => void
 
-export const RED = '#cc2200'
-export const GREEN = '#1a7a4a'
+/** Theme tokens from the shared Tools palette (G-03). */
+export { RED, GREEN } from '../palette'
 
 let entrySeq = 0
 export function nextId(): string {

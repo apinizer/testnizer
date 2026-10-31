@@ -44,7 +44,7 @@ export default function ConfirmDialog({
         <button
           onClick={onConfirm}
           className="rounded px-3 py-1 text-xs font-medium text-white"
-          style={{ background: danger ? '#cc2200' : 'var(--accent)' }}
+          style={{ background: danger ? 'var(--red)' : 'var(--accent)' }}
         >
           {confirmLabel}
         </button>

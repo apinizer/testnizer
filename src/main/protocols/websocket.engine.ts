@@ -1,7 +1,13 @@
 import WebSocket from 'ws'
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
-import { classifyTransportError, hintForHttpStatus } from '../lib/error-classifier'
+import {
+  classifyTransportError,
+  connectTimeoutError,
+  formatConnectionError,
+  toConnectionError,
+  type ConnectionErrorInfo,
+} from '../lib/error-classifier'
 import { decodeBinary } from '../../shared/realtime'
 
 // ─── Types ───────────────────────────────────────────────────
@@ -51,6 +57,8 @@ export interface WsEventPayload {
   contentType?: 'text' | 'json' | 'binary'
   attempt?: number
   reconnected?: boolean
+  /** `error` only (issue #253): the classified failure; `data` is its English text. */
+  errorInfo?: ConnectionErrorInfo
 }
 
 /** Default handshake timeout (the fixed timer before issue #282). */
@@ -97,26 +105,12 @@ function sendEventToRenderer(windowId: number, event: WsEventPayload): void {
 
 /**
  * `ws` reports handshake failures as `Error("Unexpected server response: 401")`
- * and transport failures as `Error("connect ECONNREFUSED ...")` — the latter
- * also carry a `.code` property. We normalize both shapes through the shared
- * classifier and bolt on an HTTP status hint when one is recoverable from
- * the handshake message (so a user staring at "401" gets "check Authorization").
+ * and transport failures as `Error("connect ECONNREFUSED ...")`. Both go
+ * through the shared classifier (issue #253): what happened + host:port + the
+ * next step (for a 401, "check the Authorization header").
  */
-export function describeWebSocketError(err: unknown): string {
-  const e = err as { message?: unknown }
-  const msg = typeof e?.message === 'string' ? e.message : String(err)
-
-  const m = msg.match(/Unexpected server response:\s*(\d{3})/i)
-  if (m) {
-    const status = Number(m[1])
-    const hint = hintForHttpStatus(status)
-    return hint
-      ? `WebSocket handshake failed: HTTP ${status} ${hint}`
-      : `WebSocket handshake failed: HTTP ${status}`
-  }
-
-  const classified = classifyTransportError(err)
-  return classified.message
+export function describeWebSocketError(err: unknown, url?: string): string {
+  return formatConnectionError(classifyTransportError(err, { protocol: 'websocket', url }))
 }
 
 // ─── Public API ─────────────────────────────────────────────
@@ -251,7 +245,7 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
     try {
       ws = newSocket(options)
     } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
+      reject(toConnectionError(err, { protocol: 'websocket', url: options.url }))
       return
     }
 
@@ -278,7 +272,12 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       if (ws.readyState === WebSocket.CONNECTING) {
         ws.terminate()
         connections.delete(connectionId)
-        reject(new Error(`WebSocket connection timeout (${Math.round(timeoutMs / 100) / 10}s)`))
+        reject(
+          connectTimeoutError(
+            `WebSocket connection timeout (${Math.round(timeoutMs / 100) / 10}s)`,
+            { protocol: 'websocket', url: options.url },
+          ),
+        )
       }
     }, timeoutMs)
 
@@ -308,18 +307,20 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       clearTimeout(timeout)
       if (options.pendingId) pendingConnects.delete(options.pendingId)
 
-      const message = describeWebSocketError(err)
+      // One classification (issue #253) for the event and the rejection:
+      // the renderer re-renders `errorInfo` in the active locale.
+      const failure = toConnectionError(err, { protocol: 'websocket', url: options.url })
       sendEventToRenderer(windowId, {
         connectionId,
         type: 'error',
-        data: message,
+        data: failure.message,
+        errorInfo: failure.info,
         timestamp: Date.now(),
       })
 
-      // If we haven't connected yet, reject the promise with the enriched
-      // message so the renderer surfaces the same text as the error event.
+      // If we haven't connected yet, reject with the same classified error.
       if (!connections.has(connectionId)) {
-        reject(new Error(message))
+        reject(failure)
       }
     })
   })

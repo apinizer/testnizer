@@ -401,3 +401,13 @@ export const HTTP_STATUS_CODES: HttpStatus[] = [
     description: 'The client must authenticate to gain network access (e.g. captive portal).',
   },
 ]
+
+/**
+ * Case- and diacritic-insensitive search key (issue #258): "BULUNAMADI",
+ * "bulunamadi" and "Bulunamadı" all fold to "bulunamadi". The Turkish dotted
+ * / dotless I pair is folded explicitly — `toLowerCase()` alone turns "I"
+ * into "i" but leaves "ı" alone, and NFD has no decomposition for "ı".
+ */
+export function foldSearchText(s: string): string {
+  return s.replace(/[İIı]/g, 'i').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+}

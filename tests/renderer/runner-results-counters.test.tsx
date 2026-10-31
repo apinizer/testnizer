@@ -55,7 +55,11 @@ function result(over: Partial<EndpointRunResult> & { endpointId: string }): Endp
 
 /** A green main flow plus a teardown row that threw — the QA §5 scenario. */
 const GREEN_RUN_WITH_FAILED_TEARDOWN: EndpointRunResult[] = [
-  result({ endpointId: 'main-1', assertions: [{ name: 'status is 200', passed: true }], passed: 1 }),
+  result({
+    endpointId: 'main-1',
+    assertions: [{ name: 'status is 200', passed: true }],
+    passed: 1,
+  }),
   result({
     endpointId: 'cleanup',
     phase: 'teardown',
@@ -136,14 +140,13 @@ describe('teardown failures stay out of the run verdict (RL-4)', () => {
     expect(screen.getByText(/Teardown: 1 · Does not affect the run verdict/)).toBeTruthy()
   })
 
-  it('counts only verdict-bearing rows in "All tests"', () => {
+  it('counts only verdict-bearing rows in "All requests"', () => {
     renderTab(GREEN_RUN_WITH_FAILED_TEARDOWN)
     // Two rows exist; one is teardown, so the run is one test.
-    expect(stat('All tests')).toBe('1')
+    expect(stat('All requests')).toBe('1')
     expect(filterCount('passed')).toBe(1)
     expect(filterCount('failed')).toBe(0)
   })
-
 })
 
 /* ── RL-5: synthetic rows are not HTTP exchanges ───────────────────────────── */
@@ -194,10 +197,9 @@ describe('skipped rows are scored in neither direction (RL-8)', () => {
     expect(filterCount('skipped')).toBe(2)
     // passed + failed + skipped === total
     expect(filterCount('passed') + filterCount('failed') + filterCount('skipped')).toBe(
-      Number(stat('All tests')),
+      Number(stat('All requests')),
     )
   })
-
 })
 
 /* ── RL-6: the Console counter is real ─────────────────────────────────────── */
@@ -227,5 +229,4 @@ describe('script console output is counted and filterable (RL-6)', () => {
     renderTab([result({ endpointId: 'quiet' })])
     expect(filterCount('console')).toBe(0)
   })
-
 })

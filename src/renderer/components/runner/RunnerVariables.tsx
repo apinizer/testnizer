@@ -113,7 +113,11 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                       </td>
                       <td className="py-1.5" style={{ color: 'var(--muted)' }}>
                         {v.secret ? (
-                          <span style={{ fontFamily: 'monospace', letterSpacing: 1 }}>
+                          <span
+                            data-testid="runner-var-secret"
+                            title={t('env.secretStaysLocal')}
+                            style={{ fontFamily: 'monospace', letterSpacing: 1 }}
+                          >
                             {v.value || v.initialValue ? (
                               '••••••••'
                             ) : (
@@ -175,7 +179,11 @@ export default function RunnerVariables({ environmentId, fillParent }: RunnerVar
                     </td>
                     <td className="py-1.5" style={{ color: 'var(--muted)' }}>
                       {v.secret ? (
-                        <span style={{ fontFamily: 'monospace', letterSpacing: 1 }}>
+                        <span
+                          data-testid="runner-var-secret"
+                          title={t('env.secretStaysLocal')}
+                          style={{ fontFamily: 'monospace', letterSpacing: 1 }}
+                        >
                           {v.value || v.initialValue ? (
                             '••••••••'
                           ) : (

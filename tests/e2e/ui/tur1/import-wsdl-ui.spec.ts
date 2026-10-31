@@ -98,11 +98,6 @@ uiTest.describe('Tur1 — WSDL → SOAP import [MST-074]', () => {
     const folder = `WSDL ${uid()}`
     const result = await importWsdlFileIpc(window, wsdlContent, folder)
 
-    if (result.error) {
-      // Some environments may not have the SOAP parser available
-      console.warn(`MST-074: WSDL import error — ${result.error}`)
-    }
-
     expect(result.error).toBeUndefined()
     expect((result.endpointCount ?? 0)).toBeGreaterThan(0)
   })
@@ -111,10 +106,7 @@ uiTest.describe('Tur1 — WSDL → SOAP import [MST-074]', () => {
     const wsdlContent = fs.readFileSync(path.join(FIXTURES, 'sample.wsdl'), 'utf8')
     const folder = `WSDL2 ${uid()}`
     const result = await importWsdlFileIpc(window, wsdlContent, folder)
-    if (result.error) {
-      console.warn(`MST-074: WSDL import error — ${result.error}`)
-      return
-    }
+    expect(result.error, 'WSDL import must succeed').toBeUndefined()
 
     const projectId = await getActiveProjectId(window)
     await expect
@@ -132,10 +124,7 @@ uiTest.describe('Tur1 — WSDL → SOAP import [MST-074]', () => {
     const wsdlContent = fs.readFileSync(path.join(FIXTURES, 'sample.wsdl'), 'utf8')
     const folder = `WSDL3 ${uid()}`
     const result = await importWsdlFileIpc(window, wsdlContent, folder)
-    if (result.error) {
-      console.warn(`MST-074: WSDL import error — ${result.error}`)
-      return
-    }
+    expect(result.error, 'WSDL import must succeed').toBeUndefined()
 
     const projectId = await getActiveProjectId(window)
     const rows = (await listEndpointsByProject(window, projectId)) as Array<{
@@ -162,10 +151,7 @@ uiTest.describe('Tur1 — WSDL → SOAP import [MST-074]', () => {
     const wsdlContent = fs.readFileSync(path.join(FIXTURES, 'sample.wsdl'), 'utf8')
     const folder = `WSDL4 ${uid()}`
     const result = await importWsdlFileIpc(window, wsdlContent, folder)
-    if (result.error) {
-      console.warn(`MST-074: WSDL import error — ${result.error}`)
-      return
-    }
+    expect(result.error, 'WSDL import must succeed').toBeUndefined()
 
     const projectId = await getActiveProjectId(window)
     await expect

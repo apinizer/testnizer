@@ -20,7 +20,9 @@ describe('classifyTransportError — axios response (HTTP status)', () => {
     })
     expect(out.httpStatus).toBe(401)
     expect(out.message).toMatch(/HTTP 401/)
-    expect(out.message).toMatch(/Authorization/i)
+    // Issue #253: the message says what happened; the next step is the hint.
+    expect(out.kind).toBe('unauthorized')
+    expect(out.hint).toMatch(/Authorization/i)
   })
 
   it('falls back to statusText for unknown HTTP codes', () => {
@@ -42,7 +44,8 @@ describe('classifyTransportError — transport codes', () => {
     })
     expect(out.message).toMatch(/Connection refused/)
     expect(out.code).toBe('ECONNREFUSED')
-    expect(out.hint).toMatch(/listening/i)
+    // Issue #253: one next-step wording for every protocol.
+    expect(out.hint).toMatch(/server is running/i)
   })
 
   it('classifies ENOTFOUND as a DNS lookup failure', () => {

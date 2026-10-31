@@ -10,7 +10,11 @@
  * when they differ from Postman's default; at their default they change
  * nothing and stay quiet.
  */
-import type { RequestSettings } from '../../../shared/request-settings'
+import {
+  encodeFollowRedirects,
+  encodeSslVerification,
+  type RequestSettings,
+} from '../../../shared/request-settings'
 
 type Ppb = Record<string, unknown>
 
@@ -39,11 +43,14 @@ export function mergePpb(parent: Ppb | undefined, own: unknown): Ppb | undefined
 export function ppbToRequestSettings(ppb: Ppb | undefined): RequestSettings {
   const out: RequestSettings = {}
   if (!ppb) return out
-  if (typeof ppb.followRedirects === 'boolean') out.followRedirects = ppb.followRedirects
+  // Postman's keys are explicit choices: a `true` carries its issue #287
+  // marker (a bare stored `true` reads as "inherit the project / app").
+  if (typeof ppb.followRedirects === 'boolean')
+    Object.assign(out, encodeFollowRedirects(ppb.followRedirects))
   const max = ppb.maxRedirects
   if (typeof max === 'number' && Number.isFinite(max) && max >= 0)
     out.maxRedirects = Math.floor(max)
-  if (typeof ppb.strictSSL === 'boolean') out.sslVerification = ppb.strictSSL
+  if (typeof ppb.strictSSL === 'boolean') Object.assign(out, encodeSslVerification(ppb.strictSSL))
   return out
 }
 

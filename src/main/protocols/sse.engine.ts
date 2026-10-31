@@ -2,6 +2,14 @@ import { EventSource, type ErrorEvent, type EventSourceFetchInit } from 'eventso
 import { randomUUID } from 'crypto'
 import { BrowserWindow } from 'electron'
 import { applyDefaultUserAgent } from '../lib/user-agent'
+import {
+  ConnectionError,
+  classifyTransportError,
+  connectTimeoutError,
+  formatConnectionError,
+  toConnectionError,
+  type ConnectionErrorInfo,
+} from '../lib/error-classifier'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -65,6 +73,8 @@ export interface SseEventPayload {
    * from the transport) is not marked.
    */
   streamEnded?: true
+  /** `error` only (issue #253): the classified failure; `data` is its English text. */
+  errorInfo?: ConnectionErrorInfo
   timestamp: number
 }
 
@@ -91,77 +101,46 @@ export function isStreamEndReconnect(
 // ─── Error message enrichment ───────────────────────────────
 
 /**
- * Best-effort short hint to point users at the likely fix for common HTTP
- * statuses returned during the SSE handshake. Missing entries fall through to
- * the raw `<status> <statusText>` so any code is at least surfaced verbatim.
- */
-const HTTP_STATUS_HINTS: Record<number, string> = {
-  400: 'Bad Request — check headers / query params',
-  401: 'Unauthorized — check Authorization header / token',
-  403: 'Forbidden — credentials lack access to this stream',
-  404: 'Not Found — check the SSE URL',
-  405: 'Method Not Allowed — server does not expose SSE here',
-  408: 'Request Timeout',
-  429: 'Too Many Requests — rate limited',
-  500: 'Internal Server Error',
-  502: 'Bad Gateway',
-  503: 'Service Unavailable',
-  504: 'Gateway Timeout',
-}
-
-/**
  * `eventsource@3` exposes errors as an `ErrorEvent` carrying optional `code`
  * (HTTP status from the failed handshake) and `message` (HTTP status text OR a
- * lower-level socket error like "connect ECONNREFUSED 127.0.0.1:9"). For
- * historical reasons (and the manual fetch path that synthesizes `status`) we
- * accept either field and squash them into a single user-facing string and,
- * when present, the numeric status.
+ * lower-level text like "TypeError: fetch failed: connect ECONNREFUSED …");
+ * the fetch path synthesizes `status`. Both go through the shared classifier
+ * (issue #253): what happened + host:port + the next step, and the numeric
+ * status when there is one.
  */
-export function describeSseError(err: {
-  status?: unknown
-  code?: unknown
-  message?: unknown
-  data?: unknown
-}): { message: string; httpStatus?: number } {
-  const rawStatus =
-    typeof err.status === 'number'
-      ? err.status
-      : typeof err.code === 'number'
-        ? err.code
-        : undefined
+export function describeSseError(
+  err: {
+    status?: unknown
+    code?: unknown
+    message?: unknown
+    data?: unknown
+  },
+  url?: string,
+): { message: string; httpStatus?: number; info: ConnectionErrorInfo } {
   const rawMessage =
     typeof err.message === 'string' && err.message.trim()
       ? err.message.trim()
       : typeof err.data === 'string' && err.data.trim()
         ? err.data.trim()
-        : ''
-
-  if (rawStatus !== undefined) {
-    const hint = HTTP_STATUS_HINTS[rawStatus]
-    const tail = hint ?? rawMessage
-    return {
-      message: tail ? `HTTP ${rawStatus} ${tail}` : `HTTP ${rawStatus}`,
-      httpStatus: rawStatus,
-    }
+        : undefined
+  const info = classifyTransportError(
+    {
+      ...(typeof err.status === 'number' ? { status: err.status } : {}),
+      ...(err.code !== undefined ? { code: err.code } : {}),
+      ...(rawMessage ? { message: rawMessage } : {}),
+    },
+    { protocol: 'sse', url },
+  )
+  return {
+    message: formatConnectionError(info),
+    ...(info.httpStatus !== undefined ? { httpStatus: info.httpStatus } : {}),
+    info,
   }
+}
 
-  if (rawMessage) {
-    if (/ECONNREFUSED/i.test(rawMessage)) {
-      return { message: `Connection refused — ${rawMessage}` }
-    }
-    if (/ENOTFOUND|EAI_AGAIN/i.test(rawMessage)) {
-      return { message: `DNS lookup failed — ${rawMessage}` }
-    }
-    if (/ETIMEDOUT/i.test(rawMessage)) {
-      return { message: `Connection timed out — ${rawMessage}` }
-    }
-    if (/CERT|SELF_SIGNED|UNABLE_TO_VERIFY/i.test(rawMessage)) {
-      return { message: `TLS certificate error — ${rawMessage}` }
-    }
-    return { message: rawMessage }
-  }
-
-  return { message: 'SSE connection error' }
+/** The connect rejection for a described error: same text, same info. */
+function sseFailure(described: { info: ConnectionErrorInfo }): ConnectionError {
+  return new ConnectionError(described.info)
 }
 
 // ─── Connection manager ─────────────────────────────────────
@@ -272,7 +251,7 @@ function connectEventSource(
         fetch: wrappedFetch,
       })
     } catch (err) {
-      reject(err instanceof Error ? err : new Error(String(err)))
+      reject(toConnectionError(err, { protocol: 'sse', url: options.url }))
       return
     }
 
@@ -294,7 +273,12 @@ function connectEventSource(
       if (eventSource.readyState === EventSource.CONNECTING) {
         eventSource.close()
         connections.delete(connectionId)
-        reject(new Error('SSE connection timeout (15s)'))
+        reject(
+          connectTimeoutError('SSE connection timeout (15s)', {
+            protocol: 'sse',
+            url: options.url,
+          }),
+        )
       }
     }, 15000)
 
@@ -343,10 +327,8 @@ function connectEventSource(
       if (options.pendingId) pendingConnects.delete(options.pendingId)
 
       // `eventsource@3` emits `ErrorEvent { code?: number, message?: string }`.
-      const { message, httpStatus } = describeSseError({
-        code: err.code,
-        message: err.message,
-      })
+      const described = describeSseError({ code: err.code, message: err.message }, options.url)
+      const { message, httpStatus } = described
       // CLOSED here = the library gave up (`failConnection`): a reconnect
       // answered 204 / non-200 / wrong type. CONNECTING = it will retry.
       const closed =
@@ -364,14 +346,14 @@ function connectEventSource(
         data: streamEnded ? SSE_STREAM_ENDED_MESSAGE : message,
         httpStatus,
         ...(closed ? { closed } : {}),
-        ...(streamEnded ? { streamEnded: true as const } : {}),
+        ...(streamEnded ? { streamEnded: true as const } : { errorInfo: described.info }),
         timestamp: Date.now(),
       })
 
       // If not yet connected, reject
       if (!connections.has(connectionId)) {
         connections.delete(connectionId)
-        reject(new Error(message))
+        reject(sseFailure(described))
       }
 
       // If the connection is closed, clean up
@@ -479,7 +461,12 @@ function connectStreaming(
     const timeout = setTimeout(() => {
       controller.abort()
       if (!connections.has(connectionId)) {
-        reject(new Error('SSE connection timeout (15s)'))
+        reject(
+          connectTimeoutError('SSE connection timeout (15s)', {
+            protocol: 'sse',
+            url: options.url,
+          }),
+        )
       }
     }, 15000)
 
@@ -500,21 +487,22 @@ function connectStreaming(
         if (!response.ok) {
           // Surface as an HTTP-status error using the same enrichment as the
           // EventSource path so the renderer renders identical messaging.
-          const { message, httpStatus } = describeSseError({
-            status: response.status,
-            message: response.statusText,
-          })
+          const described = describeSseError(
+            { status: response.status, message: response.statusText },
+            options.url,
+          )
           clearTimeout(timeout)
           if (options.pendingId) pendingConnects.delete(options.pendingId)
           sendEventToRenderer(windowId, {
             connectionId,
             type: 'error',
-            data: message,
-            httpStatus,
+            data: described.message,
+            httpStatus: described.httpStatus,
+            errorInfo: described.info,
             closed: 'failed',
             timestamp: Date.now(),
           })
-          reject(new Error(message))
+          reject(sseFailure(described))
           return
         }
         if (response.status === 204) {
@@ -522,19 +510,17 @@ function connectStreaming(
           // do not reconnect" — report it like the EventSource path does.
           clearTimeout(timeout)
           if (options.pendingId) pendingConnects.delete(options.pendingId)
-          const { message, httpStatus } = describeSseError({
-            status: 204,
-            message: 'No Content',
-          })
+          const described = describeSseError({ status: 204, message: 'No Content' }, options.url)
           sendEventToRenderer(windowId, {
             connectionId,
             type: 'error',
-            data: message,
-            httpStatus,
+            data: described.message,
+            httpStatus: described.httpStatus,
+            errorInfo: described.info,
             closed: 'ended',
             timestamp: Date.now(),
           })
-          reject(new Error(message))
+          reject(sseFailure(described))
           return
         }
         if (!response.body) {
@@ -615,12 +601,13 @@ function connectStreaming(
             connections.delete(connectionId)
             return
           }
-          const { message, httpStatus } = describeSseError({ message: e?.message })
+          const failure = toConnectionError(err, { protocol: 'sse', url: options.url })
           sendEventToRenderer(windowId, {
             connectionId,
             type: 'error',
-            data: message,
-            httpStatus,
+            data: failure.message,
+            httpStatus: failure.info.httpStatus,
+            errorInfo: failure.info,
             closed: 'failed',
             timestamp: Date.now(),
           })
@@ -630,29 +617,25 @@ function connectStreaming(
       .catch((err: unknown) => {
         clearTimeout(timeout)
         if (options.pendingId) pendingConnects.delete(options.pendingId)
-        const e = err as {
-          name?: string
-          message?: string
-          cause?: { code?: string; message?: string }
-        }
+        const e = err as { name?: string }
         if (e?.name === 'AbortError' && connections.has(connectionId)) {
           // Already handled by disconnect; nothing to surface.
           return
         }
-        // `fetch` wraps low-level transport errors in `cause`. ECONNREFUSED
-        // surfaces as `cause.code === 'ECONNREFUSED'` on Node 18+.
-        const raw = e?.cause?.message || e?.message || ''
-        const { message, httpStatus } = describeSseError({ message: raw })
+        // `fetch` wraps low-level transport errors in `cause` (undici
+        // `fetch failed`); the classifier unwraps it (issue #253).
+        const failure = toConnectionError(err, { protocol: 'sse', url: options.url })
         sendEventToRenderer(windowId, {
           connectionId,
           type: 'error',
-          data: message,
-          httpStatus,
+          data: failure.message,
+          httpStatus: failure.info.httpStatus,
+          errorInfo: failure.info,
           closed: 'failed',
           timestamp: Date.now(),
         })
         if (!connections.has(connectionId)) {
-          reject(new Error(message))
+          reject(failure)
         } else {
           connections.delete(connectionId)
         }

@@ -499,6 +499,43 @@ da çalışır. Sonuçlarda betik satırları **SCRIPT** rozetiyle görünür ve
 fırlatan bir betik hata olarak raporlanır. Bkz.
 [Setup, Flow ve Teardown](/tr/docs/cli-and-automation#setup-flow-ve-teardown).
 
+#### Run fail script — kırmızı run'da uyarı
+
+Üçüncü slot **Run fail script**, **run başına bir kez, teardown ve run teardown
+betiğinden sonra, yalnız run sonucu başarısızsa** çalışır (setup + flow;
+sonuçlarda görünen sonucun aynısı). Yeşil bir run'da, yalnız bir teardown adımı
+başarısız olduğunda ya da **Stop now** sonrasında çalışmaz; kendi hataları bir
+satır olarak raporlanır ama sonucu asla değiştirmez. `pm.run` yalnız bu betikte
+vardır:
+
+- `pm.run.summary` — bitmiş run'ın `{ passed, failed, skipped, errors, duration, stopReason }`
+  özeti (salt okunur);
+- `pm.run.exportHtml()` / `pm.run.exportJson()` — **Export HTML / Export JSON**
+  butonlarının **aynı** raporu, sırlar maskeli.
+
+Yerleşik bir e-posta istemcisi yoktur: raporu `pm.sendRequest` ile e-posta ya
+da sohbet API'nize gönderin; anahtarı betiğe değil gizli bir değişkene
+(`alertWebhookKey`) koyun:
+
+```js
+const s = pm.run.summary
+await pm.sendRequest({
+  url: 'https://hooks.example.com/testnizer-alerts',
+  method: 'POST',
+  header: {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer ' + pm.environment.get('alertWebhookKey'),
+  },
+  body: {
+    mode: 'raw',
+    raw: JSON.stringify({
+      text: `Run failed: ${s.failed} failed, ${s.passed} passed (${s.stopReason || 'completed'})`,
+      html: pm.run.exportHtml(),
+    }),
+  },
+})
+```
+
 ## Auth (kimlik) mirası
 
 Bir isteğin **Auth** sekmesinde **Inherit from parent** (üstten miras al) seçeneği

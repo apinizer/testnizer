@@ -16,6 +16,7 @@ import {
 import { urlCredentialText } from '../lib/credential-text'
 import { makeId } from '../lib/utils'
 import { t } from '../lib/i18n'
+import { connectErrorText } from '../lib/connection-error'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for SSE, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -108,7 +109,9 @@ interface SseStore extends TabSseState {
 function emptyTabState(): TabSseState {
   return {
     withheldCredentials: [],
-    url: 'https://stream.wikimedia.org/v2/stream/recentchange',
+    // Empty like Socket.IO / MCP (issue #257): no third-party host the user
+    // did not type. The field shows an example placeholder instead.
+    url: '',
     method: 'GET',
     body: '',
     bodyType: 'json',
@@ -359,7 +362,10 @@ export const useSseStore = create<SseStore>((set, get) => ({
                   ? t('sse.closedByServerStatus').replace('{status}', '204')
                   : ended
                     ? t('sse.closedByServer')
-                    : evt.data || t('sse.connectionError'),
+                    : connectErrorText(
+                        { error: evt.data, errorInfo: evt.errorInfo },
+                        t('sse.connectionError'),
+                      ),
             })
             break
           }
@@ -370,15 +376,21 @@ export const useSseStore = create<SseStore>((set, get) => ({
           // (issue #226). The server ending the response is not a failure:
           // no message. A network error keeps its text for the record.
           if (getOwnerConnectionState() !== 'connected') {
+            // Issue #253: `errorInfo` → the active locale's text with host:port.
             applyToOwner({
               connectionState: 'error',
               reconnecting: false,
-              errorMessage: evt.data || 'SSE connection error',
+              errorMessage: connectErrorText(
+                { error: evt.data, errorInfo: evt.errorInfo },
+                'SSE connection error',
+              ),
             })
           } else {
             applyToOwner({
               reconnecting: true,
-              errorMessage: evt.streamEnded ? null : evt.data || 'SSE error',
+              errorMessage: evt.streamEnded
+                ? null
+                : connectErrorText({ error: evt.data, errorInfo: evt.errorInfo }, 'SSE error'),
             })
           }
           break
@@ -444,7 +456,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
           _unsubscribe: undefined,
           _pendingConnectId: undefined,
           connectionState: 'error',
-          errorMessage: result?.error || 'SSE connection failed',
+          errorMessage: connectErrorText(result, 'SSE connection failed'),
         })
       }
     } catch (e) {

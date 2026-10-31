@@ -1,15 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
-import { useUIStore } from '../../stores/ui.store'
 import { useTabsStore } from '../../stores/tabs.store'
-import { saveActiveRequestInPlace } from '../../lib/save-active-request'
 import { useTranslation } from '../../lib/i18n'
-import { toast } from '../../lib/toast'
+import { useCompactUrlBar } from '../../lib/use-narrow-layout'
+import {
+  URL_BAR_COMPACT_METHOD_MIN_PX,
+  URL_BAR_COMPACT_PAD_X_PX,
+  URL_BAR_COMPACT_SEND_GAP_PX,
+  URL_FIELD_MIN_PX,
+} from '../../lib/narrow-layout'
 import MethodBadge from '../shared/MethodBadge'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import { handleUrlBarPaste } from './url-bar-paste'
-import { T, BTN_P, BTN_S, BASE_INP } from '../../styles/tokens'
+import { UrlBarMoreMenu, UrlBarSaveButton } from './UrlBarSave'
+import { useUrlBarSave } from './use-url-bar-save'
+import { T, BTN_P, BASE_INP } from '../../styles/tokens'
 import type { HttpMethod } from '../../types'
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'QUERY']
@@ -22,7 +28,6 @@ export default function UrlBar() {
   const sendRequest = useRequestStore((s) => s.sendRequest)
   const cancelRequest = useRequestStore((s) => s.cancelRequest)
   const isLoading = useResponseStore((s) => s.isLoading)
-  const setShowEndpointSaveModal = useUIStore((s) => s.setShowEndpointSaveModal)
   const activeTab = useTabsStore((s) => s.tabs.find((t) => t.id === s.activeTabId))
   const pinTab = useTabsStore((s) => s.pinTab)
   const { t } = useTranslation()
@@ -34,9 +39,11 @@ export default function UrlBar() {
 
   const [showMethodDrop, setShowMethodDrop] = useState(false)
   const [showSendDrop, setShowSendDrop] = useState(false)
-  const [saveLoading, setSaveLoading] = useState(false)
-  const [saveOk, setSaveOk] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const saveState = useUrlBarSave()
+  // Issue #251: below URL_BAR_COMPACT_BELOW the bar's own width cannot hold
+  // method + URL + Send + Save, so Save moves into an overflow menu.
+  const barRef = useRef<HTMLDivElement>(null)
+  const compact = useCompactUrlBar(barRef)
   const dropRef = useRef<HTMLDivElement>(null)
   const sendDropRef = useRef<HTMLDivElement>(null)
 
@@ -80,6 +87,9 @@ export default function UrlBar() {
 
   return (
     <div
+      ref={barRef}
+      data-testid="url-bar"
+      data-compact={compact ? 'true' : 'false'}
       style={{
         height: 44,
         background: T.white,
@@ -87,12 +97,13 @@ export default function UrlBar() {
         display: 'flex',
         alignItems: 'center',
         gap: 0,
-        padding: '0 12px',
+        // Compact (#251): every px of chrome goes to the URL field.
+        padding: compact ? `0 ${URL_BAR_COMPACT_PAD_X_PX}px` : '0 12px',
         flexShrink: 0,
       }}
     >
       {/* Method dropdown — Postman style: bordered pill on the left, flush with URL input */}
-      <div ref={dropRef} style={{ position: 'relative' }}>
+      <div ref={dropRef} style={{ position: 'relative', flexShrink: 0 }}>
         <div
           data-testid="url-method"
           onClick={(e) => {
@@ -110,7 +121,7 @@ export default function UrlBar() {
             borderRadius: '8px 0 0 8px',
             cursor: 'pointer',
             userSelect: 'none',
-            minWidth: 90,
+            minWidth: compact ? URL_BAR_COMPACT_METHOD_MIN_PX : 90,
             height: 32,
           }}
         >
@@ -194,6 +205,9 @@ export default function UrlBar() {
           }
         }}
         placeholder={t('urlBar.enterUrl')}
+        // Issue #251: the URL never shrinks to a sliver (it was ~30 px at 1024 px).
+        // On the outer flex item, so Send / the overflow menu can never overlap it.
+        fieldMinWidth={URL_FIELD_MIN_PX}
         style={{
           ...BASE_INP,
           flex: 1,
@@ -205,7 +219,15 @@ export default function UrlBar() {
       />
 
       {/* Send split button — Postman style */}
-      <div ref={sendDropRef} style={{ position: 'relative', display: 'flex', marginLeft: 8 }}>
+      <div
+        ref={sendDropRef}
+        style={{
+          position: 'relative',
+          display: 'flex',
+          marginLeft: compact ? URL_BAR_COMPACT_SEND_GAP_PX : 8,
+          flexShrink: 0,
+        }}
+      >
         <button
           type="button"
           data-testid="send-btn"
@@ -385,74 +407,8 @@ export default function UrlBar() {
         )}
       </div>
 
-      {/* Save button */}
-      <button
-        type="button"
-        data-testid="save-btn"
-        onClick={async () => {
-          const isSaved =
-            activeTab?.savedRequestId || activeTab?.endpointId || activeTab?.testSuiteItemId
-          if (!isSaved) {
-            // Not saved yet — open save modal. A tab whose row was deleted
-            // from the sidebar says so (issue #269).
-            if (activeTab?.orphaned) toast.info(t('toast.requestOrphaned'))
-            setShowEndpointSaveModal(true)
-            return
-          }
-          // Already saved — update in place. Same helper as Ctrl+S and
-          // "Save & Close": one snapshot (protocol metadata included), one
-          // tree refresh. The two paths used to be separate copies and
-          // drifted — the shortcut skipped the tree refresh, this button
-          // skipped SOAP/WS/gRPC metadata.
-          setSaveLoading(true)
-          setSaveError(null)
-          try {
-            const result = await saveActiveRequestInPlace()
-            if (result.notApplicable) {
-              // No row to write in place — the tab's row was deleted (issue
-              // #269) or it never had one. Same fallback as Ctrl+S: the Save
-              // dialog; it used to throw here and show only a red ✗.
-              if (result.orphaned) toast.info(t('toast.requestOrphaned'))
-              setShowEndpointSaveModal(true)
-              return
-            }
-            if (!result.success) throw new Error(result.error || 'Save failed')
-            setSaveOk(true)
-            setTimeout(() => setSaveOk(false), 1500)
-          } catch (e) {
-            // Silent swallow → user thought their work was saved when it
-            // wasn't. Surface the failure as a transient error chip.
-            setSaveError((e as Error).message || 'Save failed')
-            setTimeout(() => setSaveError(null), 4000)
-          } finally {
-            setSaveLoading(false)
-          }
-        }}
-        disabled={saveLoading}
-        title={saveError ?? undefined}
-        style={{
-          ...BTN_S,
-          height: 32,
-          borderRadius: 8,
-          marginLeft: 6,
-          borderColor: saveError ? 'var(--red, #cc2200)' : saveOk ? 'var(--green)' : undefined,
-          color: saveError ? 'var(--red, #cc2200)' : saveOk ? 'var(--green)' : undefined,
-        }}
-      >
-        <svg
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-          <polyline points="17 21 17 13 7 13 7 21" />
-          <polyline points="7 3 7 8 15 8" />
-        </svg>
-        {saveError ? '✗' : saveOk ? '✓' : t('urlBar.save')}
-      </button>
+      {/* Save — inline when there is room, in the overflow menu when not (#251) */}
+      {compact ? <UrlBarMoreMenu state={saveState} /> : <UrlBarSaveButton state={saveState} />}
     </div>
   )
 }

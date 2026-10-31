@@ -1,4 +1,5 @@
 import type { Tab } from '../types'
+import { isScratchTabName } from './endpoint-name'
 
 /**
  * Is this tab a genuinely BLANK scratch tab — the one that should show the
@@ -20,5 +21,6 @@ export function isBlankScratchTab(
 ): boolean {
   if (tab.endpointId || tab.savedRequestId || tab.testSuiteItemId) return false
   if (tab.url) return false
-  return tab.name === 'New Request'
+  // Any locale's scratch name (issue #261), via the one rule.
+  return isScratchTabName(tab.name)
 }

@@ -143,7 +143,7 @@ describe('Logs tab — one row per stream (issue #226)', () => {
     expect(rows()).toHaveLength(1)
     expect(rows()[0]).toHaveAttribute('data-streaming', 'true')
     expect(within(rows()[0]).getByTestId('mock-log-latency')).toHaveTextContent('streaming…')
-    expect(screen.getByTestId('mock-log-count')).toHaveTextContent('1 entries')
+    expect(screen.getByTestId('mock-log-count')).toHaveTextContent('1 entry')
   })
 
   it('the closed entry replaces the open row; the 204 reconnect stays its own row', async () => {

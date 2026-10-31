@@ -9,6 +9,7 @@ import { makeId } from '../lib/utils'
 import { mqttMaskedSendError } from '../lib/masked-send-guard'
 import { markActiveTabDirty } from '../lib/mark-dirty'
 import { t } from '../lib/i18n'
+import { connectErrorText } from '../lib/connection-error'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -643,7 +644,8 @@ export const useMqttStore = create<MqttStore>((set, get) => {
         for (const run of early.splice(0)) run()
       } else {
         unsubscribe()
-        const message = res?.error ?? t('mqtt.error.connectFailed')
+        // Issue #253: `errorInfo` → the active locale's text with host:port.
+        const message = connectErrorText(res, t('mqtt.error.connectFailed'))
         patchTab(ownerTabId, (sl) => ({
           connectionState: 'error',
           errorMessage: message,

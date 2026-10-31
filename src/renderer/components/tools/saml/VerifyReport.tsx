@@ -1,11 +1,7 @@
 import { useTranslation } from '../../../lib/i18n'
 import { classifyFailure } from '../../../lib/tools/saml'
 import type { SamlVerifyResult } from '../../../types'
-
-const GREEN = '#1a7a4a'
-const GREEN_BG = '#e8f9f1'
-const RED = '#cc2200'
-const RED_BG = '#fff0f0'
+import { GREEN, GREEN_BG, RED, RED_BG } from '../palette'
 
 /**
  * The per-check PASS/FAIL breakdown.

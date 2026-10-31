@@ -1,13 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Eye, EyeOff, GitBranch, Plus, Trash2, FileUp } from 'lucide-react'
-import type { Theme, Language } from '../../types'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyMaterialField from '../shared/KeyMaterialField'
 import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
-import { isMac } from '../../lib/platform'
+import { formatDate } from '../../lib/format-datetime'
+import { platformLabel } from '../../lib/platform-label'
+import {
+  formatShortcut,
+  NEXT_TAB_SHORTCUT,
+  PREV_TAB_SHORTCUT,
+  TOGGLE_CONSOLE_SHORTCUT,
+} from '../../lib/shortcut-format'
 import { useNumberDraft } from '../../lib/number-draft'
-import { FONT_PRESETS } from '../../stores/ui.store'
+import { isActiveProxy, type ProxySetting } from '../../../shared/request-settings'
+import { AppearanceLinkPane, ProjectTimeoutInput, SettingScopeNote } from './SettingScopeNote'
+import { describeProxy, onOff } from '../../lib/settings-scope'
 import { toast } from '../../lib/toast'
 import { projectDisplayName } from '../../lib/project-export'
 import { useProjectExportStore } from '../../stores/project-export.store'
@@ -54,7 +62,12 @@ export interface ProjectSettings {
   preScript: string
   testScript: string
   // General
-  requestTimeout: number
+  /**
+   * Issue #254: absent = follows the app Settings `defaultTimeout`; `null` =
+   * "Use app setting" was pressed (saved as the delete marker). Never
+   * defaulted — a default here froze 30000 into every project on first Save.
+   */
+  requestTimeout?: number | null
   maxResponseSizeMb: number
   trimRequest: boolean
   autoSave: boolean
@@ -63,13 +76,21 @@ export interface ProjectSettings {
   sendNoCache: boolean
   sendPostmanToken: boolean
   retainHeaders: boolean
-  sslVerification: boolean
-  followRedirects: boolean
+  /**
+   * Issue #287: absent = the project does not set it and follows the app
+   * Settings value. Never defaulted, so a first Save does not freeze the app
+   * value into the project (which made the app toggle dead).
+   */
+  sslVerification?: boolean | null
+  followRedirects?: boolean | null
   workingDirectory: string
   // TLS protocol / cipher overrides — surfaced in Certificates pane
   tls?: ProjectTls
-  // Proxy
-  proxy: ProjectProxy
+  /**
+   * Machine-local proxy. Issue #254: absent / `system` = follows the app
+   * Settings proxy (`resolveProxy`); `null` = "Use app setting" pressed.
+   */
+  proxy?: ProjectProxy | null
   // Update
   autoCheckUpdates: boolean
   autoDownloadUpdates: boolean
@@ -171,16 +192,43 @@ function Toggle({
   hint,
   checked,
   onChange,
+  extra,
 }: {
   label: string
   hint?: string
   checked: boolean
   onChange: (v: boolean) => void
+  /** Rendered under the row, outside the <label> (e.g. a scope note with a button). */
+  extra?: React.ReactNode
+}) {
+  if (extra) {
+    return (
+      <div className="pb-2" style={{ borderBottom: '1px dashed var(--border)' }}>
+        <ToggleRow label={label} hint={hint} checked={checked} onChange={onChange} bare />
+        <div className="pl-7">{extra}</div>
+      </div>
+    )
+  }
+  return <ToggleRow label={label} hint={hint} checked={checked} onChange={onChange} />
+}
+
+function ToggleRow({
+  label,
+  hint,
+  checked,
+  onChange,
+  bare,
+}: {
+  label: string
+  hint?: string
+  checked: boolean
+  onChange: (v: boolean) => void
+  bare?: boolean
 }) {
   return (
     <label
       className="flex cursor-pointer items-start gap-3 py-2"
-      style={{ borderBottom: '1px dashed var(--border)' }}
+      style={bare ? undefined : { borderBottom: '1px dashed var(--border)' }}
     >
       <input
         type="checkbox"
@@ -254,7 +302,7 @@ export function OverviewPane(props: {
   createdAt: number
   updatedAt: number
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <div className="p-6">
       <PaneHeader title={t('overview.title')} subtitle={t('overview.subtitle')} />
@@ -364,14 +412,8 @@ export function OverviewPane(props: {
           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
         >
           <MetaField label={t('overview.type')} value={props.typeLabel} />
-          <MetaField
-            label={t('overview.created')}
-            value={new Date(props.createdAt).toLocaleDateString()}
-          />
-          <MetaField
-            label={t('overview.updated')}
-            value={new Date(props.updatedAt).toLocaleDateString()}
-          />
+          <MetaField label={t('overview.created')} value={formatDate(props.createdAt, locale)} />
+          <MetaField label={t('overview.updated')} value={formatDate(props.updatedAt, locale)} />
         </div>
       </div>
     </div>
@@ -875,14 +917,38 @@ export function BranchesPane({
 // General (Postman-style)
 // ════════════════════════════════════════════════════════════════
 
+/**
+ * The app Settings values a project inherits when it does not set its own
+ * (issues #287, #254) — what the inheritable fields show then.
+ */
+export interface AppNetworkDefaults {
+  sslVerification?: boolean
+  followRedirects?: boolean
+  /** App `defaultTimeout` (ms). */
+  timeout?: number
+  /** App proxy. */
+  proxy?: ProxySetting
+}
+
+/** The engine's own default timeout when the app never saved one. */
+const APP_TIMEOUT_FALLBACK = 30000
+
 export function GeneralPane({
   settings,
   onChange,
+  appDefaults = {},
 }: {
   settings: ProjectSettings
   onChange: (patch: Partial<ProjectSettings>) => void
+  appDefaults?: AppNetworkDefaults
 }) {
   const { t } = useTranslation()
+  // Issue #287: an unset project value shows (and is) the app Settings value.
+  const appSsl = appDefaults.sslVerification ?? true
+  const appFollow = appDefaults.followRedirects ?? true
+  const sslOn = settings.sslVerification ?? appSsl
+  const followOn = settings.followRedirects ?? appFollow
+  const appTimeout = String(appDefaults.timeout ?? APP_TIMEOUT_FALLBACK)
   return (
     <div className="p-6">
       <PaneHeader title={t('general.title')} subtitle={t('general.subtitle')} />
@@ -892,12 +958,16 @@ export function GeneralPane({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label text={t('general.requestTimeout')} />
-              <NumberInput
+              <ProjectTimeoutInput
                 value={settings.requestTimeout}
+                placeholder={appTimeout}
                 onChange={(v) => onChange({ requestTimeout: v })}
-                min={0}
-                max={600000}
-                suffix="ms"
+              />
+              <SettingScopeNote
+                field="timeout"
+                own={settings.requestTimeout != null}
+                appValue={`${appTimeout} ms`}
+                onReset={() => onChange({ requestTimeout: null })}
               />
               <div className="mt-1" style={{ color: 'var(--hint)' }}>
                 {t('general.requestTimeoutHint')}
@@ -940,13 +1010,29 @@ export function GeneralPane({
             />
             <Toggle
               label={t('general.sslVerification')}
-              checked={settings.sslVerification}
+              checked={sslOn}
               onChange={(v) => onChange({ sslVerification: v })}
+              extra={
+                <SettingScopeNote
+                  field="ssl"
+                  own={settings.sslVerification != null}
+                  appValue={onOff(t, appSsl)}
+                  onReset={() => onChange({ sslVerification: null })}
+                />
+              }
             />
             <Toggle
               label={t('general.followRedirects')}
-              checked={settings.followRedirects}
+              checked={followOn}
               onChange={(v) => onChange({ followRedirects: v })}
+              extra={
+                <SettingScopeNote
+                  field="redirects"
+                  own={settings.followRedirects != null}
+                  appValue={onOff(t, appFollow)}
+                  onReset={() => onChange({ followRedirects: null })}
+                />
+              }
             />
           </div>
         </SectionCard>
@@ -989,177 +1075,10 @@ export function GeneralPane({
 }
 
 // ════════════════════════════════════════════════════════════════
-// Themes (central font family + size + locale + theme + accent)
+// Themes → appearance is app-wide (issue #254): a link row to App settings
 // ════════════════════════════════════════════════════════════════
 
-export function ThemesPane({
-  theme,
-  locale,
-  fontSize,
-  fontFamily,
-  accentColor,
-  onThemeChange,
-  onLocaleChange,
-  onFontSizeChange,
-  onFontFamilyChange,
-  onAccentColorChange,
-}: {
-  theme: Theme
-  locale: Language
-  fontSize: number
-  fontFamily: string
-  accentColor: string
-  onThemeChange: (v: Theme) => void
-  onLocaleChange: (v: Language) => void
-  onFontSizeChange: (v: number) => void
-  onFontFamilyChange: (v: string) => void
-  onAccentColorChange: (v: string) => void
-}) {
-  const { t } = useTranslation()
-  const themeOptions: Array<{ id: Theme; label: string }> = [
-    { id: 'light', label: t('themes.light') },
-    { id: 'dark', label: t('themes.dark') },
-    { id: 'system', label: t('themes.system') },
-  ]
-  return (
-    <div className="p-6">
-      <PaneHeader title={t('themes.title')} subtitle={t('themes.subtitle')} />
-
-      <div className="flex flex-col gap-5">
-        <div>
-          <Label text={t('settings.theme')} />
-          <div className="flex gap-2">
-            {themeOptions.map((opt) => (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => onThemeChange(opt.id)}
-                className="flex-1 cursor-pointer rounded-[8px] px-3 py-2"
-                style={{
-                  border: `2px solid ${theme === opt.id ? 'var(--accent)' : 'var(--border)'}`,
-                  background: theme === opt.id ? 'var(--accent-light)' : 'var(--white)',
-                  color: theme === opt.id ? 'var(--accent-text)' : 'var(--text)',
-                  fontWeight: theme === opt.id ? 600 : 400,
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <Label text={t('themes.accentColor')} />
-          <div className="flex flex-wrap gap-2">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => onAccentColorChange(c)}
-                className="cursor-pointer"
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 7,
-                  background: c,
-                  border: `2.5px solid ${c === accentColor ? 'var(--heading)' : 'transparent'}`,
-                  transform: c === accentColor ? 'scale(1.12)' : 'scale(1)',
-                  transition: 'all 0.15s',
-                }}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div>
-          <Label text={t('settings.language')} />
-          <select
-            value={locale}
-            onChange={(e) => onLocaleChange(e.target.value as Language)}
-            style={{ ...BASE_INP, cursor: 'pointer' }}
-          >
-            <option value="en">English</option>
-            <option value="tr">Türkçe</option>
-          </select>
-        </div>
-
-        <div>
-          <Label text={t('themes.fontFamily')} />
-          <input
-            type="text"
-            value={fontFamily}
-            onChange={(e) => onFontFamilyChange(e.target.value)}
-            placeholder={t('themes.fontFamilyPlaceholder')}
-            spellCheck={false}
-            style={{ ...BASE_INP, fontFamily: fontFamily || undefined }}
-          />
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {FONT_PRESETS.map((p) => {
-              const isActive = p.stack === fontFamily
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onFontFamilyChange(p.stack)}
-                  className="cursor-pointer rounded-[6px] px-2 py-0.5"
-                  style={{
-                    border: `1px solid ${isActive ? 'var(--accent)' : 'var(--border)'}`,
-                    background: isActive ? 'var(--accent-light)' : 'var(--surface)',
-                    color: isActive ? 'var(--accent-text)' : 'var(--text)',
-                    fontFamily: p.stack,
-                  }}
-                >
-                  {p.label}
-                </button>
-              )
-            })}
-          </div>
-          <div className="mt-1" style={{ color: 'var(--hint)' }}>
-            {t('themes.fontAppliesEverywhere')}
-          </div>
-        </div>
-
-        <div>
-          <Label text={t('themes.fontSize')} />
-          <div className="flex items-center gap-3">
-            <input
-              type="range"
-              min={10}
-              max={20}
-              value={fontSize}
-              onChange={(e) => onFontSizeChange(Number(e.target.value))}
-              style={{ flex: 1, accentColor: 'var(--accent)' }}
-            />
-            <span
-              className="rounded-[6px] px-2 py-0.5 font-semibold"
-              style={{
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                color: 'var(--text)',
-                minWidth: 46,
-                textAlign: 'center',
-              }}
-            >
-              {fontSize}px
-            </span>
-          </div>
-        </div>
-
-        <div
-          className="rounded-[8px] p-4"
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            fontFamily: fontFamily || undefined,
-            fontSize: fontSize,
-          }}
-        >
-          {t('themes.fontPreview')}
-        </div>
-      </div>
-    </div>
-  )
-}
+export { AppearanceLinkPane }
 
 // ════════════════════════════════════════════════════════════════
 // Shortcuts
@@ -1167,20 +1086,19 @@ export function ThemesPane({
 
 export function ShortcutsPane() {
   const { t } = useTranslation()
-  const mac = isMac()
-  const cmd = mac ? '⌘' : 'Ctrl'
-  const alt = mac ? '⌥' : 'Alt'
+  // Same notation as the command palette — the one formatter (issue #257).
   const rows: Array<{ action: string; keys: string }> = [
-    { action: t('shortcuts.sendRequest'), keys: `${cmd} + Enter` },
-    { action: t('shortcuts.saveRequest'), keys: `${cmd} + S` },
-    { action: t('shortcuts.newTab'), keys: `${cmd} + T` },
-    { action: t('shortcuts.closeTab'), keys: `${cmd} + W` },
-    { action: t('shortcuts.nextTab'), keys: `${cmd} + ${alt} + →` },
-    { action: t('shortcuts.prevTab'), keys: `${cmd} + ${alt} + ←` },
-    { action: t('shortcuts.focusUrl'), keys: `${cmd} + L` },
-    { action: t('shortcuts.toggleSidebar'), keys: `${cmd} + B` },
-    { action: t('shortcuts.openSettings'), keys: `${cmd} + ,` },
-    { action: t('shortcuts.search'), keys: `${cmd} + K` },
+    { action: t('shortcuts.sendRequest'), keys: formatShortcut(['Mod', 'Enter']) },
+    { action: t('shortcuts.saveRequest'), keys: formatShortcut(['Mod', 'S']) },
+    { action: t('shortcuts.newTab'), keys: formatShortcut(['Mod', 'T']) },
+    { action: t('shortcuts.closeTab'), keys: formatShortcut(['Mod', 'W']) },
+    { action: t('shortcuts.nextTab'), keys: formatShortcut(NEXT_TAB_SHORTCUT) },
+    { action: t('shortcuts.prevTab'), keys: formatShortcut(PREV_TAB_SHORTCUT) },
+    { action: t('shortcuts.focusUrl'), keys: formatShortcut(['Mod', 'L']) },
+    { action: t('shortcuts.toggleSidebar'), keys: formatShortcut(['Mod', 'B']) },
+    { action: t('shortcuts.toggleConsole'), keys: formatShortcut(TOGGLE_CONSOLE_SHORTCUT) },
+    { action: t('shortcuts.openSettings'), keys: formatShortcut(['Mod', ',']) },
+    { action: t('shortcuts.search'), keys: formatShortcut(['Mod', 'K']) },
   ]
   return (
     <div className="p-6">
@@ -1376,12 +1294,16 @@ export function CertificatesPane({
   projectId,
   settings,
   onChange,
+  appDefaults = {},
 }: {
   projectId: string
   settings: ProjectSettings
   onChange: (patch: Partial<ProjectSettings>) => void
+  appDefaults?: AppNetworkDefaults
 }) {
   const { t } = useTranslation()
+  const appSsl = appDefaults.sslVerification ?? true
+  const sslOn = settings.sslVerification ?? appSsl
   const [certs, setCerts] = useState<CertRow[]>([])
   const [loading, setLoading] = useState(false)
   const tls: ProjectTls = settings.tls ?? {}
@@ -1596,8 +1518,16 @@ export function CertificatesPane({
           <Toggle
             label={t('general.sslVerification')}
             hint={t('tls.verifyHint')}
-            checked={settings.sslVerification}
+            checked={sslOn}
             onChange={(v) => onChange({ sslVerification: v })}
+            extra={
+              <SettingScopeNote
+                field="ssl"
+                own={settings.sslVerification != null}
+                appValue={onOff(t, appSsl)}
+                onReset={() => onChange({ sslVerification: null })}
+              />
+            }
           />
 
           <div className="mt-3 grid grid-cols-2 gap-3">
@@ -2085,15 +2015,20 @@ function EmptyCerts({ text }: { text: string }) {
 export function ProxyPane({
   settings,
   onChange,
+  appDefaults = {},
 }: {
   settings: ProjectSettings
   onChange: (patch: Partial<ProjectSettings>) => void
+  appDefaults?: AppNetworkDefaults
 }) {
   const { t } = useTranslation()
-  const proxy = settings.proxy
+  // Issue #254: absent / `system` = follow the app Settings proxy.
+  const proxy: ProjectProxy = settings.proxy ?? { mode: 'system' }
+  const own = isActiveProxy(proxy)
   function update(patch: Partial<ProjectProxy>) {
     onChange({ proxy: { ...proxy, ...patch } })
   }
+  const followApp = (): void => onChange({ proxy: null })
   // Draft-backed: clearing the box wrote port 0, which is not a port.
   const portDraft = useNumberDraft({
     value: proxy.port ?? 8080,
@@ -2111,7 +2046,7 @@ export function ProxyPane({
           <div className="flex gap-2">
             {(
               [
-                { id: 'system', label: t('proxy.useSystem') },
+                { id: 'system', label: t('settingsScope.proxyFollowApp') },
                 { id: 'none', label: t('proxy.noProxy') },
                 { id: 'custom', label: t('proxy.custom') },
               ] as const
@@ -2119,7 +2054,8 @@ export function ProxyPane({
               <button
                 key={m.id}
                 type="button"
-                onClick={() => update({ mode: m.id })}
+                aria-pressed={proxy.mode === m.id}
+                onClick={() => (m.id === 'system' ? followApp() : update({ mode: m.id }))}
                 className="flex-1 cursor-pointer rounded-[8px] px-3 py-2"
                 style={{
                   border: `2px solid ${proxy.mode === m.id ? 'var(--accent)' : 'var(--border)'}`,
@@ -2132,6 +2068,12 @@ export function ProxyPane({
               </button>
             ))}
           </div>
+          <SettingScopeNote
+            field="proxy"
+            own={own}
+            appValue={describeProxy(t, appDefaults.proxy)}
+            onReset={followApp}
+          />
         </div>
 
         {proxy.mode === 'custom' && (
@@ -2234,6 +2176,15 @@ export function UpdatePane({
     <div className="p-6">
       <PaneHeader title={t('updateTab.title')} subtitle={t('updateTab.subtitle')} />
       <div className="flex flex-col gap-4">
+        {/* Issue #254: these are what the updater reads (use-auto-updater.ts),
+            per project — the App dialog no longer shows a dead duplicate. */}
+        <div
+          data-testid="project-setting-scope-update"
+          data-scope="project"
+          className="text-[var(--hint)]"
+        >
+          {t('settingsScope.updateScope')}
+        </div>
         <SectionCard>
           <Toggle
             label={t('updateTab.autoCheck')}
@@ -2308,7 +2259,7 @@ export function AboutPane() {
 
   const rows: Array<{ label: string; value: string | undefined }> = [
     { label: t('about.version'), value: versions.app || '—' },
-    { label: t('about.platform'), value: versions.platform },
+    { label: t('about.platform'), value: platformLabel(versions.platform) },
     { label: t('about.electron'), value: versions.electron },
     { label: t('about.node'), value: versions.node },
     { label: t('about.chrome'), value: versions.chrome },

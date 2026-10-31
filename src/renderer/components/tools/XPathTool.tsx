@@ -176,7 +176,7 @@ export default function XPathTool() {
         ) : result.ok ? (
           <MonacoWrapper value={output} language="xml" readOnly />
         ) : (
-          <div className="p-3 text-sm" style={{ color: 'var(--red, #cc2200)' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {result.error}
           </div>

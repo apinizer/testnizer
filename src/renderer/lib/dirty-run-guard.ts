@@ -2,6 +2,7 @@ import type { Tab } from '../types'
 import { useTabsStore } from '../stores/tabs.store'
 import { saveActiveRequestInPlace } from './save-active-request'
 import { toast } from './toast'
+import { formatShortcut } from './shortcut-format'
 
 /**
  * `t` loaded on demand, like `withheld-before-send.ts` does: `i18n` pulls in
@@ -10,7 +11,9 @@ import { toast } from './toast'
  */
 async function message(key: string, vars: Record<string, string>): Promise<string> {
   const { t } = await import('./i18n')
-  return Object.entries(vars).reduce((text, [k, v]) => text.replace(`{${k}}`, v), t(key))
+  // `{shortcut}` = the save chord in the platform's notation (⌘S / Ctrl+S).
+  const all: Record<string, string> = { shortcut: formatShortcut(['Mod', 'S']), ...vars }
+  return Object.entries(all).reduce((text, [k, v]) => text.replace(`{${k}}`, v), t(key))
 }
 
 /**

@@ -1,6 +1,6 @@
 ---
 title: Klavye kısayolları
-description: İstek gönderme, sekme yönetimi, kenar çubuğunda gezinme ve araçları açma için varsayılan klavye kısayolları.
+description: İstek gönderme, sekme yönetimi, panelleri açıp kapatma ve içe aktarma için varsayılan klavye kısayolları.
 order: 2
 section: Referans
 ---
@@ -15,11 +15,12 @@ ardından gösterilir.
 
 | Eylem | macOS | Windows / Linux |
 |---|---|---|
-| İstek gönder | `Cmd+Enter` | `Ctrl+Enter` |
+| İstek gönder (MCP sekmesinde tool / resource / prompt'u çalıştırır) | `Cmd+Enter` | `Ctrl+Enter` |
 | İsteği kaydet | `Cmd+S` | `Ctrl+S` |
-| Mevcut sekmeyi çoğalt | `Cmd+D` | `Ctrl+D` |
+| Projeyi kaydet | `Cmd+Shift+S` | `Ctrl+Shift+S` |
+| İstek gövdesini biçimlendir | `Cmd+Shift+F` | `Ctrl+Shift+F` |
 | Mevcut sekmeyi kapat | `Cmd+W` | `Ctrl+W` |
-| İşlemdeki isteği iptal et | `Cmd+.` | `Ctrl+.` |
+| Mevcut sekmeyi zorla kapat (kaydedilmemiş değişiklik sorulmaz) | `Cmd+Alt+W` | `Ctrl+Alt+W` |
 
 ---
 
@@ -27,38 +28,23 @@ ardından gösterilir.
 
 | Eylem | macOS | Windows / Linux |
 |---|---|---|
+| Yeni istek sekmesi | `Cmd+N` | `Ctrl+N` |
 | Yeni sekme | `Cmd+T` | `Ctrl+T` |
-| Sonraki sekmeye geç | `Cmd+]` | `Ctrl+]` |
-| Önceki sekmeye geç | `Cmd+[` | `Ctrl+[` |
-| Numarasına göre sekmeye geç (1–9) | `Cmd+1` … `Cmd+9` | `Ctrl+1` … `Ctrl+9` |
+| Sonraki sekmeye geç | `Cmd+Alt+→` | `Ctrl+Alt+→` |
+| Önceki sekmeye geç | `Cmd+Alt+←` | `Ctrl+Alt+←` |
 | URL çubuğuna odaklan | `Cmd+L` | `Ctrl+L` |
-| Sol kenar çubuğuna odaklan | `Cmd+Shift+E` | `Ctrl+Shift+E` |
 | Sol kenar çubuğunu aç/kapat | `Cmd+B` | `Ctrl+B` |
+| Proje Hub'ını aç | `Cmd+P` | `Ctrl+P` |
 
 ---
 
-## Araçlar
+## Paneller ve pencereler
 
 | Eylem | macOS | Windows / Linux |
 |---|---|---|
-| JWT Hata Ayıklayıcı'yı aç | `Cmd+Shift+J` | `Ctrl+Shift+J` |
-| JSON Biçimleyici'yi aç | `Cmd+Shift+F` | `Ctrl+Shift+F` |
-| Diff görüntüleyiciyi aç | `Cmd+Shift+D` | `Ctrl+Shift+D` |
-| Konsolu aç | `Cmd+Shift+C` | `Ctrl+Shift+C` |
-| Ortam yöneticisini aç | `Cmd+Shift+N` | `Ctrl+Shift+N` |
-
----
-
-## Kenar çubuğu — yeni istek
-
-| Eylem | macOS | Windows / Linux |
-|---|---|---|
-| Yeni HTTP isteği | `Cmd+Alt+N` | `Ctrl+Alt+N` |
-| Yeni SOAP isteği | `Cmd+Alt+S` | `Ctrl+Alt+S` |
-| Yeni WebSocket bağlantısı | `Cmd+Alt+W` | `Ctrl+Alt+W` |
-| Yeni GraphQL isteği | `Cmd+Alt+G` | `Ctrl+Alt+G` |
-| Yeni gRPC isteği | `Cmd+Alt+R` | `Ctrl+Alt+R` |
-| Yeni SSE dinleyicisi | `Cmd+Alt+E` | `Ctrl+Alt+E` |
+| Konsolu aç/kapat | `Cmd+Alt+C` | `Ctrl+Alt+C` |
+| Konsolu kapat | `Esc` | `Esc` |
+| Yeni pencere | `Cmd+Shift+N` | `Ctrl+Shift+N` |
 
 ---
 
@@ -67,24 +53,28 @@ ardından gösterilir.
 | Eylem | macOS | Windows / Linux |
 |---|---|---|
 | Komut paleti | `Cmd+K` | `Ctrl+K` |
+| Kısayol kılavuzunu göster | `?` | `?` |
 | Ayarları aç | `Cmd+,` | `Ctrl+,` |
-| Pencereyi yeniden yükle (yalnızca geliştirme) | `Cmd+Shift+R` | `Ctrl+Shift+R` |
-| DevTools'u aç (yalnızca geliştirme) | `Cmd+Option+I` | `Ctrl+Shift+I` |
-| Yardım / belgeler | `F1` | `F1` |
+| İçe aktar | `Cmd+O` | `Ctrl+O` |
+| cURL içe aktar (İçe Aktar penceresini açar) | `Cmd+I` | `Ctrl+I` |
+| Pencereyi yeniden yükle | `Cmd+R` | `Ctrl+R` |
+| Pencereyi zorla yeniden yükle | `Cmd+Shift+R` | `Ctrl+Shift+R` |
+| DevTools'u aç/kapat | `Cmd+Option+I` | `Ctrl+Shift+I` |
 | Testnizer'dan çık | `Cmd+Q` | `Alt+F4` |
 
 ---
 
 ## Notlar
 
-- Yukarıda listelenen tüm kısayollar Testnizer ile birlikte gelen varsayılanlardır.
-  Herhangi bir kısayolu **Ayarlar → Klavye kısayolları** bölümünden yeniden
-  atayabilirsiniz.
+- Burada uygulamanın yanıt verdiği kısayollar yer alır. Bunlar **Proje Ayarları
+  → Kısayollar** bölümünde ve uygulama içi kılavuzda (`?` tuşu) salt okunur
+  olarak listelenir; yeniden atanamazlar.
 - İşletim sisteminizde sistem genelinde bir kısayolla çakışan kısayollar, sistem
-  kısayolu devre dışı bırakılana veya Testnizer bağlaması değiştirilene kadar
-  çalışmayabilir.
+  kısayolu devre dışı bırakılana kadar çalışmayabilir.
+- macOS'ta Testnizer, menülerde, ipuçlarında ve komut paletinde kısayolları
+  Apple sembolleriyle gösterir — örneğin `Cmd+Alt+C` ⌥⌘C, `Cmd+Alt+→` ise ⌥⌘→
+  olarak görünür.
 - Komut paleti (`Cmd+K` / `Ctrl+K`), tüm eylemler üzerinde belirsiz arama kabul
   eder; böylece tam kısayolu hatırlamadan herhangi bir özelliği tetikleyebilirsiniz.
-- Sekme numarası kısayolları (`Cmd+1` ile `Cmd+9`) açık sekmelerin soldan sağa
-  görsel sırasını izler. `Cmd+9`, kaç sekme açık olduğundan bağımsız olarak
-  her zaman son sekmeyi etkinleştirir.
+- Yeniden yükle, Zorla yeniden yükle ve DevTools'u aç/kapat standart Electron
+  **View** menüsünden gelir.

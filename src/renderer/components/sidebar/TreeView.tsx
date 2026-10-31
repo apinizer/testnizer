@@ -23,7 +23,7 @@ import { collectRequestIds } from '../../lib/folder-request-selection'
 import { isHttpMockableProtocol } from '../../../shared/request-protocols'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
-import { DEFAULT_REQUEST_BY_PROTOCOL } from '../../lib/endpoint-name'
+import { defaultRequestFor } from '../../lib/endpoint-name'
 import { openFolderRunner } from '../../lib/open-runner-tab'
 import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { exportProjectAs, type ProjectExportFormat } from '../../lib/project-export'
@@ -723,11 +723,11 @@ export default function TreeView() {
         const folderId = parentNode.type === 'folder' ? parentNode.id : null
         // Default name + method follow the same conventions as the global
         // "+ New" dropdown (UX 4 — same operation, same defaults everywhere).
-        // HTTP's is 'New Endpoint', not 'New Request' (issue #69 — see the
-        // table's comment). The table is shared with `isDefaultRequestName`, so
-        // saving an HTTP request still named this renames it from its URL
+        // HTTP's is 'New Endpoint' / 'Yeni Uç Nokta', never the scratch tab's
+        // name (issue #69). `isDefaultRequestName` knows every locale's name,
+        // so saving an HTTP request still named this renames it from its URL
         // (issue #201).
-        const d = DEFAULT_REQUEST_BY_PROTOCOL[protocol] ?? DEFAULT_REQUEST_BY_PROTOCOL.http!
+        const d = defaultRequestFor(protocol)
         const result = (await window.api?.savedRequest?.create({
           project_id: activeProjectId,
           folder_id: folderId,

@@ -7,6 +7,7 @@
 // Workbench.tsx, but the v1.4.4 menu fix needs it from AppShell too.
 
 import { useTabsStore } from '../stores/tabs.store'
+import { forgetStoredAuth } from './stored-auth-credentials'
 import { useRequestStore } from '../stores/request.store'
 import { useSoapStore } from '../stores/soap.store'
 import { useWebSocketStore } from '../stores/websocket.store'
@@ -30,6 +31,7 @@ export function cleanupTabState(tabId: string): void {
   if (!closing) return
 
   useRequestStore.getState().removeTabState(tabId)
+  forgetStoredAuth(tabId)
   useSoapStore.getState().removeTabState(tabId)
   useWebSocketStore.getState().removeTabState(tabId)
   useSseStore.getState().removeTabState(tabId)

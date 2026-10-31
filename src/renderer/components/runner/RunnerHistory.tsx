@@ -5,8 +5,10 @@ import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import EmptyState from '../shared/EmptyState'
 import NewRunButton from './NewRunButton'
+import RunReportExportButtons from './RunReportExportButtons'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate, formatTime } from '../../lib/format-datetime'
 import {
   displayRunSourceLabel,
   historyRunOrigin,
@@ -368,7 +370,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
                   {t('runnerHistory.colDuration')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  {t('runnerHistory.colAllTests')}
+                  {t('runnerHistory.colAllRequests')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
                   {t('runnerHistory.colPassed')}
@@ -382,6 +384,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
                   {t('runnerHistory.colAvgResp')}
                 </th>
+                <th className="py-2 pr-2" />
                 <th className="w-16 py-2" />
               </tr>
             </thead>
@@ -491,6 +494,8 @@ function HistoryRow({
     failed_tests: number
     skipped_tests: number
     avg_resp_time: number
+    /** Stored rows of the run — enables re-export (issue #266). */
+    results_json?: string | null
   }
   isSelected: boolean
   onToggle: () => void
@@ -501,18 +506,8 @@ function HistoryRow({
   const [hovered, setHovered] = useState(false)
   const hasFailed = run.failed_endpoints > 0 || run.failed_tests > 0
 
-  const formatDate = (ts: number) => {
-    const d = new Date(ts)
-    return (
-      d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : 'en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      }) +
-      ' ' +
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    )
-  }
+  const formatStamp = (ts: number) =>
+    `${formatDate(ts, locale)} ${formatTime(ts, locale, { seconds: true })}`
 
   const formatDuration = (ms: number) => {
     if (ms < 1000) return `${ms}ms`
@@ -530,6 +525,8 @@ function HistoryRow({
 
   return (
     <tr
+      data-testid="runner-history-row"
+      data-run-id={run.id}
       className="border-b border-[var(--border)] transition-colors"
       style={{
         background: isSelected ? 'var(--accent-light)' : hovered ? 'var(--surface)' : undefined,
@@ -554,7 +551,7 @@ function HistoryRow({
             className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
             style={{ background: hasFailed ? '#cc2200' : '#1a7a4a' }}
           />
-          {formatDate(run.started_at)}
+          {formatStamp(run.started_at)}
         </div>
       </td>
       <td className="py-2.5 pr-4 text-[var(--text)]">
@@ -568,6 +565,13 @@ function HistoryRow({
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.failed_endpoints}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.skipped_tests}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.avg_resp_time} ms</td>
+      <td className="py-2.5 pr-2">
+        {/* Re-export a stored run without re-running it (issue #266). Always
+            visible: an action that only exists on hover can't be found. */}
+        {run.results_json ? (
+          <RunReportExportButtons resultsJson={run.results_json} compact />
+        ) : null}
+      </td>
       <td className="py-2.5">
         {(hovered || isSelected) && hasViewReport && (
           <button

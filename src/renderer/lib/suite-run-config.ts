@@ -40,6 +40,8 @@ export interface SuiteRunOptions {
   environmentId: string
   runPreScript: string
   runPostScript: string
+  /** Issue #267. Optional: callers written before the field existed omit it. */
+  runFailScript?: string
 }
 
 /**
@@ -69,6 +71,9 @@ export function buildSuiteRunConfig(
   if (options.environmentId.trim()) config.environmentId = options.environmentId
   if (options.runPreScript.trim()) config.runPreScript = options.runPreScript
   if (options.runPostScript.trim()) config.runPostScript = options.runPostScript
+  if (typeof options.runFailScript === 'string' && options.runFailScript.trim()) {
+    config.runFailScript = options.runFailScript
+  }
   return config
 }
 
@@ -134,6 +139,9 @@ export function parseSuiteRunConfig(raw: string | null | undefined): SuiteRunCon
   }
   if (typeof obj.runPostScript === 'string' && obj.runPostScript) {
     config.runPostScript = obj.runPostScript
+  }
+  if (typeof obj.runFailScript === 'string' && obj.runFailScript) {
+    config.runFailScript = obj.runFailScript
   }
   return config
 }

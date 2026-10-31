@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, Search, Trash2, Clock } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
+import { formatDateTime, formatTime, type DateTimeLocale } from '../../lib/format-datetime'
+import { historyStatusDisplay } from '../../lib/history-status'
+import { useTranslation } from '../../lib/i18n'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -26,6 +29,7 @@ import type {
  */
 export default function HistoryPanel() {
   const show = useUIStore((s) => s.showHistoryPanel)
+  const locale = useUIStore((s) => s.locale)
   const setShow = useUIStore((s) => s.setShowHistoryPanel)
 
   const entries = useHistoryStore((s) => s.entries)
@@ -65,7 +69,7 @@ export default function HistoryPanel() {
   }, [entries, searchTerm])
 
   // Group by date bucket
-  const groups = useMemo(() => groupByDate(filtered), [filtered])
+  const groups = useMemo(() => groupByDate(filtered, locale), [filtered, locale])
 
   const selected = useMemo(
     () => filtered.find((e) => e.id === selectedId) || null,
@@ -237,18 +241,9 @@ export default function HistoryPanel() {
                     >
                       <RequestBadge protocol={entry.protocol} method={entry.method} small />
                       <span className="flex-1 truncate">{shortUrl(entry.url)}</span>
-                      {entry.status_code != null && (
-                        <span
-                          className="shrink-0 rounded px-1 font-medium"
-                          style={{
-                            color: statusColor(entry.status_code),
-                          }}
-                        >
-                          {entry.status_code}
-                        </span>
-                      )}
+                      <StatusLabel entry={entry} className="shrink-0 rounded px-1 font-medium" />
                       <span className="shrink-0" style={{ color: 'var(--muted)' }}>
-                        {formatTime(entry.executed_at)}
+                        {formatTime(entry.executed_at, locale)}
                       </span>
                       <button
                         type="button"
@@ -297,6 +292,7 @@ export default function HistoryPanel() {
 // ────────────────────────────────────────────────────────────────
 
 function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => void }) {
+  const { t, locale } = useTranslation()
   const resp = entry.response_snapshot
   return (
     <div className="p-4">
@@ -318,21 +314,18 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
       <div className="mb-3 flex items-center gap-4" style={{ color: 'var(--muted)' }}>
         {entry.status_code != null && (
           <span>
-            Status:{' '}
-            <span className="font-semibold" style={{ color: statusColor(entry.status_code) }}>
-              {entry.status_code}
-            </span>
+            {t('history.detailStatus')} <StatusLabel entry={entry} className="font-semibold" />
           </span>
         )}
         {entry.duration_ms != null && (
           <span>
-            Time:{' '}
+            {t('history.detailTime')}{' '}
             <span className="font-semibold" style={{ color: 'var(--green)' }}>
               {entry.duration_ms} ms
             </span>
           </span>
         )}
-        <span>{new Date(entry.executed_at).toLocaleString()}</span>
+        <span>{formatDateTime(entry.executed_at, locale)}</span>
       </div>
 
       {resp?.headers && Object.keys(resp.headers).length > 0 && (
@@ -387,7 +380,10 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
 // Helpers
 // ────────────────────────────────────────────────────────────────
 
-function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: HistoryEntry[] }> {
+function groupByDate(
+  entries: HistoryEntry[],
+  locale: DateTimeLocale,
+): Array<{ label: string; items: HistoryEntry[] }> {
   const now = new Date()
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
   const startOfYesterday = startOfToday - 24 * 60 * 60 * 1000
@@ -403,7 +399,7 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
       yesterday.push(e)
     } else {
       const d = new Date(e.executed_at)
-      const key = d.toLocaleDateString(undefined, {
+      const key = d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : undefined, {
         year: 'numeric',
         month: 'long',
         day: 'numeric',
@@ -422,10 +418,6 @@ function groupByDate(entries: HistoryEntry[]): Array<{ label: string; items: His
   return out
 }
 
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-}
-
 function shortUrl(url: string): string {
   try {
     const u = new URL(url)
@@ -435,11 +427,16 @@ function shortUrl(url: string): string {
   }
 }
 
-function statusColor(code: number): string {
-  if (code >= 200 && code < 300) return 'var(--green)'
-  if (code >= 300 && code < 400) return 'var(--blue)'
-  if (code >= 400 && code < 500) return 'var(--orange)'
-  return 'var(--red)'
+/** Status label + colour — the shared History rule (G-15). */
+function StatusLabel({ entry, className }: { entry: HistoryEntry; className: string }) {
+  const { t } = useTranslation()
+  const status = historyStatusDisplay(entry, t)
+  if (!status) return null
+  return (
+    <span className={className} style={{ color: status.color }} title={status.title}>
+      {status.label}
+    </span>
+  )
 }
 
 function formatBody(body: string): string {

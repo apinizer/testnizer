@@ -78,10 +78,7 @@ uiTest.describe('Tur1 — External fixtures smoke [MST-089]', () => {
   for (const fixture of SMOKE_FIXTURES) {
     uiTest(`MST-089 ${fixture} imports without crash`, async ({ window }) => {
       const fixturePath = path.join(EXTERNAL_INSOMNIA, fixture)
-      if (!fs.existsSync(fixturePath)) {
-        console.warn(`MST-089: fixture missing — ${fixture}`)
-        return
-      }
+      uiTest.skip(!fs.existsSync(fixturePath), `fixture missing: ${fixture}`)
 
       const result = await importInsomniaSmoke(window, fixture)
 
@@ -98,7 +95,7 @@ uiTest.describe('Tur1 — External fixtures smoke [MST-089]', () => {
 
     for (const fixture of SMOKE_FIXTURES) {
       const fixturePath = path.join(EXTERNAL_INSOMNIA, fixture)
-      if (!fs.existsSync(fixturePath)) continue
+      expect(fs.existsSync(fixturePath), `fixture missing: ${fixture}`).toBe(true)
 
       try {
         const result = await importInsomniaSmoke(window, fixture)
@@ -112,10 +109,7 @@ uiTest.describe('Tur1 — External fixtures smoke [MST-089]', () => {
       }
     }
 
-    if (failures > 0) {
-      console.warn('MST-089 failures:', errors.join('\n'))
-    }
-    // At most 1 failure tolerated (e.g. one fixture has unusual schema)
-    expect(failures).toBeLessThanOrEqual(1)
+    expect(errors, errors.join('\n')).toEqual([])
+    expect(failures).toBe(0)
   })
 })

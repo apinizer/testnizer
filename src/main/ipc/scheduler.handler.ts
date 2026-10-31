@@ -43,6 +43,8 @@ interface ScheduledTask {
   teardown_endpoint_ids: string | null
   run_pre_script: string | null
   run_post_script: string | null
+  /** Run fail script (issue #267) — NULL when the task has none. */
+  run_fail_script: string | null
   /** "Stop run if an error occurs". NULL on tasks saved before the column
    *  existed — read with `!== 0` so those inherit the safer ON. */
   stop_on_error: number | null
@@ -67,6 +69,8 @@ interface CreateSchedulePayload {
   teardownEndpointIds?: string[]
   runPreScript?: string
   runPostScript?: string
+  /** Run fail script (issue #267) — once after teardown when the run is red. */
+  runFailScript?: string
   /** Omitted ⇒ ON, matching the interactive runner's default. */
   stopOnError?: boolean
 }
@@ -284,6 +288,8 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
       teardownEndpointIds: parseIdList(task.teardown_endpoint_ids),
       runPreScript: task.run_pre_script || undefined,
       runPostScript: task.run_post_script || undefined,
+      // The fail hook (issue #267) — a red unattended run is the case it exists for.
+      runFailScript: task.run_fail_script || undefined,
       // Same parity argument as the phases above: the checkbox the user ticked
       // when creating the schedule has to reach the run, or an unattended
       // nightly keeps going after a failure while its interactive twin stops.
@@ -467,8 +473,8 @@ export function registerSchedulerHandlers(): void {
           interval_value, interval_unit, delay_ms, enabled, next_run_at, created_at,
           schedule_type, schedule_time, schedule_days, schedule_cron, suite_id,
           setup_endpoint_ids, teardown_endpoint_ids, run_pre_script, run_post_script,
-          stop_on_error)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          run_fail_script, stop_on_error)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       ).run(
         id,
@@ -491,6 +497,7 @@ export function registerSchedulerHandlers(): void {
         payload.teardownEndpointIds?.length ? JSON.stringify(payload.teardownEndpointIds) : null,
         payload.runPreScript || null,
         payload.runPostScript || null,
+        payload.runFailScript || null,
         payload.stopOnError === false ? 0 : 1,
       )
 
@@ -524,7 +531,7 @@ export function registerSchedulerHandlers(): void {
           schedule_type = ?, schedule_time = ?, schedule_days = ?, schedule_cron = ?,
           suite_id = ?, next_run_at = ?,
           setup_endpoint_ids = ?, teardown_endpoint_ids = ?,
-          run_pre_script = ?, run_post_script = ?, stop_on_error = ?
+          run_pre_script = ?, run_post_script = ?, run_fail_script = ?, stop_on_error = ?
         WHERE id = ?
       `,
       ).run(
@@ -550,6 +557,7 @@ export function registerSchedulerHandlers(): void {
         payload.teardownEndpointIds?.length ? JSON.stringify(payload.teardownEndpointIds) : null,
         payload.runPreScript || null,
         payload.runPostScript || null,
+        payload.runFailScript || null,
         payload.stopOnError === false ? 0 : 1,
         payload.id,
       )

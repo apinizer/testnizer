@@ -497,6 +497,42 @@ manual Stop. In the results, script rows appear with a **SCRIPT** chip, and a
 script that threw is reported as an error. See
 [Setup, Flow and Teardown](/docs/cli-and-automation#setup-flow-and-teardown).
 
+#### Run fail script — alert on a red run
+
+A third slot, **Run fail script**, runs **once per run, after teardown and the
+run teardown script, only when the run verdict is failed** (setup + flow, the
+same verdict the results show). It does not run on a green run, when only a
+teardown step failed, or after **Stop now**; its own failures are reported as a
+row but never change the verdict. It is the one script with `pm.run`:
+
+- `pm.run.summary` — `{ passed, failed, skipped, errors, duration, stopReason }`
+  of the finished run (read-only);
+- `pm.run.exportHtml()` / `pm.run.exportJson()` — the **same** report as the
+  **Export HTML / Export JSON** buttons, secrets masked.
+
+There is no built-in mail client: post the report to your mail or chat API with
+`pm.sendRequest`, and keep the key in a secret variable (`alertWebhookKey`),
+not in the script:
+
+```js
+const s = pm.run.summary
+await pm.sendRequest({
+  url: 'https://hooks.example.com/testnizer-alerts',
+  method: 'POST',
+  header: {
+    'Content-Type': 'application/json',
+    Authorization: 'Bearer ' + pm.environment.get('alertWebhookKey'),
+  },
+  body: {
+    mode: 'raw',
+    raw: JSON.stringify({
+      text: `Run failed: ${s.failed} failed, ${s.passed} passed (${s.stopReason || 'completed'})`,
+      html: pm.run.exportHtml(),
+    }),
+  },
+})
+```
+
 ## Auth inheritance
 
 A request's **Auth** tab has an **Inherit from parent** option (the default for

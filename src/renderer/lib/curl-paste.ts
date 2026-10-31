@@ -28,6 +28,7 @@ import {
   type CurlWarning,
 } from '../../shared/curl'
 import { isCredentialHeaderName } from '../../shared/credential-headers'
+import { requestSslVerification } from '../../shared/request-settings'
 import type { AuthConfig, HttpMethod, KeyValuePair, RequestBody, Tab } from '../types'
 
 type RequestSlice = Pick<
@@ -123,9 +124,13 @@ export function applyCurlPaste(text: string): CurlPasteResult {
   store.setHeaders(req.headers as KeyValuePair[])
   store.setBody(req.body as RequestBody)
   store.setAuth(pastedAuth(req.auth as AuthConfig | undefined, req.headers))
-  store.setFollowRedirects(req.settings.followRedirects ?? true)
+  // Issue #287: only what the command says (`-L` / `--no-location` / `-k`)
+  // is an override; otherwise the request inherits the project / app setting.
+  // A curl command's `followRedirects` is always its own flag (never a legacy
+  // row value), so it is taken as is.
+  store.setFollowRedirects(req.settings.followRedirects ?? null)
   store.setMaxRedirects(req.settings.maxRedirects ?? 5)
-  store.setSslVerification(req.settings.sslVerification ?? true)
+  store.setSslVerification(requestSslVerification(req.settings) ?? null)
   store.setRequestTimeout(req.settings.timeout ?? null)
   // The old request's withheld-credential markers (issue #244) point at values
   // the pasted request replaced — Ctrl+S must not refill them from the row.

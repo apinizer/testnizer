@@ -13,6 +13,7 @@ import {
   Upload,
   Search,
   Variable,
+  Lock,
 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
@@ -787,6 +788,18 @@ function VarTable({
           `py-2` like the search row below it, so the note never touches the
           table's column header when there is no search row. */}
       <SecretStorageUnencryptedNote className="shrink-0 px-5 py-2" />
+      {/* What "secret" means, said once and always visible (issue #257) —
+          the tooltips alone were the status quo nobody found. */}
+      {variables.some((v) => v.secret) && (
+        <div
+          data-testid="env-secret-note"
+          role="note"
+          className="flex shrink-0 items-start gap-1.5 px-5 py-2 text-[11px] text-[var(--muted)]"
+        >
+          <Lock size={12} className="mt-0.5 shrink-0" aria-hidden="true" />
+          <span>{t('env.secretStaysLocal')}</span>
+        </div>
+      )}
       {/* Search — only meaningful once there is something to search. */}
       {variables.length > 0 && (
         <div className="shrink-0 px-5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
@@ -851,7 +864,7 @@ function VarTable({
       <div
         className="grid shrink-0 items-center px-5 py-2 font-medium uppercase tracking-wide"
         style={{
-          gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px 28px',
+          gridTemplateColumns: '22px minmax(0,1fr) 100px minmax(0,1fr) minmax(0,1fr) 28px 28px',
           gap: 12,
           background: 'var(--surface)',
           borderBottom: '1px solid var(--border)',
@@ -943,6 +956,9 @@ function VarRowView({
   const [copied, setCopied] = useState(false)
   // Undecryptable until the user types a new value (issue #239).
   const locked = !!variable.decryptFailed && !variable.value
+  // A secret's dots read like an error in the value colour (orange); secrets
+  // stay neutral, masked or revealed (issue #257). Other rows keep it.
+  const valueColor = variable.secret ? 'var(--text)' : 'var(--json-string)'
 
   const INPUT: React.CSSProperties = {
     width: '100%',
@@ -964,7 +980,7 @@ function VarRowView({
         // Seven tracks for seven cells, matching the header above. One short
         // and the remove button wrapped onto a second line, left-aligned under
         // the checkbox and doubling every row's height.
-        gridTemplateColumns: '22px 1fr 100px 1fr 1fr 28px 28px',
+        gridTemplateColumns: '22px minmax(0,1fr) 100px minmax(0,1fr) minmax(0,1fr) 28px 28px',
         gap: 12,
         borderBottom: '1px solid var(--border-split)',
       }}
@@ -1015,11 +1031,17 @@ function VarRowView({
         onChange={(e) => onUpdate({ initialValue: e.target.value })}
         placeholder="—"
         type={variable.secret && !showCurrent ? 'password' : 'text'}
-        style={{ ...INPUT, color: 'var(--json-string)' }}
+        // A plain value too long for the column shows in full on hover; a
+        // secret's tooltip is the "stays local" note, NEVER the value (G-05).
+        title={variable.secret ? t('env.secretStaysLocal') : variable.initialValue || undefined}
+        // min-w-0: the grid track can shrink (#257). text-ellipsis: unfocused,
+        // an overlong value / mask ends on a whole glyph + "…", not a half dot.
+        className="min-w-0 text-ellipsis"
+        style={{ ...INPUT, color: valueColor }}
       />
 
       {/* Current Value — with show/hide toggle for secrets */}
-      <div className="flex items-center gap-1">
+      <div className="flex min-w-0 items-center gap-1">
         <input
           data-testid="env-var-current"
           value={variable.value}
@@ -1039,12 +1061,19 @@ function VarRowView({
                 : variable.initialValue || '—'
           }
           // Issue #239: the stored secret cannot be decrypted on this computer.
-          title={locked ? t('env.decryptFailed') : undefined}
+          title={
+            locked
+              ? t('env.decryptFailed')
+              : variable.secret
+                ? t('env.secretStaysLocal')
+                : variable.value || variable.initialValue || undefined
+          }
           data-decrypt-failed={locked || undefined}
           type={variable.secret && !showCurrent && !locked ? 'password' : 'text'}
+          className="min-w-0 text-ellipsis"
           style={{
             ...INPUT,
-            color: 'var(--json-string)',
+            color: valueColor,
             ...(locked ? { boxShadow: 'inset 0 0 0 1px var(--red)' } : {}),
           }}
         />

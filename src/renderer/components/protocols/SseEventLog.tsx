@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Trash2, Filter } from 'lucide-react'
 import { useSseStore } from '../../stores/sse.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatElapsed } from '../../../shared/realtime'
 
 /** Event-type badge tones — globals.css tokens (the method-badge palette), so dark mode follows. */
 const EVENT_TYPE_COLORS: Record<string, { bg: string; color: string }> = {
@@ -51,15 +52,6 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max) + '...' : str
 }
 
-function formatDuration(ms: number): string {
-  const seconds = Math.floor(ms / 1000)
-  const minutes = Math.floor(seconds / 60)
-  const hours = Math.floor(minutes / 60)
-  if (hours > 0) return `${hours}h ${minutes % 60}m`
-  if (minutes > 0) return `${minutes}m ${seconds % 60}s`
-  return `${seconds}s`
-}
-
 export default function SseEventLog() {
   const { t } = useTranslation()
   const events = useSseStore((s) => s.events)
@@ -86,7 +78,9 @@ export default function SseEventLog() {
     }
   }, [events, autoScroll])
 
-  // Update duration display
+  // Update duration display. `now` can trail `connectedAt` until the first
+  // tick (it was read at mount, before the connect stamp) — `formatElapsed`
+  // clamps that to 0s; it used to print "-1s" (G-11).
   useEffect(() => {
     if (connectionState !== 'connected') return
     const interval = setInterval(() => setNow(Date.now()), 1000)
@@ -197,7 +191,9 @@ export default function SseEventLog() {
               : t('sse.eventCount').replace('{count}', String(events.length))}
           </span>
           {connectionState === 'connected' && connectedAt && (
-            <span className="text-[var(--hint)]">{formatDuration(now - connectedAt)}</span>
+            <span data-testid="sse-elapsed" className="text-[var(--hint)]">
+              {formatElapsed(now - connectedAt)}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-3">

@@ -4,6 +4,8 @@ import { useResponseStore } from './response.store'
 import { useTabsStore } from './tabs.store'
 import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
+import { useRequestStore } from './request.store'
+import { loadInheritedNetwork, networkPayload } from '../lib/network-settings'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
@@ -122,7 +124,7 @@ interface GraphQLStore extends TabGraphQLState {
 }
 
 const DEFAULT_QUERY = `# Write your GraphQL query here
-# Example (countries API): { country(code: "TR") { name capital } }
+# Example: { country(code: "TR") { name capital } }
 query {
 
 }
@@ -196,7 +198,9 @@ function parseIntrospectionResult(data: Record<string, unknown>): GqlSchema | nu
 function emptyTabState(): TabGraphQLState {
   return {
     withheldCredentials: [],
-    url: 'https://countries.trevorblades.com/graphql',
+    // Empty like Socket.IO / MCP (issue #257): no third-party host the user
+    // did not type. The field shows an example placeholder instead.
+    url: '',
     query: DEFAULT_QUERY,
     variables: '{}',
     headers: [defaultKv('Content-Type', 'application/json', true)],
@@ -375,6 +379,12 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
 
     try {
       const ws = useWorkspaceStore.getState()
+      // SSL verification / redirects / TLS / proxy (issue #287): the shared
+      // request → project → app chain Run applies to this row.
+      const network = networkPayload(
+        useRequestStore.getState(),
+        await loadInheritedNetwork(ws.activeProjectId),
+      )
       const result = await window.api?.request?.send({
         method: 'POST',
         url: resolvedUrl,
@@ -383,6 +393,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           type: 'json',
           content: JSON.stringify({ query: resolvedQuery, variables: parsedVars }),
         },
+        ...network,
         _protocol: 'graphql',
         _requestId: requestId,
         _workspaceId: ws.activeWorkspaceId || undefined,
@@ -517,9 +528,16 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     )
 
     try {
+      // Introspection talks to the same server as the query: same SSL / TLS /
+      // proxy settings (issue #287).
+      const network = networkPayload(
+        useRequestStore.getState(),
+        await loadInheritedNetwork(useWorkspaceStore.getState().activeProjectId),
+      )
       const result = await window.api?.request?.send({
         method: 'POST',
         url: introUrl,
+        ...network,
         headers: [
           ...introHeaders,
           // Default Content-Type so the gateway treats this as a valid

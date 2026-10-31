@@ -314,7 +314,7 @@ export default function JweBody(): React.JSX.Element {
               {t('tools.jwt.jweDecryptButton')}
             </button>
             {error ? (
-              <Badge color="#cc2200">
+              <Badge tone="danger">
                 {t('tools.common.error')}: {error}
               </Badge>
             ) : null}
@@ -345,7 +345,7 @@ export default function JweBody(): React.JSX.Element {
           ) : null}
           {inspected ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Badge color={inspected.kind === 'jwe' ? '#7c1fa6' : '#b35a00'}>
+              <Badge tone={inspected.kind === 'jwe' ? 'accent' : 'warning'}>
                 {inspected.kind.toUpperCase()} — {inspected.segments} segments
               </Badge>
               {'header' in inspected ? (
@@ -353,7 +353,7 @@ export default function JweBody(): React.JSX.Element {
                   alg={String(inspected.header.alg)} enc={String(inspected.header.enc)}
                 </span>
               ) : (
-                <Badge color="#cc2200">{inspected.error}</Badge>
+                <Badge tone="danger">{inspected.error}</Badge>
               )}
             </div>
           ) : null}

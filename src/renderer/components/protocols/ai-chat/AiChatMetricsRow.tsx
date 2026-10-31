@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import type { AiTurnMetrics } from '../../../../shared/ai-chat-types'
 import { formatMs as ms, metricsTooltip, partialUsageNote } from '../../../lib/ai-chat-view'
 import { useTranslation } from '../../../lib/i18n'
+import { formatClock } from '../../../lib/format-datetime'
 
 /**
  * Per-message metrics (issue #198, Postman parity): status, time to first
@@ -24,8 +25,8 @@ export default function AiChatMetricsRow({
    */
   interrupted?: boolean
 }): ReactElement {
-  const { t } = useTranslation()
-  const time = new Date(timestamp).toLocaleTimeString()
+  const { t, locale } = useTranslation()
+  const time = formatClock(timestamp, locale)
   if (!metrics) {
     return (
       <div className="mt-1 text-[var(--hint)]" style={{ fontSize: 11 }} data-testid="ai-metrics">

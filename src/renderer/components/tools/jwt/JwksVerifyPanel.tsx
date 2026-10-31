@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from '../../../lib/i18n'
 import { useInvalidateOn } from '../../../lib/use-stale-guard'
 import {
@@ -36,10 +36,13 @@ import { Badge, FIELD_STYLE } from './atoms'
 export default function JwksVerifyPanel({
   token,
   algorithm,
+  onVerdict,
 }: {
   token: string
   /** Pre-fills the allowlist from the decoded header; the user may override. */
   algorithm: string
+  /** The verdict for the current token (null = none), so the token footer can report it. */
+  onVerdict?: (verdict: 'valid' | 'invalid' | null) => void
 }): React.JSX.Element {
   const { t } = useTranslation()
   const [mode, setMode] = useState<'url' | 'paste'>('url')
@@ -90,6 +93,12 @@ export default function JwksVerifyPanel({
    * that was never loaded.
    */
   useInvalidateOn([uri, mode], () => setLoadState({ kind: 'idle' }))
+
+  /* A verdict describes ONE token: paste another and it is gone (stale-verdict class). */
+  useInvalidateOn([token], () => setResult({ state: 'idle' }))
+  useEffect(() => {
+    onVerdict?.(result.state === 'idle' ? null : result.state)
+  }, [result.state, onVerdict])
 
   const uriId = useId()
   const pasteId = useId()
@@ -221,15 +230,11 @@ export default function JwksVerifyPanel({
             verdict on the token rather than on the endpoint.
           */}
           {loadState.kind === 'error' ? (
-            <div role="alert" className="mt-1 text-[10px]" style={{ color: '#cc2200' }}>
+            <div role="alert" className="mt-1 text-[10px]" style={{ color: 'var(--red)' }}>
               {t('tools.jwt.jwksLoadFailed')}: {loadState.message}
             </div>
           ) : loadState.kind === 'loaded' ? (
-            <div
-              role="status"
-              className="mt-1 text-[10px]"
-              style={{ color: 'var(--green, #1a7a4a)' }}
-            >
+            <div role="status" className="mt-1 text-[10px]" style={{ color: 'var(--green)' }}>
               {t('tools.jwt.jwksLoaded')} ({loadState.count})
               {loadState.kids.length > 0 ? ` · ${loadState.kids.join(', ')}` : ''}
             </div>
@@ -307,12 +312,12 @@ export default function JwksVerifyPanel({
           {busy ? t('tools.jwt.verifying') : t('tools.jwt.jwksVerifyButton')}
         </button>
         {result.state === 'valid' ? (
-          <Badge color="#1a7a4a">
+          <Badge tone="success">
             {t('tools.jwt.signatureVerified')}
             {typeof result.header.kid === 'string' ? ` — kid ${result.header.kid}` : ''}
           </Badge>
         ) : result.state === 'invalid' ? (
-          <Badge color="#cc2200">
+          <Badge tone="danger">
             {t('tools.jwt.invalid')}: {result.reason}
           </Badge>
         ) : null}

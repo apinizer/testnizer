@@ -39,7 +39,7 @@ import {
   StoragePane,
   BranchesPane,
   GeneralPane,
-  ThemesPane,
+  AppearanceLinkPane,
   ShortcutsPane,
   DataPane,
   CertificatesPane,
@@ -47,7 +47,9 @@ import {
   UpdatePane,
   AboutPane,
 } from './project-settings-panes'
-import type { ProjectSettings, ProjectAuth } from './project-settings-panes'
+import type { AppNetworkDefaults, ProjectSettings, ProjectAuth } from './project-settings-panes'
+import { loadInheritedNetwork } from '../../lib/network-settings'
+import { useSettingsSwitch } from './use-settings-switch'
 
 type Tab =
   | 'overview'
@@ -72,8 +74,10 @@ const DEFAULT_SETTINGS: ProjectSettings = {
     '// Runs before every request in this project\n// pm.environment.set("timestamp", Date.now())\n',
   testScript:
     '// Runs after every response in this project\n// pm.test("Status is 2xx", () => pm.response.to.be.ok)\n',
-  // Postman-style general settings (apply per-project)
-  requestTimeout: 30000,
+  // Postman-style general settings (apply per-project). requestTimeout /
+  // sslVerification / followRedirects / proxy: deliberately NOT defaulted
+  // (issues #287, #254) — unset = follow the app Settings; a default here was
+  // written on the first Save and made the app value dead for the project.
   maxResponseSizeMb: 50,
   trimRequest: true,
   autoSave: true,
@@ -82,11 +86,7 @@ const DEFAULT_SETTINGS: ProjectSettings = {
   sendNoCache: true,
   sendPostmanToken: true,
   retainHeaders: false,
-  sslVerification: true,
-  followRedirects: true,
   workingDirectory: '',
-  // Proxy
-  proxy: { mode: 'system' },
   // Update
   autoCheckUpdates: true,
   autoDownloadUpdates: true,
@@ -99,6 +99,8 @@ export default function ProjectDetailModal() {
   const setShowEnvironmentModal = useUIStore((s) => s.setShowEnvironmentModal)
   const setShowUpdateModal = useUIStore((s) => s.setShowUpdateModal)
   const setShowImportModal = useUIStore((s) => s.setShowImportModal)
+  const setShowSettingsModal = useUIStore((s) => s.setShowSettingsModal)
+  const setAccentColor = useUIStore((s) => s.setAccentColor)
 
   const activeProject = useWorkspaceStore((s) => {
     const pid = s.activeProjectId
@@ -134,18 +136,36 @@ export default function ProjectDetailModal() {
   const [editIconMode, setEditIconMode] = useState<'auto' | 'emoji'>('auto')
 
   const [projSettings, setProjSettings] = useState<ProjectSettings>(DEFAULT_SETTINGS)
+  // What the dialog loaded — the unsaved-changes guard compares against it (#254).
+  const [settingsBaseline, setSettingsBaseline] = useState(JSON.stringify(DEFAULT_SETTINGS))
+  // The app Settings values an unset project field shows (#287, #254).
+  const [appNet, setAppNet] = useState<AppNetworkDefaults>({})
 
-  // App-level (shared state)
-  const theme = useUIStore((s) => s.theme)
-  const setTheme = useUIStore((s) => s.setTheme)
-  const locale = useUIStore((s) => s.locale)
-  const setLocale = useUIStore((s) => s.setLocale)
-  const fontSize = useUIStore((s) => s.fontSize)
-  const setFontSize = useUIStore((s) => s.setFontSize)
-  const fontFamily = useUIStore((s) => s.fontFamily)
-  const setFontFamily = useUIStore((s) => s.setFontFamily)
-  const accentColor = useUIStore((s) => s.accentColor)
-  const setAccentColor = useUIStore((s) => s.setAccentColor)
+  const dirty =
+    !!activeProject &&
+    (JSON.stringify(projSettings) !== settingsBaseline ||
+      editName !== (activeProject.display_name || activeProject.name) ||
+      editDesc !== (activeProject.description || '') ||
+      editSaveMode !== (activeProject.save_mode || 'local') ||
+      editLocalPath !== (activeProject.local_path || '') ||
+      editIconColor !== (activeProject.icon_color || '#2D5FA0') ||
+      (editIconMode === 'emoji' ? editIconEmoji : '') !== (activeProject.icon_emoji || '') ||
+      editGitUrl !== (gitConfig?.repoUrl || '') ||
+      editGitUser !== (gitConfig?.username || '') ||
+      editGitBranch !== (gitConfig?.branch || 'main') ||
+      editGitToken !== (gitConfig?.token || ''))
+
+  // Issue #254: "Open App settings" (header + Themes link) with the guard.
+  const toApp = useSettingsSwitch({
+    dirty,
+    target: t('settingsScope.targetApp'),
+    save: () => handleSave(),
+    discard: () => {},
+    switchTo: () => {
+      handleClose()
+      setShowSettingsModal(true)
+    },
+  })
 
   useEffect(() => {
     if (show && activeProject) {
@@ -162,6 +182,7 @@ export default function ProjectDetailModal() {
       setEditIconEmoji(activeProject.icon_emoji || '')
       setEditIconColor(activeProject.icon_color || '#2D5FA0')
       setEditIconMode(activeProject.icon_emoji ? 'emoji' : 'auto')
+      setGitConfig(null)
       loadGitConfig(activeProject.id)
       loadProjectSettings(activeProject.id)
     }
@@ -188,19 +209,26 @@ export default function ProjectDetailModal() {
   }
 
   async function loadProjectSettings(projectId: string) {
+    void loadInheritedNetwork(null).then((n) =>
+      setAppNet({
+        sslVerification: n.appSslVerification,
+        followRedirects: n.appFollowRedirects,
+        timeout: n.appTimeout,
+        proxy: n.appProxy,
+      }),
+    )
+    let loaded = DEFAULT_SETTINGS
     try {
       const result = (await window.api?.settings?.get(`project.${projectId}.settings`)) as {
         success: boolean
         data?: Partial<ProjectSettings>
       }
-      if (result?.success && result.data) {
-        setProjSettings({ ...DEFAULT_SETTINGS, ...result.data })
-      } else {
-        setProjSettings(DEFAULT_SETTINGS)
-      }
+      if (result?.success && result.data) loaded = { ...DEFAULT_SETTINGS, ...result.data }
     } catch {
-      setProjSettings(DEFAULT_SETTINGS)
+      /* defaults */
     }
+    setProjSettings(loaded)
+    setSettingsBaseline(JSON.stringify(loaded))
   }
 
   if (!show || !activeProject) return null
@@ -220,8 +248,9 @@ export default function ProjectDetailModal() {
     }
   }
 
-  async function handleSave() {
-    if (!activeProject) return
+  /** Persist everything; `true` only when every write landed (the dialog then closes). */
+  async function handleSave(): Promise<boolean> {
+    if (!activeProject) return false
     setSaving(true)
 
     try {
@@ -253,6 +282,10 @@ export default function ProjectDetailModal() {
         }))
       ) {
         failures.push(t('settings.saveFailed'))
+      } else if (editIconColor !== (activeProject.icon_color || '#2D5FA0')) {
+        // The project colour is the accent of the open project (issue #37);
+        // the Themes pane used to apply it live — now Overview does, on Save.
+        setAccentColor(editIconColor)
       }
 
       /**
@@ -301,16 +334,18 @@ export default function ProjectDetailModal() {
       if (failures.length > 0) {
         // Same channel the outer catch uses, and the modal stays open.
         toast.error(`Save failed: ${failures.join(' · ')}`)
-        return
+        return false
       }
 
       toast.success(t('modal.saved') || 'Project settings saved')
       handleClose()
+      return true
     } catch (e) {
       // Surface save failures instead of silently closing the modal — without
       // this, a renameProject / updateProject reject left the user thinking
       // their change had landed (v1.4.0 review finding).
       toast.error(`Save failed: ${(e as Error).message}`)
+      return false
     } finally {
       setSaving(false)
     }
@@ -354,15 +389,20 @@ export default function ProjectDetailModal() {
     setProjSettings((s) => ({ ...s, ...patch }))
   }
 
+  const dialogTitle = t('settingsScope.projectTitle').replace(
+    '{name}',
+    activeProject.display_name || activeProject.name,
+  )
+
   return (
     <Modal
       open={show}
       onOpenChange={(o) => !o && handleClose()}
-      title={activeProject.display_name || activeProject.name}
+      title={dialogTitle}
       testId="project-detail-modal"
     >
       <div
-        className="flex overflow-hidden"
+        className="flex flex-col overflow-hidden"
         style={{
           background: 'var(--white)',
           borderRadius: 14,
@@ -374,231 +414,246 @@ export default function ProjectDetailModal() {
           border: '1px solid var(--border)',
         }}
       >
-        {/* Sidebar */}
-        <div
-          className="flex w-[240px] shrink-0 flex-col"
-          style={{
-            background: 'var(--surface)',
-            borderRight: '1px solid var(--border)',
-          }}
-        >
-          {/* Project header */}
-          <div
-            className="flex items-center gap-3 px-4 py-4"
-            style={{ borderBottom: '1px solid var(--border)' }}
+        {/* Title bar — says the scope and links to the app-wide dialog (issue #254) */}
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-2.5">
+          <span
+            data-testid="project-settings-title"
+            className="truncate font-semibold text-[var(--heading)]"
           >
-            <ProjectIcon
-              name={activeProject.display_name || activeProject.name}
-              emoji={activeProject.icon_emoji || undefined}
-              color={activeProject.icon_color || '#2D5FA0'}
-              size={34}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="truncate font-semibold" style={{ color: 'var(--heading)' }}>
-                {activeProject.display_name || activeProject.name}
+            {dialogTitle}
+          </span>
+          <button
+            type="button"
+            data-testid="settings-open-app-settings"
+            onClick={toApp.request}
+            className="shrink-0 cursor-pointer rounded-md border border-[var(--border)] bg-[var(--white)] px-2.5 py-1 text-[var(--muted)] transition-colors hover:text-[var(--text)]"
+          >
+            {t('settingsScope.openAppSettings')}
+          </button>
+        </div>
+        {toApp.dialog}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {/* Sidebar */}
+          <div
+            className="flex w-[240px] shrink-0 flex-col"
+            style={{
+              background: 'var(--surface)',
+              borderRight: '1px solid var(--border)',
+            }}
+          >
+            {/* Project header */}
+            <div
+              className="flex items-center gap-3 px-4 py-4"
+              style={{ borderBottom: '1px solid var(--border)' }}
+            >
+              <ProjectIcon
+                name={activeProject.display_name || activeProject.name}
+                emoji={activeProject.icon_emoji || undefined}
+                color={activeProject.icon_color || '#2D5FA0'}
+                size={34}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate font-semibold" style={{ color: 'var(--heading)' }}>
+                  {activeProject.display_name || activeProject.name}
+                </div>
+                <div className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                  {typeLabels[activeProject.type]?.icon}
+                  <span>{typeLabels[activeProject.type]?.label || 'HTTP'}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
-                {typeLabels[activeProject.type]?.icon}
-                <span>{typeLabels[activeProject.type]?.label || 'HTTP'}</span>
-              </div>
+            </div>
+
+            {/* Nav */}
+            <div className="flex-1 overflow-y-auto py-2">
+              {ALL_TABS.map((item) => (
+                <SidebarItem
+                  key={item.id}
+                  testId={`project-detail-tab-${item.id}`}
+                  label={item.label}
+                  icon={item.icon}
+                  active={tab === item.id}
+                  onClick={() => setTab(item.id)}
+                />
+              ))}
+            </div>
+
+            {/* Close */}
+            <div
+              className="flex items-center justify-between px-3 py-2"
+              style={{ borderTop: '1px solid var(--border)' }}
+            >
+              <span style={{ color: 'var(--hint)' }}>
+                {modeLabels[activeProject.save_mode || 'local']?.label || 'Local'}
+              </span>
+              <button
+                type="button"
+                aria-label={t('common.close')}
+                onClick={handleClose}
+                className="cursor-pointer rounded p-1"
+                style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
             </div>
           </div>
 
-          {/* Nav */}
-          <div className="flex-1 overflow-y-auto py-2">
-            {ALL_TABS.map((item) => (
-              <SidebarItem
-                key={item.id}
-                testId={`project-detail-tab-${item.id}`}
-                label={item.label}
-                icon={item.icon}
-                active={tab === item.id}
-                onClick={() => setTab(item.id)}
-              />
-            ))}
-          </div>
+          {/* Content area */}
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <div className="flex-1 overflow-y-auto">
+              {tab === 'overview' && (
+                <OverviewPane
+                  name={editName}
+                  desc={editDesc}
+                  iconMode={editIconMode}
+                  iconEmoji={editIconEmoji}
+                  iconColor={editIconColor}
+                  onNameChange={setEditName}
+                  onDescChange={setEditDesc}
+                  onIconModeChange={setEditIconMode}
+                  onIconEmojiChange={setEditIconEmoji}
+                  onIconColorChange={setEditIconColor}
+                  typeLabel={typeLabels[activeProject.type]?.label || 'HTTP'}
+                  createdAt={activeProject.created_at}
+                  updatedAt={activeProject.updated_at}
+                />
+              )}
+              {tab === 'authorization' && (
+                <AuthPane auth={projSettings.auth} onChange={updateAuth} />
+              )}
+              {tab === 'preRequest' && (
+                <ScriptPane
+                  title={t('tab.preRequest')}
+                  description={t('script.preRequestDesc')}
+                  value={projSettings.preScript}
+                  onChange={(v) => updateProjSettings({ preScript: v })}
+                  language="javascript"
+                />
+              )}
+              {tab === 'tests' && (
+                <ScriptPane
+                  title={t('tab.tests')}
+                  description={t('script.testsDesc')}
+                  value={projSettings.testScript}
+                  onChange={(v) => updateProjSettings({ testScript: v })}
+                  language="javascript"
+                />
+              )}
+              {tab === 'variables' && (
+                <VariablesPane
+                  envCount={envCount}
+                  globalVarsCount={globalVarsCount}
+                  onOpenManager={() => {
+                    setShow(false)
+                    setShowEnvironmentModal(true)
+                  }}
+                />
+              )}
+              {tab === 'storage' && (
+                <StoragePane
+                  projectId={activeProject.id}
+                  saveMode={editSaveMode}
+                  localPath={editLocalPath}
+                  gitUrl={editGitUrl}
+                  gitUser={editGitUser}
+                  gitBranch={editGitBranch}
+                  gitToken={editGitToken}
+                  showToken={showToken}
+                  modeLabels={modeLabels}
+                  onSaveModeChange={setEditSaveMode}
+                  onLocalPathChange={setEditLocalPath}
+                  onSelectDir={handleSelectDir}
+                  onGitUrlChange={setEditGitUrl}
+                  onGitUserChange={setEditGitUser}
+                  onGitBranchChange={setEditGitBranch}
+                  onGitTokenChange={setEditGitToken}
+                  onToggleShowToken={() => setShowToken((v) => !v)}
+                />
+              )}
+              {tab === 'branches' && (
+                <BranchesPane branches={branches} activeBranchId={activeBranchId} />
+              )}
 
-          {/* Close */}
-          <div
-            className="flex items-center justify-between px-3 py-2"
-            style={{ borderTop: '1px solid var(--border)' }}
-          >
-            <span style={{ color: 'var(--hint)' }}>
-              {modeLabels[activeProject.save_mode || 'local']?.label || 'Local'}
-            </span>
-            <button
-              type="button"
-              aria-label={t('common.close')}
-              onClick={handleClose}
-              className="cursor-pointer rounded p-1"
-              style={{ background: 'transparent', border: 'none', color: 'var(--muted)' }}
+              {tab === 'general' && (
+                <GeneralPane
+                  settings={projSettings}
+                  onChange={updateProjSettings}
+                  appDefaults={appNet}
+                />
+              )}
+              {/* Issue #254: theme / language / font are app-wide (ui.store) —
+                only a link row here. The project colour (accent, issue #37)
+                stays in Overview, where it is saved as icon_color. */}
+              {tab === 'themes' && <AppearanceLinkPane onOpenApp={toApp.request} />}
+              {tab === 'shortcuts' && <ShortcutsPane />}
+              {tab === 'data' && (
+                <DataPane
+                  projectId={activeProject.id}
+                  onOpenImport={() => {
+                    setShow(false)
+                    setShowImportModal(true)
+                  }}
+                />
+              )}
+              {tab === 'certificates' && (
+                <CertificatesPane
+                  projectId={activeProject.id}
+                  settings={projSettings}
+                  onChange={updateProjSettings}
+                  appDefaults={appNet}
+                />
+              )}
+              {tab === 'proxy' && (
+                <ProxyPane
+                  settings={projSettings}
+                  onChange={updateProjSettings}
+                  appDefaults={appNet}
+                />
+              )}
+              {tab === 'update' && (
+                <UpdatePane
+                  settings={projSettings}
+                  onChange={updateProjSettings}
+                  onCheckNow={() => {
+                    setShow(false)
+                    setShowUpdateModal(true)
+                  }}
+                />
+              )}
+              {tab === 'about' && <AboutPane />}
+            </div>
+
+            {/* Footer */}
+            <div
+              className="flex shrink-0 items-center justify-end gap-2 px-5 py-3"
+              style={{ borderTop: '1px solid var(--border)' }}
             >
-              <X size={14} aria-hidden="true" />
-            </button>
-          </div>
-        </div>
-
-        {/* Content area */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            {tab === 'overview' && (
-              <OverviewPane
-                name={editName}
-                desc={editDesc}
-                iconMode={editIconMode}
-                iconEmoji={editIconEmoji}
-                iconColor={editIconColor}
-                onNameChange={setEditName}
-                onDescChange={setEditDesc}
-                onIconModeChange={setEditIconMode}
-                onIconEmojiChange={setEditIconEmoji}
-                onIconColorChange={setEditIconColor}
-                typeLabel={typeLabels[activeProject.type]?.label || 'HTTP'}
-                createdAt={activeProject.created_at}
-                updatedAt={activeProject.updated_at}
-              />
-            )}
-            {tab === 'authorization' && <AuthPane auth={projSettings.auth} onChange={updateAuth} />}
-            {tab === 'preRequest' && (
-              <ScriptPane
-                title={t('tab.preRequest')}
-                description={t('script.preRequestDesc')}
-                value={projSettings.preScript}
-                onChange={(v) => updateProjSettings({ preScript: v })}
-                language="javascript"
-              />
-            )}
-            {tab === 'tests' && (
-              <ScriptPane
-                title={t('tab.tests')}
-                description={t('script.testsDesc')}
-                value={projSettings.testScript}
-                onChange={(v) => updateProjSettings({ testScript: v })}
-                language="javascript"
-              />
-            )}
-            {tab === 'variables' && (
-              <VariablesPane
-                envCount={envCount}
-                globalVarsCount={globalVarsCount}
-                onOpenManager={() => {
-                  setShow(false)
-                  setShowEnvironmentModal(true)
+              <button
+                type="button"
+                onClick={handleClose}
+                className="cursor-pointer rounded-[7px] px-4 py-[7px]"
+                style={{
+                  background: 'var(--white)',
+                  border: '1.5px solid var(--border2)',
+                  color: 'var(--text)',
                 }}
-              />
-            )}
-            {tab === 'storage' && (
-              <StoragePane
-                projectId={activeProject.id}
-                saveMode={editSaveMode}
-                localPath={editLocalPath}
-                gitUrl={editGitUrl}
-                gitUser={editGitUser}
-                gitBranch={editGitBranch}
-                gitToken={editGitToken}
-                showToken={showToken}
-                modeLabels={modeLabels}
-                onSaveModeChange={setEditSaveMode}
-                onLocalPathChange={setEditLocalPath}
-                onSelectDir={handleSelectDir}
-                onGitUrlChange={setEditGitUrl}
-                onGitUserChange={setEditGitUser}
-                onGitBranchChange={setEditGitBranch}
-                onGitTokenChange={setEditGitToken}
-                onToggleShowToken={() => setShowToken((v) => !v)}
-              />
-            )}
-            {tab === 'branches' && (
-              <BranchesPane branches={branches} activeBranchId={activeBranchId} />
-            )}
-
-            {tab === 'general' && (
-              <GeneralPane settings={projSettings} onChange={updateProjSettings} />
-            )}
-            {tab === 'themes' && (
-              <ThemesPane
-                theme={theme}
-                locale={locale}
-                fontSize={fontSize}
-                fontFamily={fontFamily}
-                accentColor={accentColor}
-                onThemeChange={setTheme}
-                onLocaleChange={setLocale}
-                onFontSizeChange={setFontSize}
-                onFontFamilyChange={setFontFamily}
-                onAccentColorChange={(c) => {
-                  // Apply + persist the global UI accent, AND mirror it into the
-                  // active project's icon_color so Save Changes persists it.
-                  // Without the project side, setActiveProject re-applied the old
-                  // project color on the next launch and the accent "reset"
-                  // (issue #37).
-                  setAccentColor(c)
-                  setEditIconColor(c)
+              >
+                {t('modal.close')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={saving}
+                className="cursor-pointer rounded-[7px] px-5 py-[7px] font-semibold"
+                style={{
+                  background: 'var(--accent)',
+                  border: 'none',
+                  color: '#fff',
+                  opacity: saving ? 0.7 : 1,
                 }}
-              />
-            )}
-            {tab === 'shortcuts' && <ShortcutsPane />}
-            {tab === 'data' && (
-              <DataPane
-                projectId={activeProject.id}
-                onOpenImport={() => {
-                  setShow(false)
-                  setShowImportModal(true)
-                }}
-              />
-            )}
-            {tab === 'certificates' && (
-              <CertificatesPane
-                projectId={activeProject.id}
-                settings={projSettings}
-                onChange={updateProjSettings}
-              />
-            )}
-            {tab === 'proxy' && <ProxyPane settings={projSettings} onChange={updateProjSettings} />}
-            {tab === 'update' && (
-              <UpdatePane
-                settings={projSettings}
-                onChange={updateProjSettings}
-                onCheckNow={() => {
-                  setShow(false)
-                  setShowUpdateModal(true)
-                }}
-              />
-            )}
-            {tab === 'about' && <AboutPane />}
-          </div>
-
-          {/* Footer */}
-          <div
-            className="flex shrink-0 items-center justify-end gap-2 px-5 py-3"
-            style={{ borderTop: '1px solid var(--border)' }}
-          >
-            <button
-              type="button"
-              onClick={handleClose}
-              className="cursor-pointer rounded-[7px] px-4 py-[7px]"
-              style={{
-                background: 'var(--white)',
-                border: '1.5px solid var(--border2)',
-                color: 'var(--text)',
-              }}
-            >
-              {t('modal.close')}
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={saving}
-              className="cursor-pointer rounded-[7px] px-5 py-[7px] font-semibold"
-              style={{
-                background: 'var(--accent)',
-                border: 'none',
-                color: '#fff',
-                opacity: saving ? 0.7 : 1,
-              }}
-            >
-              {saving ? t('modal.saving') : t('modal.saveChanges')}
-            </button>
+              >
+                {saving ? t('modal.saving') : t('modal.saveChanges')}
+              </button>
+            </div>
           </div>
         </div>
       </div>

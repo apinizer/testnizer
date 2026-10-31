@@ -120,7 +120,7 @@ export default function YamlJsonTool() {
         result.ok ? (
           <MonacoWrapper value={result.output} language={outputLang} readOnly />
         ) : (
-          <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {result.error}
           </div>

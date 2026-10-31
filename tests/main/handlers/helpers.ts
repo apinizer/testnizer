@@ -370,6 +370,7 @@ const SCHEMA_SQL = `
     teardown_endpoint_ids TEXT,
     run_pre_script TEXT,
     run_post_script TEXT,
+    run_fail_script TEXT,
     stop_on_error INTEGER DEFAULT 1
   );
 

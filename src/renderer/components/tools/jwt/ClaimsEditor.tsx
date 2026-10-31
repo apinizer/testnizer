@@ -1,6 +1,11 @@
 import { useId } from 'react'
 import { useTranslation } from '../../../lib/i18n'
-import { describeExpiry, type ClaimEdits } from '../../../lib/tools/jwt'
+import {
+  DURATION_UNITS_TR,
+  describeExpiry,
+  formatDuration,
+  type ClaimEdits,
+} from '../../../lib/tools/jwt'
 import { Badge, FIELD_STYLE } from './atoms'
 
 /**
@@ -32,7 +37,7 @@ export default function ClaimsEditor({
   previewPayload: Record<string, unknown>
   nowSeconds: number
 }): React.JSX.Element {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const ids = {
     iss: useId(),
     sub: useId(),
@@ -43,6 +48,18 @@ export default function ClaimsEditor({
     iat: useId(),
   }
   const expiry = describeExpiry(previewPayload, nowSeconds)
+  // The lib's `text` is English; the badge words it in the UI language (G-17).
+  const duration = formatDuration(
+    expiry.secondsRemaining ?? 0,
+    locale === 'tr' ? DURATION_UNITS_TR : undefined,
+  )
+  const expiryText =
+    expiry.state === 'none'
+      ? t('tools.jwt.noExpiry')
+      : t(expiry.state === 'expired' ? 'tools.jwt.expiredAgo' : 'tools.jwt.expiresIn').replace(
+          '{d}',
+          duration,
+        )
 
   const set = (patch: Partial<ClaimEdits>): void => onChange({ ...edits, ...patch })
 
@@ -133,7 +150,7 @@ export default function ClaimsEditor({
       </label>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge color={expiry.state === 'expired' ? '#cc2200' : '#1a7a4a'}>{expiry.text}</Badge>
+        <Badge tone={expiry.state === 'expired' ? 'danger' : 'success'}>{expiryText}</Badge>
         {expiry.iso ? (
           <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
             {expiry.iso}

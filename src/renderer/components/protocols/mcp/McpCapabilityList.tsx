@@ -74,7 +74,10 @@ export default function McpCapabilityList() {
 
   return (
     <div data-testid="mcp-capability-list" className="flex h-full flex-col overflow-hidden">
-      <div role="tablist" className="flex shrink-0 border-b border-[var(--border)]">
+      {/* Tabs size to their label (G-08 / issue #251): equal thirds cut
+          "Resources" while "Tools" had room to spare. They share the spare
+          width and the strip scrolls only when the pane is narrower than all three. */}
+      <div role="tablist" className="flex shrink-0 overflow-x-auto border-b border-[var(--border)]">
         {TABS.map((id) => (
           <button
             key={id}
@@ -85,13 +88,13 @@ export default function McpCapabilityList() {
             onClick={() => setTab(id)}
             // Base size, 600 active / 400 idle — the sibling config / result
             // tab strips (review #6: this strip stayed 12px at the 16px setting).
-            className={`flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-1 whitespace-nowrap border-x-0 border-t-0 border-b-2 bg-transparent px-1 py-2 text-sm ${
+            className={`flex flex-[1_0_auto] cursor-pointer items-center justify-center gap-1 whitespace-nowrap border-x-0 border-t-0 border-b-2 bg-transparent px-1 py-2 text-sm ${
               tab === id
                 ? 'border-[var(--accent)] font-semibold text-[var(--accent-text)]'
                 : 'border-transparent font-normal text-[var(--muted)] hover:text-[var(--text)]'
             }`}
           >
-            <span className="min-w-0 truncate">{labels[id]}</span>
+            <span>{labels[id]}</span>
             <span className="shrink-0 rounded-full bg-[var(--surface)] px-1.5 text-[10px] text-[var(--muted)]">
               {counts[id]}
             </span>

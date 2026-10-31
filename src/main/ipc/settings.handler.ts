@@ -100,7 +100,17 @@ function writeSetting(store: StoreInstance, key: string, value: unknown): void {
   }
   const { shared, local } = splitProjectSettings(value)
   if (shared) writeSharedProjectSettings(projectId, shared)
-  store.set(key, transformSecrets(local, 'encrypt'))
+  store.set(key, transformSecrets(withoutNulls(local), 'encrypt'))
+}
+
+/**
+ * The local part of a project settings save is stored whole, so a key the
+ * save leaves out is already gone; `null` ("Use app setting" on the
+ * machine-local proxy, issue #254) means the same and is never stored.
+ */
+function withoutNulls(local: unknown): unknown {
+  if (!local || typeof local !== 'object' || Array.isArray(local)) return local
+  return Object.fromEntries(Object.entries(local).filter(([, v]) => v !== null))
 }
 
 /** Startup: move pre-`shared_settings` project settings into the DB once. */

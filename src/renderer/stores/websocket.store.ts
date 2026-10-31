@@ -6,6 +6,7 @@ import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
+import { connectErrorText } from '../lib/connection-error'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -110,7 +111,9 @@ interface WebSocketStore extends TabWsState {
 function emptyTabState(): TabWsState {
   return {
     withheldCredentials: [],
-    url: 'wss://echo.websocket.org',
+    // Empty like Socket.IO / MCP (issue #257): no third-party host the user
+    // did not type. The field shows an example placeholder instead.
+    url: '',
     customHeaders: [defaultKv()],
     params: [],
     settings: { ...DEFAULT_WS_SETTINGS },
@@ -396,13 +399,19 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
                   : sl.messages,
             }))
             break
-          case 'error':
+          case 'error': {
+            // Issue #253: `errorInfo` → the active locale's text with host:port.
+            const text = connectErrorText(
+              { error: evt.data, errorInfo: evt.errorInfo },
+              'WebSocket error',
+            )
             patchOwner((sl) => ({
               connectionState: 'error',
-              errorMessage: evt.data || 'WebSocket error',
-              messages: [...sl.messages, systemRow('error', evt.data || 'WebSocket error')],
+              errorMessage: text,
+              messages: [...sl.messages, systemRow('error', text)],
             }))
             break
+          }
         }
       })
       set({ _unsubscribe: unsub })
@@ -438,7 +447,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
             _unsubscribe: undefined,
             _pendingConnectId: undefined,
             connectionState: 'error',
-            errorMessage: result?.error || 'Connection failed',
+            errorMessage: connectErrorText(result, 'Connection failed'),
           }))
         }
       } catch (e) {

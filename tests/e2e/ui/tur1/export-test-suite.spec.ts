@@ -212,10 +212,7 @@ uiTest.describe('Tur1 — Test suite export/import [MST-099]', () => {
     const json = await buildTestSuiteExportJson(window, suiteId)
     const importedName = `Imported-${uid()}`
     const result = await importTestSuiteIpc(window, projectId, json, importedName)
-    if (result.error) {
-      console.warn(`MST-099: suite import error — ${result.error}`)
-      return
-    }
+    expect(result.error, 'suite import must succeed').toBeUndefined()
 
     await expect
       .poll(async () => {
@@ -239,12 +236,10 @@ uiTest.describe('Tur1 — Test suite export/import [MST-099]', () => {
     const json = await buildTestSuiteExportJson(window, suiteId)
     const importedName = `ItemsCheck-Restored-${uid()}`
     const result = await importTestSuiteIpc(window, projectId, json, importedName)
-    if (result.error || !result.suiteId) {
-      console.warn(`MST-099: suite import error — ${result.error}`)
-      return
-    }
+    expect(result.error, 'suite import must succeed').toBeUndefined()
+    expect(result.suiteId).toBeTruthy()
 
-    const items = await listSuiteItems(window, result.suiteId)
+    const items = await listSuiteItems(window, result.suiteId as string)
     expect((items as unknown[]).length).toBe(2)
   })
 })

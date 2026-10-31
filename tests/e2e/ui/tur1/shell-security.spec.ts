@@ -88,15 +88,7 @@ uiTest.describe('Tur1 — Shell auth timing safety [MST-290]', () => {
       return w.api?.auth?.setPassword({ password: 'correct-test-pass-mst290', hint: '' })
     })
 
-    if (!setRes?.success) {
-      // Setting a password from the current session state is not possible.
-      // needs hook: a fresh, password-free session is required to exercise the
-      // login verify branch. Treat the unreachable state as non-fatal.
-      console.log(
-        'MST-290: Cannot set password from current session state — skipping timing assertion. needs hook: run in fresh session with no existing password.',
-      )
-      return
-    }
+    expect(setRes?.success, 'setPassword must succeed so the verify branch is exercised').toBe(true)
     const userId = setRes.data?.user?.id ?? ''
 
     try {

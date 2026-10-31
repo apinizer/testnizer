@@ -21,6 +21,14 @@ import { setLocale } from '../../src/renderer/lib/i18n'
 
 const code = (): string => screen.getAllByTestId('monaco')[0].textContent ?? ''
 
+/**
+ * The layout tests below pin `-u 'u:p'` as typed: "Include secret values" ON.
+ * With it OFF (the default) the typed password is masked (issue #256).
+ */
+const includeSecrets = (): void => {
+  fireEvent.click(screen.getAllByTestId('codegen-include-secrets')[0])
+}
+
 beforeEach(() => {
   useUIStore.setState({
     showCodeGenerator: true,
@@ -28,6 +36,9 @@ beforeEach(() => {
     // The language choice lives in ui.store since issue #280 (it was modal state).
     codegen: { language: 'curl', variantByLanguage: {}, optionsByVariant: {} },
     rightPanelTab: 'code',
+    // The panel starts collapsed since issue #257; this file renders it open.
+    rightPanelCollapsed: false,
+    rightPanelNarrowCollapsed: false,
   })
   useRequestStore.setState({
     method: 'POST',
@@ -48,6 +59,7 @@ afterEach(() => {
 describe('Generate Code modal — cURL variant (issue #279)', () => {
   it('bash multi-line is the default (byte-identical layout, -u, -k)', () => {
     render(<CodeGeneratorModal />)
+    includeSecrets()
     expect(screen.getByTestId('codegen-curl-dialect-bash')).toHaveAttribute('aria-pressed', 'true')
     expect(code()).toBe(
       [
@@ -63,6 +75,7 @@ describe('Generate Code modal — cURL variant (issue #279)', () => {
 
   it("PowerShell: curl.exe, backtick continuation, '' and \\\" quoting", () => {
     render(<CodeGeneratorModal />)
+    includeSecrets()
     fireEvent.click(screen.getByTestId('codegen-curl-dialect-powershell'))
     expect(code()).toBe(
       [
@@ -78,12 +91,19 @@ describe('Generate Code modal — cURL variant (issue #279)', () => {
 
   it('CMD single-line: one line, caret form for the JSON body', () => {
     render(<CodeGeneratorModal />)
+    includeSecrets()
     fireEvent.click(screen.getByTestId('codegen-curl-dialect-cmd'))
     fireEvent.click(screen.getByTestId('codegen-curl-multiline'))
     expect(code()).toBe(
       `curl -X POST "https://api.test/users" -H "Content-Type: application/json" -u "u:p" -d ^"{\\^"name\\^":\\^"it's\\^"}^" -k`,
     )
     expect(useUIStore.getState().curlSnippet).toEqual({ dialect: 'cmd', multiLine: false })
+  })
+
+  it('with "Include secret values" off (the default) the typed password is masked (issue #256)', () => {
+    render(<CodeGeneratorModal />)
+    expect(code()).toContain(`-u 'u:***'`)
+    expect(code()).not.toContain(`'u:p'`)
   })
 
   it('the variant row is cURL-only', () => {

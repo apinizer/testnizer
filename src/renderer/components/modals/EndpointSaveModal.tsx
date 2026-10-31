@@ -3,7 +3,8 @@ import { AlertTriangle } from 'lucide-react'
 import { toast } from '../../lib/toast'
 import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { useRequestStore } from '../../stores/request.store'
+import { HTTP_CREDENTIALS, useRequestStore } from '../../stores/request.store'
+import { recordStoredAuth } from '../../lib/stored-auth-credentials'
 import { useTabsStore } from '../../stores/tabs.store'
 import {
   aiSaveAsAction,
@@ -285,6 +286,9 @@ export default function EndpointSaveModal() {
             url: effectiveUrl,
             protocol: protocol as Tab['protocol'],
           })
+          // The new row stores this auth — the Auth restart hint compares with it (#261).
+          const saved = useTabsStore.getState().tabs.find((tb) => tb.id === tabId)
+          if (saved) recordStoredAuth(saved, req.auth, HTTP_CREDENTIALS)
         }
         // Confirm the save (issue #212) — the modal closes, so without this
         // nothing but the vanished dirty dot said it worked.

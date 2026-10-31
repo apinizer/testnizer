@@ -32,7 +32,11 @@ import {
 } from '../helpers/ui/runner-flow'
 import { localHttpBin } from '../helpers/test-servers'
 
-const SHOTS = '/private/tmp/claude-501/-Users-mhy-IdeaProjects-testnizer/080c60f4-ae3a-433a-9eda-a394ab175de1/scratchpad/shots'
+// Screenshots land in the test output dir; TESTNIZER_SHOTS_DIR redirects them for manual review.
+const shot = (name: string): string =>
+  process.env.TESTNIZER_SHOTS_DIR
+    ? `${process.env.TESTNIZER_SHOTS_DIR}/${name}`
+    : uiTest.info().outputPath(name)
 const uid = (): string => String(Date.now()).slice(-8)
 
 const activeTab = (page: Page) => page.locator('[data-testid="endpoint-tab"][data-active="true"]')
@@ -103,7 +107,7 @@ uiTest.describe('Issue #304 — critical request stops the run', () => {
 
       await setCritical(window, true)
       await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true')
-      await window.screenshot({ path: `${SHOTS}/304-1-settings-critical-toggle.png` })
+      await window.screenshot({ path: shot('304-1-settings-critical-toggle.png') })
       await pressModShortcut(window, 's')
       await expect(activeTab(window)).toHaveAttribute('data-dirty', 'false', { timeout: 8_000 })
 
@@ -135,7 +139,7 @@ uiTest.describe('Issue #304 — critical request stops the run', () => {
       await expect(list).toContainText(first)
       await expect(list).toContainText(second)
       await expect(list).toContainText('NOT RUN')
-      await window.screenshot({ path: `${SHOTS}/304-2-run-stopped-critical.png` })
+      await window.screenshot({ path: shot('304-2-run-stopped-critical.png') })
 
       // Control — drop the flag: the same run executes both requests, no stop line.
       await closeAllTabs(window)
@@ -152,7 +156,7 @@ uiTest.describe('Issue #304 — critical request stops the run', () => {
       await expect(wb.getByTestId('critical-badge')).toHaveCount(0)
       await expect(wb.getByTestId('runner-results-list')).toContainText(second)
       await expect(wb.getByTestId('runner-results-list')).not.toContainText('NOT RUN')
-      await window.screenshot({ path: `${SHOTS}/304-3-control-both-ran.png` })
+      await window.screenshot({ path: shot('304-3-control-both-ran.png') })
     } finally {
       await treeClearSearch(window).catch(() => {})
       await closeAllTabs(window).catch(() => {})

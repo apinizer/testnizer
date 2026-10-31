@@ -98,7 +98,7 @@ export default function JwksFillButton({
           disabled={busy}
           data-testid={testId}
           title={t('mock.jwksFillHint')}
-          className="cursor-pointer rounded border px-2 py-0.5 text-[11px] disabled:cursor-default disabled:opacity-50"
+          className="cursor-pointer whitespace-nowrap rounded border px-2 py-0.5 text-[11px] disabled:cursor-default disabled:opacity-50"
           style={{
             borderColor: 'var(--border)',
             color: 'var(--muted)',
@@ -110,7 +110,7 @@ export default function JwksFillButton({
       </div>
 
       {error && (
-        <div className="mt-1 text-[11px]" style={{ color: '#cc2200' }}>
+        <div className="mt-1 text-[11px]" style={{ color: 'var(--red)' }}>
           {error}
         </div>
       )}

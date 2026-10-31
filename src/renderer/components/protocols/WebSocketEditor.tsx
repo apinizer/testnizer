@@ -23,7 +23,6 @@ export default function WebSocketEditor() {
   const { t } = useTranslation()
   const [tab, setTab] = useState<WsTab>('message')
   const s = useWebSocketStore()
-  const connected = s.connectionState === 'connected'
   const settingsChanged =
     JSON.stringify({ ...DEFAULT_WS_SETTINGS, ...s.settings }) !==
     JSON.stringify(DEFAULT_WS_SETTINGS)
@@ -38,13 +37,9 @@ export default function WebSocketEditor() {
     <div className="flex h-full flex-col overflow-hidden bg-[var(--white)]">
       {/* Tab bar label */}
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3.5 py-2">
+        {/* The connection state is shown once, by the bar's `ws-status` pill
+            (issue #257) — the header badge duplicated it. */}
         <span className="font-medium text-[var(--accent-text)]">WebSocket</span>
-        {/* Same badge as the SSE editor's header (issue #248): translated, theme tokens. */}
-        {connected && (
-          <span className="rounded-full bg-[var(--green-bg)] px-2 py-0.5 font-medium text-[var(--green)]">
-            {t('mcp.status.connected')}
-          </span>
-        )}
       </div>
       <div className="shrink-0 border-b border-[var(--border)] px-3.5 py-2.5">
         <WsConnectionBar />
@@ -83,7 +78,7 @@ export default function WebSocketEditor() {
               maxPayload={s.settings.maxPayload}
               onChange={s.setSettings}
               onMaxPayloadChange={(maxPayload) => s.setSettings({ maxPayload })}
-              connected={connected}
+              connected={s.connectionState === 'connected'}
               testIdPrefix="ws"
             />
           )}

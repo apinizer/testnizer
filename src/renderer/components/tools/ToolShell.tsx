@@ -20,8 +20,8 @@ interface ToolShellProps {
 
 const FOOTER_TONE_COLOR: Record<'muted' | 'ok' | 'error', string> = {
   muted: 'var(--muted)',
-  ok: 'var(--green, #1a7a4a)',
-  error: '#cc2200',
+  ok: 'var(--green)',
+  error: 'var(--red)',
 }
 
 /**

@@ -1,24 +1,37 @@
 # E2E "needs hook" listesi — gelecekteki src/ PR'ı
 
-Güncelleme: 2026-06-07. Tur1 MST yazımı sırasında derlendi. Bu maddeler **test değişikliği değil**, `src/` tarafında küçük eklemeler (data-testid / IPC / UI yüzeyi) gerektirir. Hepsi tek PR'da toplanıp tek rebuild ile çıkarılabilir; ilgili testler şu an IPC-yolu veya heuristik locator ile geçiyor (ya da soft-skip).
+Güncelleme: 2026-10-31 (tur1 soft-pass temizliği). Kural: bir spec, aranan öğe bulunamadı diye **geçmez**. Öğe başka bir selector/IPC ile erişilebiliyorsa test gerçek assertion'a çevrildi; src'de hiç yoksa test açıkça `test.skip(true, '<neden> — needs ...')` ile atlanır (raporda "skipped" görünür) ve aşağıya yazılır. Bu maddeler **test değişikliği değil**, `src/` tarafında küçük eklemeler (data-testid / UI yüzeyi) gerektirir.
 
-## data-testid eklemeleri (UI yolunu açar)
+## Özellik eksikleri (testler bilerek skip — özellik src'de yok)
+
+| İstek | Skip eden test | Not |
+|---|---|---|
+| ProjectHome içinde proje arama kutusu (`data-testid="project-search"`) | `workspace-advanced` MST-013 | ProjectHome'da arama input'u yok |
+| Tanılama / log dışa aktarma UI'ı | `settings-advanced` MST-199 | Settings'te diagnostics yüzeyi yok |
+| Kullanıcının oluşturabildiği Module | `tree-advanced` MST-027 | "module" yalnız proje kök düğümü; oluşturulamaz |
+| Endpoint Case / Add Case kavramı | `tree-advanced` MST-024 | EndpointCase modeli yok |
+| Profil görünen adının düzenlenebilmesi | `ux-misc` MST-201 | ProfileModal'da editable display name yok |
+| MST-004 OS biyometrik auth mock'u (`auth.osAuthMock`) | `auth-advanced` MST-004 | OS-mock altyapısı gerekiyor |
+
+## data-testid eklemeleri (UI yolunu açar; bugün IPC-only assert veya etiket/role locator)
+
+Hepsi src'de HÂLÂ yok (doğrulandı, 2026-10-31):
 
 | Testid | Bileşen | Bugünkü geçici çözüm |
 |---|---|---|
-| `runner-export-html` | RunnerResults "Export HTML" butonu | IPC-only assert |
-| `runner-iteration-data-textarea` | IterationDataPicker | Data dosyası IPC ile enjekte ediliyor |
-| `ai-key-toggle`, `ai-error-message` | AI Chat editörü | `title`/metin eşleşmesi |
-| `mock-response-condition` | Mock response condition textarea'sı | JSON değerine göre heuristik eşleşme (`fillLastResponseCondition`) |
+| `runner-export-html` | RunnerResults "Export HTML" butonu | `18-runner-report` MST-177 IPC (`runner:export`) + sayılar HTML'e karşı doğrulanıyor |
+| `runner-iteration-data-textarea` | IterationDataPicker | `runner-iterations` MST-175 yalnız iterasyon sayısını sürer; veri dosyası UI yolu test edilmiyor |
+| `ai-key-toggle`, `ai-error-message` | AI Chat editörü | role/placeholder ve metin eşleşmesi (`ai-chat-deep`) |
+| `mock-response-condition` | Mock response condition textarea'sı | JSON değerine göre heuristik (`fillLastResponseCondition`) |
 | `quick-test-shell` | QuickTestShell kök elemanı | — |
-| `login-quick-test` | Password login formundaki guest butonu | Yalnızca ilk açılış welcome'ında `login-continue-anonymous` var |
-| `project-search`, `new-project-mode-local`, `new-project-mode-git` | Project Home + New Project sihirbazı | MST-013/014 soft-skip |
-| Branch satırı delete kontrolü | BranchDropdown | IPC fallback |
-| `merge-conflict-modal` + çözüm butonları | Git merge akışı | IPC fallback |
-| `updater-*` (bildirim yüzeyi) | Updater UI — şu an UpdateModal yalnızca manuel açılıyor, `updater:event` bildirimi UI'a yansımıyor | `shell-updater` MST-230/231 IPC-only |
-| `resizable-divider` | Workbench bölücüsü | — |
-| `mock-proxy-enabled` | Mock proxy ayarı | — |
-| `wsse-*` | WSSE konfigürasyon alanları | Heuristik locator |
+| `login-quick-test` | Password login formundaki guest butonu | yalnız ilk açılış welcome'ında `login-continue-anonymous` var |
+| `new-project-mode-local`, `new-project-mode-git` | New Project sihirbazı adım 3 (save mode kartları, OptionCard div) | `workspace-advanced` MST-014 kart metniyle çalışır |
+| `branch-delete-{name}` | BranchDropdown çöp kutusu | `git-advanced` IPC delete |
+| `merge-conflict-modal`, `conflict-resolve-ours`, `conflict-resolve-theirs` | MergeConflictModal | `git-advanced` MST-188 yalnız IPC `git:resolveConflict` |
+| `resizable-divider` | Sol panel kenar tutamağı (`EdgeResizeHandle`, `role=separator`, title "Drag to resize") | `ux-misc` MST-208 role ile sürüklüyor — testid isteği kozmetik |
+| `mock-proxy-enabled` | Mock proxy checkbox'ı | `mock-proxy` MST-169 label ile erişiyor — kozmetik |
+
+Çözülenler (listeden çıkarıldı): updater bildirim yüzeyi (`updater-notification`, `updater-install-now`, `updater-install-on-quit`, `updater-skip-version` artık var; `shell-updater*` UI assert eder), `ai-chat-editor`/`ai-api-key`/`ai-settings-*`, `mock-response-delay`/`mock-log-*`, `footer-enterprise`/`about-modal`, `tab-strip`/`left-panel`, `wsse-*` (`auth-wsse-section`, `codegen-wsse-note` mevcut), `kv-bulk-toggle`, `auth-type-ntlm`, `body-type-binary`, `path-variables`.
 
 ## App bug'ları (testler skip/daraltılmış — bkz. `ui-coverage.md` app-gap tablosu)
 
@@ -29,6 +42,6 @@ Güncelleme: 2026-06-07. Tur1 MST yazımı sırasında derlendi. Bu maddeler **t
 
 ## Test altyapısı eksikleri
 
-- `tests/e2e/servers/grpc-server.ts` yalnızca unary RPC destekliyor — streaming MST'leri için server-side/client-side/bidi streaming eklenebilir.
+- `tests/e2e/servers/grpc-server.ts` yalnızca unary RPC destekliyor; streaming MST-134/135/136 `grpc-advanced` içindeki satır-içi streaming sunucusuyla gerçek UI üzerinden koşuyor.
+- graphql-ws test sunucusu yok — MST-131 yalnız Run -> Subscribe düğme geçişini doğrular.
 - 6 import formatının engine desteği yok: Apidog, JMeter JMX, ApiDoc, WADL, Google Discovery, Hoppscotch (MST-076/077/078/080/081/084) — format engine'i gelirse spec şablonu `import-formats-2.spec.ts`'ten kopyalanabilir.
-- MST-004 (OS biyometrik auth) OS-mock altyapısı gerektiriyor — `auth-advanced` içinde skip.

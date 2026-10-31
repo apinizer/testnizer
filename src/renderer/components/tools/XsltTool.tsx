@@ -117,7 +117,7 @@ export default function XsltTool() {
       }
       outputPane={
         error ? (
-          <div className="p-3 text-sm" style={{ color: 'var(--red, #cc2200)' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {error}
           </div>

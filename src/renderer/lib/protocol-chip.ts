@@ -6,6 +6,8 @@
  *
  * Colours are globals.css tokens (light + dark themes), never hex.
  */
+import { t } from './i18n'
+
 export interface ProtocolChipInfo {
   label: string
   /** Tailwind text-colour class over a globals.css token. */
@@ -14,10 +16,17 @@ export interface ProtocolChipInfo {
   name: string
 }
 
-const CHIPS: Record<string, ProtocolChipInfo> = {
+/**
+ * A chip's full name is a proper name (WebSocket, GraphQL…) except where it is
+ * a phrase that has a translation: those carry `nameKey`, read at call time
+ * so a locale switch is picked up (issue #261).
+ */
+type ChipDef = Omit<ProtocolChipInfo, 'name'> & ({ name: string } | { nameKey: string })
+
+const CHIPS: Record<string, ChipDef> = {
   mcp: { label: 'MCP', color: 'text-[var(--mb-head-fg)]', name: 'MCP' },
   websocket: { label: 'WS', color: 'text-[var(--mb-options-fg)]', name: 'WebSocket' },
-  sse: { label: 'SSE', color: 'text-[var(--orange)]', name: 'Server-Sent Events' },
+  sse: { label: 'SSE', color: 'text-[var(--orange)]', nameKey: 'protocolChip.name.sse' },
   socketio: { label: 'SIO', color: 'text-[var(--mb-query-fg)]', name: 'Socket.IO' },
   mqtt: { label: 'MQTT', color: 'text-[var(--blue)]', name: 'MQTT' },
   graphql: { label: 'GQL', color: 'text-[var(--mb-put-fg)]', name: 'GraphQL' },
@@ -26,8 +35,21 @@ const CHIPS: Record<string, ProtocolChipInfo> = {
   ai: { label: 'AI', color: 'text-[var(--mb-patch-fg)]', name: 'AI Chat' },
 }
 
-export function protocolChip(protocol: string | undefined | null): ProtocolChipInfo | null {
+function chipDef(protocol: string | undefined | null): ChipDef | null {
   return (protocol && CHIPS[protocol]) || null
+}
+
+/** The protocol's full name in the UI language (the chip tooltip), or null for no chip. */
+export function protocolChipName(protocol: string | undefined | null): string | null {
+  const def = chipDef(protocol)
+  if (!def) return null
+  return 'nameKey' in def ? t(def.nameKey) : def.name
+}
+
+export function protocolChip(protocol: string | undefined | null): ProtocolChipInfo | null {
+  const def = chipDef(protocol)
+  if (!def) return null
+  return { label: def.label, color: def.color, name: protocolChipName(protocol) ?? def.label }
 }
 
 /** The chip text for a protocol, or null when the row/tab keeps its method badge. */

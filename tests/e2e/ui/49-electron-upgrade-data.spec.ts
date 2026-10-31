@@ -184,6 +184,31 @@ const LEGACY_LOCAL_STORAGE: Record<string, (old: unknown, note: (msg: string) =>
       }
       return walk(old)
     },
+    // Issue #287 (1.6.0): request-tab `sslVerification` / `followRedirects` are
+    // tri-state (null = inherit the project / app setting). Older builds wrote
+    // the store default `true` for EVERY tab, unmarked; the new store loads an
+    // unmarked `true` as `null` (and marks a `true` it writes itself with
+    // `<key>Explicit`). A `false` was always a user choice and is kept.
+    'testnizer-request': (old, note) => {
+      let changed = 0
+      const walk = (v: unknown): unknown => {
+        if (Array.isArray(v)) return v.map(walk)
+        if (!v || typeof v !== 'object') return v
+        const o = Object.fromEntries(
+          Object.entries(v as Record<string, unknown>).map(([k, x]) => [k, walk(x)]),
+        )
+        for (const key of ['sslVerification', 'followRedirects'] as const) {
+          if (o[key] === true && o[`${key}Explicit`] !== true) {
+            o[key] = null
+            changed++
+          }
+        }
+        return o
+      }
+      const out = walk(old)
+      if (changed > 0) note(`${changed} unmarked ssl/redirects 'true' read as inherit (null)`)
+      return out
+    },
   }
 
 function expectNoLoss(report: DiffReport, where: string): void {

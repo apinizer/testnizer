@@ -92,3 +92,14 @@ export function formatLogTime(ts: number): string {
   const pad = (v: number, l = 2): string => String(v).padStart(l, '0')
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
 }
+
+/**
+ * The display label of a message format — the log badge and the Info line
+ * (issue #261: the raw value "json" was shown). `rt.format.<type>` (Text /
+ * Metin, JSON, Binary / İkili…); an unknown type is its raw value upper-cased.
+ */
+export function messageFormatLabel(contentType: string, t: (key: string) => string): string {
+  const key = `rt.format.${contentType}`
+  const label = t(key)
+  return label === key ? contentType.toUpperCase() : label
+}

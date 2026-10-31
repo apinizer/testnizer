@@ -37,6 +37,11 @@ import {
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/client/stdio'
 import { createMcpOAuthFetch } from './mcp-oauth.engine'
 import { isCredentialHeaderName } from '../lib/credential-headers'
+import {
+  classifyTransportError,
+  scrubConnectionText,
+  toConnectionError,
+} from '../lib/error-classifier'
 import { applyMcpAuth, type McpAuthOptions } from './mcp-auth'
 import type { McpCallOutcome } from '../../shared/mcp-response'
 import { applyToolSchema } from '../../shared/mcp-call'
@@ -1543,18 +1548,54 @@ export async function mcpConnect(options: {
     // Issue #169: a 401 / 403 after a cross-origin redirect dropped the
     // user's credential headers is explained by that drop — say so. The
     // error object is kept (`.status` drives the handler's `unauthorized`).
-    if (
-      decorated instanceof Error &&
-      state.credentialDrops.size > 0 &&
-      isAuthRejection(decorated)
-    ) {
-      try {
-        decorated.message = `${decorated.message} ${credentialDropHint(state)}`
-      } catch {
-        /* read-only message — leave it */
-      }
+    const dropHint =
+      decorated instanceof Error && state.credentialDrops.size > 0 && isAuthRejection(decorated)
+        ? credentialDropHint(state)
+        : undefined
+    const ctx = {
+      protocol: 'mcp' as const,
+      transport: options.transport,
+      ...(options.transport === 'stdio' ? {} : { url: options.url }),
     }
-    throw decorated
+    // Not connection failures, kept verbatim (credentials still scrubbed): a
+    // user cancel, and an answer the server gave in MCP terms — a JSON-RPC
+    // error (also inside an HTTP 4xx body) or a failed era negotiation. A
+    // JSON-RPC answer is recognised from its SHAPE before any text rule: a
+    // server message such as "Invalid URL in server configuration" must not
+    // turn into the `invalid-url` connection failure. Only an HTTP status the
+    // classifier maps to its own kind (401 / 403 / 404 — the handler offers
+    // OAuth on 401) still wins over the answer.
+    const e = decorated as { name?: unknown; code?: unknown; message?: unknown; cause?: unknown }
+    const rpcAnswer =
+      e.name === 'ProtocolError' ||
+      (typeof e.message === 'string' && /^HTTP \d{3}: MCP error /.test(e.message))
+    let answered = false
+    if (rpcAnswer) {
+      const info = classifyTransportError(decorated, ctx)
+      answered = info.httpStatus === undefined || info.kind === 'http-status'
+    } else if (e.code === 'ERA_NEGOTIATION_FAILED') {
+      // The SDK wraps a network failure of the probe (refused, closed, …) as
+      // an era-negotiation error with the transport error as `cause`: judge
+      // what it wraps, not the SDK sentence around a server's reply.
+      const kind = classifyTransportError(e.cause ?? decorated, ctx).kind
+      answered = kind === 'unknown' || kind === 'http-status'
+    }
+    if (cancelled || answered) {
+      if (decorated instanceof Error) {
+        try {
+          decorated.message = scrubConnectionText(
+            dropHint ? `${decorated.message} ${dropHint}` : decorated.message,
+            ctx.url,
+          )
+        } catch {
+          /* read-only message — leave it */
+        }
+      }
+      throw decorated
+    }
+    // Issue #253: what happened + host:port (none for stdio) + the next step;
+    // `status` / `code` / `name` survive for the OAuth offer and the retry.
+    throw toConnectionError(decorated, ctx, dropHint ? { detail: dropHint } : undefined)
   }
 
   let client: Client

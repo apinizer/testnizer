@@ -36,6 +36,29 @@ export interface PmRequestLike {
   name?: string
 }
 
+/**
+ * The finished run as the run FAIL script sees it (issue #267) — read-only.
+ * `summary` is a frozen snapshot taken by the host before the hook started;
+ * the exports are the host's report generator (main `buildRunReport`), the
+ * SAME text as the Export HTML / JSON buttons.
+ */
+export interface PmRunSummary {
+  passed: number
+  failed: number
+  skipped: number
+  errors: number
+  /** ms since the run began. */
+  duration: number
+  /** The run's stop reason (`RunStopReason`), or null when nothing stopped it. */
+  stopReason: string | null
+}
+
+export interface PmRunLike {
+  readonly summary: Readonly<PmRunSummary>
+  exportJson(): string
+  exportHtml(): string
+}
+
 export interface PmLike {
   info: {
     eventName: string
@@ -94,6 +117,8 @@ export interface PmLike {
     /** Folder names + request name; `.current` is the last entry. */
     location?: string[] & { current: string }
   }
+  /** The run fail script's run context (issue #267); absent everywhere else. */
+  run?: PmRunLike
   /** No visualizer pane in Testnizer: set/clear are accepted and ignored. */
   visualizer?: { set(...args: unknown[]): void; clear(): void }
   /** JWS/JWT helper (#73). Hosts do NOT supply it — `buildScriptBindings`

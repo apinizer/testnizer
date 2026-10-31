@@ -13,6 +13,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate } from '../../lib/format-datetime'
 import { toast } from '../../lib/toast'
 import { isMac } from '../../lib/platform'
 import { useProjectExportStore } from '../../stores/project-export.store'
@@ -29,7 +30,7 @@ export default function ProjectHome() {
   const deleteProject = useWorkspaceStore((s) => s.deleteProject)
   const renameProject = useWorkspaceStore((s) => s.renameProject)
   const setShowNewProjectModal = useUIStore((s) => s.setShowNewProjectModal)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
 
   const api = () => window.api
 
@@ -382,7 +383,7 @@ export default function ProjectHome() {
                     main
                   </span>
                   <span>&middot;</span>
-                  <span>{new Date(project.created_at).toLocaleDateString()}</span>
+                  <span>{formatDate(project.created_at, locale)}</span>
                 </div>
               </div>
 

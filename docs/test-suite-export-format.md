@@ -44,6 +44,33 @@ Insomnia) use it.
 - Insomnia: every folder and request gets a `metaSortKey` in execution
   order, because Insomnia orders siblings by that key.
 
+## Run configuration (`suite.run_config`)
+
+`run_config` is the suite's saved Runner configuration (issue #100), stored
+verbatim as a JSON string and carried by project export / git like the rest
+of the suite:
+
+```jsonc
+{
+  "version": 1,
+  "items": [ { "id", "selected", "phase"? } ],   // phase: "setup" | "teardown"; omitted = flow
+  "delay", "iterationDelay", "iterations",
+  "stopOnError", "persistResponses", "keepVariableValues",
+  "environmentId"?,
+  "runPreScript"?,    // once, before the setup requests
+  "runPostScript"?,   // once, after teardown — even when the run stopped early
+  "runFailScript"?    // once, after teardown + runPostScript, only when the run is red (issue #267)
+}
+```
+
+Blank scripts are omitted; a reader that does not know a key ignores it, and
+a config written by an older build simply has no `runFailScript`.
+
+The scripts are plain text in the file. A fail script that calls a mail or
+chat webhook should reference the key as `{{secretVar}}` (a secret
+environment or project variable) rather than paste it — secret values stay on
+this machine, the script does not.
+
 ## Folder auth and scripts
 
 `folders[].auth`, `pre_script` and `post_script` travel with the folder. They

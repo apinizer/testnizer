@@ -140,11 +140,11 @@ export default function UuidTool() {
                 </select>
                 <input
                   id={namespaceCustomId}
-                  aria-label="Custom namespace UUID"
+                  aria-label={t('tools.uuid.namespaceCustomLabel')}
                   type="text"
                   value={namespace}
                   onChange={(e) => setNamespace(e.target.value)}
-                  placeholder="custom namespace UUID"
+                  placeholder={t('tools.uuid.namespaceCustomPlaceholder')}
                   className="mt-1 w-full rounded border px-2 py-1 text-xs font-mono"
                   style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
                 />
@@ -217,14 +217,14 @@ export default function UuidTool() {
               type="text"
               value={validatorInput}
               onChange={(e) => setValidatorInput(e.target.value)}
-              placeholder="paste a UUID to inspect"
+              placeholder={t('tools.uuid.validatePlaceholder')}
               className="w-full rounded border px-2 py-1 text-xs font-mono"
               style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
             />
             {validation && (
               <div
                 className="mt-1 text-xs"
-                style={{ color: validation.ok ? '#1a7a4a' : '#cc2200' }}
+                style={{ color: validation.ok ? 'var(--green)' : 'var(--red)' }}
               >
                 {validation.ok
                   ? `✓ ${t('tools.uuid.validUuid')} (v${validation.version})`
@@ -236,7 +236,7 @@ export default function UuidTool() {
       }
       outputPane={
         error ? (
-          <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {error}
           </div>
@@ -253,13 +253,13 @@ export default function UuidTool() {
               <span style={{ color: 'var(--muted)' }}>
                 {output.length} {t('tools.uuid.generated')}
                 {stale ? (
-                  <span style={{ color: 'var(--orange, #b35a00)' }}>
+                  <span style={{ color: 'var(--orange)' }}>
                     {' · '}
                     {t('tools.common.staleOutput')}
                   </span>
                 ) : null}
                 {rowCopy.copied ? (
-                  <span style={{ color: 'var(--green, #1a7a4a)' }}>
+                  <span style={{ color: 'var(--green)' }}>
                     {' · '}
                     {t('tools.common.copied')}
                   </span>

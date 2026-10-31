@@ -17,6 +17,8 @@ import { useResponseStore } from '../../stores/response.store'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatRelativeTime } from '../../lib/format-datetime'
+import { historyStatusDisplay } from '../../lib/history-status'
 import { makeTabId } from '../../lib/utils'
 import RequestBadge from '../shared/RequestBadge'
 import { mcpHistoryRestore, mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
@@ -45,7 +47,7 @@ export default function NewRequestWelcome() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   const history = useHistoryStore((s) => s.entries)
   const fetchHistory = useHistoryStore((s) => s.fetch)
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
 
   // Pull the 5 most recent history rows for the current project. v1.3.1 B14
   // shipped the welcome screen without any "recent" affordance, so users who
@@ -288,23 +290,9 @@ export default function NewRequestWelcome() {
                   >
                     {recentLabel(entry).label}
                   </span>
-                  {entry.status_code != null && (
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color:
-                          entry.status_code >= 400
-                            ? '#cc2200'
-                            : entry.status_code >= 300
-                              ? '#b35a00'
-                              : 'var(--green)',
-                      }}
-                    >
-                      {entry.status_code}
-                    </span>
-                  )}
+                  <RecentStatus entry={entry} />
                   <span style={{ fontSize: 11, color: 'var(--hint)' }}>
-                    {relativeTime(entry.executed_at)}
+                    {formatRelativeTime(entry.executed_at, locale)}
                   </span>
                 </button>
               ))}
@@ -316,10 +304,18 @@ export default function NewRequestWelcome() {
   )
 }
 
-function relativeTime(ts: number): string {
-  const delta = Math.max(0, Date.now() - ts) / 1000
-  if (delta < 60) return 'just now'
-  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`
-  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`
-  return `${Math.floor(delta / 86400)}d ago`
+/** The row's status: one shared rule with the History sidebar (G-15). */
+function RecentStatus({ entry }: { entry: HistoryEntry }) {
+  const { t } = useTranslation()
+  const status = historyStatusDisplay(entry, t)
+  if (!status) return null
+  return (
+    <span
+      className="shrink-0 whitespace-nowrap"
+      style={{ fontSize: 12, color: status.color, fontWeight: status.failed ? 600 : undefined }}
+      title={status.title}
+    >
+      {status.label}
+    </span>
+  )
 }

@@ -21,22 +21,10 @@ uiTest.describe('Tur1 — Import cancel mid-wizard [MST-090]', () => {
     const projectId = await getActiveProjectId(window)
     const rowsBefore = ((await listEndpointsByProject(window, projectId)) as unknown[]).length
 
-    // Open import modal via button
-    const importBtn = window.getByRole('button', { name: /Import API Data|API Verisi İçe Aktar/i })
-    const importBtnVisible = await importBtn.isVisible().catch(() => false)
-    if (!importBtnVisible) {
-      console.warn('MST-090: import button not visible — skip')
-      return
-    }
-    await importBtn.click()
-
-    // Wait for modal to appear
+    // The "Import API Data" button opens a format dropdown; picking a format opens the modal.
+    await openImportDropdown(window, /Postman/i)
     const modal = window.getByTestId('import-modal')
-    const modalVisible = await modal.isVisible({ timeout: 8_000 }).catch(() => false)
-    if (!modalVisible) {
-      console.warn('MST-090: import modal not visible after button click — skip')
-      return
-    }
+    await expect(modal).toBeVisible({ timeout: 8_000 })
 
     // Cancel by pressing Escape
     await window.keyboard.press('Escape')
@@ -46,73 +34,48 @@ uiTest.describe('Tur1 — Import cancel mid-wizard [MST-090]', () => {
     expect(rowsAfter).toBe(rowsBefore)
   })
 
-  uiTest('MST-090 cancel after file selection (step 2) leaves tree unchanged', async ({ window }) => {
+  uiTest('MST-090 cancel after file selection (step 2) leaves tree unchanged', async ({ app, window }) => {
     const projectId = await getActiveProjectId(window)
     const rowsBefore = ((await listEndpointsByProject(window, projectId)) as unknown[]).length
 
-    // Stub file dialog and open Postman modal
-    await stubImportOpenFile(window, 'postman-v2.1.json')
-    await openImportDropdown(window, /Postman/i)
+    const restoreDialog = await stubImportOpenFile(app, 'postman-v2.1.json')
+    try {
+      await openImportDropdown(window, /Postman/i)
+      const modal = window.getByTestId('import-modal')
 
-    const modal = window.getByTestId('import-modal')
-    await expect(modal).toBeVisible({ timeout: 8_000 })
+      // Pick the (stubbed-dialog) file: the wizard advances to the destination step
+      await modal.getByRole('button', { name: /Click to select a/i }).click()
+      await expect(modal.getByText(/Ready to import/i)).toBeVisible({ timeout: 15_000 })
 
-    // Click file select to load the stubbed content
-    const fileBtn = modal.getByRole('button', { name: /Click to select a/i })
-    const fileBtnVisible = await fileBtn.isVisible().catch(() => false)
-    if (fileBtnVisible) {
-      await fileBtn.click()
-      // Wait briefly for modal to process the file
-      await window.waitForTimeout(500)
+      await modal.getByRole('button', { name: /^Cancel$/i }).click()
+      await expect(modal).toBeHidden({ timeout: 10_000 })
+    } finally {
+      await restoreDialog()
     }
-
-    // Cancel by pressing Escape (or close button if available)
-    const closeBtn = modal.getByRole('button', { name: /Cancel|Close|✕|×/i }).first()
-    if (await closeBtn.isVisible().catch(() => false)) {
-      await closeBtn.click()
-    } else {
-      await window.keyboard.press('Escape')
-    }
-
-    await expect(modal).toBeHidden({ timeout: 10_000 })
 
     const rowsAfter = ((await listEndpointsByProject(window, projectId)) as unknown[]).length
-    // Cancel must not have created any endpoints
     expect(rowsAfter).toBe(rowsBefore)
   })
 
-  uiTest('MST-090 cancel after folder name entry (step 3) leaves tree unchanged', async ({ window }) => {
+  uiTest('MST-090 cancel after folder name entry (step 3) leaves tree unchanged', async ({ app, window }) => {
     const projectId = await getActiveProjectId(window)
     const rowsBefore = ((await listEndpointsByProject(window, projectId)) as unknown[]).length
 
-    await stubImportOpenFile(window, 'postman-v2.1.json')
-    await openImportDropdown(window, /Postman/i)
+    const restoreDialog = await stubImportOpenFile(app, 'postman-v2.1.json')
+    try {
+      await openImportDropdown(window, /Postman/i)
+      const modal = window.getByTestId('import-modal')
 
-    const modal = window.getByTestId('import-modal')
-    await expect(modal).toBeVisible({ timeout: 8_000 })
+      await modal.getByRole('button', { name: /Click to select a/i }).click()
+      await expect(modal.getByText(/Ready to import/i)).toBeVisible({ timeout: 15_000 })
 
-    const fileBtn = modal.getByRole('button', { name: /Click to select a/i })
-    if (await fileBtn.isVisible().catch(() => false)) {
-      await fileBtn.click()
-      // Wait for "Ready to import" state
-      await modal.getByText(/Ready to import/i).waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {})
+      // Fill folder name but do NOT click Import — cancel instead
+      await modal.getByPlaceholder('Folder name').fill('Should Not Be Created')
+      await modal.getByRole('button', { name: /^Cancel$/i }).click()
+      await expect(modal).toBeHidden({ timeout: 10_000 })
+    } finally {
+      await restoreDialog()
     }
-
-    // Fill folder name but do NOT click Import — cancel instead
-    const folderInput = modal.getByPlaceholder('Folder name')
-    if (await folderInput.isVisible().catch(() => false)) {
-      await folderInput.fill('Should Not Be Created')
-    }
-
-    // Click Cancel / Close / Escape
-    const cancelBtn = modal.getByRole('button', { name: /Cancel/i }).first()
-    if (await cancelBtn.isVisible().catch(() => false)) {
-      await cancelBtn.click()
-    } else {
-      await window.keyboard.press('Escape')
-    }
-
-    await expect(modal).toBeHidden({ timeout: 10_000 })
 
     // Give the app a moment to settle
     await window.waitForTimeout(300)
@@ -121,30 +84,29 @@ uiTest.describe('Tur1 — Import cancel mid-wizard [MST-090]', () => {
     expect(rowsAfter).toBe(rowsBefore)
   })
 
-  uiTest('MST-090 reopening import modal after cancel shows clean state', async ({ window }) => {
-    await stubImportOpenFile(window, 'postman-v2.1.json')
-    await openImportDropdown(window, /Postman/i)
-    const modal = window.getByTestId('import-modal')
-    await expect(modal).toBeVisible({ timeout: 8_000 })
+  uiTest('MST-090 reopening import modal after cancel shows clean state', async ({ app, window }) => {
+    const restoreDialog = await stubImportOpenFile(app, 'postman-v2.1.json')
+    try {
+      await openImportDropdown(window, /Postman/i)
+      const modal = window.getByTestId('import-modal')
+      await modal.getByRole('button', { name: /Click to select a/i }).click()
+      await expect(modal.getByText(/Ready to import/i)).toBeVisible({ timeout: 15_000 })
+      await modal.getByPlaceholder('Folder name').fill('Stale Folder Name')
 
-    // Cancel
-    await window.keyboard.press('Escape')
-    await expect(modal).toBeHidden({ timeout: 10_000 })
+      await modal.getByRole('button', { name: /^Cancel$/i }).click()
+      await expect(modal).toBeHidden({ timeout: 10_000 })
 
-    // Reopen
-    const importBtn = window.getByRole('button', { name: /Import API Data|API Verisi İçe Aktar/i })
-    if (await importBtn.isVisible().catch(() => false)) {
-      await importBtn.click()
-      const reopenedModal = window.getByTestId('import-modal')
-      const reopened = await reopenedModal.isVisible({ timeout: 8_000 }).catch(() => false)
-      if (reopened) {
-        // Modal should show the format selection step (clean state), not a partial
-        // import state from the previous cancelled run.
-        // needs hook: data-testid="import-modal-step" on each step
-        await window.keyboard.press('Escape')
-      }
+      // Reopen the same format: the modal must be back at the file-pick step,
+      // not carry the file / folder name of the cancelled run.
+      await openImportDropdown(window, /Postman/i)
+      const reopened = window.getByTestId('import-modal')
+      await expect(reopened.getByRole('button', { name: /Click to select a/i })).toBeVisible()
+      await expect(reopened.getByText(/Ready to import/i)).toBeHidden()
+      await expect(reopened.getByPlaceholder('Folder name')).toBeHidden()
+      await window.keyboard.press('Escape')
+      await expect(reopened).toBeHidden({ timeout: 10_000 })
+    } finally {
+      await restoreDialog()
     }
-    // No assertion crash = pass
-    expect(true).toBe(true)
   })
 })

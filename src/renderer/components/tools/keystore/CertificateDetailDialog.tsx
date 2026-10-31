@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from '../../../lib/i18n'
+import { formatDateTime, type DateTimeLocale } from '../../../lib/format-datetime'
 import type { KeystoreAliasDetail, KeystoreCertificateInfo } from '../../../types'
 
 export default function CertificateDetailDialog({
@@ -12,7 +13,7 @@ export default function CertificateDetailDialog({
   /** Chain position to open on (clamped). Defaults to the leaf (0). */
   initialIndex?: number
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const [index, setIndex] = useState(
     Math.min(Math.max(initialIndex, 0), Math.max(detail.chain.length - 1, 0)),
   )
@@ -74,7 +75,7 @@ export default function CertificateDetailDialog({
             {cert.subjectDN === cert.issuerDN && (
               <span
                 className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                style={{ background: '#e8f9f1', color: '#1a7a4a' }}
+                style={{ background: 'var(--green-bg)', color: 'var(--green)' }}
               >
                 {t('tools.keystore.selfSigned')}
               </span>
@@ -90,8 +91,8 @@ export default function CertificateDetailDialog({
                 label={t('tools.keystore.keySize')}
                 value={`${cert.keySize} ${t('tools.keystore.bits')}`}
               />
-              <Field label={t('tools.keystore.validFrom')} value={fmt(cert.notBefore)} />
-              <Field label={t('tools.keystore.validTo')} value={fmt(cert.notAfter)} />
+              <Field label={t('tools.keystore.validFrom')} value={fmt(cert.notBefore, locale)} />
+              <Field label={t('tools.keystore.validTo')} value={fmt(cert.notAfter, locale)} />
             </div>
             <Field label={t('tools.keystore.sha1')} value={cert.sha1Fingerprint} mono />
             <Field label={t('tools.keystore.sha256')} value={cert.sha256Fingerprint} mono />
@@ -109,9 +110,9 @@ export default function CertificateDetailDialog({
   )
 }
 
-function fmt(iso: string): string {
+function fmt(iso: string, locale: DateTimeLocale): string {
   const ts = Date.parse(iso)
-  return Number.isNaN(ts) ? iso : new Date(ts).toLocaleString()
+  return Number.isNaN(ts) ? iso : formatDateTime(ts, locale)
 }
 
 function Field({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

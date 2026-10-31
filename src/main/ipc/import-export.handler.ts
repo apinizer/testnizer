@@ -6,8 +6,14 @@ import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protoc
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
 import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
-import { readRequestSettings, readRequestSettingsJson } from '../../shared/request-settings'
+import {
+  encodeFollowRedirects,
+  readRequestSettings,
+  readRequestSettingsJson,
+  requestFollowRedirects,
+} from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
+import { orderTreeLevel, orderTreeRequests } from '../../shared/tree-order'
 import {
   applyPathVariables,
   readPathVariables,
@@ -2123,9 +2129,9 @@ function savedRequestToExportRow(row: SavedRequestExportRow): ExportEndpointRow 
  * Every request of a project in tree order: imported / created endpoints AND
  * the requests saved with Ctrl+S (`saved_requests`). Exports read only
  * `endpoints` before issue #197, so saved requests vanished from every
- * collection file. Both tables share one `sort_order` space per folder (see
- * the reorder handler in endpoint.handler.ts), so the merged list is sorted by
- * it — a stable sort keeps endpoints first on a tie.
+ * collection file. Order = the APIs tree's (issue #257, `src/shared/tree-order.ts`):
+ * a level's endpoints, then its saved requests, each by `sort_order` — the
+ * tree never interleaves the two tables, so neither does the export.
  */
 function loadProjectExportRows(
   db: ReturnType<typeof getDb>,
@@ -2137,10 +2143,13 @@ function loadProjectExportRows(
   const saved = db
     .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
     .all(projectId) as SavedRequestExportRow[]
-  return [
-    ...endpoints.map((e) => ({ ...e, owner_type: 'endpoint' as const })),
-    ...saved.map(savedRequestToExportRow),
-  ].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+  return orderTreeRequests<ExportEndpointRow>(
+    [
+      ...endpoints.map((e) => ({ ...e, owner_type: 'endpoint' as const })),
+      ...saved.map(savedRequestToExportRow),
+    ],
+    (r) => r.owner_type === 'saved_request',
+  )
 }
 
 /**
@@ -2255,7 +2264,11 @@ function collectPostmanVariables(projectId: string): PostmanVariable[] | undefin
 function ppbFromSettings(schema: UiRequestSchema): Record<string, unknown> | undefined {
   const s = readRequestSettings(schema)
   const out: Record<string, unknown> = {}
-  if (s.followRedirects !== undefined) out.followRedirects = s.followRedirects
+  // Issue #287: a legacy bare `true` is "inherit", not a choice to export
+  // (ssl's reader already drops it) — so an export → import round-trip does
+  // not turn it into an explicit override.
+  const follow = requestFollowRedirects(s)
+  if (follow !== undefined) out.followRedirects = follow
   if (s.maxRedirects !== undefined) out.maxRedirects = s.maxRedirects
   if (s.sslVerification !== undefined) out.strictSSL = s.sslVerification
   return Object.keys(out).length > 0 ? out : undefined
@@ -2478,6 +2491,21 @@ function buildPostmanCollection(
     }
   }
 
+  // Issue #257: each level in APIs-tree order (root: folders first; inside a
+  // folder: requests first). The rows already arrive endpoints-then-saved, so
+  // the requests keep their order. A suite export reorders on top of this.
+  const inTreeOrder = (list: PostmanItem[], atRoot: boolean): PostmanItem[] => {
+    for (const node of list) if (node.item) node.item = inTreeOrder(node.item, false)
+    return orderTreeLevel(
+      {
+        folders: list.filter((n) => !!n.item),
+        endpoints: list.filter((n) => !n.item),
+        savedRequests: [],
+      },
+      atRoot,
+    )
+  }
+
   const collection: PostmanCollection = {
     info: {
       ...(extra.postmanId ? { _postman_id: extra.postmanId } : {}),
@@ -2485,7 +2513,7 @@ function buildPostmanCollection(
       description: description ?? undefined,
       schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
     },
-    item: rootItems,
+    item: inTreeOrder(rootItems, true),
   }
   if (variables) collection.variable = variables
   const collectionEvents = scriptsToPostmanEvents(
@@ -2768,7 +2796,9 @@ function importCurl(
   if (req.headers.length > 0) requestSchema.headers = req.headers
   if (req.body.type !== 'none') requestSchema.body = req.body
   if (req.auth) requestSchema.auth = req.auth
-  Object.assign(requestSchema, req.settings)
+  // A curl flag is an explicit choice: `-L` keeps its issue #287 marker (a
+  // bare stored `true` reads as "inherit").
+  Object.assign(requestSchema, req.settings, encodeFollowRedirects(req.settings.followRedirects))
 
   db.prepare(
     `

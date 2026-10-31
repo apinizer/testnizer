@@ -48,17 +48,13 @@ uiTest.describe('Tur1 — Binary body upload [MST-037]', () => {
 
   uiTest('MST-037b UI binary body type selector is visible and pickable', async ({ window }) => {
     await window.getByTestId('req-tab-body').click()
-    await window.getByTestId('body-type-raw').click()
-
-    // The format selector should include a binary option
-    const formatSelect = window.getByTestId('body-raw-format')
-    const options = await formatSelect.locator('option').allTextContents()
-    // needs-hook: the raw format select must include a 'binary' option
-    // OR there's a separate data-testid="body-type-binary" button
-    const hasBinary =
-      options.some((o) => /binary/i.test(o)) ||
-      (await window.getByTestId('body-type-binary').isVisible().catch(() => false))
-    expect(hasBinary).toBe(true)
+    // Binary is its own body-type radio (BodyTab), not a raw-format option.
+    const binary = window.getByTestId('body-type-binary')
+    await expect(binary).toBeVisible()
+    await binary.click()
+    await expect(binary).toBeChecked()
+    // Raw-format dropdown is raw-only and must disappear for binary.
+    await expect(window.getByTestId('body-raw-format')).toHaveCount(0)
   })
 
   uiTest('MST-037c small text file uploaded as octet-stream echoes back correctly', async ({ window }) => {

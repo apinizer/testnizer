@@ -162,6 +162,14 @@ export interface RunnerExecuteOptions {
   runPreScript?: string
   /** Run-level post-run script — runs ONCE at the end of teardown (guaranteed). */
   runPostScript?: string
+  /**
+   * Run-level FAIL script (issue #267) — runs ONCE after the teardown requests
+   * and `runPostScript`, only when the run verdict is failed (setup + main,
+   * `endpointDidPass`). Never on a green run, a teardown-only failure or a hard
+   * stop; its row is a teardown row, so it never changes the verdict. The only
+   * script with `pm.run` (summary + the report exports).
+   */
+  runFailScript?: string
   folderName?: string
   source?: string
   sourceLabel?: string

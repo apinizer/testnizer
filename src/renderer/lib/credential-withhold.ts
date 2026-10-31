@@ -244,9 +244,38 @@ export function hasLiteralAuthCredential(
   auth: { type?: string } | undefined,
   spec: CredentialSpec,
 ): boolean {
-  if (!auth?.type) return false
+  return literalAuthCredentials(auth, spec).length > 0
+}
+
+/**
+ * The literal credentials of the ACTIVE auth type as `[path, value]` pairs —
+ * what `hasLiteralAuthCredential` tests for. The restart hint compares them
+ * with what the bound row stores (issue #261).
+ */
+export function literalAuthCredentials(
+  auth: { type?: string } | undefined,
+  spec: CredentialSpec,
+): Array<[string, string]> {
+  if (!auth?.type) return []
   const prefix = `auth.${AUTH_FIELD_KEY[auth.type] ?? auth.type}.`
-  return spec.fields.some((p) => p.startsWith(prefix) && isLiteralCredential(getPath({ auth }, p)))
+  const out: Array<[string, string]> = []
+  for (const p of spec.fields) {
+    if (!p.startsWith(prefix)) continue
+    const v = getPath({ auth }, p)
+    if (isLiteralCredential(v)) out.push([p, v])
+  }
+  return out
+}
+
+/** Every `auth.*` credential field of `spec` that holds a string, by path. */
+export function authCredentialValues(auth: unknown, spec: CredentialSpec): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const p of spec.fields) {
+    if (!p.startsWith('auth.')) continue
+    const v = getPath({ auth }, p)
+    if (typeof v === 'string') out[p] = v
+  }
+  return out
 }
 
 // ─── Snapshot sanitizer ─────────────────────────────────────────────────

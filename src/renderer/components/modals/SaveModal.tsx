@@ -15,6 +15,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { toast } from '../../lib/toast'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate } from '../../lib/format-datetime'
 import type { SaveMode, GitRepoFile } from '../../types'
 import Modal from '../shared/Modal'
 
@@ -118,7 +119,7 @@ const inputStyle: React.CSSProperties = {
 }
 
 export default function SaveModal() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const show = useUIStore((s) => s.showSaveModal)
   const setShow = useUIStore((s) => s.setShowSaveModal)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
@@ -550,7 +551,7 @@ export default function SaveModal() {
                           {entry.message}
                         </span>
                         <span style={{ color: 'var(--hint)' }}>
-                          {new Date(entry.timestamp).toLocaleDateString()}
+                          {formatDate(entry.timestamp, locale)}
                         </span>
                       </div>
                     ))}

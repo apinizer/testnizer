@@ -30,13 +30,13 @@ let userDataDir: string
 const BADSSL_TLS10 = 'https://tls-v1-0.badssl.com:1010/'
 const HTTPBIN = 'https://httpbin.org/get'
 
-const EXTERNAL_NET_RE = /ENETUNREACH|ETIMEDOUT|EAI_AGAIN|ECONNRESET|ECONNREFUSED|socket hang up/i
+// Raw libuv codes (curl sidecar) and the classifier's wording (issue #253:
+// "Connection refused — host:port", no raw code).
+const EXTERNAL_NET_RE =
+  /ENETUNREACH|ETIMEDOUT|EAI_AGAIN|ECONNRESET|ECONNREFUSED|socket hang up|Connection refused|Connection timed out|Connection reset|DNS lookup failed|Host unreachable/i
 const TLS_HANDSHAKE_RE = /SSL|TLS|handshake|connect|reset|protocol|certificate/i
 
-function skipIfExternalUnavailable(
-  res: SendResult | undefined,
-  label: string,
-): void {
+function skipIfExternalUnavailable(res: SendResult | undefined, label: string): void {
   const err = res?.data?.error ?? res?.error ?? ''
   if (!res?.success && EXTERNAL_NET_RE.test(err)) {
     test.skip(true, `${label} unreachable: ${err}`)
@@ -90,18 +90,20 @@ async function send(options: {
     // way the renderer would. ipcMain.handle stores listeners as a private
     // map keyed by channel — call directly via emit.
     type Listener = (event: unknown, payload: unknown) => Promise<unknown>
-    const handlers = (
-      ipcMain as unknown as { _invokeHandlers: Map<string, Listener> }
-    )._invokeHandlers
+    const handlers = (ipcMain as unknown as { _invokeHandlers: Map<string, Listener> })
+      ._invokeHandlers
     const listener = handlers.get('request:send')
     if (!listener) throw new Error('request:send handler not registered')
-    return listener({}, {
-      method: 'GET',
-      url: args.url,
-      tls: args.tls,
-      timeout: 15000,
-      followRedirects: false,
-    })
+    return listener(
+      {},
+      {
+        method: 'GET',
+        url: args.url,
+        tls: args.tls,
+        timeout: 15000,
+        followRedirects: false,
+      },
+    )
   }, options)) as SendResult
 }
 

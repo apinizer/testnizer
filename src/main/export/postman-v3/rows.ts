@@ -8,6 +8,7 @@
  */
 import type { Database } from 'better-sqlite3'
 import { orderSuiteFolders, orderSuiteItems } from '../../../shared/suite-order'
+import { orderTreeRequests } from '../../../shared/tree-order'
 import { maskSavedExample } from '../../lib/saved-example-mask'
 
 export type Json = Record<string, unknown>
@@ -53,8 +54,12 @@ export interface ExportTree {
   description: string | null
   folders: ExportFolder[]
   requests: ExportRequest[]
-  /** Suites run a level's requests before its folders; the APIs tree lists folders first. */
-  requestsFirst: boolean
+  /**
+   * `tree`: APIs-tree order (`src/shared/tree-order.ts`, issue #257 — root
+   * folders first, inside a folder requests first). `suite`: a suite runs
+   * every level's requests before its folders (`src/shared/suite-order.ts`).
+   */
+  order: 'tree' | 'suite'
 }
 
 const protocolOf = (p: unknown): string => {
@@ -141,13 +146,14 @@ export function loadProjectTree(db: Database, projectId: string): ExportTree {
       .prepare('SELECT * FROM saved_requests WHERE project_id = ? ORDER BY sort_order ASC')
       .all(projectId) as Json[]
   ).map(savedRequestOf)
-  const requests = [...eps, ...saved].sort((a, b) => a.sortOrder - b.sortOrder)
+  // Endpoints, then saved requests (each by sort_order) — the tree's order.
+  const requests = orderTreeRequests([...eps, ...saved], (r) => r.ownerType === 'saved_request')
   return {
     name: project.name,
     description: project.description,
     folders,
     requests,
-    requestsFirst: false,
+    order: 'tree',
   }
 }
 
@@ -207,7 +213,7 @@ export function loadSuiteTree(db: Database, suiteId: string): ExportTree & { pro
     description: suite.description,
     folders: folderRows.map(folderOf),
     requests,
-    requestsFirst: true,
+    order: 'suite',
     projectId: suite.project_id,
   }
 }

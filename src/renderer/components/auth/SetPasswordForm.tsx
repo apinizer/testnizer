@@ -79,6 +79,7 @@ export default function SetPasswordForm({
                 if (error) setError(null)
               }}
               placeholder={t('profile.newPasswordPlaceholder')}
+              title={t('profile.newPasswordPlaceholder')}
               autoFocus
               className={`${INPUT_CLS} border-[var(--border)]`}
             />

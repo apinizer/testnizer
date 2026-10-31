@@ -3,6 +3,7 @@ import { GitCommit, RefreshCw, ChevronRight, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate, formatRelativeTime, type DateTimeLocale } from '../../lib/format-datetime'
 
 interface CommitRow {
   hash: string
@@ -158,7 +159,7 @@ export default function CommitHistoryPanel() {
                   </span>
                   <span>{c.author}</span>
                   <span>•</span>
-                  <span>{formatDate(c.date, t, locale)}</span>
+                  <span>{commitDate(c.date, locale)}</span>
                   {c.refs && c.refs.trim() && (
                     <>
                       <span>•</span>
@@ -188,15 +189,10 @@ export default function CommitHistoryPanel() {
   )
 }
 
-function formatDate(iso: string, t: (key: string) => string, locale: string): string {
+/** Relative for the last week (shared formatter, G-17), then the date. */
+function commitDate(iso: string, locale: DateTimeLocale): string {
   const d = new Date(iso)
   if (isNaN(d.getTime())) return iso
-  const now = Date.now()
-  const delta = (now - d.getTime()) / 1000
-  const ago = (key: string, n: number): string => t(key).replace('{n}', String(n))
-  if (delta < 60) return t('commitHistory.justNow')
-  if (delta < 3600) return ago('commitHistory.minutesAgo', Math.floor(delta / 60))
-  if (delta < 86400) return ago('commitHistory.hoursAgo', Math.floor(delta / 3600))
-  if (delta < 86400 * 7) return ago('commitHistory.daysAgo', Math.floor(delta / 86400))
-  return d.toLocaleDateString(locale === 'tr' ? 'tr-TR' : undefined)
+  if (Date.now() - d.getTime() < 86400 * 7 * 1000) return formatRelativeTime(d, locale)
+  return formatDate(d, locale)
 }

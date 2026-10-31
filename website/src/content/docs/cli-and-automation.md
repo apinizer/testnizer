@@ -61,7 +61,15 @@ has a **Run setup script** and a **Run teardown script**. They execute once per
 run — not once per iteration — and the teardown script is guaranteed the same
 way teardown requests are: it still runs when the flow stops early. In the
 results, script rows carry a **SCRIPT** chip rather than a status code, and a
-script that threw is reported as an error.
+script that threw is reported as an error. A third slot, **Run fail script**,
+runs once after teardown only when the run is red — use it to post the report
+(`pm.run.exportHtml()`) to a mail or chat webhook; see
+[Run fail script](/docs/scripts#run-fail-script--alert-on-a-red-run).
+
+The **Export HTML** / **Export JSON** buttons on the run results, on every
+**All Runs** row and in a scheduled task's history save the run report to a
+file — secrets masked, headline counts identical to the screen. A stored run
+re-exports without re-running.
 
 ### Stopping a run
 

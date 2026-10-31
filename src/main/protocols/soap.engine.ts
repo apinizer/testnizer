@@ -12,7 +12,11 @@ import {
 } from './wsse.engine'
 import { resolveWsseKeyMaterial } from '../lib/wsse-key-material'
 import { applyDefaultUserAgent } from '../lib/user-agent'
-import { classifyTransportError } from '../lib/error-classifier'
+import {
+  classifyTransportError,
+  formatConnectionError,
+  type ConnectionErrorInfo,
+} from '../lib/error-classifier'
 import { normaliseTlsVersion, isLegacyTlsVersion, type TlsOptions } from '../lib/tls-presets'
 import { executeViaCurl, shouldUseCurlSidecar } from './curl-shim'
 
@@ -106,6 +110,8 @@ export interface SoapApiResponse {
     download?: number
   }
   error?: string
+  /** Classified transport failure (issue #253) — localized by the renderer. */
+  errorInfo?: ConnectionErrorInfo
   actualRequest?: {
     method: string
     url: string
@@ -474,8 +480,10 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
         raw,
       )
     ) {
+      // With the next step (issue #253): a status error used to carry it in
+      // the message ("HTTP 404 Not Found — check the URL").
       const classified = classifyTransportError(err)
-      throw new Error(`WSDL fetch failed: ${classified.message}`)
+      throw new Error(`WSDL fetch failed: ${formatConnectionError(classified)}`)
     }
     throw new Error(`WSDL parse error: ${raw}`)
   }
@@ -935,7 +943,9 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
       requestId,
       protocol: 'soap',
       timing: { total: totalTime },
-      error: classified.message,
+      // With the next step, like HTTP and the realtime editors (issue #253).
+      error: formatConnectionError(classified),
+      errorInfo: classified,
     }
   }
 }

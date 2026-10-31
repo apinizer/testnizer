@@ -32,6 +32,13 @@ export interface RequestOptions {
   }
   timeout?: number
   followRedirects?: boolean
+  /** Per-request proxy (http.engine `options.proxy`). */
+  proxy?: {
+    mode: 'system' | 'none' | 'custom'
+    host?: string
+    port?: number
+    auth?: { username: string; password: string }
+  }
   sslVerification?: boolean
   certificates?: {
     /** PEM strings — converted to Buffer in the helper before IPC */

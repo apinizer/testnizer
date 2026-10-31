@@ -581,6 +581,7 @@ function RecoverPasswordForm({ onBack }: { onBack: () => void }) {
               value={newPw}
               onChange={(e) => setNewPw(e.target.value)}
               placeholder={t('profile.newPasswordPlaceholder')}
+              title={t('profile.newPasswordPlaceholder')}
               autoComplete="new-password"
               className="w-full rounded-lg border py-2.5 pl-3.5 pr-10 outline-none transition-colors"
               style={{
@@ -866,6 +867,7 @@ function SetPasswordForm({ onBack }: { onBack: () => void }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={t('profile.newPasswordPlaceholder')}
+              title={t('profile.newPasswordPlaceholder')}
               autoFocus
               className="w-full rounded-lg border py-2.5 pl-3.5 pr-10 outline-none transition-colors"
               style={{

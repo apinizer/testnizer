@@ -44,7 +44,7 @@ export default function WsConnectionBar() {
               value={url}
               onChange={setUrl}
               data-testid="ws-url"
-              placeholder="wss://echo.websocket.org"
+              placeholder="wss://api.example.com/socket"
               spellCheck={false}
               autoComplete="off"
               className={CB_URL_FIELD}

@@ -83,6 +83,7 @@ const ENGLISH: RegExp[] = [
   /\bActive\b/,
   /\bDuration\b/,
   /\bAll tests\b/,
+  /\bAll requests\b/,
   /\bErrors\b/,
   /\bAvg\b/,
   /\bAll\b/,

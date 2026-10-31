@@ -15,10 +15,10 @@
  * /tmp so the tests never touch the main working tree.
  *
  * MST-188 (MergeConflictModal) and UI-level branch delete (trash icon in
- * BranchDropdown) have no data-testid attributes today — those interactions are
- * covered via IPC-level assertions with "needs hook" comments marking where
- * the renderer component needs a data-testid before UI-click assertions can be
- * added.
+ * BranchDropdown) have no data-testid attributes today, so those two are
+ * IPC-level assertions only. The UI-click path is a src hook request, tracked
+ * in docs/e2e/needs-hooks.md (merge-conflict-modal, conflict-resolve-*,
+ * branch-delete-*).
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
@@ -136,7 +136,7 @@ uiTest.describe('Tur1 — Git advanced [MST-186..189]', () => {
     )
     await expect(branchItem.first()).toBeVisible({ timeout: 8_000 })
 
-    // Delete via IPC (no testid on the trash icon — needs hook: add data-testid="branch-delete-{name}")
+    // Delete via IPC (the trash icon has no testid — hook request in docs/e2e/needs-hooks.md)
     await deleteBranchIpc(window, (await listBranches(window, projectId) as Array<{ id: string; name: string }>).find(b => b.name === branchName)!.id)
 
     // Close and reopen dropdown to see the updated list
@@ -287,9 +287,7 @@ uiTest.describe('Tur1 — Git advanced [MST-186..189]', () => {
 
     // Without an active merge conflict, resolveConflict should return a
     // graceful error (not throw), confirming the IPC channel is registered.
-    // Full UI test requires MergeConflictModal data-testids.
-    // needs hook: add data-testid="merge-conflict-modal" to MergeConflictModal.tsx
-    // needs hook: add data-testid="conflict-resolve-ours" and "conflict-resolve-theirs" to resolution buttons
+    // The UI path (MergeConflictModal) is a hook request: docs/e2e/needs-hooks.md.
     const res = await window.evaluate(async (pid) => {
       const w = window as unknown as Window & {
         api?: {

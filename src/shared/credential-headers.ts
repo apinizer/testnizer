@@ -50,6 +50,8 @@ const CREDENTIAL_ARG_WORDS = new Set([
   'cookie',
   'session',
   'signature',
+  // Azure SAS / presigned-URL signature (`?sig=…`) — issue #256.
+  'sig',
   'credential',
   'credentials',
   'bearer',

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { RadioTower } from 'lucide-react'
 import { useMqttStore, type MqttLogRow } from '../../../stores/mqtt.store'
 import { useTranslation } from '../../../lib/i18n'
-import { defaultViewMode, messageSize } from '../../../lib/realtime-format'
+import { defaultViewMode, messageFormatLabel, messageSize } from '../../../lib/realtime-format'
 import EmptyState from '../../shared/EmptyState'
 import RealtimeLogToolbar from '../realtime/RealtimeLogToolbar'
 import RealtimeLogRow from '../realtime/RealtimeLogRow'
@@ -102,7 +102,7 @@ export default function MqttLog() {
                 badge={badgeOf(r)}
                 timestamp={r.timestamp}
                 sizeBytes={system ? undefined : messageSize(r.content, binary)}
-                typeLabel={system ? undefined : r.contentType}
+                typeLabel={system ? undefined : messageFormatLabel(r.contentType, t)}
                 copyText={r.content}
                 onSave={
                   system

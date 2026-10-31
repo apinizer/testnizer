@@ -8,6 +8,7 @@ import {
   switchAiConversation,
 } from '../../../stores/ai-chat-conversations'
 import { useTranslation } from '../../../lib/i18n'
+import { formatDateTime } from '../../../lib/format-datetime'
 import type { AiConversationSummary } from '../../../../shared/ai-chat-types'
 
 const NO_CONVERSATIONS: AiConversationSummary[] = []
@@ -21,7 +22,7 @@ const BTN =
  * file or git.
  */
 export default function AiChatConversationBar(): ReactElement {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const name = useAiChatStore((s) => s.conversationName)
   const currentId = useAiChatStore((s) => s.conversationId)
   const list = useAiChatStore((s) => s.conversations) ?? NO_CONVERSATIONS
@@ -130,7 +131,7 @@ export default function AiChatConversationBar(): ReactElement {
                   >
                     {c.name}
                     <span className="ml-1 text-[var(--hint)]">
-                      · {new Date(c.updatedAt).toLocaleString()}
+                      · {formatDateTime(c.updatedAt, locale)}
                     </span>
                   </button>
                   <button

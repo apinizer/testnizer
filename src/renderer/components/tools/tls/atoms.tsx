@@ -2,13 +2,8 @@
  * TLS Inspector presentational primitives, lifted out of `TlsInspectorTool.tsx`
  * when it outgrew the ~200-line rule. Pure move — same markup, same CSS vars.
  */
-/** Shared palette — the badge/meta colours the whole tool uses. */
-export const GREEN = '#1a7a4a'
-export const GREEN_BG = '#e8f9f1'
-export const AMBER = '#b35a00'
-export const AMBER_BG = '#fff4e0'
-export const RED = '#cc2200'
-export const RED_BG = '#fff0f0'
+/** Shared palette — the Tools panel's theme tokens (`../palette`). */
+export { GREEN, GREEN_BG, AMBER, AMBER_BG, RED, RED_BG } from '../palette'
 
 export function Labeled({
   id,

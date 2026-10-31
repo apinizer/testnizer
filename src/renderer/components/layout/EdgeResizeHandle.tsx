@@ -1,7 +1,14 @@
 import { useRef } from 'react'
-import { useUIStore } from '../../stores/ui.store'
+import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import { lockDragStyles } from '../../lib/drag-lock'
 import { useTranslation } from '../../lib/i18n'
+import {
+  EDGE_HANDLE_PX,
+  RIGHT_PANEL_MAX_PX,
+  RIGHT_PANEL_MIN_PX,
+  rightPanelDragClamp,
+  rightPanelRenderedWidth,
+} from '../../lib/narrow-layout'
 
 interface Props {
   /**
@@ -14,7 +21,7 @@ interface Props {
 
 const BOUNDS = {
   left: { min: 200, max: 600 },
-  right: { min: 240, max: 600 },
+  right: { min: RIGHT_PANEL_MIN_PX, max: RIGHT_PANEL_MAX_PX },
 } as const
 
 /**
@@ -29,7 +36,7 @@ const BOUNDS = {
  */
 export default function EdgeResizeHandle({ target }: Props) {
   const { t } = useTranslation()
-  const collapsed = useUIStore((s) => (target === 'right' ? s.rightPanelCollapsed : false))
+  const collapsed = useUIStore((s) => (target === 'right' ? selectRightPanelCollapsed(s) : false))
   const width = useUIStore((s) => (target === 'left' ? s.leftPanelWidth : s.rightPanelWidth))
   const setLeft = useUIStore((s) => s.setLeftPanelWidth)
   const setRight = useUIStore((s) => s.setRightPanelWidth)
@@ -46,14 +53,25 @@ export default function EdgeResizeHandle({ target }: Props) {
   function startDrag(e: React.MouseEvent): void {
     e.preventDefault()
     startX.current = e.clientX
-    startW.current = width
+    // The right pane may not squeeze the editor under the narrow-view threshold
+    // nor the URL bar under its room (issue #251): the row is measured once —
+    // its width does not change while the panel inside it is resized. The drag
+    // starts from the width ON SCREEN (the stored one may be clamped down). The
+    // left handle's row is the AppShell's.
+    const rowWidth =
+      target === 'right' ? (e.currentTarget.parentElement?.getBoundingClientRect().width ?? 0) : 0
+    startW.current = target === 'right' ? rightPanelRenderedWidth(rowWidth, width) : width
+    const clamp =
+      target === 'right'
+        ? rightPanelDragClamp(rowWidth, startW.current, min, max)
+        : (next: number): number => Math.max(min, Math.min(max, next))
     const releaseStyles = lockDragStyles('col-resize')
 
     const onMove = (ev: MouseEvent): void => {
       const dx = ev.clientX - startX.current
       // Left divider widens as it moves right; right divider narrows.
       const next = target === 'left' ? startW.current + dx : startW.current - dx
-      setWidth(Math.max(min, Math.min(max, next)))
+      setWidth(clamp(next))
     }
     const onUp = (): void => {
       window.removeEventListener('mousemove', onMove)
@@ -72,7 +90,7 @@ export default function EdgeResizeHandle({ target }: Props) {
       aria-orientation="vertical"
       title={t('shell.dragToResize')}
       className="shrink-0 transition-colors hover:bg-[var(--accent)]"
-      style={{ width: 5, cursor: 'col-resize', background: 'transparent', zIndex: 5 }}
+      style={{ width: EDGE_HANDLE_PX, cursor: 'col-resize', background: 'transparent', zIndex: 5 }}
     />
   )
 }

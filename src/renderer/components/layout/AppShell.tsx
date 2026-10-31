@@ -33,6 +33,7 @@ import { useAuthStore } from '../../stores/auth.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useKeyboardShortcuts } from '../../lib/keyboard-shortcuts'
 import { makeTabId } from '../../lib/utils'
+import { defaultRequestTabName } from '../../lib/endpoint-name'
 import { toast } from '../../lib/toast'
 import { closeTabSafely } from '../../lib/cleanup-tab-state'
 import { useTranslation, t as translate } from '../../lib/i18n'
@@ -123,7 +124,7 @@ export default function AppShell() {
           const tabs = useTabsStore.getState()
           tabs.openTab({
             id: makeTabId(),
-            name: 'New Request',
+            name: defaultRequestTabName(),
             protocol: 'http',
             method: 'GET',
             url: '',

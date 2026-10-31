@@ -308,39 +308,100 @@ describe('disclosure heuristics', () => {
   // Server-controlled bodies are scanned synchronously in the main process:
   // every rule must stay linear on adversarial input (the old js-stack rule
   // took ~730 ms on 30 KB of `"\n at " + "a"…` and minutes on 400 KB).
-  it.each([
-    ['"\\n at " + a…', () => '\n at ' + 'a'.repeat(1_000_000)],
-    ['"\\n at " + spaces', () => '\n at ' + ' '.repeat(1_000_000)],
-    ['"\\n at (" + a…', () => '\n at (' + 'a'.repeat(1_000_000)],
-    ['"\\n at " + "a:1:"…', () => '\n at ' + 'a:1:'.repeat(250_000)],
-    ['"\\n at a:" + digits', () => '\n at a:' + '1'.repeat(1_000_000)],
-    ['newlines', () => '\n'.repeat(1_000_000)],
-    ['"\\n\\t"…', () => '\n\t'.repeat(500_000)],
-    ['"at a("…', () => 'at a('.repeat(200_000)],
-    ['"at a() in "…', () => 'at a() in '.repeat(100_000)],
-    ['"at a."…', () => 'at a.'.repeat(200_000)],
-    ['"/home/"…', () => '/home/'.repeat(170_000)],
-    ['"File \\""…', () => 'File "'.repeat(170_000)],
-  ])('1 MB of %s is classified in < 50 ms', (_label, make) => {
-    const text = make()
-    const started = performance.now()
-    findVerboseError(text)
-    expect(performance.now() - started).toBeLessThan(50)
+  //
+  // The guard measures COMPLEXITY, not speed (issue #292): a fixed "< 50 ms"
+  // failed at 136 ms on a loaded machine while proving nothing about the
+  // regex. A quadratic rule is ~100x slower on 10x the input, a linear one
+  // ~10x — a ratio survives load because both sides slow down together. Each
+  // measurement is a warm-up plus the minimum of several runs (the minimum is
+  // the run the scheduler interrupted least), and a generous absolute ceiling
+  // still fails catastrophic backtracking, which takes seconds to minutes.
+  const FULL = 1_000_000 // the "1 MB" the issue is about
+  const SMALL = FULL / 10
+  const RUNS = 7
+  const CEILING_MS = 1000
+  /** Linear is ~10x for 10x the input; quadratic ~100x. */
+  const MAX_GROWTH = 40
+  /** Below this a run is dominated by timer noise, so it is not a divisor. */
+  const NOISE_FLOOR_MS = 1
+
+  /** Best-of-N wall time of `run`, after one untimed warm-up (JIT, regex compile). */
+  function bestOfMs(run: () => void): number {
+    run()
+    let best = Infinity
+    for (let i = 0; i < RUNS; i++) {
+      const started = performance.now()
+      run()
+      best = Math.min(best, performance.now() - started)
+    }
+    return best
+  }
+
+  /** `prefix` + `unit` repeated to about `chars` characters. */
+  const shape = (prefix: string, unit: string, chars: number): string =>
+    prefix + unit.repeat(Math.ceil(chars / unit.length))
+
+  function expectLinear(make: (chars: number) => string, run: (text: string) => void): void {
+    const small = make(SMALL)
+    const full = make(FULL)
+    const tSmall = bestOfMs(() => run(small))
+    const tFull = bestOfMs(() => run(full))
+    expect(
+      tFull,
+      `${FULL} chars took ${tFull.toFixed(1)} ms (${SMALL} took ${tSmall.toFixed(1)} ms)`,
+    ).toBeLessThan(CEILING_MS)
+    const growth = tFull / Math.max(tSmall, NOISE_FLOOR_MS)
+    expect(
+      growth,
+      `${FULL} chars took ${tFull.toFixed(1)} ms vs ${tSmall.toFixed(1)} ms for ${SMALL}: ` +
+        `${growth.toFixed(1)}x for 10x the input`,
+    ).toBeLessThan(MAX_GROWTH)
+  }
+
+  const ADVERSARIAL_SHAPES: ReadonlyArray<[string, string, string]> = [
+    ['"\\n at " + a…', '\n at ', 'a'],
+    ['"\\n at " + spaces', '\n at ', ' '],
+    ['"\\n at (" + a…', '\n at (', 'a'],
+    ['"\\n at " + "a:1:"…', '\n at ', 'a:1:'],
+    ['"\\n at a:" + digits', '\n at a:', '1'],
+    ['newlines', '', '\n'],
+    ['"\\n\\t"…', '', '\n\t'],
+    ['"at a("…', '', 'at a('],
+    ['"at a() in "…', '', 'at a() in '],
+    ['"at a."…', '', 'at a.'],
+    ['"/home/"…', '', '/home/'],
+    ['"File \\""…', '', 'File "'],
+  ]
+
+  // `findVerboseError` caps its input (VERBOSE_ERROR_MAX_CHARS), so the 1 MB
+  // case is the capped 256 KB scan: it must be linear and well inside the
+  // ceiling. The rules themselves are exercised UNCAPPED in the next case.
+  it.each(ADVERSARIAL_SHAPES)('1 MB of %s is scanned in linear time', (_label, prefix, unit) => {
+    expectLinear(
+      (chars) => shape(prefix, unit, chars),
+      (text) => {
+        findVerboseError(text)
+      },
+    )
   })
 
-  it('the js-stack rule itself is linear — 1 MB of each adversarial shape, uncapped, < 50 ms', () => {
+  it('the js-stack rule itself is linear — 1 MB of each adversarial shape, uncapped', () => {
     const rule = VERBOSE_ERROR_RULES.find((r) => r.id === 'js-stack')?.re
     if (!rule) throw new Error('no js-stack rule')
-    for (const text of [
-      '\n at ' + 'a'.repeat(1_000_000),
-      '\n at ' + ' '.repeat(1_000_000),
-      '\n at (' + 'a'.repeat(1_000_000),
-      '\n'.repeat(1_000_000),
-      '\n at '.repeat(200_000),
+    for (const [prefix, unit] of [
+      ['\n at ', 'a'],
+      ['\n at ', ' '],
+      ['\n at (', 'a'],
+      ['', '\n'],
+      ['', '\n at '],
     ]) {
-      const started = performance.now()
-      rule.test(text)
-      expect(performance.now() - started).toBeLessThan(50)
+      expectLinear(
+        (chars) => shape(prefix, unit, chars),
+        (text) => {
+          rule.lastIndex = 0
+          rule.test(text)
+        },
+      )
     }
   })
 

@@ -13,6 +13,8 @@ import { useMockStore } from '../../stores/mock.store'
 import { useMockMcpStore } from '../../stores/mock-mcp.store'
 import { GhostButton, INPUT_CLS, PrimaryButton } from '../mock-mcp/ui'
 import NewMockServerPresetPicker from './NewMockServerPresetPicker'
+import NewMockServerPortField from './NewMockServerPortField'
+import { checkMockPort } from './mock-port'
 import { uniqueName } from './mock-create-helpers'
 import {
   createMockServer,
@@ -43,8 +45,19 @@ export default function NewMockServerModal({
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
 
+  // Select the suggested name once the dialog has settled (the focus trap moves
+  // focus on open, hence the delay). Never steal focus back from another text
+  // field: select() also focuses, so a Port edit started inside that window
+  // landed in the Name field instead.
   useEffect(() => {
-    const id = setTimeout(() => nameRef.current?.select(), 50)
+    const id = setTimeout(() => {
+      const el = nameRef.current
+      const active = document.activeElement
+      const editingElsewhere =
+        active !== el &&
+        (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
+      if (el && !editingElsewhere) el.select()
+    }, 50)
     return () => clearTimeout(id)
   }, [])
 
@@ -57,8 +70,10 @@ export default function NewMockServerModal({
   const option = presetOption(kind, presetId)
   const name = nameDraft ?? uniqueName(option.defaultName, taken.names)
   const port = portDraft ?? String(suggestMockPort(kind, taken.ports))
-  const portNum = Number(port.trim())
-  const portTaken = taken.ports.includes(portNum)
+  // Checked as the user types (issue #257); a conflict stays a warning.
+  const portCheck = checkMockPort(port)
+  const portNum = portCheck.ok ? portCheck.port : Number.NaN
+  const portTaken = portCheck.ok && taken.ports.includes(portNum)
 
   function chooseKind(next: MockKind): void {
     if (next === kind) return
@@ -73,9 +88,7 @@ export default function NewMockServerModal({
     if (!projectId) return setError(t('mock.noActiveProject'))
     const trimmed = name.trim()
     if (!trimmed) return setError(t('mock.nameRequired'))
-    if (!/^\d+$/.test(port.trim()) || portNum < 1 || portNum > 65535) {
-      return setError(t('mock.invalidPort'))
-    }
+    if (!portCheck.ok) return setError(t('mock.invalidPort'))
     setBusy(true)
     setError(null)
     const err = await createMockServer({ kind, presetId, projectId, name: trimmed, port: portNum })
@@ -140,19 +153,13 @@ export default function NewMockServerModal({
                 className={INPUT_CLS}
               />
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="text-[11px] font-medium text-[var(--muted)]">
-                {t('mockNew.port')}
-              </span>
-              <input
-                data-testid="mock-new-port"
-                inputMode="numeric"
-                value={port}
-                onChange={(e) => setPortDraft(e.target.value)}
-                className={`${INPUT_CLS} font-mono`}
-              />
-            </label>
+            <NewMockServerPortField value={port} check={portCheck} onChange={setPortDraft} />
           </div>
+          {portCheck.ok && portCheck.privileged && (
+            <p data-testid="mock-new-port-hint" className="-mt-2 text-[11px] text-[var(--muted)]">
+              {t('mockNew.portPrivileged')}
+            </p>
+          )}
           {portTaken && (
             <p
               data-testid="mock-new-port-warning"

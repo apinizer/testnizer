@@ -106,42 +106,59 @@ uiTest.describe('Tur1 — Proxy HTTP CONNECT [MST-053]', () => {
   })
 
   uiTest('MST-053a HTTP request routed through proxy returns 200', async ({ window }) => {
+    const proxyUrl = new URL(proxy.url)
+    const forwardsBefore = proxy.forwardCount()
     const res = await sendRequest(window, {
       method: 'GET',
       url: `${echo()}/get?via=proxy`,
-      // needs-hook: window.api.request.send must accept a `proxy` field in options
-      // for this test to fully exercise the proxy path; without that hook this
-      // test validates the IPC call does not crash
+      proxy: { mode: 'custom', host: proxyUrl.hostname, port: Number(proxyUrl.port) },
     })
-    // Without proxy field support: direct call succeeds (engine ignores proxy opts)
     expect(res.status).toBe(200)
+    // The request really went through the proxy, not directly to the echo server.
+    expect(proxy.forwardCount()).toBeGreaterThan(forwardsBefore)
   })
 
-  uiTest('MST-053b proxy settings UI section is visible in request Settings tab', async ({ window }) => {
-    await window.getByTestId('req-tab-settings').click()
-    // needs-hook: data-testid="settings-proxy" or similar must exist in RequestSettings
-    const proxySection = window
-      .getByTestId('settings-proxy')
-      .or(window.getByText(/proxy/i).first())
-    const visible = await proxySection.isVisible().catch(() => false)
-    // Soft check — proxy section may not yet be implemented
-    // If not visible, record as needs-hook
-    if (!visible) {
-      // Log needs-hook: proxy settings UI not found — data-testid="settings-proxy" required
-      expect(true).toBe(true) // pass with note
-    } else {
-      expect(visible).toBe(true)
-    }
+  uiTest('MST-053b proxy settings UI section is reachable (Project Detail → Proxy tab)', async ({ window }) => {
+    // Proxy is configured per project (Project Detail → Proxy) and globally
+    // (Settings modal, covered by settings-advanced MST-197) — the request
+    // Settings tab has no proxy section.
+    await window.getByTestId('nav-settings').click()
+    const modal = window.getByTestId('project-detail-modal')
+    await expect(modal).toBeVisible({ timeout: 8_000 })
+    await modal.getByTestId('project-detail-tab-proxy').click()
+
+    // Issue #254: the first mode is "Follow app setting" — the app proxy is
+    // the fallback (a project `system` proxy was never an override).
+    await expect(
+      modal.getByRole('button', { name: /^Follow app setting$|^Uygulama ayarını izle$/i }),
+    ).toBeVisible()
+    await expect(modal.getByTestId('project-setting-scope-proxy')).toBeVisible()
+    await expect(modal.getByRole('button', { name: /^No proxy$|^Proxy yok$/i })).toBeVisible()
+    await expect(modal.getByRole('button', { name: /Custom proxy|Özel proxy/i })).toBeVisible()
+
+    await window.keyboard.press('Escape')
+    await expect(modal).toBeHidden({ timeout: 5_000 })
   })
 
   uiTest('MST-053c unreachable proxy produces error response (no crash)', async ({ window }) => {
+    // A port nothing listens on: grab a free one and close it again.
+    const dead = await new Promise<number>((resolve, reject) => {
+      const srv = net.createServer()
+      srv.listen(0, '127.0.0.1', () => {
+        const { port } = srv.address() as net.AddressInfo
+        srv.close(() => resolve(port))
+      })
+      srv.on('error', reject)
+    })
     const res = await sendRequest(window, {
       method: 'GET',
       url: `${echo()}/get`,
-      // Point to a port that is not listening
+      proxy: { mode: 'custom', host: '127.0.0.1', port: dead },
     })
-    // Direct call must succeed or return an error — not a JS crash
-    const noJsCrash = !res.error?.includes('TypeError') && !res.error?.includes('is not a function')
-    expect(noJsCrash).toBe(true)
+    // The request must fail through the proxy (no direct fallback), as a
+    // reported error — not a JS crash.
+    expect(res.status ?? 0).not.toBe(200)
+    expect(res.error ?? '').not.toMatch(/TypeError|is not a function/)
+    expect(res.error ?? '').toMatch(/ECONNREFUSED|connect|proxy/i)
   })
 })
