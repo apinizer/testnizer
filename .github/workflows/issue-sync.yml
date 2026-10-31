@@ -80,7 +80,7 @@ jobs:
               --body "🔧 Fix in progress — PR #${PR_NUM}: ${PR_URL}" \
               || { echo "::error::comment #$n failed"; fail=1; }
             gh issue edit "$n" \
-              --add-label "status:in-review" --remove-label "status:triage" \
+              --add-label "status:in-review" --remove-label "status:triage" --remove-label "status:in-progress" \
               || { echo "::error::label #$n failed"; fail=1; }
           done
           [ "$fail" -eq 0 ] || { echo "One or more issue updates failed."; exit 1; }
@@ -117,7 +117,7 @@ jobs:
               --body "✅ Merged to main (\`${short}\`, PR #${PR_NUM}). It ships in the next release — re-test on that build." \
               || { echo "::error::comment #$n failed"; fail=1; }
             gh issue edit "$n" \
-              --add-label "status:needs-verification" --remove-label "status:in-review" \
+              --add-label "status:needs-verification" --remove-label "status:in-review" --remove-label "status:in-progress" \
               || { echo "::error::label #$n failed"; fail=1; }
           done
           [ "$fail" -eq 0 ] || { echo "One or more issue updates failed."; exit 1; }
@@ -171,7 +171,7 @@ jobs:
               || { echo "::error::comment #$n failed"; fail=1; }
             gh issue edit "$n" \
               --add-label "status:released" \
-              --remove-label "status:needs-verification" --remove-label "status:in-review" \
+              --remove-label "status:needs-verification" --remove-label "status:in-review" --remove-label "status:in-progress" \
               || { echo "::error::label #$n failed"; fail=1; }
             gh issue close "$n" --reason completed \
               || { echo "::error::close #$n failed"; fail=1; }
