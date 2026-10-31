@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { RadioTower } from 'lucide-react'
 import { useMqttStore, type MqttLogRow } from '../../../stores/mqtt.store'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import { defaultViewMode, messageFormatLabel, messageSize } from '../../../lib/realtime-format'
 import EmptyState from '../../shared/EmptyState'
 import RealtimeLogToolbar from '../realtime/RealtimeLogToolbar'
@@ -142,8 +143,7 @@ export default function MqttLog() {
       </div>
       <div className="flex shrink-0 items-center border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]" data-testid="mqtt-message-counts">
-          {t(traffic.length === 1 ? 'ws.countsOne' : 'ws.countsOther')
-            .replace('{count}', String(traffic.length))
+          {formatCount(traffic.length, t('ws.countsOne'), t('ws.countsOther'))
             .replace('{sent}', String(sent))
             .replace('{received}', String(traffic.length - sent))}
         </span>

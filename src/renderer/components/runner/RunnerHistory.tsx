@@ -8,6 +8,7 @@ import NewRunButton from './NewRunButton'
 import RunReportExportButtons from './RunReportExportButtons'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { formatDate, formatTime } from '../../lib/format-datetime'
 import {
   displayRunSourceLabel,
@@ -15,6 +16,7 @@ import {
   suiteTaskIdsOf,
 } from '../../lib/runner-source-label'
 import type { RunOrigin } from '../../lib/reveal-run-result'
+import { displayRunEnvironment } from '../../lib/run-environment-label'
 
 interface RunHistoryRow {
   id: string
@@ -210,6 +212,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
         passedAssertions: run.passed_tests,
         failedAssertions: run.failed_tests,
         results,
+        // Resolved in main (issue #307); unknown (null) stays absent → '-'.
+        ...(typeof run.environment_name === 'string'
+          ? { environmentName: run.environment_name }
+          : {}),
       }
       const sourceLabel = run.source_label || run.source || 'Runner'
       onViewReport(
@@ -285,7 +291,11 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       {selectedIds.size > 0 && (
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] bg-[var(--surface)] px-5 py-2">
           <span className="text-[var(--text)]">
-            {t('runnerHistory.selectedCount').replace('{count}', String(selectedIds.size))}
+            {formatCount(
+              selectedIds.size,
+              t('runnerHistory.selectedCountOne'),
+              t('runnerHistory.selectedCount'),
+            )}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -455,11 +465,11 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
 
       <DeleteConfirmDialog
         open={showDeleteConfirm}
-        itemName={
-          selectedIds.size === 1
-            ? t('deleteConfirm.runCountOne')
-            : t('deleteConfirm.runCount').replace('{count}', String(selectedIds.size))
-        }
+        itemName={formatCount(
+          selectedIds.size,
+          t('deleteConfirm.runCountOne'),
+          t('deleteConfirm.runCount'),
+        )}
         itemType="run history"
         typeLabel={t('deleteConfirm.type.runHistory')}
         onConfirm={handleDeleteConfirm}
@@ -557,7 +567,9 @@ function HistoryRow({
       <td className="py-2.5 pr-4 text-[var(--text)]">
         {run.source_label ? displayRunSourceLabel(run.source_label, t) : run.source}
       </td>
-      <td className="py-2.5 pr-4 text-[var(--text)]">{run.environment_name || '-'}</td>
+      <td className="py-2.5 pr-4 text-[var(--text)]" data-testid="run-environment">
+        {displayRunEnvironment(run.environment_name, t)}
+      </td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.iterations}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{formatDuration(run.duration_ms)}</td>
       <td className="py-2.5 pr-4 text-[var(--text)]">{run.total_endpoints}</td>
@@ -569,7 +581,11 @@ function HistoryRow({
         {/* Re-export a stored run without re-running it (issue #266). Always
             visible: an action that only exists on hover can't be found. */}
         {run.results_json ? (
-          <RunReportExportButtons resultsJson={run.results_json} compact />
+          <RunReportExportButtons
+            resultsJson={run.results_json}
+            environmentName={run.environment_name}
+            compact
+          />
         ) : null}
       </td>
       <td className="py-2.5">

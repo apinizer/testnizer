@@ -6,6 +6,7 @@
  * the engine fills those fields with placeholders on a transport failure.
  */
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import type { TlsCertificateInfo, TlsInspectResult, TlsProbeSuccess } from '../../../types'
 import { resultVisibility } from '../../../lib/tools/tls-inspect'
 import { Badge, Caption, Meta, AMBER, AMBER_BG, GREEN, GREEN_BG, RED, RED_BG } from './atoms'
@@ -97,11 +98,16 @@ export default function ResultPane({
               label={t('tools.tlsInspect.expiresIn')}
               value={
                 probe.expired
-                  ? t('tools.tlsInspect.expiredAgo').replace(
-                      '{n}',
-                      String(Math.abs(probe.daysToExpiry)),
+                  ? formatCount(
+                      Math.abs(probe.daysToExpiry),
+                      t('tools.tlsInspect.expiredAgoOne'),
+                      t('tools.tlsInspect.expiredAgo'),
                     )
-                  : t('tools.tlsInspect.inDays').replace('{n}', String(probe.daysToExpiry))
+                  : formatCount(
+                      probe.daysToExpiry,
+                      t('tools.tlsInspect.inDaysOne'),
+                      t('tools.tlsInspect.inDays'),
+                    )
               }
             />
           </div>

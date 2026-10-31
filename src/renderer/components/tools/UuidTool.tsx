@@ -14,6 +14,7 @@ import {
   type UuidGenerateOptions,
 } from '../../lib/tools/uuid'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 const FORMATS: NonNullable<UuidGenerateOptions['format']>[] = [
   'lower',
@@ -251,7 +252,11 @@ export default function UuidTool() {
               style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
             >
               <span style={{ color: 'var(--muted)' }}>
-                {output.length} {t('tools.uuid.generated')}
+                {formatCount(
+                  output.length,
+                  t('tools.uuid.generatedCountOne'),
+                  t('tools.uuid.generatedCount'),
+                )}
                 {stale ? (
                   <span style={{ color: 'var(--orange)' }}>
                     {' · '}

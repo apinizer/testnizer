@@ -36,12 +36,19 @@ function reportFailure(error: string): false {
 export async function exportRunReport(
   results: EndpointRunResult[],
   format: RunReportFormat,
+  /** The run's environment (issue #307, `src/shared/run-environment.ts`). */
+  environmentName?: string | null,
 ): Promise<boolean> {
   try {
     const build = window.api?.runner?.export
     const save = window.api?.importExport?.saveFile
     if (!build || !save) return reportFailure('export is not available')
-    const built = await build({ results, format })
+    // Unknown (null / absent) is not sent: the report then prints nothing.
+    const built = await build({
+      results,
+      format,
+      ...(typeof environmentName === 'string' ? { environmentName } : {}),
+    })
     if (!built?.success || typeof built.data !== 'string') {
       return reportFailure(built?.error ?? 'the report could not be built')
     }
@@ -62,6 +69,7 @@ export async function exportRunReport(
 export async function exportStoredRunReport(
   resultsJson: string,
   format: RunReportFormat,
+  environmentName?: string | null,
 ): Promise<boolean> {
   let results: unknown
   try {
@@ -70,5 +78,5 @@ export async function exportStoredRunReport(
     return reportFailure(e instanceof Error ? e.message : String(e))
   }
   if (!Array.isArray(results)) return reportFailure('the stored run has no results')
-  return exportRunReport(results as EndpointRunResult[], format)
+  return exportRunReport(results as EndpointRunResult[], format, environmentName)
 }

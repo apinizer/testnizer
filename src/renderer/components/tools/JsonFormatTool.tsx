@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { formatJson, type JsonFormatOptions } from '../../lib/tools/json-format'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 const SAMPLE =
@@ -135,10 +136,12 @@ export default function JsonFormatTool() {
       footer={
         <div className="flex items-center gap-4">
           <span>
-            {t('tools.common.input')}: {inputBytes} {t('tools.common.bytes')}
+            {t('tools.common.input')}:{' '}
+            {formatCount(inputBytes, t('tools.common.byteCountOne'), t('tools.common.byteCount'))}
           </span>
           <span>
-            {t('tools.common.output')}: {outputBytes} {t('tools.common.bytes')}
+            {t('tools.common.output')}:{' '}
+            {formatCount(outputBytes, t('tools.common.byteCountOne'), t('tools.common.byteCount'))}
           </span>
         </div>
       }

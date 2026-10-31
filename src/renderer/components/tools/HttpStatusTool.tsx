@@ -3,6 +3,7 @@ import ToolShell from './ToolShell'
 import { HTTP_STATUS_CODES, foldSearchText, type HttpStatus } from '../../lib/tools/http-status'
 import { HTTP_STATUS_TR } from '../../lib/tools/http-status-tr'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { TONE, type ToneTokens } from './palette'
 
 /** Category tones from the shared Tools palette (theme tokens, G-03). */
@@ -150,7 +151,11 @@ export default function HttpStatusTool() {
       }
       footer={
         <span>
-          {filtered.length} {t('tools.httpStatus.codes')}
+          {formatCount(
+            filtered.length,
+            t('tools.httpStatus.codeCountOne'),
+            t('tools.httpStatus.codeCount'),
+          )}
         </span>
       }
     />

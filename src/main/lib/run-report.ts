@@ -29,6 +29,7 @@ import {
   isSkippedStep,
 } from '../../shared/runner-verdict'
 import type { EndpointRunResult } from '../../shared/runner-types'
+import { runEnvironmentOf, type RunEnvironment } from '../../shared/run-environment'
 
 export type RunReportFormat = 'html' | 'json'
 
@@ -37,6 +38,11 @@ export interface RunReportOptions {
   secrets?: readonly unknown[]
   /** The "Generated:" stamp of the HTML report; defaults to now. */
   generatedAt?: Date | number
+  /**
+   * The environment the run used (issue #307; `src/shared/run-environment.ts`
+   * encoding). Unknown (null / absent) prints nothing.
+   */
+  environmentName?: string | null
 }
 
 /** The DB for the secret inventory — null before init (never throws). */
@@ -55,9 +61,19 @@ export function buildRunReport(
 ): string {
   const scrub = scrubberFor(secretDb(), options.secrets ?? [])
   const masked = (Array.isArray(results) ? results : []).map((r) => maskRunResult(r, scrub))
-  if (format === 'html') return renderHtml(masked, options.generatedAt)
-  // The SAME shape `exportAsJson` always wrote: a plain array of rows.
-  return JSON.stringify(masked, null, 2)
+  const environment = runEnvironmentOf(options.environmentName)
+  if (format === 'html') return renderHtml(masked, options.generatedAt, environment)
+  // The SAME shape `exportAsJson` always wrote: a plain array of rows. A run-
+  // level field has no slot in an array, so each row carries the run's
+  // environment (issue #307): its name, or null for "no environment". Unknown
+  // adds nothing (a row that already carries one keeps it — idempotent).
+  if (environment.kind === 'unknown') return JSON.stringify(masked, null, 2)
+  const environmentName = environment.kind === 'named' ? environment.name : null
+  return JSON.stringify(
+    masked.map((r) => ({ ...r, environmentName })),
+    null,
+    2,
+  )
 }
 
 const escapeHtml = (str: string): string =>
@@ -68,7 +84,11 @@ function stampOf(at: Date | number | undefined): string {
   return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString()
 }
 
-function renderHtml(results: EndpointRunResult[], generatedAt: Date | number | undefined): string {
+function renderHtml(
+  results: EndpointRunResult[],
+  generatedAt: Date | number | undefined,
+  environment: RunEnvironment,
+): string {
   const totalPassed = results.reduce((sum, r) => sum + (r.passed || 0), 0)
   const totalFailed = results.reduce((sum, r) => sum + (r.failed || 0), 0)
   const totalDuration = results.reduce((sum, r) => sum + (r.duration || 0), 0)
@@ -87,6 +107,13 @@ function renderHtml(results: EndpointRunResult[], generatedAt: Date | number | u
         `Stopped: critical request "${criticalStop.endpointName}" failed`,
       )}</p>`
     : ''
+  // The environment the run used (issue #307). The report is English-only.
+  const environmentLine =
+    environment.kind === 'unknown'
+      ? ''
+      : `<p data-testid="report-environment" style="margin:8px 0 0;font-size:13px;color:#555">${escapeHtml(
+          `Environment: ${environment.kind === 'named' ? environment.name : 'No environment'}`,
+        )}</p>`
   const criticalBadge =
     '<span data-critical="true" style="padding:2px 6px;border-radius:4px;border:1px solid #cc2200;color:#cc2200;font-size:11px;font-weight:600">Critical</span>'
 
@@ -185,6 +212,7 @@ function renderHtml(results: EndpointRunResult[], generatedAt: Date | number | u
     <h1 style="margin:0;font-size:20px;color:#2D5FA0">Testnizer</h1>
     <h2 style="margin:8px 0 0;font-size:16px;font-weight:500">Collection Run Report</h2>
     <p style="margin:8px 0 0;font-size:13px;color:#888">Generated: ${stampOf(generatedAt)}</p>
+    ${environmentLine}
     ${stopLine}
     <div class="stats">
       <div class="stat"><div class="stat-value" data-stat="passed" style="color:#1a7a4a">${summary.passed}</div><div class="stat-label">Passed</div></div>

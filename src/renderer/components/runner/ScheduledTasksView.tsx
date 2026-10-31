@@ -19,6 +19,7 @@ import { protocolChipLabel } from '../../lib/protocol-chip'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
 import RunReportExportButtons from './RunReportExportButtons'
+import { displayRunEnvironment, displayTaskEnvironment } from '../../lib/run-environment-label'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate, formatTime } from '../../lib/format-datetime'
 
@@ -31,6 +32,8 @@ interface ScheduledTask {
   endpoint_ids: string
   folder_id: string | null
   environment_id: string | null
+  /** Current name, resolved in main (issue #307): '' = none, null = deleted. */
+  environment_name?: string | null
   interval_value: number
   interval_unit: string
   delay_ms: number
@@ -56,6 +59,8 @@ interface ScheduledTaskHistoryRow {
   passed_tests: number
   failed_tests: number
   started_at: number
+  /** The run's environment, resolved in main (issue #307; '' = none, null = unknown). */
+  environment_name?: string | null
   /** Stored rows of the run — enables re-export (issue #266). */
   results_json?: string | null
 }
@@ -490,8 +495,11 @@ function TaskRow({
         </td>
 
         {/* Environment */}
-        <td style={{ padding: '12px 16px', color: 'var(--muted)' }}>
-          {task.environment_id || t('scheduledTasks.noEnvironment')}
+        <td
+          style={{ padding: '12px 16px', color: 'var(--muted)' }}
+          data-testid="scheduled-task-environment"
+        >
+          {displayTaskEnvironment(task, t)}
         </td>
 
         {/* Endpoints */}
@@ -685,6 +693,9 @@ function TaskRow({
                       {t('scheduledTasks.colTests')}
                     </th>
                     <th style={{ padding: '4px 8px', fontWeight: 600 }}>
+                      {t('scheduledTasks.colEnvironment')}
+                    </th>
+                    <th style={{ padding: '4px 8px', fontWeight: 600 }}>
                       {t('scheduledTasks.colDuration')}
                     </th>
                     <th style={{ padding: '4px 8px' }} />
@@ -713,13 +724,23 @@ function TaskRow({
                         <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>
                           {row.passed_tests}/{row.total_tests}
                         </td>
+                        <td
+                          style={{ padding: '4px 8px', color: 'var(--muted)' }}
+                          data-testid="run-environment"
+                        >
+                          {displayRunEnvironment(row.environment_name, t)}
+                        </td>
                         <td style={{ padding: '4px 8px', color: 'var(--muted)' }}>
                           {formatDuration(row.duration_ms)}
                         </td>
                         <td style={{ padding: '4px 8px' }}>
                           {/* Re-export without re-running (issue #266). */}
                           {row.results_json ? (
-                            <RunReportExportButtons resultsJson={row.results_json} compact />
+                            <RunReportExportButtons
+                              resultsJson={row.results_json}
+                              environmentName={row.environment_name}
+                              compact
+                            />
                           ) : null}
                         </td>
                       </tr>

@@ -5,6 +5,7 @@ import { useResponseStore } from '../../stores/response.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import EmptyState from '../shared/EmptyState'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts)
@@ -224,9 +225,7 @@ function StreamView() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]">
-          {streamEvents.length === 1
-            ? t('sse.eventCountOne')
-            : t('sse.eventCount').replace('{count}', String(streamEvents.length))}
+          {formatCount(streamEvents.length, t('sse.eventCountOne'), t('sse.eventCount'))}
         </span>
         <label className="flex cursor-pointer items-center gap-1.5">
           <input

@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { hashAll, HASH_ALGORITHMS, type HashAlgorithm } from '../../lib/tools/hash'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 export default function HashTool() {
   const { t } = useTranslation()
@@ -121,7 +122,11 @@ export default function HashTool() {
       footer={
         text ? (
           <span>
-            {new Blob([text]).size} {t('tools.common.bytes')}
+            {formatCount(
+              new Blob([text]).size,
+              t('tools.common.byteCountOne'),
+              t('tools.common.byteCount'),
+            )}
           </span>
         ) : null
       }

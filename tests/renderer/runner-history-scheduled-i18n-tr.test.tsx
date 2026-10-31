@@ -146,7 +146,7 @@ const ENGLISH: RegExp[] = [
   /\bRun history\b/,
   /\bPaused\b/,
   /\bLast run\b/,
-  /\bNo Environment\b/,
+  /\bNo environment\b/i,
   /\bRun now\b/,
   /\bPause\b/,
   /\bResume\b/,
@@ -268,7 +268,7 @@ describe('issue #248 — Scheduled Tasks in Turkish', () => {
     expect(screen.getByText('Her 5 dakikada bir')).toBeTruthy()
     expect(screen.getByText('Pzt, Çar 09:00')).toBeTruthy()
     expect(screen.getByText('Duraklatıldı')).toBeTruthy()
-    expect(screen.getAllByText('Ortam Yok')).toHaveLength(2)
+    expect(screen.getAllByText('Ortam yok')).toHaveLength(2)
     expect(within(rows[0]).getByLabelText('Şimdi çalıştır')).toBeTruthy()
     expect(within(rows[0]).getByLabelText('Duraklat')).toBeTruthy()
     expect(within(rows[1]).getByLabelText('Sürdür')).toBeTruthy()

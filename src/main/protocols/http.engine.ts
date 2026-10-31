@@ -1473,7 +1473,7 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     // error format (issue #253): what happened + host:port + the next step,
     // exactly like the WebSocket / SSE / MCP editors. `errorInfo` lets the
     // renderer write it in the active locale.
-    const classified = classifyTransportError(err)
+    const classified = classifyTransportError(err, { protocol: 'http' })
     return {
       requestId,
       protocol: 'http',

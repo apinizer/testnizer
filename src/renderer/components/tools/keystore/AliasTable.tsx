@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import type { KeystoreAliasSummary } from '../../../types'
 import { certValidityStatus } from './cert-validity'
 
@@ -24,10 +25,10 @@ function expiryStatus(notAfter: string | undefined, t: (k: string) => string): E
   if (status === 'expired') {
     return {
       color: RED,
-      label: `${t('tools.keystore.expired')} · ${days} ${t('tools.keystore.daysAgoSuffix')}`,
+      label: `${t('tools.keystore.expired')} · ${formatCount(days, t('tools.keystore.daysAgoOne'), t('tools.keystore.daysAgo'))}`,
     }
   }
-  const label = `${t('tools.keystore.inPrefix')} ${days} ${t('tools.keystore.daysSuffix')}`.trim()
+  const label = formatCount(days, t('tools.keystore.inDaysOne'), t('tools.keystore.inDays'))
   return { color: status === 'warning' ? AMBER : GREEN, label }
 }
 

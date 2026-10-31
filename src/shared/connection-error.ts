@@ -54,18 +54,33 @@ export interface ConnectionErrorInfo {
 }
 
 /**
- * English `what` + `hint` per kind. The renderer's EN i18n block is built from
+ * The protocols whose failure is a SEND (one request with a request timeout),
+ * not a connect (issue #309). A `requestHint` replaces `hint` for them; every
+ * other protocol (WebSocket, Socket.IO, SSE, MCP, MQTT) and an unknown one
+ * keeps the connect wording.
+ */
+export const REQUEST_PROTOCOLS = ['http', 'graphql', 'soap'] as const
+
+export function isRequestProtocol(protocol: unknown): boolean {
+  return typeof protocol === 'string' && (REQUEST_PROTOCOLS as readonly string[]).includes(protocol)
+}
+
+/**
+ * English `what` + `hint` per kind (+ `requestHint` where a send reads
+ * differently from a connect). The renderer's EN i18n block is built from
  * this table (`connectionErrorEnglishKeys`) — change wording here only.
  */
 export const CONNECTION_ERROR_TEXT_EN: Record<
   ConnectionErrorKind,
-  { what: string; hint?: string }
+  { what: string; hint?: string; requestHint?: string }
 > = {
   refused: { what: 'Connection refused', hint: 'Check that the server is running' },
   dns: { what: 'DNS lookup failed', hint: 'Check the host name in the URL' },
   timeout: {
     what: 'Connection timed out',
     hint: 'Check the host and port; if the server is slow, raise the connect timeout in Settings',
+    requestHint:
+      'Check the host and port; if the server is slow, raise the request timeout in the request Settings tab, the project settings or app Settings',
   },
   unreachable: {
     what: 'Host unreachable',
@@ -129,11 +144,33 @@ export const CONNECTION_ERROR_TEXT_EN: Record<
 export function connectionErrorEnglishKeys(): Record<string, string> {
   const out: Record<string, string> = {}
   for (const kind of CONNECTION_ERROR_KINDS) {
-    const { what, hint } = CONNECTION_ERROR_TEXT_EN[kind]
+    const { what, hint, requestHint } = CONNECTION_ERROR_TEXT_EN[kind]
     out[`connError.${kind}.what`] = what
     if (hint) out[`connError.${kind}.hint`] = hint
+    if (requestHint) out[`connError.${kind}.requestHint`] = requestHint
   }
   return out
+}
+
+/**
+ * The i18n key of the next step for `kind` on `protocol`: the request variant
+ * (`connError.<kind>.requestHint`) for an HTTP / GraphQL / SOAP send when the
+ * kind has one, else `connError.<kind>.hint`. Main and renderer both decide
+ * through this, so the English text main writes equals the renderer's.
+ */
+export function connectionHintKey(kind: ConnectionErrorKind, protocol?: unknown): string {
+  return isRequestProtocol(protocol) && CONNECTION_ERROR_TEXT_EN[kind].requestHint
+    ? `connError.${kind}.requestHint`
+    : `connError.${kind}.hint`
+}
+
+/** English next step for `kind` on `protocol` (main's half of `connectionHintKey`). */
+export function connectionHintEn(
+  kind: ConnectionErrorKind,
+  protocol?: unknown,
+): string | undefined {
+  const text = CONNECTION_ERROR_TEXT_EN[kind]
+  return isRequestProtocol(protocol) && text.requestHint ? text.requestHint : text.hint
 }
 
 /**

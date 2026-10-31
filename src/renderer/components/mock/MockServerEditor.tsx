@@ -23,7 +23,14 @@ import type {
 } from '../../types'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
-import { CONDITION_SNIPPETS, SCRIPT_SNIPPETS } from '../../lib/mock-snippets'
+import {
+  CONDITION_SNIPPETS,
+  SCRIPT_SNIPPETS,
+  snippetDescriptionKey,
+  snippetLabelKey,
+  type MockSnippet,
+} from '../../lib/mock-snippets'
+import { formatCount } from '../../lib/plural'
 import JwksFillButton from './JwksFillButton'
 import { provisionJwksServe } from '../../lib/jwks-serve'
 import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mock-kind'
@@ -314,12 +321,23 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
         toast.error(`${t('mock.importFailed')}: ${result.error}`)
         return
       }
+      const n = result.warnings.length
       const warn =
-        result.warnings.length > 0 ? ` (${result.warnings.length} ${t('mock.warnings')})` : ''
+        n > 0 ? ` (${formatCount(n, t('mock.warningCountOne'), t('mock.warningCount'))})` : ''
+      const endpoints = formatCount(
+        result.endpointsCreated,
+        t('mock.importEndpointCountOne'),
+        t('mock.importEndpointCount'),
+      )
+      const responses = formatCount(
+        result.responsesCreated,
+        t('mock.importResponseCountOne'),
+        t('mock.importResponseCount'),
+      )
       toast.success(
         t('mock.importDone')
-          .replace('{endpoints}', String(result.endpointsCreated))
-          .replace('{responses}', String(result.responsesCreated))
+          .replace('{endpoints}', endpoints)
+          .replace('{responses}', responses)
           .replace('{warnings}', warn),
       )
     }
@@ -1119,16 +1137,21 @@ function ResponseEditor({
   )
 }
 
-/** Compact dropdown that inserts a chosen snippet body into the parent editor. */
+/**
+ * Compact dropdown that inserts a chosen snippet body into the parent editor.
+ * Names / descriptions are translated here, at render time (issue #309); the
+ * option value stays the array index and the body is the untranslated code.
+ */
 function SnippetPicker({
   label,
   snippets,
   onPick,
 }: {
   label: string
-  snippets: { label: string; description: string; body: string }[]
+  snippets: MockSnippet[]
   onPick: (body: string) => void
 }) {
+  const { t } = useTranslation()
   return (
     <select
       value=""
@@ -1150,8 +1173,8 @@ function SnippetPicker({
     >
       <option value="">{label}</option>
       {snippets.map((s, i) => (
-        <option key={i} value={i} title={s.description}>
-          {s.label}
+        <option key={s.id} value={i} title={t(snippetDescriptionKey(s))}>
+          {t(snippetLabelKey(s))}
         </option>
       ))}
     </select>
@@ -1630,9 +1653,7 @@ function LogsTab({ serverId }: { serverId: string }) {
           style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
         >
           <span data-testid="mock-log-count" className="text-xs" style={{ color: 'var(--muted)' }}>
-            {logs.length === 1
-              ? t('mock.entryCountOne')
-              : t('mock.entryCount').replace('{count}', String(logs.length))}
+            {formatCount(logs.length, t('mock.entryCountOne'), t('mock.entryCount'))}
           </span>
           <div className="flex gap-1">
             <button

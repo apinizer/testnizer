@@ -4,6 +4,7 @@ import { useWebSocketStore } from '../../stores/websocket.store'
 import EmptyState from '../shared/EmptyState'
 import type { WsMessage } from '../../types'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { defaultViewMode, messageFormatLabel, messageSize } from '../../lib/realtime-format'
 import RealtimeLogToolbar from './realtime/RealtimeLogToolbar'
 import RealtimeLogRow from './realtime/RealtimeLogRow'
@@ -125,8 +126,7 @@ export default function WsMessageLog() {
       </div>
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]" data-testid="ws-message-counts">
-          {t(traffic.length === 1 ? 'ws.countsOne' : 'ws.countsOther')
-            .replace('{count}', String(traffic.length))
+          {formatCount(traffic.length, t('ws.countsOne'), t('ws.countsOther'))
             .replace('{sent}', String(sentCount))
             .replace('{received}', String(traffic.length - sentCount))}
         </span>

@@ -190,6 +190,11 @@ export interface RunnerExecuteOptions {
 export interface RunnerExportOptions {
   results: EndpointRunResult[]
   format: 'json' | 'html'
+  /**
+   * The environment the run used (issue #307) — `src/shared/run-environment.ts`
+   * encoding: name, '' = none, null / absent = unknown (not printed).
+   */
+  environmentName?: string | null
 }
 
 export interface RunnerProgress {
@@ -272,4 +277,10 @@ export interface RunnerReport {
   teardownFailedAssertions?: number
   /** Why the main flow ended before its last request, when it did. */
   stopReason?: RunStopReason
+  /**
+   * Name of the environment the run used, snapshotted at run start (issue
+   * #307); '' = the run used no environment; absent = unknown (a report from
+   * an older build). Encoding: `src/shared/run-environment.ts`.
+   */
+  environmentName?: string
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useNumberDraft } from '../../lib/number-draft'
 import { toast } from '../../lib/toast'
 
@@ -764,11 +765,11 @@ function IterationDataPicker({
         {filename && (
           <span style={{ color: 'var(--muted)', fontSize: 12 }}>
             {filename} ·{' '}
-            {t(
-              rows.length === 1
-                ? 'runnerConfig.iterationCountOne'
-                : 'runnerConfig.iterationCountOther',
-            ).replace('{count}', String(rows.length))}
+            {formatCount(
+              rows.length,
+              t('runnerConfig.iterationCountOne'),
+              t('runnerConfig.iterationCountOther'),
+            )}
           </span>
         )}
         {rows.length > 0 && (

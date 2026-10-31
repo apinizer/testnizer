@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react'
 import { ArrowUpCircle } from 'lucide-react'
 import Modal from '../shared/Modal'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useBranchStore } from '../../stores/branch.store'
 
 /** What the user chose about uncommitted changes (issue #214). */
@@ -155,10 +156,7 @@ function PushCommitForm({
               className="mt-0.5 h-3.5 w-3.5 shrink-0 cursor-pointer accent-[var(--accent)]"
             />
             <span>
-              {t(pending === 1 ? 'push.includePendingOne' : 'push.includePending').replace(
-                '{count}',
-                String(pending),
-              )}
+              {formatCount(pending, t('push.includePendingOne'), t('push.includePending'))}
               {!commitPending && (
                 <span className="block text-[var(--hint)]">{t('push.pendingStays')}</span>
               )}

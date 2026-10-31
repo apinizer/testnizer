@@ -13,6 +13,7 @@
 
 import { ipcMain, BrowserWindow } from 'electron'
 import { getDb } from '../db/database'
+import { withRunEnvironmentNames, withTaskEnvironmentNames } from '../lib/run-environment'
 import { randomUUID } from 'crypto'
 
 /* ── Types ────────────────────────────────────────────────────── */
@@ -574,8 +575,9 @@ export function registerSchedulerHandlers(): void {
       const db = getDb()
       const tasks = db
         .prepare('SELECT * FROM scheduled_tasks WHERE project_id = ? ORDER BY created_at DESC')
-        .all(projectId)
-      return { success: true, data: tasks }
+        .all(projectId) as Array<{ environment_id?: unknown; project_id?: unknown }>
+      // The environment's current name, never its id (issue #307).
+      return { success: true, data: withTaskEnvironmentNames(db, tasks) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -638,8 +640,12 @@ export function registerSchedulerHandlers(): void {
            ORDER BY started_at DESC
            LIMIT 200`,
         )
-        .all(taskId, task ? `Scheduled: ${task.name}` : `Scheduled: __none__`)
-      return { success: true, data: rows }
+        .all(taskId, task ? `Scheduled: ${task.name}` : `Scheduled: __none__`) as Array<{
+        environment_name?: unknown
+        project_id?: unknown
+      }>
+      // Legacy id rows → current name, in main (issue #307).
+      return { success: true, data: withRunEnvironmentNames(db, rows) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
