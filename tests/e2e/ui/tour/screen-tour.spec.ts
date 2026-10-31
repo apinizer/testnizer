@@ -1618,17 +1618,16 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
           await expect(w.getByTestId('endpoint-tab').last()).toBeVisible()
         })
 
-        // #251: narrow window + right panel opened by hand → compact URL bar,
-        // Save moved into the overflow menu. Same approach as
-        // tests/e2e/ui/54-narrow-editor-layout-251.spec.ts: shrink FIRST (the
-        // auto collapse closes a panel that was open before the resize — the
-        // old step opened it at full size, so at 1024 px it collapsed again and
-        // the ~596 px editor stayed above the 580 px compact threshold), then
-        // open the panel by hand from the rail. 900 px is the size spec 54
-        // proves compact at unconditionally.
+        // #251: narrow window + right panel opened by hand. Since 7a42335 the
+        // panel opens as an OVERLAY drawer over the editor's right part (it
+        // covers url-more-btn), so step 131 shoots the drawer and step 132
+        // closes it through its collapse control before opening the overflow
+        // menu. Same approach as tests/e2e/ui/54-narrow-editor-layout-251.spec.ts:
+        // shrink FIRST (the auto collapse closes a panel that was open before
+        // the resize), then open the panel by hand from the rail.
         await shot(
           w,
-          { id: 131, area: 'http', screen: 'url-bar-narrow-right-panel', state: 'narrow' },
+          { id: 131, area: 'http', screen: 'right-panel-overlay', state: 'narrow' },
           async () => {
             await openSeeded(w, 'Create order')
             await setContentSize(app, NARROW_EDITOR)
@@ -1638,14 +1637,17 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
             await expect(w.getByTestId('right-panel-rail')).toBeVisible({ timeout: 5_000 })
             await w.getByTestId('right-panel-rail-variables').click()
             await expect(w.getByTestId('right-panel')).toBeVisible({ timeout: 5_000 })
-            await expect(w.getByTestId('url-more-btn')).toBeVisible({ timeout: 8_000 })
-            await expect(w.getByTestId('save-btn')).toHaveCount(0)
+            await expect(w.getByTestId('right-panel')).toHaveAttribute('data-mode', 'overlay')
           },
         )
         await shot(
           w,
           { id: 132, area: 'http', screen: 'url-bar-overflow-menu', state: 'narrow' },
           async () => {
+            await w.getByTestId('right-panel-collapse').click()
+            await expect(w.getByTestId('right-panel-rail')).toBeVisible({ timeout: 5_000 })
+            await expect(w.getByTestId('right-panel')).toHaveCount(0)
+            await expect(w.getByTestId('save-btn')).toHaveCount(0)
             await w.getByTestId('url-more-btn').click()
             await expect(w.getByTestId('url-more-menu')).toBeVisible()
           },
