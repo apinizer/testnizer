@@ -497,7 +497,19 @@ paneli geliyor; Electron 44 — ve secret'lar makinenizde kalıyor.**
 - **Türkçe, son adım:** Türkçe adları ve açıklamalarıyla HTTP durum kodları
   (arama iki dilde de çalışır), Tools yer tutucuları ve ipuçları, Runs,
   History, AI Chat ve günlüklerde tek bir tarih ve saat biçimi ve her iki dilde
-  de tanınan varsayılan istek adları.
+  de tanınan varsayılan istek adları. Mock **Örnek ekle** parçalarının adları
+  Türkçe, sayaçlar İngilizcede tekil/çoğul doğru yazılır ("1 warning" /
+  "2 warnings") ve HTTP, GraphQL ya da SOAP zaman aşımı bağlantı değil istek
+  zaman aşımı ayarını gösterir.
+
+- **Run sonuçları ortamı adıyla gösterir:** bir koşu kullandığı ortamı
+  kaydeder; sonuçlarda, All Runs'ta, Scheduled geçmişinde, zamanlanmış görev
+  listesinde ve HTML / JSON raporda gösterir — ortam yoksa "Ortam yok".
+  Ortamı sonradan yeniden adlandırmak ya da silmek geçmişi değiştirmez.
+
+- **Dar pencerede Runner ayarları:** sıra listesi ile ayarlar yan yana
+  sığmadığında sıra formun üstüne geçer; her alan ve Start / Schedule / Save
+  alt çubuğu en küçük pencerede de bütün kalır.
 
 **Testler:** süit 741 dosyada 9932 teste ulaştı ve tam UI uçtan uca süiti 884
 spec koşturuyor. Yeni uçtan uca spec'ler Postman import'unu (hesap veri

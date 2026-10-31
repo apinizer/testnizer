@@ -480,6 +480,20 @@ your machine.**
   Turkish names and descriptions (search works in both languages), Tools
   placeholders and hints, one date and time format across Runs, History,
   AI Chat and logs, and default request names recognised in both languages.
+  Mock **Insert example** snippets have Turkish names, counts read "1 warning"
+  / "2 warnings" everywhere, and an HTTP, GraphQL or SOAP timeout points to
+  the request timeout setting instead of a connect timeout.
+
+- **Run results name their environment:** a run records the
+  environment it actually used and shows it in the results, All Runs,
+  Scheduled history, the scheduled task list and the HTML / JSON report —
+  "No environment" when it used none. Renaming or deleting the environment
+  later does not rewrite history.
+
+- **Runner configuration in a narrow window:** when the sequence
+  and the configuration no longer fit side by side, the sequence moves above
+  the form, so every field and the Start / Schedule / Save footer stay whole
+  down to the smallest window.
 
 **Tests:** the suite grew to 9932 tests in 741 files, and the full UI end-to-end suite runs 884 specs. New end-to-end specs
 cover Postman import (account data dumps and artifacts, Native Git v3 folders,
