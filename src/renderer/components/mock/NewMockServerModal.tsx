@@ -45,8 +45,19 @@ export default function NewMockServerModal({
   const [error, setError] = useState<string | null>(null)
   const nameRef = useRef<HTMLInputElement>(null)
 
+  // Select the suggested name once the dialog has settled (the focus trap moves
+  // focus on open, hence the delay). Never steal focus back from another text
+  // field: select() also focuses, so a Port edit started inside that window
+  // landed in the Name field instead.
   useEffect(() => {
-    const id = setTimeout(() => nameRef.current?.select(), 50)
+    const id = setTimeout(() => {
+      const el = nameRef.current
+      const active = document.activeElement
+      const editingElsewhere =
+        active !== el &&
+        (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement)
+      if (el && !editingElsewhere) el.select()
+    }, 50)
     return () => clearTimeout(id)
   }, [])
 

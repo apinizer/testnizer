@@ -51,7 +51,20 @@ export async function addMockEndpoint(
 
 /** Add a response and optionally set its status code. Default body is {"ok":true}. */
 export async function addMockResponse(page: Page, opts: { status?: number } = {}): Promise<void> {
+  // The editor shows ONE response at a time and switches to the new one only
+  // after the create IPC returns (the panel is keyed by the active response, so
+  // it remounts). A status input already on screen belongs to the PREVIOUS
+  // response: filling it before the switch rewrote the first response's status
+  // and left the new one at 200 (the 403/401-instead-of-200 flake in
+  // mock-conditional). Wait for the old input to go away first.
+  const previous = await page
+    .getByTestId('mock-response-status')
+    .elementHandle({ timeout: 1_000 })
+    .catch(() => null)
   await page.getByTestId('mock-add-response').click()
+  if (previous) {
+    await page.waitForFunction((el) => !el.isConnected, previous, { timeout: 10_000 })
+  }
   await expect(page.getByTestId('mock-response-status')).toBeVisible({ timeout: 10_000 })
   if (opts.status !== undefined) {
     await page.getByTestId('mock-response-status').fill(String(opts.status))

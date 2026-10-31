@@ -43,6 +43,12 @@ uiTest.describe('Tur1 — Tree Advanced [MST-018, MST-020, MST-024, MST-027, MST
     await navigateSidebar(window, 'apis')
   })
 
+  // MST-029 works inside the Tests module; leave the shared Electron instance
+  // on APIs so the next spec does not open its project on the Tests page.
+  uiTest.afterEach(async ({ window }) => {
+    await navigateSidebar(window, 'apis').catch(() => {})
+  })
+
   // -------------------------------------------------------------------------
   // MST-018 — Folder delete cascade: deleting a folder removes child requests
   // -------------------------------------------------------------------------
