@@ -129,12 +129,13 @@ uiTest.describe('Issue #302 — suite run result reveals the item in Tests', () 
       await expect(row).toBeVisible({ timeout: 10_000 })
       await expect(row).toHaveAttribute('data-active', 'true')
       await expect(row).toContainText(itemName)
-      // The nav highlight follows the page (150 ms colour transition).
-      await window.waitForTimeout(400)
+      // The nav highlight follows the page through a 150 ms colour transition.
+      // On the xvfb CI runner the transition can lag well past 150 ms (the
+      // fixed 400 ms wait read the start colour), so poll for the end state.
       const navColor = (id: string) =>
         window.getByTestId(`nav-${id}`).evaluate((el) => getComputedStyle(el).backgroundColor)
+      await expect.poll(() => navColor('apis'), { timeout: 5_000 }).toBe('rgba(0, 0, 0, 0)')
       expect(await navColor('tests')).not.toBe(await navColor('apis'))
-      expect(await navColor('apis')).toBe('rgba(0, 0, 0, 0)')
       await window.screenshot({ path: shot('302-2-revealed-in-tests-sidebar.png') })
     } finally {
       await closeAllTabs(window).catch(() => {})
