@@ -5,16 +5,46 @@
  * MQTT was missing). This keeps them saying the same things the code does.
  */
 import { describe, it, expect } from 'vitest'
+import { execFileSync } from 'child_process'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 
 const root = path.resolve(__dirname, '../..')
 const read = (rel: string): string => fs.readFileSync(path.join(root, rel), 'utf8')
 
+/**
+ * Until a release is tagged, website pages describing unreleased behaviour are
+ * held as docs/release-notes/website/vX.Y.Z-site-docs.patch (the live site must
+ * match the shipped build). These checks are about the build being tested, so
+ * a held page is read with its patch applied.
+ */
+const HELD_DIR = path.join(root, 'docs/release-notes/website')
+const heldPatches = fs.existsSync(HELD_DIR)
+  ? fs
+      .readdirSync(HELD_DIR)
+      .filter((f) => f.endsWith('-site-docs.patch'))
+      .map((f) => path.join(HELD_DIR, f))
+  : []
+
+const readWebsite = (rel: string): string => {
+  const patch = heldPatches.find((p) => fs.readFileSync(p, 'utf8').includes(`a/${rel} `))
+  if (!patch) return read(rel)
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'held-site-'))
+  try {
+    fs.mkdirSync(path.join(tmp, path.dirname(rel)), { recursive: true })
+    fs.copyFileSync(path.join(root, rel), path.join(tmp, rel))
+    execFileSync('git', ['apply', `--include=${rel}`, patch], { cwd: tmp, stdio: 'pipe' })
+    return fs.readFileSync(path.join(tmp, rel), 'utf8')
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true })
+  }
+}
+
 const TEXTS = {
   'docs/legal/privacy-policy.md': read('docs/legal/privacy-policy.md'),
-  'website/src/pages/privacy.astro': read('website/src/pages/privacy.astro'),
-  'website/src/pages/tr/privacy.astro': read('website/src/pages/tr/privacy.astro'),
+  'website/src/pages/privacy.astro': readWebsite('website/src/pages/privacy.astro'),
+  'website/src/pages/tr/privacy.astro': readWebsite('website/src/pages/tr/privacy.astro'),
 } as const
 
 /** Plain text with tags and markdown emphasis removed, whitespace collapsed. */
@@ -87,8 +117,8 @@ describe.each(Object.entries(TEXTS))('%s', (_name, raw) => {
  * Linux systems, and the app password is only a scrypt-hashed login gate.
  */
 const SECURITY = {
-  'website/src/pages/security.astro': read('website/src/pages/security.astro'),
-  'website/src/pages/tr/security.astro': read('website/src/pages/tr/security.astro'),
+  'website/src/pages/security.astro': readWebsite('website/src/pages/security.astro'),
+  'website/src/pages/tr/security.astro': readWebsite('website/src/pages/tr/security.astro'),
 } as const
 
 describe.each(Object.entries(SECURITY))('%s', (_name, raw) => {
@@ -105,7 +135,9 @@ describe.each(Object.entries(SECURITY))('%s', (_name, raw) => {
   })
 
   it('names the secrets that are encrypted and the plain-text exceptions', () => {
-    expect(text).toMatch(/Secret-type (environment and global )?variables|Gizli \(secret\) türündeki/i)
+    expect(text).toMatch(
+      /Secret-type (environment and global )?variables|Gizli \(secret\) türündeki/i,
+    )
     expect(text).toMatch(/Mock MCP bearer/i)
     expect(text).toMatch(/certificate passphrases|sertifika parola/i)
     // No keychain (Linux without libsecret) -> stored unencrypted.
