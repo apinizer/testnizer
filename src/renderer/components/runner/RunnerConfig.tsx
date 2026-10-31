@@ -469,7 +469,7 @@ export default function RunnerConfig({
             the delay inputs used to squeeze to a few px beside their labels. */}
         <div
           data-testid="runner-run-config-grid"
-          className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4"
+          className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(min(9rem,100%),1fr))] gap-4"
         >
           <div className="min-w-0">
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
@@ -484,7 +484,7 @@ export default function RunnerConfig({
                 iterationsDraft.inputProps.onFocus()
                 e.currentTarget.select()
               }}
-              className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              className="w-full min-w-[5rem] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               style={{ fontSize: 13 }}
             />
           </div>
@@ -511,7 +511,7 @@ export default function RunnerConfig({
                   delayDraft.inputProps.onFocus()
                   e.currentTarget.select()
                 }}
-                className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                className="w-full min-w-[5rem] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}
               />
               <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>
@@ -541,7 +541,7 @@ export default function RunnerConfig({
                   iterationDelayDraft.inputProps.onFocus()
                   e.currentTarget.select()
                 }}
-                className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                className="w-full min-w-[5rem] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}
               />
               <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>

@@ -94,14 +94,19 @@ describe('G-16 — RunnerTab panes: the sequence pane gives way first', () => {
     )
   })
 
+  // Issue #308 moved the two panes out of RunnerTab into RunnerConfigSplit
+  // (side by side as before, stacked below RUNNER_STACK_BELOW). Same pins,
+  // read from where the panes now live; RunnerTab must render the split.
   it('RunnerTab uses them (no fixed, non-shrinking sequence width)', () => {
-    const src = readFileSync(
-      resolve(__dirname, '../../src/renderer/components/runner/RunnerTab.tsx'),
-      'utf8',
-    )
-    expect(src).toMatch(/style=\{sequencePaneStyle\(sequenceWidth\)\}/)
-    expect(src).toMatch(/className=\{CONFIG_PANE_CLASS\}/)
-    expect(src).toMatch(/style=\{\{ minWidth: RUNNER_CONFIG_MIN_WIDTH \}\}/)
+    const read = (f: string): string =>
+      readFileSync(resolve(__dirname, '../../src/renderer/components/runner', f), 'utf8')
+    const tab = read('RunnerTab.tsx')
+    expect(tab).toMatch(/<RunnerConfigSplit\s+sequenceWidth=\{sequenceWidth\}/)
+    expect(tab).not.toMatch(/width: sequenceWidth, flexShrink: 0/)
+    const src = read('RunnerConfigSplit.tsx')
+    expect(src).toMatch(/style=\{stacked \? undefined : sequencePaneStyle\(sequenceWidth\)\}/)
+    expect(src).toMatch(/className=\{stacked \? STACKED_CONFIG_PANE_CLASS : CONFIG_PANE_CLASS\}/)
+    expect(src).toMatch(/style=\{stacked \? undefined : \{ minWidth: RUNNER_CONFIG_MIN_WIDTH \}\}/)
     expect(src).not.toMatch(/width: sequenceWidth, flexShrink: 0/)
     expect(src).toMatch(/data-testid="runner-sequence-pane"/)
     expect(src).toMatch(/data-testid="runner-config-pane"/)

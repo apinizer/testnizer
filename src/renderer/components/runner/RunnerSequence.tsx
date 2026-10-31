@@ -195,14 +195,16 @@ export default function RunnerSequence({
 
   return (
     <div className="flex w-full flex-col overflow-hidden" style={{ fontSize: 13 }} lang={locale}>
-      {/* Header */}
-      <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-2.5">
-        <span style={{ fontWeight: 600, color: 'var(--text)' }}>{t('runSequence.title')}</span>
-        <div className="flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+      {/* Header — wraps whole units (title / each action), never words (#308). */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-[var(--border)] px-4 py-2.5">
+        <span className="whitespace-nowrap" style={{ fontWeight: 600, color: 'var(--text)' }}>
+          {t('runSequence.title')}
+        </span>
+        <div className="flex flex-wrap items-center gap-1" style={{ color: 'var(--muted)' }}>
           <button
             type="button"
             onClick={onDeselectAll}
-            className="cursor-pointer border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
+            className="cursor-pointer whitespace-nowrap border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
             style={{ fontSize: 13, color: 'inherit' }}
           >
             {t('runSequence.deselectAll')}
@@ -211,7 +213,7 @@ export default function RunnerSequence({
           <button
             type="button"
             onClick={onSelectAll}
-            className="cursor-pointer border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
+            className="cursor-pointer whitespace-nowrap border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
             style={{ fontSize: 13, color: 'inherit' }}
           >
             {t('runSequence.selectAll')}
@@ -220,7 +222,7 @@ export default function RunnerSequence({
           <button
             type="button"
             onClick={onReset}
-            className="cursor-pointer border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
+            className="cursor-pointer whitespace-nowrap border-none bg-transparent px-1.5 py-0.5 hover:text-[var(--text)]"
             style={{ fontSize: 13, color: 'inherit' }}
           >
             {t('runSequence.reset')}

@@ -105,10 +105,12 @@ import { PROJECT_DETAIL_TABS } from '../../helpers/ui/inventory'
 const TOUR_ON = !!process.env.TESTNIZER_SCREEN_TOUR
 const PROJECT = 'Acme Payments API'
 
-type State = 'main' | 'empty' | 'error' | 'filled' | 'dark' | 'tr' | 'narrow'
+type State = 'main' | 'empty' | 'error' | 'filled' | 'dark' | 'tr' | 'narrow' | 'min-window'
 
 /** The window size tests/e2e/ui/54-narrow-editor-layout-251.spec.ts proves the compact URL bar at. */
 const NARROW_EDITOR = { width: 900, height: 700 } as const
+/** The app's minimum window width (src/main/index.ts `minWidth: 900`) — issue #308. */
+const MIN_WINDOW = { width: 900, height: 700 } as const
 type Variant = 'dark' | 'tr' | 'narrow'
 
 interface ShotSpec {
@@ -1863,6 +1865,38 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
           .toBe(true)
       },
     )
+    // #308: at the minimum window, with the left sidebar open, the sequence and
+    // config columns stack; every footer action and field stays whole.
+    await shot(w, { id: 307, area: 'runner', screen: 'config', state: 'min-window' }, async () => {
+      await setContentSize(app, MIN_WINDOW)
+      await expect
+        .poll(() => w.evaluate(() => window.innerWidth), { timeout: 5_000 })
+        .toBe(MIN_WINDOW.width)
+      await expect(w.getByTestId('runner-config-split')).toHaveAttribute('data-layout', 'stacked', {
+        timeout: 5_000,
+      })
+      const bar = w.getByTestId('runner-action-bar')
+      await expect(bar).toBeInViewport({ ratio: 1 })
+      const barBox = (await bar.boundingBox())!
+      for (const id of ['runner-start', 'runner-save-config']) {
+        const b = (await w.getByTestId(id).boundingBox())!
+        expect(b.x, `${id} left edge`).toBeGreaterThanOrEqual(barBox.x - 1)
+        expect(b.x + b.width, `${id} right edge`).toBeLessThanOrEqual(barBox.x + barBox.width + 1)
+        expect(b.height, `${id} label wrapped`).toBeLessThanOrEqual(44)
+      }
+      for (const id of [
+        'runner-config-body',
+        'runner-config-pane',
+        'runner-config-split',
+        'runner-sequence-pane',
+      ]) {
+        const spill = await w.getByTestId(id).evaluate((el) => el.scrollWidth - el.clientWidth)
+        expect(spill, `${id} overflows horizontally`).toBeLessThanOrEqual(1)
+      }
+      // The header title stays one line (no stack of words).
+      const title = w.getByTestId('runner-sequence-pane').getByText('Run Sequence')
+      expect((await title.boundingBox())!.height).toBeLessThanOrEqual(24)
+    })
   })
 
   // 99 ─ Cleanup ───────────────────────────────────────────────────────────────
