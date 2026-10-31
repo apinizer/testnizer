@@ -499,7 +499,7 @@ paneli geliyor; Electron 44 — ve secret'lar makinenizde kalıyor.**
   History, AI Chat ve günlüklerde tek bir tarih ve saat biçimi ve her iki dilde
   de tanınan varsayılan istek adları.
 
-**Testler:** süit 724 dosyada 9842 teste ulaştı ve tam UI uçtan uca süiti 879
+**Testler:** süit 741 dosyada 9932 teste ulaştı ve tam UI uçtan uca süiti 884
 spec koşturuyor. Yeni uçtan uca spec'ler Postman import'unu (hesap veri
 dökümleri ve artifact'lar, Native Git v3 klasörleri, `.zip` arşivleri,
 koleksiyon değişkenleri), Postman v3 export'unu, cURL yapıştırmayı, Generate
