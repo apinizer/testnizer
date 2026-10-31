@@ -55,7 +55,14 @@ import { openImportModal, refreshWorkspaceTree } from '../../helpers/ui/import-f
 import { persistedLocale } from '../../helpers/ui/locale'
 import { goToProjectHome, createProject, openProject } from '../../helpers/ui/workspace-flow'
 import { treeClearSearch, treeOpenNode } from '../../helpers/ui/tree'
-import { clickSend, addParam, waitForResponseStatus } from '../../helpers/ui/request-flow'
+import {
+  clickSend,
+  addParam,
+  addHeader,
+  fillUrl,
+  setAuthBasic,
+  waitForResponseStatus,
+} from '../../helpers/ui/request-flow'
 import { fillMonaco } from '../../helpers/ui/monaco'
 import { pressModShortcut } from '../../helpers/ui/keyboard'
 import { withClipboardText } from '../../helpers/ui/clipboard'
@@ -444,6 +451,51 @@ async function typeIntoVisibleEditor(w: Page, index: number, text: string): Prom
   await w.waitForTimeout(250)
 }
 
+/**
+ * Type a one-line GraphQL document key by key: Monaco auto-closes `{ ( "` and
+ * overtypes the closers it inserted, so the text lands exactly as written. A
+ * bulk `insertText` of a multi-line document ended with a stray `}` (shot 200).
+ */
+async function typeGraphqlQuery(w: Page, query: string): Promise<void> {
+  const editor = w.getByTestId('graphql-query-editor').locator('.monaco-editor').first()
+  await editor.click()
+  const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+  await w.keyboard.press(`${mod}+KeyA`)
+  await w.keyboard.press('Backspace')
+  await w.keyboard.type(query, { delay: 8 })
+  const closers = (query.match(/}/g) ?? []).length
+  // Trim any auto-closed leftovers at the end of the document.
+  for (let i = 0; i < 3; i++) {
+    const text = (await editor.locator('.view-lines').first().innerText()).replace(/\u00a0/g, ' ')
+    if ((text.match(/}/g) ?? []).length <= closers) break
+    await w.keyboard.press(`${mod}+End`)
+    await w.keyboard.press('Backspace')
+  }
+  await w.locator('body').click({ position: { x: 4, y: 4 } })
+  await w.waitForTimeout(250)
+}
+
+/** Make the next native "open file" dialog return `file`; returns the restore function. */
+async function stubOpenDialog(
+  app: ElectronApplication,
+  file: string,
+): Promise<() => Promise<void>> {
+  await app.evaluate(({ dialog }, p) => {
+    const d = dialog as unknown as Record<string, unknown>
+    if (!d.__tourOrigOpen) d.__tourOrigOpen = d.showOpenDialog
+    d.showOpenDialog = async () => ({ canceled: false, filePaths: [p] })
+  }, file)
+  return async () => {
+    await app.evaluate(({ dialog }) => {
+      const d = dialog as unknown as Record<string, unknown>
+      if (d.__tourOrigOpen) {
+        d.showOpenDialog = d.__tourOrigOpen
+        delete d.__tourOrigOpen
+      }
+    })
+  }
+}
+
 async function ensureExpanded(w: Page, folder: string, child: string): Promise<void> {
   if ((await w.getByTestId('tree-node').filter({ hasText: child }).count()) > 0) return
   const node = w.getByTestId('tree-node').filter({ hasText: folder }).first()
@@ -537,7 +589,9 @@ async function seedScratch(w: Page): Promise<void> {
     kv('X-Tenant', '{{tenantId}}', 3), // deliberately unresolved
   ])
   const bearer = JSON.stringify({ type: 'bearer', bearer: { token: '{{token}}' } })
-  const body = (raw: string): string => JSON.stringify({ type: 'raw', raw, format: 'json' })
+  // RequestBody is `{ type, content }` (src/renderer/types). The old
+  // `{ type:'raw', raw, format }` shape loaded as an EMPTY body (shot 103).
+  const body = (content: string): string => JSON.stringify({ type: 'json', content })
 
   await createSavedRequestIpc(w, {
     projectId: pid,
@@ -1020,15 +1074,21 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     const { graphql } = getTestServerUrls()
     await openNewDropdownItem(w, /GraphQL/i)
     await w.getByTestId('graphql-url').fill(graphql)
-    await fillMonaco(w, 'graphql-query-editor', 'query Greeting {\n  hello(name: "Testnizer")\n}')
+    await typeGraphqlQuery(w, 'query Greeting { hello(name: "Testnizer") }')
     await shot(w, { id: 200, area: 'graphql', screen: 'editor', state: 'filled' })
     await shot(w, { id: 201, area: 'graphql', screen: 'response' }, async () => {
       await w.getByTestId('graphql-run').click()
-      await expect(w.getByText(/Testnizer|hello/i).first()).toBeVisible({ timeout: 15_000 })
+      // The echo server answers `Hello Testnizer`; the query text only has
+      // `"Testnizer"` — so this cannot match before the response arrives.
+      await expect(w.getByText(/Hello\sTestnizer/).first()).toBeVisible({ timeout: 15_000 })
     })
     await shot(w, { id: 202, area: 'graphql', screen: 'schema-explorer' }, async () => {
       await w.getByTestId('graphql-introspect').click()
-      await expect(w.getByText(/Query|Schema/i).first()).toBeVisible({ timeout: 15_000 })
+      // Introspection fills the Schema Explorer; the tab does not switch itself.
+      const tab = w.getByRole('button', { name: /^Schema Explorer$/ })
+      await expect(tab).toBeVisible({ timeout: 15_000 })
+      await tab.click()
+      await expect(w.getByText(/^Query$/).first()).toBeVisible({ timeout: 15_000 })
     })
   })
 
@@ -1179,13 +1239,25 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
         timeout: 10_000,
       })
     })
+    // `mcp-security-tab` is the PANE; the right-pane tab that opens it is
+    // `mcp-section-security`. The OAuth debugger lives in the Authorization
+    // tab of the config strip (type "OAuth 2.0") — there is no `mcp-oauth-tab`
+    // button. (Both used to click a non-existent testid and time out.)
     await shot(w, { id: 253, area: 'mcp', screen: 'security-scan' }, async () => {
-      await w.getByTestId('mcp-security-tab').click()
+      await w.getByTestId('mcp-section-security').click()
+      await expect(w.getByTestId('mcp-security-tab')).toBeVisible()
       await expect(w.getByTestId('mcp-security-scan')).toBeVisible()
     })
+    await shot(w, { id: 255, area: 'mcp', screen: 'security-scan-result' }, async () => {
+      await w.getByTestId('mcp-security-scan').click()
+      await expect(w.getByTestId('mcp-security-summary')).toBeVisible({ timeout: 60_000 })
+    })
     await shot(w, { id: 254, area: 'mcp', screen: 'oauth-debugger' }, async () => {
-      await w.getByTestId('mcp-oauth-tab').click()
-      await w.waitForTimeout(300)
+      await w.getByTestId('mcp-section-explorer').click()
+      await w.getByTestId('mcp-config-tab-auth').click()
+      await w.getByTestId('mcp-auth-type').selectOption('oauth2')
+      await expect(w.getByTestId('mcp-oauth-tab')).toBeVisible()
+      await expect(w.getByTestId('mcp-oauth-start')).toBeVisible()
     })
     await disconnectIfConnected(w)
     await closeAllTabs(w)
@@ -1282,8 +1354,9 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     const pid = T.projectId
 
     // HTTP mock with two endpoints, running.
+    const ordersPort = randomMockPort()
     const built = await attempt('build http mock', async () => {
-      await createMockServer(w, 'Orders mock', randomMockPort())
+      await createMockServer(w, 'Orders mock', ordersPort)
       await addMockEndpoint(w, { path: '/orders', method: 'GET' })
       await addMockResponse(w, { status: 200 })
       await addMockEndpoint(w, { path: '/orders', method: 'POST' })
@@ -1353,6 +1426,26 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     })
     await dismissOverlays(w)
 
+    // Issue #257: a port that another mock of the project already uses is a
+    // WARNING under the field (Create stays enabled); a non-port is an error.
+    const portSpec = { area: 'mocks', screen: 'new-dialog-port-in-use' }
+    await shot(w, { ...portSpec, id: 441 }, async () => {
+      await navigateSidebar(w, 'mocks')
+      await w.getByTestId('mock-new').click()
+      await expect(w.getByTestId('mock-new-dialog')).toBeVisible()
+      await w.getByTestId('mock-new-port').fill(String(ordersPort))
+      await expect(w.getByTestId('mock-new-port-warning')).toBeVisible()
+    })
+    await shot(
+      w,
+      { id: 442, area: 'mocks', screen: 'new-dialog-port-invalid', state: 'error' },
+      async () => {
+        await w.getByTestId('mock-new-port').fill('99999')
+        await expect(w.getByTestId('mock-new-port-error')).toBeVisible()
+      },
+    )
+    await dismissOverlays(w)
+
     // Free the ports before leaving the group.
     if (pid) await attempt('purge mocks', () => purgeMocks(w, pid))
   })
@@ -1387,8 +1480,13 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
       await openImportModal(w)
     })
     await dismissOverlays(w)
+    // "Click to select a file" calls `import:openFile`, a NATIVE dialog in main
+    // (not an <input type=file>), so Playwright never sees a `filechooser` —
+    // the first run hung on a spinner. Patch `dialog.showOpenDialog` in main.
+    const fixture = path.resolve(__dirname, '../../../fixtures/import-export/oracle-postman.json')
+    let restoreDialog: (() => Promise<void>) | null = null
     await shot(w, { id: 521, area: 'import', screen: 'import-result' }, async () => {
-      const fixture = path.resolve(__dirname, '../../../fixtures/import-export/oracle-postman.json')
+      restoreDialog = await stubOpenDialog(c.app, fixture)
       await w.getByRole('button', { name: /Import API Data|API Verisi İçe Aktar/i }).click()
       await w
         .getByRole('button', { name: /Postman/i })
@@ -1396,13 +1494,13 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
         .click()
       const modal = w.getByTestId('import-modal')
       await expect(modal).toBeVisible()
-      const chooser = w.waitForEvent('filechooser', { timeout: 15_000 })
       await modal.getByRole('button', { name: /Click to select a/i }).click()
-      await (await chooser).setFiles(fixture)
       await expect(modal.getByText(/Ready to import/i)).toBeVisible({ timeout: 15_000 })
       await modal.getByRole('button', { name: /^Import$/i }).click()
       await expect(w.getByTestId('import-result')).toBeVisible({ timeout: 30_000 })
     })
+    const restore = restoreDialog as (() => Promise<void>) | null
+    if (restore) await restore().catch((e) => note('restore dialog', e))
     await attempt('finish import wizard', async () => {
       const done = w.getByTestId('import-result-done')
       if (await done.isVisible().catch(() => false)) await done.click()
@@ -1417,8 +1515,12 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     await shot(w, { id: 531, area: 'export', screen: 'project-export-modal' }, async () => {
       await goToProjectHome(w)
       const card = w.getByTestId('project-card').filter({ hasText: PROJECT }).first()
+      await expect(card).toBeVisible()
       await card.hover()
-      await card.getByTestId('home-card-export').click({ force: true })
+      // The card's "…" button (revealed on hover) carries no testid; it is the
+      // card's only button. The menu then lists Rename / Duplicate / Export / Delete.
+      await card.locator('button').first().click()
+      await card.getByTestId('home-card-export').click()
       await expect(w.getByTestId('project-export-confirm')).toBeVisible()
     })
     await dismissOverlays(w)
@@ -1454,6 +1556,27 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
       await openTool(w, 'WS-Security')
     })
 
+    // Issues #258/#261: the status-code reference in Turkish, searched with a
+    // Turkish word (matches the Turkish name, not only the English phrase).
+    try {
+      await shot(
+        w,
+        { id: 604, area: 'tools', screen: 'http-status-codes', state: 'tr' },
+        async () => {
+          await openTool(w, 'HTTP Status Codes')
+          await setLocale(w, 'tr')
+          await w
+            .getByTestId('workbench')
+            .getByPlaceholder(/Kod, ad veya açıklama ara/)
+            .fill('bulunamadı')
+          await expect(w.getByTestId('http-status-row-404')).toBeVisible()
+          await expect(w.getByTestId('http-status-local-name-404')).toBeVisible()
+        },
+      )
+    } finally {
+      await setLocale(w, 'en').catch((e) => note('restore locale (604)', e))
+    }
+
     await shot(w, { id: 610, area: 'security', screen: 'list' }, async () => {
       await navigateSidebar(w, 'security')
     })
@@ -1467,6 +1590,250 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
       await w.getByText('TLS Inspector', { exact: false }).first().click()
       await expect(w.getByTestId('workbench')).toBeVisible()
     })
+  })
+
+  // 1xx ─ Issue acceptance shots: tab strip, narrow URL bar, secrets, settings ──
+  group(
+    '14 tab strip, narrow url bar, request secrets and settings (#251 #252 #256 #287)',
+    async (c) => {
+      const { w, app } = c
+      const rightPanelWasOpen = await w
+        .getByTestId('right-panel')
+        .isVisible()
+        .catch(() => false)
+      try {
+        // #252: 14 tabs overflow the strip; "+" and the environment picker stay
+        // pinned at the right edge and the newest (active) tab is in view.
+        await shot(w, { id: 130, area: 'http', screen: 'tab-strip-overflow' }, async () => {
+          for (let i = 0; i < 14; i++) {
+            const before = await w.getByTestId('endpoint-tab').count()
+            await w.getByTestId('tab-new').click()
+            await expect(w.getByTestId('endpoint-tab')).toHaveCount(before + 1)
+          }
+          await expect(w.getByTestId('tab-new')).toBeVisible()
+          await expect(w.getByTestId('env-selector')).toBeVisible()
+          await expect(w.getByTestId('endpoint-tab').last()).toBeVisible()
+        })
+
+        // #251: narrow window + right panel opened by hand → compact URL bar,
+        // Save moved into the overflow menu.
+        await shot(
+          w,
+          { id: 131, area: 'http', screen: 'url-bar-narrow-right-panel', state: 'narrow' },
+          async () => {
+            await openSeeded(w, 'Create order')
+            await setRightPanelOpen(w, true)
+            await setContentSize(app, { width: 1024, height: 700 })
+            await expect(w.getByTestId('url-more-btn')).toBeVisible({ timeout: 8_000 })
+          },
+        )
+        await shot(
+          w,
+          { id: 132, area: 'http', screen: 'url-bar-overflow-menu', state: 'narrow' },
+          async () => {
+            await w.getByTestId('url-more-btn').click()
+            await expect(w.getByTestId('url-more-menu')).toBeVisible()
+          },
+        )
+        await dismissOverlays(w)
+        if (T.origContent) await setContentSize(app, T.origContent).catch(() => {})
+        await attempt('restore right panel (14)', () => setRightPanelOpen(w, rightPanelWasOpen))
+        await closeAllTabs(w)
+
+        // #256: literal Basic password + literal X-API-Key header must come out
+        // as *** in Generate Code while "Include secret values" is off.
+        await shot(
+          w,
+          { id: 125, area: 'http', screen: 'generate-code-secrets-masked', state: 'filled' },
+          async () => {
+            await openHttpRequestTab(w)
+            await fillUrl(w, `${T.http}/post`)
+            await addHeader(w, 'X-API-Key', 'sk_live_9f8e7d6c5b4a3210')
+            await setAuthBasic(w, 'demo', 'p4ss-w0rd-literal-42')
+            await setRightPanelOpen(w, true)
+            await w
+              .getByTestId('right-panel')
+              .getByTitle(/^Code$|^Kod$/)
+              .click()
+            await expect(w.getByTestId('codegen-language-select')).toBeVisible()
+            const include = w.getByTestId('codegen-include-secrets')
+            if (await include.isChecked().catch(() => false)) await include.uncheck()
+            await expect(w.getByTestId('right-panel')).toContainText('***', { timeout: 8_000 })
+          },
+        )
+        await attempt('close right panel (14)', () => setRightPanelOpen(w, rightPanelWasOpen))
+
+        // #287: SSL verification overridden to off on this request, then back
+        // to "inherit" through the "Use inherited" link.
+        const sslSwitch = w.getByTestId('settings-ssl-verify')
+        const sslSource = w.getByTestId('settings-ssl-verify-source')
+        await shot(
+          w,
+          { id: 126, area: 'http', screen: 'settings-ssl-override', state: 'filled' },
+          async () => {
+            await w.getByTestId('req-tab-settings').click()
+            await expect(sslSwitch).toBeAttached()
+            if (await sslSwitch.isChecked())
+              await sslSwitch.locator('xpath=ancestor::label[1]').click()
+            await expect(sslSwitch).not.toBeChecked()
+            await expect(sslSource).toHaveAttribute('data-inherited', 'false')
+            await expect(w.getByTestId('settings-ssl-verify-inherit')).toBeVisible()
+          },
+        )
+        await shot(
+          w,
+          { id: 127, area: 'http', screen: 'settings-ssl-inherited', state: 'filled' },
+          async () => {
+            await w.getByTestId('settings-ssl-verify-inherit').click()
+            await expect(sslSource).toHaveAttribute('data-inherited', 'true')
+            await expect(w.getByTestId('settings-ssl-verify-inherit')).toHaveCount(0)
+          },
+        )
+      } finally {
+        if (T.origContent) await setContentSize(app, T.origContent).catch(() => {})
+        await setRightPanelOpen(w, rightPanelWasOpen).catch(() => {})
+      }
+    },
+  )
+
+  // 2xx ─ Issue acceptance shots: realtime tabs, refused connections, Turkish ───
+  group(
+    '15 fresh realtime tabs, refused connections, Turkish realtime (#253 #257 #258 #261)',
+    async (c) => {
+      const { w } = c
+      const urls = getTestServerUrls()
+
+      // #257: a fresh tab starts empty, the URL field shows its placeholder.
+      const fresh = async (
+        id: number,
+        area: string,
+        label: RegExp,
+        urlTestId: string,
+      ): Promise<void> => {
+        await shot(w, { id, area, screen: 'new-tab', state: 'empty' }, async () => {
+          await openNewDropdownItem(w, label)
+          await expect(w.getByTestId(urlTestId)).toBeVisible()
+        })
+        await closeAllTabs(w)
+      }
+      await fresh(222, 'websocket', /WebSocket/i, 'ws-url')
+      await fresh(232, 'sse', /SSE/i, 'sse-url')
+      await fresh(203, 'graphql', /GraphQL/i, 'graphql-url')
+
+      // #253: connection refused must read as a real error with a hint.
+      await shot(
+        w,
+        { id: 231, area: 'sse', screen: 'connect-refused', state: 'error' },
+        async () => {
+          await openNewDropdownItem(w, /SSE/i)
+          await w.getByTestId('sse-url').fill('http://127.0.0.1:9/events')
+          await w.getByTestId('sse-connect').click()
+          await expect(w.getByTestId('sse-message')).toHaveAttribute('data-state', 'error', {
+            timeout: 20_000,
+          })
+        },
+      )
+      await disconnectIfConnected(w)
+      await closeAllTabs(w)
+      await shot(
+        w,
+        { id: 236, area: 'mqtt', screen: 'connect-refused', state: 'error' },
+        async () => {
+          await openNewDropdownItem(w, /MQTT/)
+          await w.getByTestId('mqtt-url').fill('mqtt://127.0.0.1:9')
+          await w.getByTestId('mqtt-connect').click()
+          await expect(w.getByTestId('mqtt-error')).toBeVisible({ timeout: 20_000 })
+        },
+      )
+      await disconnectIfConnected(w)
+      await closeAllTabs(w)
+
+      // #258/#261: Turkish UI. Everything is opened in English first (the
+      // helpers match English labels), then the language is switched on the
+      // open tab — the tab keeps its connection and its message log.
+      try {
+        await attempt('ws tab for Turkish shot', async () => {
+          await openNewDropdownItem(w, /WebSocket/i)
+          await w.getByTestId('ws-url').fill(urls.ws)
+          await w.getByTestId('ws-connect').click()
+          await expect(w.getByTestId('ws-disconnect')).toBeVisible({ timeout: 15_000 })
+          await fillMonaco(w, 'ws-composer', '{"type":"ping","seq":1}')
+          await w.getByRole('button', { name: /Send Message/i }).click()
+          await expect(w.getByTestId('ws-row-badge').first()).toBeVisible({ timeout: 15_000 })
+        })
+        await shot(
+          w,
+          { id: 223, area: 'websocket', screen: 'message-log-format', state: 'tr' },
+          async () => {
+            await setLocale(w, 'tr')
+            await expect(w.getByTestId('ws-row-badge').first()).toHaveText(/JSON/)
+          },
+        )
+        await setLocale(w, 'en')
+        await disconnectIfConnected(w)
+        await closeAllTabs(w)
+
+        // The SSE Body-disabled hint is a native `title` (not capturable);
+        // the visible Turkish SSE editor is what this shot proves.
+        await attempt('sse tab for Turkish shot', async () => {
+          await openNewDropdownItem(w, /SSE/i)
+          await w.getByTestId('sse-url').fill(urls.sse)
+          await w.getByTestId('sse-connect').click()
+          await expect(w.getByTestId('sse-status')).toHaveAttribute('data-state', 'connected', {
+            timeout: 15_000,
+          })
+        })
+        await shot(w, { id: 233, area: 'sse', screen: 'editor', state: 'tr' }, async () => {
+          await setLocale(w, 'tr')
+          await expect(w.getByTestId('sse-status')).toBeVisible()
+          await w.getByTestId('sse-status').hover()
+        })
+        await setLocale(w, 'en')
+        await disconnectIfConnected(w)
+        await closeAllTabs(w)
+
+        // A request created while the UI is Turkish gets the Turkish default name.
+        await shot(w, { id: 100, area: 'http', screen: 'new-tab', state: 'tr' }, async () => {
+          await setLocale(w, 'tr')
+          await w.getByTestId('tab-new').click()
+          await expect(w.getByTestId('endpoint-tab').last()).toContainText('Yeni İstek')
+        })
+      } finally {
+        await setLocale(w, 'en').catch((e) => note('restore locale (15)', e))
+      }
+    },
+  )
+
+  // 3xx ─ Issue acceptance shots: runner configuration ─────────────────────────
+  group('16 runner config: fail script, schedule mode at a narrow size (#255 #267)', async (c) => {
+    const { w, app } = c
+    const suite = 'Regression suite'
+    await shot(
+      w,
+      { id: 305, area: 'tests', screen: 'run-config-fail-script', state: 'filled' },
+      async () => {
+        await runSuiteFromContextMenu(w, suite)
+        await waitRunnerConfigReady(w)
+        const failScript = w.getByTestId('runner-fail-script')
+        await failScript.scrollIntoViewIfNeeded()
+        await failScript.fill("console.log('Regression suite failed: notify the on-call channel');")
+        await expect(failScript).toHaveValue(/Regression suite failed/)
+      },
+    )
+    await shot(
+      w,
+      { id: 306, area: 'runner', screen: 'config-schedule', state: 'narrow' },
+      async () => {
+        await w
+          .getByTestId('workbench')
+          .getByLabel(/Schedule runs/i)
+          .check()
+        await setContentSize(app, { width: 1024, height: 700 })
+        const bar = w.getByTestId('runner-action-bar')
+        await expect(bar).toBeVisible()
+        await expect(bar).toBeInViewport()
+      },
+    )
   })
 
   // 99 ─ Cleanup ───────────────────────────────────────────────────────────────
