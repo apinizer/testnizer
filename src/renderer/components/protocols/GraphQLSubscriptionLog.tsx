@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Unplug, Trash2 } from 'lucide-react'
 import { useGraphQLStore } from '../../stores/graphql.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 function formatTimestamp(ts: number): string {
   const d = new Date(ts)
@@ -114,9 +115,7 @@ export default function GraphQLSubscriptionLog() {
       {/* Footer */}
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]">
-          {events.length === 1
-            ? t('sse.eventCountOne')
-            : t('sse.eventCount').replace('{count}', String(events.length))}
+          {formatCount(events.length, t('sse.eventCountOne'), t('sse.eventCount'))}
         </span>
         <div className="flex items-center gap-3">
           <label className="flex cursor-pointer items-center gap-1.5">

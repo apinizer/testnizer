@@ -272,7 +272,7 @@ export async function executeQuery(options: GraphqlExecuteOptions): Promise<Grap
   } catch (err) {
     const endTime = performance.now()
     // The ONE connection-error format, next step included (issue #253).
-    const classified = classifyTransportError(err)
+    const classified = classifyTransportError(err, { protocol: 'graphql' })
     return {
       requestId,
       protocol: 'graphql',

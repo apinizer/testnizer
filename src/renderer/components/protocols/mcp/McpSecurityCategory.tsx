@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import McpSecurityFindingRow from './McpSecurityFindingRow'
 import { translated, type CategoryView } from './security-ui'
 
@@ -37,7 +38,11 @@ export default function McpSecurityCategory({ view }: { view: CategoryView }) {
         )}
         {warns > 0 && (
           <span className="text-[11px] font-medium text-[var(--orange)]">
-            {warns} {t('mcp.security.summary.warn')}
+            {formatCount(
+              warns,
+              t('mcp.security.summary.warnCountOne'),
+              t('mcp.security.summary.warnCount'),
+            )}
           </span>
         )}
         {view.score !== undefined && (

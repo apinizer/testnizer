@@ -232,6 +232,7 @@ interface Report {
     teardownPassedEndpoints?: number
     teardownFailedEndpoints?: number
     stopReason?: string
+    environmentName?: string
     results: EndpointRunResult[]
   }
 }
@@ -525,7 +526,10 @@ describe('run fail script — pm.run (issue #267)', () => {
   it('pm.run exists only in the fail script (setup, teardown and request scripts have none)', async () => {
     const check = (label: string, want: 'undefined' | 'object'): string =>
       `pm.test('${label}', function () { pm.expect(typeof pm.run).to.equal('${want}') })`
-    const bad = seedEndpoint({ path: '/fail', preScript: check('request script has no pm.run', 'undefined') })
+    const bad = seedEndpoint({
+      path: '/fail',
+      preScript: check('request script has no pm.run', 'undefined'),
+    })
     // The passing pre-request pm.test above makes `/fail` assertion-driven and
     // therefore PASSED (issue #16) — a second, assertion-less 500 keeps the run red.
     const red = seedEndpoint({ path: '/fail?red' })
@@ -591,7 +595,7 @@ describe('run fail script — pm.run (issue #267)', () => {
     await run({
       endpointIds: [bad],
       runFailScript:
-        "try { pm.run.summary.failed = 99 } catch (e) {}\n" +
+        'try { pm.run.summary.failed = 99 } catch (e) {}\n' +
         post('/summary', 'JSON.stringify(pm.run.summary)'),
     })
     expect((JSON.parse(bodies['/summary'][0]) as { failed: number }).failed).toBe(1)
@@ -613,9 +617,16 @@ describe('run fail script — pm.run (issue #267)', () => {
     const snapshot = res.data!.results.filter((r) => r.endpointId !== FAIL_ROW_ID)
     expect(snapshot.length).toBe(res.data!.results.length - 1)
 
+    // The live results header's Export passes the report's environment (issue
+    // #307), so the parity check does too.
     const viaExport = async (format: 'html' | 'json'): Promise<string> =>
-      ((await harness.invoke('runner:export', { results: snapshot, format })) as { data: string })
-        .data
+      (
+        (await harness.invoke('runner:export', {
+          results: snapshot,
+          format,
+          environmentName: res.data!.environmentName,
+        })) as { data: string }
+      ).data
     const stamp = (s: string): string => s.replace(/Generated: [^<]+/, 'Generated: <t>')
 
     expect(stamp(bodies['/export-html'][0])).toBe(stamp(await viaExport('html')))

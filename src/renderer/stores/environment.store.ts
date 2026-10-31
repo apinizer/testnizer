@@ -189,7 +189,10 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
       activeEnvironmentId: id,
       environments: state.environments.map((e) => ({ ...e, is_active: e.id === id })),
     }))
-    if (projectId && id) {
+    // Persist every choice, "No environment" (null) included: Run / Mock /
+    // Scheduler resolve from the DB's `is_active` row, so an unpersisted
+    // change would make Send and Run use different environments.
+    if (projectId) {
       try {
         await window.api?.environment?.setActiveForProject(projectId, id)
       } catch {
@@ -224,7 +227,11 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
             }
           }),
         )
-        const active = hydrated.find((e) => e.is_active)?.id || hydrated[0]?.id || null
+        // The DB's `is_active` row and nothing else — main (Run, Mock,
+        // Scheduler) reads the same row. A first-environment fallback here
+        // showed an environment as active (header, footer, modal badge, Send)
+        // that every run ignored, and hid Set Active so it could not be fixed.
+        const active = hydrated.find((e) => e.is_active)?.id ?? null
         set({ environments: hydrated, activeEnvironmentId: active })
       }
     } catch {

@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { evaluateXPath, XPATH_EXAMPLES, XPATH_SAMPLE_DOC } from '../../lib/tools/xpath'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 type XPathResult = ReturnType<typeof evaluateXPath>
@@ -185,7 +186,11 @@ export default function XPathTool() {
       footer={
         result?.ok && result.kind === 'nodes' ? (
           <span>
-            {result.count} {t('tools.jsonpath.matches')}
+            {formatCount(
+              result.count,
+              t('tools.jsonpath.matchCountOne'),
+              t('tools.jsonpath.matchCount'),
+            )}
           </span>
         ) : null
       }

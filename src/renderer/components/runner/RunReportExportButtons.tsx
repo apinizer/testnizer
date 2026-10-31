@@ -20,10 +20,13 @@ import {
 export default function RunReportExportButtons({
   results,
   resultsJson,
+  environmentName,
   compact = false,
 }: {
   results?: EndpointRunResult[]
   resultsJson?: string
+  /** The run's environment, printed in the report (issue #307). */
+  environmentName?: string | null
   compact?: boolean
 }) {
   const { t } = useTranslation()
@@ -33,8 +36,10 @@ export default function RunReportExportButtons({
     if (busy) return
     setBusy(true)
     try {
-      if (results) await exportRunReport(results, format)
-      else if (resultsJson !== undefined) await exportStoredRunReport(resultsJson, format)
+      if (results) await exportRunReport(results, format, environmentName)
+      else if (resultsJson !== undefined) {
+        await exportStoredRunReport(resultsJson, format, environmentName)
+      }
     } finally {
       setBusy(false)
     }

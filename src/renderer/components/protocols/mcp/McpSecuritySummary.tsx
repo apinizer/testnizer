@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Download } from 'lucide-react'
 import type { McpSecurityReport } from '../../../types/mcp'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import { saveSecurityReportHtml } from '../../../lib/mcp-security-export'
 import { GhostButton } from './ui'
 import { GRADE_CLASS } from './security-ui'
@@ -75,7 +76,13 @@ export default function McpSecuritySummary({ report }: { report: McpSecurityRepo
         <div className="flex flex-wrap items-center gap-2.5 text-[12px]">
           {COUNTS.map(([key, cls]) => (
             <span key={key} className={cls}>
-              {report.summary[key]} {t(`mcp.security.summary.${key}`)}
+              {key === 'warn'
+                ? formatCount(
+                    report.summary.warn,
+                    t('mcp.security.summary.warnCountOne'),
+                    t('mcp.security.summary.warnCount'),
+                  )
+                : `${report.summary[key]} ${t(`mcp.security.summary.${key}`)}`}
             </span>
           ))}
         </div>

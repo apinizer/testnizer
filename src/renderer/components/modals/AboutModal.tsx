@@ -3,6 +3,7 @@ import { X, ExternalLink, FileText, Shield, Building2 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEulaStore } from '../../stores/eula.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { formatDate } from '../../lib/format-datetime'
 import LegalDocModal from '../eula/LegalDocModal'
 import Modal from '../shared/Modal'
@@ -221,7 +222,11 @@ export default function AboutModal() {
               </span>
               {licenses && (
                 <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                  {t('about.licensesCount').replace('{count}', String(licenses.length))}
+                  {formatCount(
+                    licenses.length,
+                    t('about.licensesCountOne'),
+                    t('about.licensesCount'),
+                  )}
                 </span>
               )}
             </div>

@@ -938,7 +938,7 @@ export async function executeSoap(options: SoapExecuteOptions): Promise<SoapApiR
     // Reuse the shared transport classifier so SOAP shows the same TLS / DNS /
     // refused-connection messaging as HTTP. Falls back to the raw error text
     // for non-axios shapes (e.g. WSDL parse exceptions thrown above).
-    const classified = classifyTransportError(err)
+    const classified = classifyTransportError(err, { protocol: 'soap' })
     return {
       requestId,
       protocol: 'soap',

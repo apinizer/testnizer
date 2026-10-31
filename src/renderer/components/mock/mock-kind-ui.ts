@@ -11,6 +11,7 @@
  */
 import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mock-kind'
 import type { MockBodyType, MockServer } from '../../types'
+import { formatCount } from '../../lib/plural'
 
 const BODY_TYPES: Record<MockServerKind, readonly MockBodyType[]> = {
   http: ['json', 'xml', 'text', 'html'],
@@ -71,9 +72,7 @@ export function serverTypeConfirmBody(
   t: (key: string) => string,
   o: { count: number; kind: string; types: readonly MockBodyType[] },
 ): string {
-  const key = o.count === 1 ? 'mock.serverTypeConfirmBodyOne' : 'mock.serverTypeConfirmBody'
-  return t(key)
-    .replace('{count}', String(o.count))
+  return formatCount(o.count, t('mock.serverTypeConfirmBodyOne'), t('mock.serverTypeConfirmBody'))
     .replace('{kind}', o.kind)
     .replace('{types}', o.types.map((b) => bodyTypeLabel(t, b)).join(', '))
 }

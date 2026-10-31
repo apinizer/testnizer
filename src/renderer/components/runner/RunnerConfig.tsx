@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useNumberDraft } from '../../lib/number-draft'
 import { toast } from '../../lib/toast'
 
@@ -469,7 +470,7 @@ export default function RunnerConfig({
             the delay inputs used to squeeze to a few px beside their labels. */}
         <div
           data-testid="runner-run-config-grid"
-          className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4"
+          className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(min(9rem,100%),1fr))] gap-4"
         >
           <div className="min-w-0">
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
@@ -484,7 +485,7 @@ export default function RunnerConfig({
                 iterationsDraft.inputProps.onFocus()
                 e.currentTarget.select()
               }}
-              className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+              className="w-full min-w-[5rem] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
               style={{ fontSize: 13 }}
             />
           </div>
@@ -511,7 +512,7 @@ export default function RunnerConfig({
                   delayDraft.inputProps.onFocus()
                   e.currentTarget.select()
                 }}
-                className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                className="w-full min-w-[5rem] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}
               />
               <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>
@@ -541,7 +542,7 @@ export default function RunnerConfig({
                   iterationDelayDraft.inputProps.onFocus()
                   e.currentTarget.select()
                 }}
-                className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
+                className="w-full min-w-[5rem] rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                 style={{ fontSize: 13 }}
               />
               <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>
@@ -764,11 +765,11 @@ function IterationDataPicker({
         {filename && (
           <span style={{ color: 'var(--muted)', fontSize: 12 }}>
             {filename} ·{' '}
-            {t(
-              rows.length === 1
-                ? 'runnerConfig.iterationCountOne'
-                : 'runnerConfig.iterationCountOther',
-            ).replace('{count}', String(rows.length))}
+            {formatCount(
+              rows.length,
+              t('runnerConfig.iterationCountOne'),
+              t('runnerConfig.iterationCountOther'),
+            )}
           </span>
         )}
         {rows.length > 0 && (

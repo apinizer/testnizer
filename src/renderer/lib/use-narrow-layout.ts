@@ -7,8 +7,9 @@ import { narrowLayoutFor, narrowLayoutForRow } from './narrow-layout'
  * `entry.contentRect.width`; `'border'` reads the border box
  * (`borderBoxSize[0].inlineSize`, falling back to `contentRect.width` where a
  * ResizeObserver does not report it). Does nothing without ResizeObserver.
+ * Shared by every measured narrow decision (#251 editor, #308 Runner split).
  */
-function observeWidth(
+export function observeWidth(
   el: Element,
   onWidth: (width: number) => void,
   box: 'content' | 'border' = 'content',

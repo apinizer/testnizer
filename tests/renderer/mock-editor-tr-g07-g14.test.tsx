@@ -83,13 +83,10 @@ describe('TR mock editor speaks one language (G-07 / G-12)', () => {
   it('the endpoints screen has no English loan words', async () => {
     useLocale('tr')
     await mount(httpServer())
-    // The "Insert example…" pickers list code presets (`lib/mock-snippets.ts`)
-    // by their English names — a code library, out of this sweep's scope.
-    const clone = document.body.cloneNode(true) as HTMLElement
-    for (const sel of Array.from(clone.querySelectorAll('select[title="Örnek ekle…"]'))) {
-      sel.remove()
-    }
-    const text = clone.textContent ?? ''
+    // The "Insert example…" pickers are scanned too: their preset names are
+    // translated since issue #309 (`mock.snippet.<id>.label`).
+    expect(document.querySelectorAll('select[title="Örnek ekle…"]').length).toBe(2)
+    const text = document.body.textContent ?? ''
     for (const re of MIXED) {
       expect(text.match(new RegExp(`.{0,40}${re.source}.{0,40}`, 'i'))?.[0] ?? '', String(re)).toBe(
         '',

@@ -11,30 +11,39 @@
  */
 
 export interface MockSnippet {
-  /** Display label shown in the dropdown. */
-  label: string
-  /** One-line tooltip / hint shown under the snippet content. */
-  description: string
-  /** The text inserted into the editor when the user picks this entry. */
+  /**
+   * Stable id. The dropdown name and its tooltip live in i18n
+   * (`mock.snippet.<id>.label` / `.description`, EN + TR — issue #309);
+   * the picker translates them at render time.
+   */
+  id: string
+  /** The text inserted into the editor when the user picks this entry. Code — never translated. */
   body: string
+}
+
+/** i18n key of the snippet's dropdown name. */
+export function snippetLabelKey(s: Pick<MockSnippet, 'id'>): string {
+  return `mock.snippet.${s.id}.label`
+}
+
+/** i18n key of the snippet's one-line description (the option tooltip). */
+export function snippetDescriptionKey(s: Pick<MockSnippet, 'id'>): string {
+  return `mock.snippet.${s.id}.description`
 }
 
 // ─── Condition snippets ──────────────────────────────────────────
 
 export const CONDITION_SNIPPETS: MockSnippet[] = [
   {
-    label: 'Always (default)',
-    description: 'Catch-all — the simplest possible condition; matches every request.',
+    id: 'cond.always',
     body: JSON.stringify({ type: 'always' }, null, 2),
   },
   {
-    label: 'Header equals',
-    description: 'Pick this response when a request header has a specific value.',
+    id: 'cond.headerEquals',
     body: JSON.stringify({ type: 'header', name: 'X-Tenant', op: 'eq', value: 'acme' }, null, 2),
   },
   {
-    label: 'Header contains',
-    description: 'Substring match against a header value.',
+    id: 'cond.headerContains',
     body: JSON.stringify(
       { type: 'header', name: 'User-Agent', op: 'contains', value: 'Postman' },
       null,
@@ -42,8 +51,7 @@ export const CONDITION_SNIPPETS: MockSnippet[] = [
     ),
   },
   {
-    label: 'Authorization bearer present',
-    description: 'Match when the Authorization header starts with "Bearer ".',
+    id: 'cond.bearerPresent',
     body: JSON.stringify(
       { type: 'header', name: 'Authorization', op: 'regex', value: '^Bearer\\s+' },
       null,
@@ -51,18 +59,15 @@ export const CONDITION_SNIPPETS: MockSnippet[] = [
     ),
   },
   {
-    label: 'Query param equals',
-    description: 'Pick this response when ?status=active (etc.) is present.',
+    id: 'cond.queryEquals',
     body: JSON.stringify({ type: 'query', name: 'status', op: 'eq', value: 'active' }, null, 2),
   },
   {
-    label: 'Path parameter equals',
-    description: 'Match a specific :id segment from the endpoint path.',
+    id: 'cond.pathParamEquals',
     body: JSON.stringify({ type: 'pathParam', name: 'id', op: 'eq', value: '42' }, null, 2),
   },
   {
-    label: 'JSON body — field equals',
-    description: 'Match when a JSONPath in the request body equals a value.',
+    id: 'cond.jsonFieldEquals',
     body: JSON.stringify(
       { type: 'jsonPath', path: '$.user.role', op: 'eq', value: 'admin' },
       null,
@@ -70,13 +75,11 @@ export const CONDITION_SNIPPETS: MockSnippet[] = [
     ),
   },
   {
-    label: 'JSON body — field exists',
-    description: 'Match when a JSONPath resolves to anything at all.',
+    id: 'cond.jsonFieldExists',
     body: JSON.stringify({ type: 'jsonPath', path: '$.errors[0]', op: 'exists' }, null, 2),
   },
   {
-    label: 'XML body — element value (XPath)',
-    description: 'Match an XPath expression evaluated against the request body.',
+    id: 'cond.xpathValue',
     body: JSON.stringify(
       { type: 'xpath', expression: '//Order/Status/text()', op: 'eq', value: 'PAID' },
       null,
@@ -84,13 +87,11 @@ export const CONDITION_SNIPPETS: MockSnippet[] = [
     ),
   },
   {
-    label: 'Method is POST',
-    description: 'Filter by HTTP verb (useful when the endpoint accepts ANY).',
+    id: 'cond.methodPost',
     body: JSON.stringify({ type: 'method', method: 'POST' }, null, 2),
   },
   {
-    label: 'AND — header + body',
-    description: 'Combine two predicates; both must match.',
+    id: 'cond.and',
     body: JSON.stringify(
       {
         type: 'and',
@@ -104,8 +105,7 @@ export const CONDITION_SNIPPETS: MockSnippet[] = [
     ),
   },
   {
-    label: 'OR — multiple methods',
-    description: 'Match when any of the listed predicates is true.',
+    id: 'cond.or',
     body: JSON.stringify(
       {
         type: 'or',
@@ -124,9 +124,7 @@ export const CONDITION_SNIPPETS: MockSnippet[] = [
 
 export const SCRIPT_SNIPPETS: MockSnippet[] = [
   {
-    label: 'Stateful CRUD — store + return',
-    description:
-      'POST stores the body in `state.users[id]`; GET returns either one user or the full collection.',
+    id: 'script.statefulCrud',
     body: `// In-memory CRUD stub. Persists across requests until the server is stopped.
 state.users ??= {}
 
@@ -151,16 +149,13 @@ if (request.method === 'POST') {
 `,
   },
   {
-    label: 'Counter — incremented on every call',
-    description: 'Server-wide counter, useful for quickly checking how many requests came in.',
+    id: 'script.counter',
     body: `state.calls = (state.calls ?? 0) + 1
 setJson({ count: state.calls, ts: new Date().toISOString() })
 `,
   },
   {
-    label: 'Echo + transform',
-    description:
-      'Reply with method, path, headers, query and body — useful for debugging client requests.',
+    id: 'script.echo',
     body: `setJson({
   method: request.method,
   path: request.path,
@@ -172,8 +167,7 @@ setJson({ count: state.calls, ts: new Date().toISOString() })
 `,
   },
   {
-    label: 'Conditional response by request body',
-    description: 'Different status / body depending on a request body field.',
+    id: 'script.conditionalByBody',
     body: `if (request.body && request.body.role === 'admin') {
   setJson({ allowed: true, scope: ['read', 'write', 'delete'] })
 } else {
@@ -183,8 +177,7 @@ setJson({ count: state.calls, ts: new Date().toISOString() })
 `,
   },
   {
-    label: 'Random failure (1 in 5)',
-    description: 'Probabilistic fault injection — return 500 ~20% of the time.',
+    id: 'script.randomFailure',
     body: `if (Math.random() < 0.2) {
   setStatus(500)
   setJson({ error: 'random_failure' })
@@ -194,9 +187,7 @@ setJson({ count: state.calls, ts: new Date().toISOString() })
 `,
   },
   {
-    label: 'Bearer token check (custom)',
-    description:
-      'Inline token validation in script — use the server-level Auth panel for declarative auth instead.',
+    id: 'script.bearerCheck',
     body: `const auth = request.headers['authorization'] ?? ''
 const token = /^Bearer\\s+(.+)$/i.exec(auth.trim())?.[1] ?? ''
 const ALLOWED = ['secret-token-1', 'secret-token-2']
@@ -210,8 +201,7 @@ if (!ALLOWED.includes(token)) {
 `,
   },
   {
-    label: 'Add server-generated fields',
-    description: 'Take an incoming body, add an id + timestamps, return it as the response.',
+    id: 'script.serverFields',
     body: `const inbound = request.body ?? {}
 const created = {
   ...inbound,
@@ -223,17 +213,14 @@ setJson(created)
 `,
   },
   {
-    label: 'Header → response mapping',
-    description: 'Echo a request header into the response payload.',
+    id: 'script.headerMapping',
     body: `const traceId = request.headers['x-trace-id'] ?? 'untraced'
 setHeader('x-trace-id', traceId)
 setJson({ traceId, timestamp: Date.now() })
 `,
   },
   {
-    label: 'Pagination (paginate state.items)',
-    description:
-      'Slice an in-memory list with ?page=&size= query params. Run "Stateful CRUD" first to populate.',
+    id: 'script.pagination',
     body: `const items = Object.values(state.users ?? {})
 const page = Math.max(1, Number(request.query.page) || 1)
 const size = Math.min(100, Math.max(1, Number(request.query.size) || 20))
@@ -247,9 +234,7 @@ setJson({
 `,
   },
   {
-    label: 'HTTP status from query (?code=429)',
-    description:
-      'Return whatever HTTP status the caller asks for — handy for client-side error tests.',
+    id: 'script.statusFromQuery',
     body: `const code = Number(request.query.code)
 if (Number.isFinite(code) && code >= 100 && code < 600) {
   setStatus(code)
@@ -260,9 +245,7 @@ if (Number.isFinite(code) && code >= 100 && code < 600) {
 `,
   },
   {
-    label: 'Sequential responses (round-robin)',
-    description:
-      'Cycle through a fixed list of responses on each call. Resets when the server restarts.',
+    id: 'script.roundRobin',
     body: `const replies = [
   { status: 200, body: { ok: true, n: 1 } },
   { status: 200, body: { ok: true, n: 2 } },
@@ -275,9 +258,7 @@ setJson(r.body)
 `,
   },
   {
-    label: 'Slow response (artificial latency)',
-    description:
-      'Adds delay using a busy-wait loop. Prefer the per-response Delay (ms) field for cleaner waits — this script is a fallback when you need conditional latency.',
+    id: 'script.slowResponse',
     body: `// Note: vm sandbox can't await timers — for clean delays use the
 // "Delay (ms)" field on the response. This snippet shows the pattern.
 const start = Date.now()

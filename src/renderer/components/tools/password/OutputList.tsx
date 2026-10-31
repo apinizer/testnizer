@@ -7,6 +7,7 @@ import CopyButton from '../../shared/CopyButton'
 import { useCopy } from '../../../lib/use-copy'
 import type { StrengthLevel } from '../../../lib/tools/password-generator'
 import type { Tr } from './atoms'
+import { formatCount } from '../../../lib/plural'
 
 const STRENGTH_META: Record<StrengthLevel, { labelKey: string; color: string; pct: number }> = {
   'very-weak': { labelKey: 'tools.passwordGen.strengthVeryWeak', color: 'var(--red)', pct: 20 },
@@ -70,7 +71,11 @@ export default function OutputList({
         style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
       >
         <span style={{ color: 'var(--muted)' }}>
-          {output.length} {t('tools.passwordGen.generated')}
+          {formatCount(
+            output.length,
+            t('tools.passwordGen.generatedCountOne'),
+            t('tools.passwordGen.generatedCount'),
+          )}
           {/*
             Marked stale, NOT cleared: these are the user's output and they may
             be halfway through copying one. Verdicts get cleared; artifacts get

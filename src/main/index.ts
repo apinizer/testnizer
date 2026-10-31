@@ -14,6 +14,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { initDatabase, closeDatabase, getDb, type InitDatabaseResult } from './db/database'
 import { runHistoryMaskMigration } from './db/history-mask-migration'
 import { runSecretAtRestMigration } from './db/secret-at-rest-migration'
+import { runActiveEnvironmentMigration } from './db/active-environment-migration'
 import { registerAllHandlers } from './ipc'
 import { migrateProjectSettings } from './ipc/settings.handler'
 import { initAutoUpdater } from './updater'
@@ -332,6 +333,14 @@ app.whenReady().then(() => {
   }
   if (dbInit.markerError) {
     mainLog.warn(`[db] could not record the started build: ${dbInit.markerError}`)
+  }
+
+  // Once: projects with environments but none active get the environment the
+  // old store showed as active (follow-up to issue #307). Synchronous and
+  // before the window, so the first environment list already reflects it.
+  const activeEnv = runActiveEnvironmentMigration(getDb())
+  if (activeEnv.activated > 0) {
+    mainLog.info(`[db] active environment restored for ${activeEnv.activated} project(s)`)
   }
 
   // Deny-by-default web permissions (issue #294): Electron would otherwise

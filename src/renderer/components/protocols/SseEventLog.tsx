@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { Trash2, Filter } from 'lucide-react'
 import { useSseStore } from '../../stores/sse.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { formatElapsed } from '../../../shared/realtime'
 
 /** Event-type badge tones — globals.css tokens (the method-badge palette), so dark mode follows. */
@@ -186,9 +187,7 @@ export default function SseEventLog() {
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <div className="flex items-center gap-3">
           <span data-testid="sse-event-count" className="text-[var(--muted)]">
-            {events.length === 1
-              ? t('sse.eventCountOne')
-              : t('sse.eventCount').replace('{count}', String(events.length))}
+            {formatCount(events.length, t('sse.eventCountOne'), t('sse.eventCount'))}
           </span>
           {connectionState === 'connected' && connectedAt && (
             <span data-testid="sse-elapsed" className="text-[var(--hint)]">

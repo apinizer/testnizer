@@ -2,6 +2,7 @@ import { useId, useMemo, useState } from 'react'
 import ToolShell from './ToolShell'
 import { REGEX_FLAGS, REGEX_PRESETS, runRegex, type RegexFlag } from '../../lib/tools/regex'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 export default function RegexTool() {
   const { t } = useTranslation()
@@ -151,7 +152,13 @@ export default function RegexTool() {
                   not "Input2 matches"; flex layout drops it visually. */}
               {t('tools.regex.input')}{' '}
               <span style={{ textTransform: 'none' }}>
-                {result.ok ? `${result.matches.length} ${t('tools.regex.matches')}` : ''}
+                {result.ok
+                  ? formatCount(
+                      result.matches.length,
+                      t('tools.regex.matchCountOne'),
+                      t('tools.regex.matchCount'),
+                    )
+                  : ''}
               </span>
             </label>
             <textarea

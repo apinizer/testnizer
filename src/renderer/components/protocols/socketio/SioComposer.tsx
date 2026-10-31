@@ -1,6 +1,7 @@
 import { Plus, Save, Send } from 'lucide-react'
 import { useSocketIOStore } from '../../../stores/socketio.store'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { Checkbox, GhostButton, PrimaryButton } from '../../mock-mcp/ui'
 import SavedMessagesPane from '../realtime/SavedMessagesPane'
@@ -98,9 +99,7 @@ export default function SioComposer() {
           items={saved.map((m) => ({
             id: m.id,
             name: m.name,
-            subtitle: `${m.eventName}${m.acknowledgement ? ` · ${t('socketio.ackShort')}` : ''} · ${t(
-              m.args.length === 1 ? 'socketio.argsOne' : 'socketio.argsOther',
-            ).replace('{n}', String(m.args.length))}`,
+            subtitle: `${m.eventName}${m.acknowledgement ? ` · ${t('socketio.ackShort')}` : ''} · ${formatCount(m.args.length, t('socketio.argsOne'), t('socketio.argsOther'))}`,
           }))}
           activeId={activeSavedId}
           onLoad={loadSaved}

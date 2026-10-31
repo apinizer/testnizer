@@ -25,6 +25,7 @@ import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
 import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { toast } from '../../lib/toast'
 import { classifyPostmanDocument, isPostmanVariablesKind } from '../../../shared/postman-detect'
 
@@ -637,9 +638,7 @@ function EnvPane({
             )}
           </div>
           <div style={{ color: 'var(--muted)' }}>
-            {count === 1
-              ? t('env.variableCountOne')
-              : t('env.variableCount').replace('{count}', String(count))}
+            {formatCount(count, t('env.variableCountOne'), t('env.variableCount'))}
           </div>
         </div>
         <div className="flex items-center gap-2">

@@ -31,7 +31,7 @@ import { lockDragStyles } from '../../lib/drag-lock'
 import { setRunnerBusy } from '../../lib/runner-activity'
 import { revealRunResult, revealTargetFor, type RunOrigin } from '../../lib/reveal-run-result'
 import { asRunOrigin, runOriginFromSourceLabel } from '../../lib/runner-source-label'
-import { CONFIG_PANE_CLASS, RUNNER_CONFIG_MIN_WIDTH, sequencePaneStyle } from './runner-layout'
+import RunnerConfigSplit from './RunnerConfigSplit'
 
 /**
  * After a run, refresh the renderer env store from the DB so script-written
@@ -1480,10 +1480,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
             onViewReport={handleViewReport}
           />
         ) : view === 'config' ? (
-          <>
-            {/* Run Sequence (left) — resizable; shrinks first when the window is
-                narrow so the config column never overflows (G-16). */}
-            <div data-testid="runner-sequence-pane" style={sequencePaneStyle(sequenceWidth)}>
+          // Run Sequence + config: side by side (the sequence shrinks first,
+          // G-16) or stacked when the view is too narrow for both (#308).
+          <RunnerConfigSplit
+            sequenceWidth={sequenceWidth}
+            divider={<ResizeDivider onDrag={handleSequenceResize} />}
+            sequence={
               <RunnerSequence
                 endpoints={endpoints}
                 folderGroups={folderGroups}
@@ -1519,14 +1521,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                     : undefined
                 }
               />
-            </div>
-            <ResizeDivider onDrag={handleSequenceResize} />
-            {/* Config (middle) — keeps a floor; the sequence pane gives way. */}
-            <div
-              data-testid="runner-config-pane"
-              className={CONFIG_PANE_CLASS}
-              style={{ minWidth: RUNNER_CONFIG_MIN_WIDTH }}
-            >
+            }
+            config={
               <RunnerConfig
                 delay={delay}
                 setDelay={setDelay}
@@ -1564,8 +1560,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 // APIs / folder run has no suite row to store it on (#100).
                 onSaveConfig={suiteIdForRunner ? handleSaveConfig : undefined}
               />
-            </div>
-          </>
+            }
+          />
         ) : (
           <RunnerResults
             results={results}

@@ -497,9 +497,27 @@ paneli geliyor; Electron 44 — ve secret'lar makinenizde kalıyor.**
 - **Türkçe, son adım:** Türkçe adları ve açıklamalarıyla HTTP durum kodları
   (arama iki dilde de çalışır), Tools yer tutucuları ve ipuçları, Runs,
   History, AI Chat ve günlüklerde tek bir tarih ve saat biçimi ve her iki dilde
-  de tanınan varsayılan istek adları.
+  de tanınan varsayılan istek adları. Mock **Örnek ekle** parçalarının adları
+  Türkçe, sayaçlar İngilizcede tekil/çoğul doğru yazılır ("1 warning" /
+  "2 warnings") ve HTTP, GraphQL ya da SOAP zaman aşımı bağlantı değil istek
+  zaman aşımı ayarını gösterir.
 
-**Testler:** süit 741 dosyada 9932 teste ulaştı ve tam UI uçtan uca süiti 884
+- **Run sonuçları ortamı adıyla gösterir:** bir koşu kullandığı ortamı
+  kaydeder; sonuçlarda, All Runs'ta, Scheduled geçmişinde, zamanlanmış görev
+  listesinde ve HTML / JSON raporda gösterir — ortam yoksa "Ortam yok".
+  Ortamı sonradan yeniden adlandırmak ya da silmek geçmişi değiştirmez.
+
+- **Send ve Run için tek aktif ortam:** hiçbir ortam aktif işaretli değilken
+  başlık ve Send ilk ortamı, Run, Test Suite, Scheduler ve mock'lar ise hiçbir
+  ortamı kullanmıyordu; **Ortam yok** seçimi de kaydedilmiyordu. Aktif ortamın
+  artık tek kaynağı var, her seçim kaydedilir ve eski davranışa güvenen
+  projeler gördükleri ortamı korur.
+
+- **Dar pencerede Runner ayarları:** sıra listesi ile ayarlar yan yana
+  sığmadığında sıra formun üstüne geçer; her alan ve Start / Schedule / Save
+  alt çubuğu en küçük pencerede de bütün kalır.
+
+**Testler:** süit 751 dosyada 10142 teste ulaştı ve tam UI uçtan uca süiti 884
 spec koşturuyor. Yeni uçtan uca spec'ler Postman import'unu (hesap veri
 dökümleri ve artifact'lar, Native Git v3 klasörleri, `.zip` arşivleri,
 koleksiyon değişkenleri), Postman v3 export'unu, cURL yapıştırmayı, Generate

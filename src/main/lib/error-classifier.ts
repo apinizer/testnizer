@@ -20,6 +20,7 @@
 import {
   CONNECTION_ERROR_TEXT_EN,
   composeConnectionMessage,
+  connectionHintEn,
   joinConnectionHint,
   type ConnectionErrorInfo,
   type ConnectionErrorKind,
@@ -101,10 +102,14 @@ export function describeGrpcStatus(code: number, details?: string): ClassifiedEr
 
 // ─── Connection error classifier (issue #253) ───────────────
 
-/** Who is asking — fills `target` from the URL and enables protocol rules. */
+/**
+ * Who is asking — fills `target` from the URL and enables protocol rules.
+ * `http` / `graphql` / `soap` are sends: their `timeout` hint names the
+ * request timeout, not the connect timeout (issue #309).
+ */
 export interface ConnectionErrorContext {
   url?: string
-  protocol?: 'websocket' | 'socketio' | 'sse' | 'mcp' | 'mqtt' | 'http'
+  protocol?: 'websocket' | 'socketio' | 'sse' | 'mcp' | 'mqtt' | 'http' | 'graphql' | 'soap'
   transport?: 'stdio' | 'http' | 'sse'
 }
 
@@ -523,6 +528,7 @@ export function classifyTransportError(
   const target = targetOf(f, ctx)
   const detail = hit.detail ? scrubConnectionText(hit.detail, ctx?.url) || undefined : undefined
   const text = CONNECTION_ERROR_TEXT_EN[hit.kind]
+  const hint = connectionHintEn(hit.kind, ctx?.protocol)
   const code = f.codes[0]
   const base = {
     kind: hit.kind,
@@ -534,6 +540,6 @@ export function classifyTransportError(
     ...base,
     ...(code ? { code } : {}),
     message: composeConnectionMessage(base, text.what),
-    ...(text.hint ? { hint: text.hint } : {}),
+    ...(hint ? { hint } : {}),
   }
 }

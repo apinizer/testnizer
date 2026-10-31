@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useBranchStore, type ConflictEntry, type ConflictStats } from '../../stores/branch.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import Modal from '../shared/Modal'
 
 /**
@@ -140,7 +141,11 @@ export default function MergeConflictModal() {
             className="rounded px-2 py-0.5 text-[11px] font-medium"
             style={{ background: 'var(--accent-light)', color: 'var(--accent-text)' }}
           >
-            {conflict.conflicts.length} {t('mergeConflict.files')}
+            {formatCount(
+              conflict.conflicts.length,
+              t('mergeConflict.fileCountOne'),
+              t('mergeConflict.fileCount'),
+            )}
           </span>
         </div>
 

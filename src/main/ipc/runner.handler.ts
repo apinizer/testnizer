@@ -105,6 +105,7 @@ import { applySoapWsSecurityToBody, wsSecuritySecretValues } from '../lib/soap-w
 import { isWsSecurityEnabled, resolveWsSecurityVariables } from '../../shared/soap-wsse'
 import { cachedSecretInventory } from '../lib/secret-inventory-cache'
 import { buildRunReport } from '../lib/run-report'
+import { snapshotRunEnvironmentName, withRunEnvironmentNames } from '../lib/run-environment'
 import { mcpOutcomeToResponse, mcpScriptInfo, type McpScriptInfo } from '../../shared/mcp-response'
 import {
   INLINE_MASK,
@@ -1356,6 +1357,8 @@ interface RunContext {
    * stop; the main loop only obeys `StepOutcome.criticalStop`.
    */
   criticalIds: ReadonlySet<string>
+  /** The environment's name, snapshotted at run start (issue #307; '' = none). */
+  environmentName: string
 }
 
 interface StepOutcome {
@@ -2888,8 +2891,16 @@ async function runFailHook(
           duration: Date.now() - startedAt,
           stopReason: stopReason ?? null,
         },
-        exportJson: () => buildRunReport(snapshot, 'json', { secrets: secrets() }),
-        exportHtml: () => buildRunReport(snapshot, 'html', { secrets: secrets() }),
+        exportJson: () =>
+          buildRunReport(snapshot, 'json', {
+            secrets: secrets(),
+            environmentName: ctx.environmentName,
+          }),
+        exportHtml: () =>
+          buildRunReport(snapshot, 'html', {
+            secrets: secrets(),
+            environmentName: ctx.environmentName,
+          }),
       }
     }
     await runHookScript(ctx, script, 'teardown', RUN_FAIL_SCRIPT_ID, 'Run fail script', {
@@ -3001,6 +3012,16 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
       /* no active env — fall through with globals-only resolution */
     }
   }
+  // The NAME of the environment this run uses, snapshotted now (issue #307):
+  // history, the report and every export show it, and a later rename / delete
+  // must not rewrite them. '' = no environment (also for an explicit id that
+  // no longer exists — the run resolves no environment variables then).
+  let environmentName = ''
+  try {
+    environmentName = snapshotRunEnvironmentName(getDb(), effectiveEnvId, options.projectId ?? null)
+  } catch {
+    /* no DB (headless) — the run itself resolves no environment either */
+  }
   const loadedScopes = loadEnvVarScopes({
     environmentId: effectiveEnvId,
     projectId: options.projectId,
@@ -3071,6 +3092,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     total,
     emitted: 0,
     criticalIds: criticalRequestIds(options.endpointIds),
+    environmentName,
   }
 
   let stopReason: RunStopReason | undefined
@@ -3305,7 +3327,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     ).run(
       randomUUID(),
       options.projectId,
-      options.environmentId || null,
+      environmentName,
       options.source || 'Runner',
       iterations,
       durationMs,
@@ -3351,6 +3373,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     teardownPassedAssertions: totals.teardownPassedAssertions,
     teardownFailedAssertions: totals.teardownFailedAssertions,
     stopReason,
+    environmentName,
   }
 }
 
@@ -3577,7 +3600,12 @@ export function registerRunnerHandlers(): void {
       // back from an older session's report, or a History row recorded before
       // masking existed, are not. `pm.run.export*` (issue #267) uses the same.
       const format = options?.format === 'html' ? 'html' : 'json'
-      return { success: true, data: buildRunReport(options?.results ?? [], format) }
+      return {
+        success: true,
+        data: buildRunReport(options?.results ?? [], format, {
+          environmentName: options?.environmentName,
+        }),
+      }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -3600,8 +3628,9 @@ export function registerRunnerHandlers(): void {
             .prepare(
               'SELECT * FROM runner_history WHERE project_id = ? ORDER BY started_at DESC LIMIT 100',
             )
-            .all(arg)
-          return { success: true, data: rows }
+            .all(arg) as Array<{ environment_name?: unknown; project_id?: unknown }>
+          // Legacy id rows → current name, in main (issue #307).
+          return { success: true, data: withRunEnvironmentNames(db, rows) }
         }
 
         const { projectId, tab } = arg
@@ -3620,7 +3649,10 @@ export function registerRunnerHandlers(): void {
           .prepare(
             `SELECT * FROM runner_history WHERE project_id = ? AND ${sourceFilter} ORDER BY started_at DESC LIMIT ? OFFSET ?`,
           )
-          .all(projectId, limit, offset)
+          .all(projectId, limit, offset) as Array<{
+          environment_name?: unknown
+          project_id?: unknown
+        }>
 
         const totalRow = db
           .prepare(
@@ -3628,7 +3660,10 @@ export function registerRunnerHandlers(): void {
           )
           .get(projectId) as { n: number }
 
-        return { success: true, data: { rows, total: totalRow.n } }
+        return {
+          success: true,
+          data: { rows: withRunEnvironmentNames(db, rows), total: totalRow.n },
+        }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }

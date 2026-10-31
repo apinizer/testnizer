@@ -3,6 +3,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { BarChart2, Clock, FolderOpen, ChevronRight, CheckCircle2, XCircle } from 'lucide-react'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { formatDate, formatTime } from '../../lib/format-datetime'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import NewRunButton from './NewRunButton'
@@ -158,6 +159,10 @@ export default function TestsHome({
         passedAssertions: run.passed_tests,
         failedAssertions: run.failed_tests,
         results,
+        // Resolved in main (issue #307); unknown (null) stays absent → '-'.
+        ...(typeof run.environment_name === 'string'
+          ? { environmentName: run.environment_name }
+          : {}),
       }
       onViewReport(
         results,
@@ -228,7 +233,7 @@ export default function TestsHome({
                 primary={String(totalEndpointsRun)}
                 sub={
                   totalEndpointsRun > 0
-                    ? `${passedEndpoints} ${t('testsHome.passed')} • ${failedEndpoints} ${t('testsHome.failed')} • ${runSessions} ${runSessions === 1 ? t('testsHome.run') : t('testsHome.runs')}`
+                    ? `${passedEndpoints} ${t('testsHome.passed')} • ${failedEndpoints} ${t('testsHome.failed')} • ${formatCount(runSessions, t('testsHome.runCountOne'), t('testsHome.runCount'))}`
                     : t('testsHome.noRunsYet')
                 }
                 onClick={onViewAllRuns}

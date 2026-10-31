@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useSocketIOStore, type SocketIOEvent } from '../../../stores/socketio.store'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import { isTaggedBinary } from '../../../../shared/realtime'
 import { argText, rowArgs, rowMatches, rowText } from '../../../lib/socketio-timeline'
 import { messageSize } from '../../../lib/realtime-format'
@@ -101,7 +102,7 @@ export default function SioTimeline() {
                 preview={rowText(e).replace(/\s+/g, ' ').slice(0, 200)}
                 badge={
                   args.length > 1
-                    ? t('socketio.argsOther').replace('{n}', String(args.length))
+                    ? formatCount(args.length, t('socketio.argsOne'), t('socketio.argsOther'))
                     : undefined
                 }
                 timestamp={e.timestamp}

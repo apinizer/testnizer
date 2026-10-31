@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 import type { AiTurnMetrics } from '../../../../shared/ai-chat-types'
 import { formatMs as ms, metricsTooltip, partialUsageNote } from '../../../lib/ai-chat-view'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import { formatClock } from '../../../lib/format-datetime'
 
 /**
@@ -65,7 +66,11 @@ export default function AiChatMetricsRow({
         className="cursor-help underline decoration-dotted"
       >
         {metrics.usageReported && metrics.totalTokens !== undefined
-          ? `${metrics.totalTokens} ${t('aiChat.metrics.tokens')}`
+          ? formatCount(
+              metrics.totalTokens,
+              t('aiChat.metrics.tokenCountOne'),
+              t('aiChat.metrics.tokenCount'),
+            )
           : `${t('aiChat.metrics.tokens')}: ${t('aiChat.metrics.notReported')}`}
       </span>
       {partial && (
@@ -79,7 +84,11 @@ export default function AiChatMetricsRow({
       )}
       {metrics.calls.length > 1 && (
         <span>
-          {metrics.calls.length} {t('aiChat.metrics.calls')}
+          {formatCount(
+            metrics.calls.length,
+            t('aiChat.metrics.callCountOne'),
+            t('aiChat.metrics.callCount'),
+          )}
         </span>
       )}
       <span>{time}</span>

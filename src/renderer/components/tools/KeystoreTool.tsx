@@ -17,6 +17,7 @@ import ImportDialog from './keystore/ImportDialog'
 import RenameAliasDialog from './keystore/RenameAliasDialog'
 import SetEntryPasswordDialog from './keystore/SetEntryPasswordDialog'
 import { LabeledInput, LabeledSelect, Modal, ModalActions } from './keystore/dialog-ui'
+import { formatCount } from '../../lib/plural'
 
 type PasswordPrompt =
   | { kind: 'file'; pick: KeystorePickFileResult }
@@ -240,7 +241,11 @@ export default function KeystoreTool() {
               </span>
               <Pill>{s.meta.type}</Pill>
               <Pill>
-                {s.meta.aliasCount} {t('tools.keystore.aliasCount')}
+                {formatCount(
+                  s.meta.aliasCount,
+                  t('tools.keystore.aliasCountOne'),
+                  t('tools.keystore.aliasCount'),
+                )}
               </Pill>
               {s.dirty && (
                 <span
@@ -421,9 +426,11 @@ export default function KeystoreTool() {
               const skipped = useKeystoreStore.getState().convertSkipped
               if (skipped.length > 0) {
                 toast.warning(
-                  t('tools.keystore.toast.convertSkipped')
-                    .replace('{n}', String(skipped.length))
-                    .replace('{aliases}', skipped.join(', ')),
+                  formatCount(
+                    skipped.length,
+                    t('tools.keystore.toast.convertSkippedOne'),
+                    t('tools.keystore.toast.convertSkipped'),
+                  ).replace('{aliases}', skipped.join(', ')),
                 )
               }
             }
@@ -651,7 +658,12 @@ function EmptyState({
                       {e.name}
                     </span>
                     <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
-                      {e.type} · {e.alias_count} {t('tools.keystore.aliasCount')}
+                      {e.type} ·{' '}
+                      {formatCount(
+                        e.alias_count,
+                        t('tools.keystore.aliasCountOne'),
+                        t('tools.keystore.aliasCount'),
+                      )}
                     </span>
                   </button>
                   <button

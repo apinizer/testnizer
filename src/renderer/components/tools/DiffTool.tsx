@@ -11,6 +11,7 @@ import {
   type FindMatchRange,
 } from '../../lib/tools/diff'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 export default function DiffTool() {
   const { t } = useTranslation()
@@ -160,7 +161,7 @@ function PaneHeader({ title, text }: { title: string; text: string }) {
         {title}
       </span>
       <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
-        {lineCount} {t('tools.diff.lines')}
+        {formatCount(lineCount, t('tools.diff.lineCountOne'), t('tools.diff.lineCount'))}
       </span>
     </div>
   )
@@ -279,11 +280,19 @@ function SideBySideDiff({ result }: { result: SideBySideResult }) {
             style={{ color: 'var(--red)' }}
           >
             <span style={{ fontSize: 14, lineHeight: 1 }}>−</span>
-            {result.removals} {t('tools.diff.removalsLabel')}
+            {formatCount(
+              result.removals,
+              t('tools.diff.removalCountOne'),
+              t('tools.diff.removalCount'),
+            )}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
-              {result.leftLines} {t('tools.diff.lines')}
+              {formatCount(
+                result.leftLines,
+                t('tools.diff.lineCountOne'),
+                t('tools.diff.lineCount'),
+              )}
             </span>
             {/* Named per side: the two buttons were both called "Copy". */}
             <CopyButton
@@ -299,11 +308,19 @@ function SideBySideDiff({ result }: { result: SideBySideResult }) {
             style={{ color: 'var(--green)' }}
           >
             <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>
-            {result.additions} {t('tools.diff.additionsLabel')}
+            {formatCount(
+              result.additions,
+              t('tools.diff.additionCountOne'),
+              t('tools.diff.additionCount'),
+            )}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[11px]" style={{ color: 'var(--muted)' }}>
-              {result.rightLines} {t('tools.diff.lines')}
+              {formatCount(
+                result.rightLines,
+                t('tools.diff.lineCountOne'),
+                t('tools.diff.lineCount'),
+              )}
             </span>
             <CopyButton
               text={rightText}

@@ -7,10 +7,15 @@
  * `what` / `hint` from `connError.<kind>.*`. The composition is the shared one
  * main uses, so the English text equals main's `error` string.
  *
+ * An HTTP / GraphQL / SOAP send (the result's own `protocol`) gets the request
+ * variant of the hint where one exists (`connectionHintKey`, issue #309):
+ * "raise the request timeout…", not "…the connect timeout".
+ *
  * Pure: no DOM, no store — safe to import from node-env store tests.
  */
 import {
   composeConnectionMessage,
+  connectionHintKey,
   isConnectionErrorInfo,
   joinConnectionHint,
   type ConnectionErrorInfo,
@@ -23,10 +28,12 @@ export type { ConnectionErrorInfo } from '../../shared/connection-error'
 export function describeConnectionError(
   info: ConnectionErrorInfo | null | undefined,
   fallback?: string,
+  /** The failed result's protocol — picks the request vs connect hint. */
+  protocol?: unknown,
 ): string {
   if (!isConnectionErrorInfo(info)) return fallback ?? ''
   const whatKey = `connError.${info.kind}.what`
-  const hintKey = `connError.${info.kind}.hint`
+  const hintKey = connectionHintKey(info.kind, protocol)
   const whatText = t(whatKey)
   // A key this build does not know (newer main) → main's English text.
   if (whatText === whatKey) return joinConnectionHint(info.message, info.hint)
@@ -39,10 +46,10 @@ export function describeConnectionError(
 
 /** A connect result / event payload → its localized error text (`errorInfo` first, then `error`). */
 export function connectErrorText(
-  res: { error?: unknown; errorInfo?: unknown } | null | undefined,
+  res: { error?: unknown; errorInfo?: unknown; protocol?: unknown } | null | undefined,
   fallback: string,
 ): string {
   const raw = typeof res?.error === 'string' && res.error ? res.error : fallback
   const info = res?.errorInfo
-  return isConnectionErrorInfo(info) ? describeConnectionError(info, raw) : raw
+  return isConnectionErrorInfo(info) ? describeConnectionError(info, raw, res?.protocol) : raw
 }

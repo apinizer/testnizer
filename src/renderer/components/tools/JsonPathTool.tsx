@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { evaluateJsonPath, JSONPATH_EXAMPLES, JSONPATH_SAMPLE_DOC } from '../../lib/tools/jsonpath'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useInvalidateOn } from '../../lib/use-stale-guard'
 
 type JsonPathResult = ReturnType<typeof evaluateJsonPath>
@@ -108,7 +109,11 @@ export default function JsonPathTool() {
       footer={
         result?.ok ? (
           <span>
-            {matchCount} {t('tools.jsonpath.matches')}
+            {formatCount(
+              matchCount,
+              t('tools.jsonpath.matchCountOne'),
+              t('tools.jsonpath.matchCount'),
+            )}
           </span>
         ) : null
       }

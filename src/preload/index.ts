@@ -202,7 +202,7 @@ const api = {
       ipcRenderer.invoke('environment:update', id, payload),
     setActive: (workspaceId: string, environmentId: string): Promise<unknown> =>
       ipcRenderer.invoke('environment:setActive', workspaceId, environmentId),
-    setActiveForProject: (projectId: string, environmentId: string): Promise<unknown> =>
+    setActiveForProject: (projectId: string, environmentId: string | null): Promise<unknown> =>
       ipcRenderer.invoke('environment:setActiveForProject', projectId, environmentId),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('environment:delete', id),
     moveToProjectVariables: (id: string): Promise<unknown> =>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import Modal from '../shared/Modal'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 interface DiscardChangesDialogProps {
   open: boolean
@@ -29,13 +30,12 @@ export default function DiscardChangesDialog({
     return () => clearTimeout(timer)
   }, [open])
 
-  const one = count === 1
-  const body = one
-    ? t('gitCommit.discardBodyOne')
-    : t('gitCommit.discardBody').replace('{count}', String(count))
-  const confirm = one
-    ? t('gitCommit.discardConfirmOne')
-    : t('gitCommit.discardConfirm').replace('{count}', String(count))
+  const body = formatCount(count, t('gitCommit.discardBodyOne'), t('gitCommit.discardBody'))
+  const confirm = formatCount(
+    count,
+    t('gitCommit.discardConfirmOne'),
+    t('gitCommit.discardConfirm'),
+  )
 
   return (
     <Modal

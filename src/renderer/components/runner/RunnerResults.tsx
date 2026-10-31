@@ -16,7 +16,9 @@ import { endpointDidPass, criticalStopOf } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { displayRunSourceLabel } from '../../lib/runner-source-label'
+import { displayRunEnvironment } from '../../lib/run-environment-label'
 import CriticalBadge from './CriticalBadge'
 import RunReportExportButtons from './RunReportExportButtons'
 import {
@@ -443,7 +445,10 @@ export default function RunnerResults({
               <div className="flex items-center gap-2">
                 {/* One generator in main (issue #266) — the same report a run
                     fail script's pm.run.exportHtml() sends (issue #267). */}
-                <RunReportExportButtons results={results} />
+                <RunReportExportButtons
+                  results={results}
+                  environmentName={report?.environmentName}
+                />
                 <button
                   type="button"
                   onClick={onRunAgain}
@@ -519,7 +524,7 @@ export default function RunnerResults({
               />
               <StatCell
                 label={t('runnerHistory.colEnvironment')}
-                value={report ? t('runResults.envActive') : '-'}
+                value={displayRunEnvironment(report?.environmentName, t)}
               />
               <StatCell
                 label={t('runnerHistory.colIterations')}
@@ -723,9 +728,11 @@ export default function RunnerResults({
                     <span>{t('runResults.iteration').replace('{n}', String(iter))}</span>
                     <span style={{ color: 'var(--hint)', fontWeight: 400, marginLeft: 6 }}>
                       (
-                      {t(
-                        rows.length === 1 ? 'runResults.requestsOne' : 'runResults.requestsOther',
-                      ).replace('{count}', String(rows.length))}
+                      {formatCount(
+                        rows.length,
+                        t('runResults.requestsOne'),
+                        t('runResults.requestsOther'),
+                      )}
                       {failed > 0
                         ? t('runResults.failedSuffix').replace('{count}', String(failed))
                         : ''}

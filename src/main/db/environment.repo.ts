@@ -146,14 +146,22 @@ export function setActiveEnvironment(workspaceId: string, environmentId: string)
   )
 }
 
-/** Set the active environment within a single project's scope. */
-export function setActiveEnvironmentForProject(projectId: string, environmentId: string): void {
+/**
+ * Set the active environment within a single project's scope. `null` =
+ * "No environment": no row stays active, so Run / Mock / Scheduler resolve no
+ * environment variables — the same as Send.
+ */
+export function setActiveEnvironmentForProject(
+  projectId: string,
+  environmentId: string | null,
+): void {
   const db = getDb()
   const now = Date.now()
   db.prepare('UPDATE environments SET is_active = 0, updated_at = ? WHERE project_id = ?').run(
     now,
     projectId,
   )
+  if (!environmentId) return
   db.prepare('UPDATE environments SET is_active = 1, updated_at = ? WHERE id = ?').run(
     now,
     environmentId,
