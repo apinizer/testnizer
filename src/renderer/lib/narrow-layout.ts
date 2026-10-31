@@ -149,3 +149,29 @@ export function rightPanelDragClamp(
     return capped ? Math.min(cap, w) : w
   }
 }
+
+/** Editor strip an OVERLAY right panel always leaves visible on its left. */
+export const RIGHT_PANEL_OVERLAY_EDITOR_STRIP_PX = 48
+
+export type RightPanelMode = 'docked' | 'overlay'
+
+/**
+ * Docked or overlay for an OPEN right panel (issue #251). Docked needs the row
+ * to hold the compact URL bar (`URL_BAR_MIN_BUDGET`) + the drag handle + the
+ * panel at its minimum; below that the panel would squeeze the editor under
+ * its content and the editor gets cut, so it is drawn as an overlay drawer
+ * over the editor instead (the editor keeps the full row). Decided on the ROW,
+ * which the absolutely positioned overlay does not change — no feedback loop.
+ * `storedWidth` only matters if it were below the panel minimum (the store
+ * never allows that). An unmeasured row (<= 0, NaN, Infinity) is docked.
+ */
+export function rightPanelMode(rowWidth: number, storedWidth: number): RightPanelMode {
+  if (!Number.isFinite(rowWidth) || rowWidth <= 0) return 'docked'
+  const panel = Math.min(storedWidth, RIGHT_PANEL_MIN_PX)
+  return rowWidth - EDGE_HANDLE_PX - panel >= URL_BAR_MIN_BUDGET ? 'docked' : 'overlay'
+}
+
+/** Width of the OVERLAY panel: the stored width, leaving the editor strip visible. */
+export function rightPanelOverlayWidth(rowWidth: number, storedWidth: number): number {
+  return Math.max(0, Math.min(storedWidth, rowWidth - RIGHT_PANEL_OVERLAY_EDITOR_STRIP_PX))
+}

@@ -2,6 +2,11 @@
 // background panels up to system-level overlays. Add new surfaces here
 // rather than sprinkling magic numbers across components.
 export const Z = {
+  /**
+   * The right panel drawn as an overlay drawer over a narrow request editor
+   * (issue #251): above the editor's own layers (z-10), below dropdowns.
+   */
+  DRAWER: 30,
   /** Inline overlays inside the workbench (dropdowns, tooltips). */
   DROPDOWN: 100,
   /** Standard modals (Settings, Save, Import, About, etc.). */

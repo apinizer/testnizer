@@ -145,15 +145,27 @@ describe('WorkbenchMainRow renders the panel within the room it leaves', () => {
     return screen.getByTestId('right-panel')
   }
 
-  for (const row of [700, 641]) {
-    it(`row ${row}: a stored 300 px panel renders at ${Math.max(RIGHT_PANEL_MIN_PX, room(row))} px; the preference stays 300`, () => {
-      const panel = openByHandAt(row)
-      expect(parseFloat(panel.style.width)).toBe(Math.max(RIGHT_PANEL_MIN_PX, room(row)))
-      expect(parseFloat(panel.style.width)).toBeLessThan(300)
-      expect(useUIStore.getState().rightPanelWidth).toBe(300)
-      expect(setSpy.mock.calls.filter((c) => c[0] === 'ui.rightPanelWidth')).toEqual([])
-    })
-  }
+  it(`row 700: a stored 300 px panel renders docked at ${room(700)} px; the preference stays 300`, () => {
+    const panel = openByHandAt(700)
+    expect(panel.getAttribute('data-mode')).toBe('docked')
+    expect(parseFloat(panel.style.width)).toBe(room(700))
+    expect(parseFloat(panel.style.width)).toBeLessThan(300)
+    expect(useUIStore.getState().rightPanelWidth).toBe(300)
+    expect(setSpy.mock.calls.filter((c) => c[0] === 'ui.rightPanelWidth')).toEqual([])
+  })
+
+  // Row 641 (1024 px window, 300 px sidebar): docking even a PANEL_MIN panel
+  // leaves the editor under the URL bar's budget, so it used to render docked
+  // at 240 px and the editor was cut. It is now an overlay drawer at the stored
+  // width over a full-width editor (right-panel-overlay-251.test.tsx).
+  it('row 641: too narrow to dock — overlay at the stored width; the preference stays 300', () => {
+    expect(room(641)).toBeLessThan(RIGHT_PANEL_MIN_PX)
+    const panel = openByHandAt(641)
+    expect(panel.getAttribute('data-mode')).toBe('overlay')
+    expect(parseFloat(panel.style.width)).toBe(300)
+    expect(useUIStore.getState().rightPanelWidth).toBe(300)
+    expect(setSpy.mock.calls.filter((c) => c[0] === 'ui.rightPanelWidth')).toEqual([])
+  })
 
   it('a wide row renders the stored width', () => {
     const panel = openByHandAt(1400)
