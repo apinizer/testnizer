@@ -490,6 +490,13 @@ your machine.**
   "No environment" when it used none. Renaming or deleting the environment
   later does not rewrite history.
 
+- **One active environment for Send and Run:** when no environment was
+  marked active, the header and Send used the first one while Run, Test
+  Suite, Scheduler and mocks used none; choosing **No environment** was not
+  saved either. The active environment now has one source for both, every
+  choice is saved, and projects that relied on the old behaviour keep the
+  environment they saw.
+
 - **Runner configuration in a narrow window:** when the sequence
   and the configuration no longer fit side by side, the sequence moves above
   the form, so every field and the Start / Schedule / Save footer stay whole

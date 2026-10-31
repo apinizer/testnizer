@@ -507,6 +507,12 @@ paneli geliyor; Electron 44 — ve secret'lar makinenizde kalıyor.**
   listesinde ve HTML / JSON raporda gösterir — ortam yoksa "Ortam yok".
   Ortamı sonradan yeniden adlandırmak ya da silmek geçmişi değiştirmez.
 
+- **Send ve Run için tek aktif ortam:** hiçbir ortam aktif işaretli değilken
+  başlık ve Send ilk ortamı, Run, Test Suite, Scheduler ve mock'lar ise hiçbir
+  ortamı kullanmıyordu; **Ortam yok** seçimi de kaydedilmiyordu. Aktif ortamın
+  artık tek kaynağı var, her seçim kaydedilir ve eski davranışa güvenen
+  projeler gördükleri ortamı korur.
+
 - **Dar pencerede Runner ayarları:** sıra listesi ile ayarlar yan yana
   sığmadığında sıra formun üstüne geçer; her alan ve Start / Schedule / Save
   alt çubuğu en küçük pencerede de bütün kalır.
