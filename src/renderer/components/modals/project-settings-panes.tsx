@@ -4,6 +4,8 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyMaterialField from '../shared/KeyMaterialField'
 import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate } from '../../lib/format-datetime'
+import { platformLabel } from '../../lib/platform-label'
 import {
   formatShortcut,
   NEXT_TAB_SHORTCUT,
@@ -300,7 +302,7 @@ export function OverviewPane(props: {
   createdAt: number
   updatedAt: number
 }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   return (
     <div className="p-6">
       <PaneHeader title={t('overview.title')} subtitle={t('overview.subtitle')} />
@@ -410,14 +412,8 @@ export function OverviewPane(props: {
           style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
         >
           <MetaField label={t('overview.type')} value={props.typeLabel} />
-          <MetaField
-            label={t('overview.created')}
-            value={new Date(props.createdAt).toLocaleDateString()}
-          />
-          <MetaField
-            label={t('overview.updated')}
-            value={new Date(props.updatedAt).toLocaleDateString()}
-          />
+          <MetaField label={t('overview.created')} value={formatDate(props.createdAt, locale)} />
+          <MetaField label={t('overview.updated')} value={formatDate(props.updatedAt, locale)} />
         </div>
       </div>
     </div>
@@ -2263,7 +2259,7 @@ export function AboutPane() {
 
   const rows: Array<{ label: string; value: string | undefined }> = [
     { label: t('about.version'), value: versions.app || '—' },
-    { label: t('about.platform'), value: versions.platform },
+    { label: t('about.platform'), value: platformLabel(versions.platform) },
     { label: t('about.electron'), value: versions.electron },
     { label: t('about.node'), value: versions.node },
     { label: t('about.chrome'), value: versions.chrome },

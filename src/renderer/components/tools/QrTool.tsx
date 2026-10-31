@@ -139,7 +139,7 @@ export default function QrTool() {
       outputPane={
         mode === 'encode' ? (
           encoded.error ? (
-            <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+            <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
               {encoded.error}
             </div>
           ) : !encoded.url ? (
@@ -165,7 +165,7 @@ export default function QrTool() {
             </div>
           )
         ) : decodeError ? (
-          <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             {decodeError}
           </div>
         ) : decoded == null ? (

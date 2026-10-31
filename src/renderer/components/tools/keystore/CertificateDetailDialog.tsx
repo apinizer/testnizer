@@ -75,7 +75,7 @@ export default function CertificateDetailDialog({
             {cert.subjectDN === cert.issuerDN && (
               <span
                 className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                style={{ background: '#e8f9f1', color: '#1a7a4a' }}
+                style={{ background: 'var(--green-bg)', color: 'var(--green)' }}
               >
                 {t('tools.keystore.selfSigned')}
               </span>

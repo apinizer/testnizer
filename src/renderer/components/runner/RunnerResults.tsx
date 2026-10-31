@@ -529,7 +529,7 @@ export default function RunnerResults({
                 label={t('runnerHistory.colDuration')}
                 value={formatDuration(totalDuration)}
               />
-              <StatCell label={t('runnerHistory.colAllTests')} value={String(totalTests)} />
+              <StatCell label={t('runnerHistory.colAllRequests')} value={String(totalTests)} />
               <StatCell
                 label={t('runResults.errors')}
                 value={String(totalErrors)}

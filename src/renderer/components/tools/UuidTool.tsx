@@ -224,7 +224,7 @@ export default function UuidTool() {
             {validation && (
               <div
                 className="mt-1 text-xs"
-                style={{ color: validation.ok ? '#1a7a4a' : '#cc2200' }}
+                style={{ color: validation.ok ? 'var(--green)' : 'var(--red)' }}
               >
                 {validation.ok
                   ? `✓ ${t('tools.uuid.validUuid')} (v${validation.version})`
@@ -236,7 +236,7 @@ export default function UuidTool() {
       }
       outputPane={
         error ? (
-          <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {error}
           </div>
@@ -253,13 +253,13 @@ export default function UuidTool() {
               <span style={{ color: 'var(--muted)' }}>
                 {output.length} {t('tools.uuid.generated')}
                 {stale ? (
-                  <span style={{ color: 'var(--orange, #b35a00)' }}>
+                  <span style={{ color: 'var(--orange)' }}>
                     {' · '}
                     {t('tools.common.staleOutput')}
                   </span>
                 ) : null}
                 {rowCopy.copied ? (
-                  <span style={{ color: 'var(--green, #1a7a4a)' }}>
+                  <span style={{ color: 'var(--green)' }}>
                     {' · '}
                     {t('tools.common.copied')}
                   </span>

@@ -158,7 +158,7 @@ export default function EpochTool() {
               {t('tools.epoch.timestampHint')}
             </div>
           ) : decoded && isNaN(decoded.date.getTime()) ? (
-            <div className="text-sm" style={{ color: '#cc2200' }}>
+            <div className="text-sm" style={{ color: 'var(--red)' }}>
               {t('tools.epoch.invalidTimestamp')}
             </div>
           ) : decoded ? (

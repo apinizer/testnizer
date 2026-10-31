@@ -147,7 +147,7 @@ export default function CharacterForm({
         changed my length".
       */}
       {problem && (
-        <div role="alert" className="text-[11px]" style={{ color: '#cc2200' }}>
+        <div role="alert" className="text-[11px]" style={{ color: 'var(--red)' }}>
           {problem}
         </div>
       )}

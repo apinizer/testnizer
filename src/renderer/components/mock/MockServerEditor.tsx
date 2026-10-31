@@ -63,6 +63,13 @@ const METHODS: MockMethod[] = [
   'ANY',
 ]
 const PATH_MODES: MockPathMode[] = ['exact', 'param', 'wildcard', 'regex']
+/** Display labels (i18n keys, literal for the key-coverage test); values stay as above. */
+const PATH_MODE_LABEL: Record<MockPathMode, string> = {
+  exact: 'mock.pathModeOption.exact',
+  param: 'mock.pathModeOption.param',
+  wildcard: 'mock.pathModeOption.wildcard',
+  regex: 'mock.pathModeOption.regex',
+}
 type EditorTab = 'endpoints' | 'settings' | 'logs'
 /** Tab ids + i18n keys (literal so the key-coverage test sees them). */
 const EDITOR_TABS: readonly { id: EditorTab; label: string }[] = [
@@ -80,7 +87,7 @@ const EMPTY_RESPONSES: readonly MockResponse[] = []
 const EMPTY_LOGS: readonly MockLogEntry[] = []
 
 export default function MockServerEditor({ serverId }: { serverId: string }) {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const server = useMockStore((s) => s.servers.find((x) => x.id === serverId)) ?? null
   const status = useMockStore((s) => s.statusByServer[serverId] ?? 'stopped')
   const error = useMockStore((s) => s.errorByServer[serverId] ?? null)
@@ -108,6 +115,9 @@ export default function MockServerEditor({ serverId }: { serverId: string }) {
 
   return (
     <div
+      // Uppercase TR headers ("YANIT ÖNCESİ BETİK") need a Turkish `lang`, or
+      // Chromium upper-cases "i" to "I" instead of "İ".
+      lang={locale}
       className="flex h-full w-full flex-col overflow-hidden"
       style={{ background: 'var(--bg)' }}
     >
@@ -307,7 +317,10 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
       const warn =
         result.warnings.length > 0 ? ` (${result.warnings.length} ${t('mock.warnings')})` : ''
       toast.success(
-        `${result.endpointsCreated} endpoints, ${result.responsesCreated} responses imported${warn}`,
+        t('mock.importDone')
+          .replace('{endpoints}', String(result.endpointsCreated))
+          .replace('{responses}', String(result.responsesCreated))
+          .replace('{warnings}', warn),
       )
     }
     input.click()
@@ -324,7 +337,9 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
           className="flex flex-col gap-2 border-b px-3 py-2"
           style={{ borderColor: 'var(--border)' }}
         >
-          <div className="flex items-center justify-between gap-2">
+          {/* Labels stay on one line (TR is longer): the GROUP wraps, never a
+              button's text (G-07). */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span
               className="text-[11px] font-semibold uppercase tracking-wide"
               style={{ color: 'var(--muted)' }}
@@ -334,7 +349,7 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
             <button
               onClick={handleAdd}
               data-testid="mock-add-endpoint"
-              className="flex items-center gap-1 rounded px-2 py-0.5 text-xs"
+              className="flex items-center gap-1 whitespace-nowrap rounded px-2 py-0.5 text-xs"
               style={{ background: 'var(--accent)', color: '#fff', border: 'none' }}
             >
               <Plus size={12} /> {t('mock.add')}
@@ -352,11 +367,11 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
             )}
           </div>
           {showsHttpEndpointTools(kind) && (
-            <div className="flex gap-1">
+            <div className="flex flex-wrap gap-1">
               <button
                 onClick={() => handleImport('openapi')}
                 data-testid="mock-import-openapi"
-                className="flex-1 rounded border px-2 py-0.5 text-[11px]"
+                className="flex-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
                 style={{
                   borderColor: 'var(--border)',
                   color: 'var(--muted)',
@@ -368,7 +383,7 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
               <button
                 onClick={() => handleImport('postman')}
                 data-testid="mock-import-postman"
-                className="flex-1 rounded border px-2 py-0.5 text-[11px]"
+                className="flex-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px]"
                 style={{
                   borderColor: 'var(--border)',
                   color: 'var(--muted)',
@@ -579,6 +594,7 @@ function EndpointEditor({
           >
             {t('mock.pathMode')}:
             <select
+              data-testid="mock-endpoint-path-mode"
               value={endpoint.pathMode}
               onChange={(e) =>
                 updateEndpoint(endpoint.id, { pathMode: e.target.value as MockPathMode })
@@ -586,9 +602,10 @@ function EndpointEditor({
               className="rounded border px-2 py-1"
               style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
             >
+              {/* Value = the stored mode; the label is translated (G-12). */}
               {PATH_MODES.map((m) => (
                 <option key={m} value={m}>
-                  {m}
+                  {t(PATH_MODE_LABEL[m])}
                 </option>
               ))}
             </select>
@@ -1613,7 +1630,9 @@ function LogsTab({ serverId }: { serverId: string }) {
           style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
         >
           <span data-testid="mock-log-count" className="text-xs" style={{ color: 'var(--muted)' }}>
-            {logs.length} {t('mock.entries')}
+            {logs.length === 1
+              ? t('mock.entryCountOne')
+              : t('mock.entryCount').replace('{count}', String(logs.length))}
           </span>
           <div className="flex gap-1">
             <button

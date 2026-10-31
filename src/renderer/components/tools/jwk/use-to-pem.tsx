@@ -112,7 +112,7 @@ export function useToPemMode(onAdd: AddKey): ModePanes {
         <div
           role="status"
           className="px-3 pt-3 text-xs font-medium"
-          style={{ color: 'var(--green, #1a7a4a)' }}
+          style={{ color: 'var(--green)' }}
         >
           {t('tools.jwk.validLine').replace('{n}', String(verdict.count))}
         </div>

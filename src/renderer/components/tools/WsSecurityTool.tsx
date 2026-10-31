@@ -455,7 +455,7 @@ export default function WsSecurityTool() {
                   rather than removing the option.
                 */}
                 {encrypt.keyWrap === 'RSA-1.5' && (
-                  <p role="alert" className="text-[11px]" style={{ color: '#b35a00' }}>
+                  <p role="alert" className="text-[11px]" style={{ color: 'var(--orange)' }}>
                     {t('tools.wsse.rsa15Warning')}
                   </p>
                 )}
@@ -494,7 +494,7 @@ export default function WsSecurityTool() {
       }
       outputPane={
         error ? (
-          <div className="p-3 text-sm" style={{ color: 'var(--red, #cc2200)' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {error}
           </div>

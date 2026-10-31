@@ -109,7 +109,11 @@ export default function BaseConverterTool() {
           {error ? (
             <div
               className="rounded border px-3 py-2 text-xs"
-              style={{ borderColor: '#cc220040', background: '#cc220015', color: '#cc2200' }}
+              style={{
+                borderColor: 'var(--mb-delete-br)',
+                background: 'var(--mb-delete-bg)',
+                color: 'var(--red)',
+              }}
             >
               {error}
             </div>

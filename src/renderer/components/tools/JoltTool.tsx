@@ -105,7 +105,7 @@ export default function JoltTool() {
         ) : result.ok ? (
           <MonacoWrapper value={output} language="json" readOnly />
         ) : (
-          <div className="p-3 text-sm" style={{ color: 'var(--red, #cc2200)' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {result.error}
           </div>

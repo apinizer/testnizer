@@ -93,7 +93,7 @@ export default function RegexTool() {
                 className="flex-1 rounded border px-2 py-1 font-mono text-sm"
                 style={{
                   background: 'var(--white)',
-                  borderColor: !result.ok ? '#cc2200' : 'var(--border)',
+                  borderColor: !result.ok ? 'var(--red)' : 'var(--border)',
                   color: 'var(--text)',
                 }}
               />
@@ -105,7 +105,7 @@ export default function RegexTool() {
               </span>
             </div>
             {!result.ok && (
-              <div className="mt-1 text-xs" style={{ color: '#cc2200' }}>
+              <div className="mt-1 text-xs" style={{ color: 'var(--red)' }}>
                 {result.error}
               </div>
             )}
@@ -201,7 +201,7 @@ export default function RegexTool() {
       }
       outputPane={
         !result.ok ? (
-          <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {result.error}
           </div>
@@ -354,8 +354,8 @@ function Highlighted({
       <mark
         key={i}
         style={{
-          background: '#fff4e0',
-          color: '#b35a00',
+          background: 'var(--mb-put-bg)',
+          color: 'var(--orange)',
           borderRadius: 2,
           padding: '0 1px',
         }}

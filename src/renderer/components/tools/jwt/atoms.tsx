@@ -1,4 +1,5 @@
 import type { ClaimRow } from '../../../lib/tools/jwt'
+import { TONE, type Tone } from '../palette'
 
 /**
  * The JWT Debugger's presentational atoms, lifted out of `JwtTool.tsx` verbatim
@@ -121,27 +122,36 @@ export function ClearButton({
   )
 }
 
+/**
+ * A status pill. `tone` picks a theme token triple (text + tint + border) from
+ * the shared Tools palette — the old `color` prop derived the tint by appending
+ * an alpha suffix to a light-theme hex, unreadable in the dark theme (G-03).
+ */
 export function Badge({
-  color,
+  tone,
   children,
+  testId,
 }: {
-  color: string
+  tone: Tone
   children: React.ReactNode
+  testId?: string
 }): React.JSX.Element {
+  const c = TONE[tone]
   return (
     <span
+      data-testid={testId}
       className="inline-block rounded px-1.5 py-0.5 text-[11px] font-medium"
-      style={{ background: color + '15', color, border: `1px solid ${color}40` }}
+      style={{ background: c.bg, color: c.fg, border: `1px solid ${c.border}` }}
     >
       {children}
     </span>
   )
 }
 
-/** jwt.io-style three-color JWT split by dots. */
+/** jwt.io-style three-color JWT split by dots (header / payload / signature). */
 export function ColorizedJwt({ token }: { token: string }): React.JSX.Element {
   const parts = token.split('.')
-  const colors = ['#b35a00', '#7c1fa6', '#0a7a5a']
+  const colors = [TONE.danger.fg, TONE.accent.fg, 'var(--mb-patch-fg)']
   return (
     <div className="font-mono text-xs break-all leading-relaxed">
       {parts.map((p, i) => (
@@ -154,7 +164,7 @@ export function ColorizedJwt({ token }: { token: string }): React.JSX.Element {
   )
 }
 
-/** Very small JSON colorizer for the read-only decoded view. */
+/** Very small JSON colorizer for the read-only decoded view — the response viewer's `--json-*` tokens. */
 export function colorizeJson(src: string): React.ReactNode {
   const tokens: { v: string; c: string }[] = []
   const re =
@@ -163,12 +173,13 @@ export function colorizeJson(src: string): React.ReactNode {
   while ((m = re.exec(src)) !== null) {
     if (m[1] !== undefined) {
       const isKey = !!m[2]
-      tokens.push({ v: m[1], c: isKey ? '#0066cc' : '#1a7a4a' })
+      tokens.push({ v: m[1], c: isKey ? 'var(--json-key)' : 'var(--json-string)' })
       if (m[2]) tokens.push({ v: m[2], c: 'inherit' })
     } else if (m[3] !== undefined) {
-      tokens.push({ v: m[3], c: '#0066cc' })
+      tokens.push({ v: m[3], c: 'var(--json-number)' })
     } else if (m[4] !== undefined) {
-      tokens.push({ v: m[4], c: '#b35a00' })
+      const isNull = m[4].toLowerCase() === 'null'
+      tokens.push({ v: m[4], c: isNull ? 'var(--json-null)' : 'var(--json-bool)' })
     } else {
       tokens.push({ v: m[5], c: 'inherit' })
     }

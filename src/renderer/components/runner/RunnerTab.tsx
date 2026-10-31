@@ -19,6 +19,7 @@ import { runnerKey } from '../../lib/runner-storage'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
 import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDateTime } from '../../lib/format-datetime'
 import RunnerVariables from './RunnerVariables'
 import RunnerHistory from './RunnerHistory'
 import ScheduledTasksView from './ScheduledTasksView'
@@ -243,7 +244,7 @@ interface RunnerTabProps {
 
 export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProps) {
   // Reactive: the panel titles and toasts follow a language switch at once.
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const treeData = useWorkspaceStore((s) => s.treeData)
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
@@ -1353,7 +1354,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           // folder it's working with, surface that — otherwise we used to
           // print only the timestamp which made the Scheduled Tasks table
           // unreadable when you had more than a couple of rows.
-          name: `${runFolderName || t('runnerTab.scheduledRunName')} — ${new Date().toLocaleString()}`,
+          name: `${runFolderName || t('runnerTab.scheduledRunName')} — ${formatDateTime(Date.now(), locale)}`,
           endpointIds: mainIds,
           setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
           teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
@@ -1395,6 +1396,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       runPostScript,
       runFailScript,
       t,
+      locale,
     ],
   )
 

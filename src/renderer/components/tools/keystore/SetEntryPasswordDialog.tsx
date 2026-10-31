@@ -68,12 +68,12 @@ export default function SetEntryPasswordDialog({
         onEnter={() => void submit()}
       />
       {mismatch && (
-        <p className="text-[11px]" style={{ color: '#cc2200' }}>
+        <p className="text-[11px]" style={{ color: 'var(--red)' }}>
           {t('tools.keystore.setEntryPw.mismatch')}
         </p>
       )}
       {error && (
-        <p className="text-[11px]" style={{ color: '#cc2200' }}>
+        <p className="text-[11px]" style={{ color: 'var(--red)' }}>
           {error}
         </p>
       )}

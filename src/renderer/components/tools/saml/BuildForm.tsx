@@ -127,7 +127,7 @@ export default function BuildForm({
               that could never be accepted — with no hint as to why.
             */}
             {form.notOnOrAfterSeconds <= -form.notBeforeSkewSeconds && (
-              <p role="alert" className="col-span-2 text-[11px]" style={{ color: '#cc2200' }}>
+              <p role="alert" className="col-span-2 text-[11px]" style={{ color: 'var(--red)' }}>
                 {t('tools.saml.emptyValidityWindow')}
               </p>
             )}

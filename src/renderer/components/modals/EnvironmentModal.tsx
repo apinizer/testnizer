@@ -1031,9 +1031,12 @@ function VarRowView({
         onChange={(e) => onUpdate({ initialValue: e.target.value })}
         placeholder="—"
         type={variable.secret && !showCurrent ? 'password' : 'text'}
-        title={variable.secret ? t('env.secretStaysLocal') : undefined}
-        // min-w-0: the grid track can shrink, the dots are not clipped (#257).
-        className="min-w-0"
+        // A plain value too long for the column shows in full on hover; a
+        // secret's tooltip is the "stays local" note, NEVER the value (G-05).
+        title={variable.secret ? t('env.secretStaysLocal') : variable.initialValue || undefined}
+        // min-w-0: the grid track can shrink (#257). text-ellipsis: unfocused,
+        // an overlong value / mask ends on a whole glyph + "…", not a half dot.
+        className="min-w-0 text-ellipsis"
         style={{ ...INPUT, color: valueColor }}
       />
 
@@ -1063,11 +1066,11 @@ function VarRowView({
               ? t('env.decryptFailed')
               : variable.secret
                 ? t('env.secretStaysLocal')
-                : undefined
+                : variable.value || variable.initialValue || undefined
           }
           data-decrypt-failed={locked || undefined}
           type={variable.secret && !showCurrent && !locked ? 'password' : 'text'}
-          className="min-w-0"
+          className="min-w-0 text-ellipsis"
           style={{
             ...INPUT,
             color: valueColor,

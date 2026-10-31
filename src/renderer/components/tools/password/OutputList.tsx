@@ -9,11 +9,15 @@ import type { StrengthLevel } from '../../../lib/tools/password-generator'
 import type { Tr } from './atoms'
 
 const STRENGTH_META: Record<StrengthLevel, { labelKey: string; color: string; pct: number }> = {
-  'very-weak': { labelKey: 'tools.passwordGen.strengthVeryWeak', color: '#cc2200', pct: 20 },
-  weak: { labelKey: 'tools.passwordGen.strengthWeak', color: '#e0821a', pct: 40 },
-  fair: { labelKey: 'tools.passwordGen.strengthFair', color: '#b38f00', pct: 60 },
-  strong: { labelKey: 'tools.passwordGen.strengthStrong', color: '#1a7a4a', pct: 80 },
-  'very-strong': { labelKey: 'tools.passwordGen.strengthVeryStrong', color: '#0a7a5a', pct: 100 },
+  'very-weak': { labelKey: 'tools.passwordGen.strengthVeryWeak', color: 'var(--red)', pct: 20 },
+  weak: { labelKey: 'tools.passwordGen.strengthWeak', color: 'var(--orange)', pct: 40 },
+  fair: { labelKey: 'tools.passwordGen.strengthFair', color: 'var(--mb-put-fg)', pct: 60 },
+  strong: { labelKey: 'tools.passwordGen.strengthStrong', color: 'var(--green)', pct: 80 },
+  'very-strong': {
+    labelKey: 'tools.passwordGen.strengthVeryStrong',
+    color: 'var(--mb-patch-fg)',
+    pct: 100,
+  },
 }
 
 export function StrengthBar({
@@ -73,13 +77,13 @@ export default function OutputList({
             labelled.
           */}
           {stale ? (
-            <span style={{ color: 'var(--orange, #b35a00)' }}>
+            <span style={{ color: 'var(--orange)' }}>
               {' · '}
               {t('tools.common.staleOutput')}
             </span>
           ) : null}
           {rowCopy.copied ? (
-            <span style={{ color: 'var(--green, #1a7a4a)' }}>
+            <span style={{ color: 'var(--green)' }}>
               {' · '}
               {t('tools.common.copied')}
             </span>

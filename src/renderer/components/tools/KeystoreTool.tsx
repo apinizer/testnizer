@@ -245,7 +245,7 @@ export default function KeystoreTool() {
               {s.dirty && (
                 <span
                   className="rounded px-1.5 py-0.5 text-[10px] font-semibold"
-                  style={{ background: '#fff4e0', color: '#b35a00' }}
+                  style={{ background: 'var(--mb-put-bg)', color: 'var(--orange)' }}
                 >
                   {t('tools.keystore.dirty')}
                 </span>
@@ -283,7 +283,7 @@ export default function KeystoreTool() {
         <div
           role="alert"
           className="shrink-0 border-b px-4 py-1.5 text-[11px]"
-          style={{ borderColor: 'var(--border)', color: '#cc2200' }}
+          style={{ borderColor: 'var(--border)', color: 'var(--red)' }}
         >
           {s.error}
         </div>
@@ -529,7 +529,7 @@ export default function KeystoreTool() {
             onEnter={() => void submitCreate()}
           />
           {createType === 'PKCS12' && createPw === '' && (
-            <p className="text-[11px]" style={{ color: 'var(--orange, #b35a00)' }}>
+            <p className="text-[11px]" style={{ color: 'var(--orange)' }}>
               {t('tools.keystore.emptyPwWarning')}
             </p>
           )}

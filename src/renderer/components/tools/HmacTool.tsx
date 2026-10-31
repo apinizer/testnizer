@@ -92,7 +92,7 @@ export default function HmacTool() {
       }
       outputPane={
         error ? (
-          <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {error}
           </div>
@@ -179,7 +179,7 @@ function CopyButton({ text }: { text: string }) {
       className="rounded border px-1.5 py-0.5 text-[11px]"
       style={{
         borderColor: 'var(--border)',
-        color: copied ? '#1a7a4a' : 'var(--muted)',
+        color: copied ? 'var(--green)' : 'var(--muted)',
         background: 'var(--white)',
       }}
     >

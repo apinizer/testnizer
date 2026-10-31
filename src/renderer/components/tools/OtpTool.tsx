@@ -339,7 +339,7 @@ export default function OtpTool() {
               {t('tools.otp.add')}
             </button>
             {error && (
-              <div className="text-[11px]" style={{ color: '#cc2200' }}>
+              <div className="text-[11px]" style={{ color: 'var(--red)' }}>
                 {error}
               </div>
             )}
@@ -377,7 +377,7 @@ export default function OtpTool() {
             </div>
 
             {selectedCode?.error ? (
-              <div className="text-sm" style={{ color: '#cc2200' }}>
+              <div className="text-sm" style={{ color: 'var(--red)' }}>
                 {selectedCode.error}
               </div>
             ) : (
@@ -395,11 +395,7 @@ export default function OtpTool() {
              * The code itself stays on screen, so the confirmation goes under it
              * rather than replacing the glyphs with a ✓.
              */}
-            <div
-              className="-mt-3 h-4 text-[11px]"
-              style={{ color: 'var(--green, #1a7a4a)' }}
-              role="status"
-            >
+            <div className="-mt-3 h-4 text-[11px]" style={{ color: 'var(--green)' }} role="status">
               {codeCopy.copied ? t('tools.common.copied') : ''}
             </div>
 
@@ -492,7 +488,7 @@ export default function OtpTool() {
               {qr?.id === selected.id ? t('tools.otp.hideQr') : t('tools.otp.showQr')}
             </button>
             {qrError?.id === selected.id && (
-              <div className="text-[11px]" style={{ color: '#cc2200' }}>
+              <div className="text-[11px]" style={{ color: 'var(--red)' }}>
                 {qrError.message}
               </div>
             )}

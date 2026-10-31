@@ -133,7 +133,7 @@ export default function ClaimsEditor({
       </label>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge color={expiry.state === 'expired' ? '#cc2200' : '#1a7a4a'}>{expiry.text}</Badge>
+        <Badge tone={expiry.state === 'expired' ? 'danger' : 'success'}>{expiry.text}</Badge>
         {expiry.iso ? (
           <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>
             {expiry.iso}

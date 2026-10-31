@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { Loader2, Send, Globe, History as HistoryIcon, Code2 } from 'lucide-react'
 import { useTranslation } from '../../lib/i18n'
+import { connectErrorText } from '../../lib/connection-error'
 import { useScrollStrip } from '../../lib/use-scroll-strip'
 import ResponseBody from './ResponseBody'
 import CookieTab from './CookieTab'
@@ -141,7 +142,10 @@ export default function ResponsePane() {
             <div className="mb-1 font-medium" style={{ color: 'var(--red)' }}>
               {t('response.requestFailed')}
             </div>
-            <div style={{ color: 'var(--muted)' }}>{response.error}</div>
+            {/* The ONE connection-error format, in the active locale (issue #253). */}
+            <div style={{ color: 'var(--muted)' }}>
+              {connectErrorText(response, response.error)}
+            </div>
           </div>
         </div>
       </div>

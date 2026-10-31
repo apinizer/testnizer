@@ -3,6 +3,7 @@ import { X, ExternalLink, FileText, Shield, Building2 } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { useEulaStore } from '../../stores/eula.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatDate } from '../../lib/format-datetime'
 import LegalDocModal from '../eula/LegalDocModal'
 import Modal from '../shared/Modal'
 import appIcon from '../../assets/icon.png'
@@ -26,7 +27,7 @@ interface IpcResult<T> {
 const HOMEPAGE_URL = 'https://www.testnizer.com'
 
 export default function AboutModal() {
-  const { t } = useTranslation()
+  const { t, locale } = useTranslation()
   const open = useUIStore((s) => s.showAboutModal)
   const setOpen = useUIStore((s) => s.setShowAboutModal)
 
@@ -179,7 +180,7 @@ export default function AboutModal() {
             {consentValid && consentState.acceptedAt > 0 && (
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                 {t('about.consentAccepted')
-                  .replace('{date}', new Date(consentState.acceptedAt).toLocaleDateString())
+                  .replace('{date}', formatDate(consentState.acceptedAt, locale))
                   .replace('{version}', consentState.acceptedVersion || '—')}
               </div>
             )}

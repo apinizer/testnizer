@@ -3,9 +3,7 @@ import { useTranslation } from '../../../lib/i18n'
 import type { KeystoreAliasSummary } from '../../../types'
 import { certValidityStatus } from './cert-validity'
 
-const GREEN = '#1a7a4a'
-const AMBER = '#b35a00'
-const RED = '#cc2200'
+import { AMBER, GREEN, RED, TONE } from '../palette'
 
 interface ExpiryStatus {
   color: string
@@ -39,10 +37,10 @@ function badgeFor(
 ): { text: string; bg: string; color: string } {
   if (a.entryType === 'KEY') {
     return a.hasPrivateKey
-      ? { text: t('tools.keystore.badgeKeypair'), bg: '#eeecfe', color: '#5b52d4' }
-      : { text: t('tools.keystore.badgeSecret'), bg: '#fff4e0', color: '#b35a00' }
+      ? { text: t('tools.keystore.badgeKeypair'), bg: TONE.accent.bg, color: TONE.accent.fg }
+      : { text: t('tools.keystore.badgeSecret'), bg: TONE.warning.bg, color: TONE.warning.fg }
   }
-  return { text: t('tools.keystore.badgeTrusted'), bg: '#e8f4ff', color: '#0066cc' }
+  return { text: t('tools.keystore.badgeTrusted'), bg: TONE.info.bg, color: TONE.info.fg }
 }
 
 export interface AliasRowActions {
@@ -249,7 +247,7 @@ function RowMenuItem({
     <button
       onClick={onClick}
       className="block w-full px-3 py-1.5 text-left text-xs"
-      style={{ color: danger ? '#cc2200' : 'var(--text)' }}
+      style={{ color: danger ? RED : 'var(--text)' }}
     >
       {children}
     </button>

@@ -64,6 +64,8 @@ export default function JwtTool() {
   const [headerView, setHeaderView] = useState<View>('json')
   const [payloadView, setPayloadView] = useState<View>('json')
   const [verification, setVerification] = useState<Verification>({ state: 'idle' })
+  /** The JWKS panel's verdict for THIS token — the footer reports it too (G-02). */
+  const [jwksVerdict, setJwksVerdict] = useState<'valid' | 'invalid' | null>(null)
 
   // ── Encoder state ─────────────────────────────────────────────────
   const [encAlgorithm, setEncAlgorithm] = useState<JwtAlgorithm>('HS256')
@@ -110,6 +112,7 @@ export default function JwtTool() {
   useInvalidateOn([token, verifySecret, verifyAlgorithm], () => {
     setVerification({ state: 'idle' })
   })
+  useInvalidateOn([token], () => setJwksVerdict(null))
 
   /*
    * Key material only makes sense for one FAMILY of algorithms, so crossing the
@@ -322,6 +325,8 @@ export default function JwtTool() {
           verifySecret={verifySecret}
           setVerifySecret={setVerifySecret}
           verification={verification}
+          jwksVerdict={jwksVerdict}
+          setJwksVerdict={setJwksVerdict}
           runVerify={runVerify}
           t={t}
         />
@@ -379,6 +384,8 @@ function DecoderBody(props: {
   verifySecret: string
   setVerifySecret: (s: string) => void
   verification: Verification
+  jwksVerdict: 'valid' | 'invalid' | null
+  setJwksVerdict: (v: 'valid' | 'invalid' | null) => void
   runVerify: () => void
   t: (k: string) => string
 }) {
@@ -398,6 +405,8 @@ function DecoderBody(props: {
     verifySecret,
     setVerifySecret,
     verification,
+    jwksVerdict,
+    setJwksVerdict,
     runVerify,
     t,
   } = props
@@ -433,26 +442,45 @@ function DecoderBody(props: {
           style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
         >
           {decodeError ? (
-            <Badge color="#cc2200">
+            <Badge tone="danger">
               {t('tools.common.error')}: {decodeError}
             </Badge>
           ) : !jwt ? (
             <span style={{ color: 'var(--muted)' }}>{t('tools.jwt.pasteHint')}</span>
           ) : (
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge color="#1a7a4a">{t('tools.jwt.validJwt')}</Badge>
-              {expired ? <Badge color="#cc2200">{t('tools.jwt.expired')}</Badge> : null}
-              {notYet ? <Badge color="#b35a00">{t('tools.jwt.notYetValid')}</Badge> : null}
-              {verification.state === 'valid' ? (
-                <Badge color="#1a7a4a">{t('tools.jwt.signatureVerified')}</Badge>
+              {/* Decoding proves only the token's SHAPE (G-02): neutral until a
+                  secret/key or JWKS verification gives a verdict. */}
+              <Badge tone="neutral" testId="jwt-decoded-badge">
+                {t('tools.jwt.decoded')}
+              </Badge>
+              {expired ? <Badge tone="danger">{t('tools.jwt.expired')}</Badge> : null}
+              {notYet ? <Badge tone="warning">{t('tools.jwt.notYetValid')}</Badge> : null}
+              {verification.state === 'valid' || jwksVerdict === 'valid' ? (
+                <Badge tone="success">{t('tools.jwt.signatureVerified')}</Badge>
+              ) : null}
+              {verification.state !== 'valid' &&
+              verification.state !== 'invalid' &&
+              verification.state !== 'error' &&
+              jwksVerdict === null ? (
+                <span
+                  data-testid="jwt-signature-unverified"
+                  className="text-[11px]"
+                  style={{ color: 'var(--muted)' }}
+                >
+                  {t('tools.jwt.signatureNotVerified')}
+                </span>
+              ) : null}
+              {jwksVerdict === 'invalid' && verification.state !== 'invalid' ? (
+                <Badge tone="danger">{t('tools.jwt.invalid')}</Badge>
               ) : null}
               {verification.state === 'invalid' ? (
-                <Badge color="#cc2200">
+                <Badge tone="danger">
                   {t('tools.jwt.invalid')}: {verification.reason}
                 </Badge>
               ) : null}
               {verification.state === 'error' ? (
-                <Badge color="#cc2200">
+                <Badge tone="danger">
                   {t('tools.common.error')}: {verification.message}
                 </Badge>
               ) : null}
@@ -558,13 +586,13 @@ function DecoderBody(props: {
                     : t('tools.jwt.verifyButton')}
                 </button>
                 {verification.state === 'valid' ? (
-                  <Badge color="#1a7a4a">{t('tools.jwt.signatureVerified')}</Badge>
+                  <Badge tone="success">{t('tools.jwt.signatureVerified')}</Badge>
                 ) : verification.state === 'invalid' ? (
-                  <Badge color="#cc2200">
+                  <Badge tone="danger">
                     {t('tools.jwt.invalid')}: {verification.reason}
                   </Badge>
                 ) : verification.state === 'error' ? (
-                  <Badge color="#cc2200">
+                  <Badge tone="danger">
                     {t('tools.common.error')}: {verification.message}
                   </Badge>
                 ) : null}
@@ -576,7 +604,7 @@ function DecoderBody(props: {
               above is untouched and remains the default path — this panel is
               inert until the user fills it in.
             */}
-            <JwksVerifyPanel token={token} algorithm={verifyAlgorithm} />
+            <JwksVerifyPanel token={token} algorithm={verifyAlgorithm} onVerdict={setJwksVerdict} />
           </>
         )}
       </div>
@@ -686,9 +714,9 @@ function EncoderBody(props: {
           </div>
           <div className="px-3 py-1.5 text-xs">
             {headerValid ? (
-              <Badge color="#1a7a4a">{t('tools.jwt.validHeader')}</Badge>
+              <Badge tone="success">{t('tools.jwt.validHeader')}</Badge>
             ) : (
-              <Badge color="#cc2200">{t('tools.jwt.invalidJson')}</Badge>
+              <Badge tone="danger">{t('tools.jwt.invalidJson')}</Badge>
             )}
           </div>
         </div>
@@ -711,9 +739,9 @@ function EncoderBody(props: {
           </div>
           <div className="px-3 py-1.5 text-xs">
             {payloadValid ? (
-              <Badge color="#1a7a4a">{t('tools.jwt.validPayload')}</Badge>
+              <Badge tone="success">{t('tools.jwt.validPayload')}</Badge>
             ) : (
-              <Badge color="#cc2200">{t('tools.jwt.invalidJson')}</Badge>
+              <Badge tone="danger">{t('tools.jwt.invalidJson')}</Badge>
             )}
           </div>
         </div>
@@ -844,7 +872,7 @@ function EncoderBody(props: {
                 {t('tools.jwt.signButton')}
               </button>
               {error ? (
-                <Badge color="#cc2200">
+                <Badge tone="danger">
                   {t('tools.common.error')}: {error}
                 </Badge>
               ) : null}
@@ -971,7 +999,7 @@ function ClaimTable({ rows }: { rows: ClaimRow[] }) {
             <tr key={r.key}>
               <td
                 className="border-b px-3 py-1.5 align-top font-mono"
-                style={{ borderColor: 'var(--border)', color: 'var(--blue, #0066cc)' }}
+                style={{ borderColor: 'var(--border)', color: 'var(--blue)' }}
               >
                 {r.key}
               </td>

@@ -299,3 +299,17 @@ export function utf8Length(text: string): number {
   }
   return n
 }
+
+/**
+ * "12s" / "3m 4s" / "1h 2m" for a log footer's "connected for" time. Clamped
+ * at 0: the renderer's clock reading can trail the connect stamp by a tick
+ * (G-11 — the SSE footer read "-1s" right after Connect).
+ */
+export function formatElapsed(ms: number): string {
+  const seconds = Math.floor(Math.max(0, ms) / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  if (hours > 0) return `${hours}h ${minutes % 60}m`
+  if (minutes > 0) return `${minutes}m ${seconds % 60}s`
+  return `${seconds}s`
+}

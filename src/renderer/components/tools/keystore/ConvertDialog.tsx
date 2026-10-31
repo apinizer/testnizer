@@ -72,7 +72,7 @@ export default function ConvertDialog({
         {t('tools.keystore.convert.hint')}
       </p>
       {error && (
-        <p className="text-[11px]" style={{ color: '#cc2200' }}>
+        <p className="text-[11px]" style={{ color: 'var(--red)' }}>
           {error}
         </p>
       )}

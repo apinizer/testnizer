@@ -276,7 +276,7 @@ function SideBySideDiff({ result }: { result: SideBySideResult }) {
         >
           <span
             className="flex items-center gap-1.5 text-xs font-semibold"
-            style={{ color: '#cc2200' }}
+            style={{ color: 'var(--red)' }}
           >
             <span style={{ fontSize: 14, lineHeight: 1 }}>−</span>
             {result.removals} {t('tools.diff.removalsLabel')}
@@ -296,7 +296,7 @@ function SideBySideDiff({ result }: { result: SideBySideResult }) {
         <div className="flex flex-1 items-center justify-between px-3 py-1.5">
           <span
             className="flex items-center gap-1.5 text-xs font-semibold"
-            style={{ color: '#1a7a4a' }}
+            style={{ color: 'var(--green)' }}
           >
             <span style={{ fontSize: 14, lineHeight: 1 }}>+</span>
             {result.additions} {t('tools.diff.additionsLabel')}

@@ -13,7 +13,7 @@ import { useTranslation } from '../../../lib/i18n'
  */
 export function DialogError({ text }: { text: string }) {
   return (
-    <p role="alert" className="m-0 text-[11px]" style={{ color: '#cc2200' }}>
+    <p role="alert" className="m-0 text-[11px]" style={{ color: 'var(--red)' }}>
       {text}
     </p>
   )

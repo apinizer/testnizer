@@ -370,7 +370,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
                   {t('runnerHistory.colDuration')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
-                  {t('runnerHistory.colAllTests')}
+                  {t('runnerHistory.colAllRequests')}
                 </th>
                 <th className="py-2 pr-4" style={{ fontWeight: 600, color: 'var(--muted)' }}>
                   {t('runnerHistory.colPassed')}

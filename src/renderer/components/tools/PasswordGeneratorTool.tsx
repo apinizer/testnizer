@@ -122,7 +122,7 @@ export default function PasswordGeneratorTool() {
       }
       outputPane={
         error ? (
-          <div className="p-3 text-sm" style={{ color: '#cc2200' }}>
+          <div className="p-3 text-sm" style={{ color: 'var(--red)' }}>
             <strong>{t('tools.common.error')}: </strong>
             {error}
           </div>

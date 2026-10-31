@@ -186,7 +186,7 @@ export default function GenerateKeyPairDialog({
           onChange={setValidityDays}
         />
         {validityWarning && (
-          <p role="alert" className="col-span-2 -mt-2 text-[11px]" style={{ color: '#cc2200' }}>
+          <p role="alert" className="col-span-2 -mt-2 text-[11px]" style={{ color: 'var(--red)' }}>
             {validityWarning}
           </p>
         )}
@@ -232,7 +232,7 @@ export default function GenerateKeyPairDialog({
         {t('tools.keystore.generate.basicConstraintsCa')}
       </label>
       {basicConstraintsCa && !keyUsage.includes('keyCertSign') && (
-        <p className="text-[11px]" style={{ color: 'var(--orange, #b35a00)' }}>
+        <p className="text-[11px]" style={{ color: 'var(--orange)' }}>
           {t('tools.keystore.generate.caNeedsKeyCertSign')}
         </p>
       )}
@@ -241,7 +241,7 @@ export default function GenerateKeyPairDialog({
           with the store password; per-entry passwords land in Faz B4. */}
 
       {error && (
-        <p className="text-[11px]" style={{ color: '#cc2200' }}>
+        <p className="text-[11px]" style={{ color: 'var(--red)' }}>
           {error}
         </p>
       )}

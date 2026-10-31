@@ -3,6 +3,7 @@
 
 import type { MockServerKind } from '../../shared/mock-kind'
 import type { MockLlmConfig, MockSseStreamConfig } from '../../shared/mock-stream'
+import type { ConnectionErrorInfo } from '../../shared/connection-error'
 
 export type { MockServerKind }
 
@@ -877,6 +878,11 @@ export interface ApiResponse {
   bodySize?: number
   timing: ResponseTiming
   error?: string
+  /**
+   * A classified connection failure (issue #253): the response error panel
+   * writes it in the active locale; `error` is main's English one-liner.
+   */
+  errorInfo?: ConnectionErrorInfo
   cookies?: ResponseCookie[]
   actualRequest?: ActualRequestInfo
   consoleLogs?: ConsoleLog[]
