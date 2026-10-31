@@ -106,6 +106,9 @@ const TOUR_ON = !!process.env.TESTNIZER_SCREEN_TOUR
 const PROJECT = 'Acme Payments API'
 
 type State = 'main' | 'empty' | 'error' | 'filled' | 'dark' | 'tr' | 'narrow'
+
+/** The window size tests/e2e/ui/54-narrow-editor-layout-251.spec.ts proves the compact URL bar at. */
+const NARROW_EDITOR = { width: 900, height: 700 } as const
 type Variant = 'dark' | 'tr' | 'narrow'
 
 interface ShotSpec {
@@ -1616,15 +1619,27 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
         })
 
         // #251: narrow window + right panel opened by hand → compact URL bar,
-        // Save moved into the overflow menu.
+        // Save moved into the overflow menu. Same approach as
+        // tests/e2e/ui/54-narrow-editor-layout-251.spec.ts: shrink FIRST (the
+        // auto collapse closes a panel that was open before the resize — the
+        // old step opened it at full size, so at 1024 px it collapsed again and
+        // the ~596 px editor stayed above the 580 px compact threshold), then
+        // open the panel by hand from the rail. 900 px is the size spec 54
+        // proves compact at unconditionally.
         await shot(
           w,
           { id: 131, area: 'http', screen: 'url-bar-narrow-right-panel', state: 'narrow' },
           async () => {
             await openSeeded(w, 'Create order')
-            await setRightPanelOpen(w, true)
-            await setContentSize(app, { width: 1024, height: 700 })
+            await setContentSize(app, NARROW_EDITOR)
+            await expect
+              .poll(() => w.evaluate(() => window.innerWidth), { timeout: 5_000 })
+              .toBe(NARROW_EDITOR.width)
+            await expect(w.getByTestId('right-panel-rail')).toBeVisible({ timeout: 5_000 })
+            await w.getByTestId('right-panel-rail-variables').click()
+            await expect(w.getByTestId('right-panel')).toBeVisible({ timeout: 5_000 })
             await expect(w.getByTestId('url-more-btn')).toBeVisible({ timeout: 8_000 })
+            await expect(w.getByTestId('save-btn')).toHaveCount(0)
           },
         )
         await shot(
@@ -1829,9 +1844,21 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
           .getByLabel(/Schedule runs/i)
           .check()
         await setContentSize(app, { width: 1024, height: 700 })
+        await expect.poll(() => w.evaluate(() => window.innerWidth), { timeout: 5_000 }).toBe(1024)
         const bar = w.getByTestId('runner-action-bar')
         await expect(bar).toBeVisible()
         await expect(bar).toBeInViewport()
+        // Wait for the reflow (G-16): Save lies inside the bar before the shot.
+        const save = w.getByTestId('runner-save-config')
+        await expect
+          .poll(
+            async () => {
+              const [b, s] = await Promise.all([bar.boundingBox(), save.boundingBox()])
+              return !!b && !!s && s.x + s.width <= b.x + b.width + 1
+            },
+            { timeout: 5_000 },
+          )
+          .toBe(true)
       },
     )
   })

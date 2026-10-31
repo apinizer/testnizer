@@ -362,7 +362,7 @@ export default function KeyValueTable({
         if (bulkMode) commitBulk()
         setBulkMode((v) => !v)
       }}
-      className="cursor-pointer border-none bg-transparent font-normal text-[var(--accent)] hover:underline"
+      className="ml-auto shrink-0 cursor-pointer whitespace-nowrap border-none bg-transparent font-normal text-[var(--accent)] hover:underline"
       style={{ fontSize: 13 }}
     >
       {bulkMode ? t('kv.keyValueEdit') : t('kv.bulkEdit')}
@@ -434,12 +434,27 @@ export default function KeyValueTable({
             </div>
             {enableFileType && <div className="whitespace-nowrap px-2.5 py-1">{t('kv.type')}</div>}
             <div className="whitespace-nowrap px-2.5 py-1">{t('kv.value')}</div>
-            {/* Description header doubles as the Bulk Edit toggle anchor (#22). */}
-            <div className="flex items-center justify-between whitespace-nowrap px-2.5 py-1">
-              <span className="min-w-0 truncate">{t('kv.description')}</span>
+            {/* Description header doubles as the Bulk Edit toggle anchor (#22).
+                With the toggle the cell also takes the empty action track, so a
+                narrow table has room for both; the label truncates first and the
+                toggle stays whole and right-aligned (it used to glue to the
+                label: "DescriptionBulk Edit"). */}
+            <div
+              className={`flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap py-1 ${
+                bulkToggle ? 'pl-2.5 pr-1' : 'px-2.5'
+              }`}
+              style={bulkToggle ? { gridColumn: 'span 2' } : undefined}
+            >
+              <span
+                data-testid="kv-description-label"
+                className="min-w-0 flex-1 truncate"
+                title={t('kv.description')}
+              >
+                {t('kv.description')}
+              </span>
               {bulkToggle}
             </div>
-            <div />
+            {!bulkToggle && <div />}
           </div>
 
           {/* Rows */}

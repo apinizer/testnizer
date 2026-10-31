@@ -238,12 +238,17 @@ export default function RunnerConfig({
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
       style={{ fontSize: 13 }}
       lang={locale}
     >
-      {/* Content — scrolls on its own; the action bar below never does (#255). */}
-      <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+      {/* Content — scrolls on its own; the action bar below never does (#255).
+          `overflow-auto` stays: MST-255 finds the scroller by that class. The
+          fields below wrap / stack, so it never needs a horizontal bar (G-16). */}
+      <div
+        data-testid="runner-config-body"
+        className="min-h-0 min-w-0 flex-1 overflow-auto px-5 py-4"
+      >
         {/* Choose how to run. When the runner is sourced from APIs (not a
          *  Test Suite) the schedule path is intentionally unavailable —
          *  scheduled tasks live on suites, by design. */}
@@ -341,8 +346,13 @@ export default function RunnerConfig({
             </div>
 
             {scheduleType === 'interval' && (
-              <div className="flex items-center gap-2">
-                <span style={{ color: 'var(--muted)' }}>{t('runnerConfig.runEvery')}</span>
+              <div
+                data-testid="runner-schedule-interval"
+                className="flex flex-wrap items-center gap-2"
+              >
+                <span className="whitespace-nowrap" style={{ color: 'var(--muted)' }}>
+                  {t('runnerConfig.runEvery')}
+                </span>
                 <input
                   type="number"
                   min={1}
@@ -365,8 +375,10 @@ export default function RunnerConfig({
             )}
 
             {scheduleType === 'daily' && (
-              <div className="flex items-center gap-2">
-                <span style={{ color: 'var(--muted)' }}>{t('runnerConfig.everyDayAt')}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="whitespace-nowrap" style={{ color: 'var(--muted)' }}>
+                  {t('runnerConfig.everyDayAt')}
+                </span>
                 <input
                   type="time"
                   value={scheduleTime}
@@ -382,8 +394,10 @@ export default function RunnerConfig({
 
             {scheduleType === 'weekly' && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div className="flex items-center gap-2">
-                  <span style={{ color: 'var(--muted)' }}>{t('runnerConfig.at')}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="whitespace-nowrap" style={{ color: 'var(--muted)' }}>
+                    {t('runnerConfig.at')}
+                  </span>
                   <input
                     type="time"
                     value={scheduleTime}
@@ -451,8 +465,13 @@ export default function RunnerConfig({
         <h3 style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>
           {t('runnerConfig.runConfiguration')}
         </h3>
-        <div className="mb-4 flex gap-4">
-          <div className="flex-1">
+        {/* Auto-fit: three columns when there is room, one when narrow (G-16) —
+            the delay inputs used to squeeze to a few px beside their labels. */}
+        <div
+          data-testid="runner-run-config-grid"
+          className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4"
+        >
+          <div className="min-w-0">
             <label style={{ display: 'block', color: 'var(--muted)', marginBottom: 4 }}>
               {t('runnerHistory.colIterations')}
             </label>
@@ -469,7 +488,7 @@ export default function RunnerConfig({
               style={{ fontSize: 13 }}
             />
           </div>
-          <div className="flex-1">
+          <div className="min-w-0">
             {/*
               Say WHICH gap this delay fills. It sits next to "Iterations", and
               a bare "Delay" there reads as "delay between iterations" — a
@@ -498,7 +517,7 @@ export default function RunnerConfig({
               <span style={{ color: 'var(--muted)', flexShrink: 0 }}>ms</span>
             </div>
           </div>
-          <div className="flex-1">
+          <div className="min-w-0">
             {/*
               A second, independent gap (issue #89). "Delay between requests"
               already applies at the iteration boundary — it follows the last
@@ -619,14 +638,14 @@ export default function RunnerConfig({
        *  primary action used to sit below the fold behind the footer. */}
       <div
         data-testid="runner-action-bar"
-        className="flex shrink-0 items-center gap-2.5 border-t border-[var(--border)] bg-[var(--white)] px-5 py-3"
+        className="flex shrink-0 flex-wrap items-center gap-2.5 border-t border-[var(--border)] bg-[var(--white)] px-5 py-3"
       >
         <button
           type="button"
           data-testid="runner-start"
           onClick={handleStart}
           disabled={isRunning || selectedCount === 0}
-          className="flex cursor-pointer items-center gap-2 rounded-[6px] border-none px-5 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap rounded-[6px] border-none px-5 py-2 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           style={{ background: '#e86826', fontSize: 13 }}
         >
           {runMode === 'schedule' ? t('runnerConfig.scheduleRun') : t('runnerConfig.startRun')}
@@ -651,7 +670,7 @@ export default function RunnerConfig({
             onClick={handleSaveConfig}
             disabled={isSavingConfig}
             title={t('runnerConfig.saveConfigHint')}
-            className="cursor-pointer rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-4 py-2 font-semibold text-[var(--text)] hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="shrink-0 cursor-pointer whitespace-nowrap rounded-[6px] border border-[var(--border)] bg-[var(--white)] px-4 py-2 font-semibold text-[var(--text)] hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ fontSize: 13 }}
           >
             {t('runnerConfig.saveConfig')}

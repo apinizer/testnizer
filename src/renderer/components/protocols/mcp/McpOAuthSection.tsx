@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from 'react'
+import { useId, type InputHTMLAttributes } from 'react'
 import { KeyRound, ShieldAlert, X } from 'lucide-react'
 import { useMcpStore } from '../../../stores/mcp.store'
 import { useTranslation } from '../../../lib/i18n'
@@ -9,16 +9,34 @@ import McpOAuthSummaryCard from './McpOAuthSummaryCard'
 import { stepRows } from './oauth-steps'
 import { CenterHint, ErrorLine, GhostButton, PrimaryButton, SectionLabel } from './ui'
 
-function Field({ label, ...input }: { label: string } & InputHTMLAttributes<HTMLInputElement>) {
+/**
+ * One debugger field. The placeholder is a short example; what an empty value
+ * means goes in `hint`, a wrapping line under the field (G-18: a long
+ * placeholder was cut off mid-word), styled like the Socket.IO token hint.
+ */
+function Field({
+  label,
+  hint,
+  ...input
+}: { label: string; hint?: string } & InputHTMLAttributes<HTMLInputElement>) {
+  const hintId = useId()
   return (
-    <label className="flex min-w-0 flex-col gap-1 text-[11px] text-[var(--muted)]">
-      {label}
-      <input
-        spellCheck={false}
-        {...input}
-        className="h-8 min-w-0 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2.5 font-mono text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)] disabled:opacity-60"
-      />
-    </label>
+    <div className="flex min-w-0 flex-col gap-1">
+      <label className="flex min-w-0 flex-col gap-1 text-[11px] text-[var(--muted)]">
+        {label}
+        <input
+          spellCheck={false}
+          {...input}
+          aria-describedby={hint ? hintId : undefined}
+          className="h-8 min-w-0 rounded-md border border-[var(--border)] bg-[var(--input-bg)] px-2.5 font-mono text-[12px] text-[var(--text)] outline-none placeholder:text-[var(--placeholder)] focus:border-[var(--accent)] disabled:opacity-60"
+        />
+      </label>
+      {hint && (
+        <p id={hintId} className="m-0 text-[11px] text-[var(--muted)]">
+          {hint}
+        </p>
+      )}
+    </div>
   )
 }
 
@@ -80,12 +98,13 @@ export default function McpOAuthSection({ embedded = false }: { embedded?: boole
           {t('mcp.oauth.unauthorized')}
         </div>
       )}
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="grid grid-cols-1 items-start gap-2 sm:grid-cols-3">
         <Field
           label={t('mcp.oauth.clientId')}
           value={clientId}
           onChange={(e) => setClientId(e.target.value)}
           placeholder={t('mcp.oauth.clientIdPlaceholder')}
+          hint={t('mcp.oauth.clientIdHint')}
           disabled={running}
           data-testid="mcp-oauth-client-id"
         />
@@ -104,6 +123,7 @@ export default function McpOAuthSection({ embedded = false }: { embedded?: boole
           value={scope}
           onChange={(e) => setScope(e.target.value)}
           placeholder={t('mcp.oauth.scopePlaceholder')}
+          hint={t('mcp.oauth.scopeHint')}
           disabled={running}
           data-testid="mcp-oauth-scope"
         />

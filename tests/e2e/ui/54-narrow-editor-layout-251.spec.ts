@@ -135,6 +135,21 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
           const hb = (await header.boundingBox())!
           // One 16 px line + padding is ~30 px; a wrapped label doubles it.
           expect(hb.height, 'Key/Value header wrapped').toBeLessThanOrEqual(36)
+          // 1.6.0 screen review: "DescriptionBulk Edit" glued and ran past its
+          // cell. The toggle ("Toplu Düzenle" in TR) lies inside the header and
+          // its cell does not overflow.
+          const toggle = header.getByTestId('kv-bulk-toggle')
+          if (await toggle.isVisible()) {
+            const tb = (await toggle.boundingBox())!
+            expect(tb.x + tb.width, 'Bulk Edit past the header').toBeLessThanOrEqual(
+              hb.x + hb.width + 1,
+            )
+            const cellSpill = await toggle.evaluate((el) => {
+              const cell = el.parentElement as HTMLElement
+              return cell.scrollWidth - cell.clientWidth
+            })
+            expect(cellSpill, 'Description / Bulk Edit cell overflows').toBeLessThanOrEqual(1)
+          }
         } finally {
           await setContentSize(app, window, original.width, original.height)
           await restoreEnglishLocale(window)

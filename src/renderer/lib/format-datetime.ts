@@ -71,3 +71,26 @@ export function formatDateTime(ts: number | Date, locale: DateTimeLocale): strin
   }
   return d.toLocaleString()
 }
+
+/**
+ * "now" / "5 min. ago" / "yesterday" (EN), "şimdi" / "5 dk. önce" / "dün"
+ * (TR) — `Intl.RelativeTimeFormat` in the UI locale (G-17, issue #258 /
+ * issue #261: the recent-endpoints list said "just now / 1m ago" in Turkish).
+ * Past only: a timestamp ahead of `now` (clock skew) reads as "now". `now` is
+ * injectable for tests.
+ */
+export function formatRelativeTime(
+  ts: number | Date,
+  locale: DateTimeLocale,
+  now: number = Date.now(),
+): string {
+  const rtf = new Intl.RelativeTimeFormat(locale === 'tr' ? 'tr-TR' : 'en-US', {
+    numeric: 'auto',
+    style: 'short',
+  })
+  const sec = Math.max(0, now - toDate(ts).getTime()) / 1000
+  if (sec < 60) return rtf.format(0, 'second')
+  if (sec < 3600) return rtf.format(-Math.floor(sec / 60), 'minute')
+  if (sec < 86400) return rtf.format(-Math.floor(sec / 3600), 'hour')
+  return rtf.format(-Math.floor(sec / 86400), 'day')
+}

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { Plug, Shuffle, Unplug, X } from 'lucide-react'
 import { useMqttStore } from '../../../stores/mqtt.store'
 import { useTranslation } from '../../../lib/i18n'
@@ -24,6 +25,7 @@ import {
  */
 export default function MqttConnectionBar() {
   const { t } = useTranslation()
+  const clientIdHintId = useId()
   const url = useMqttStore((s) => s.url)
   const clientId = useMqttStore((s) => s.clientId)
   const version = useMqttStore((s) => s.version)
@@ -109,6 +111,7 @@ export default function MqttConnectionBar() {
             onChange={setClientId}
             data-testid="mqtt-client-id"
             aria-label={t('mqtt.clientId')}
+            aria-describedby={clientIdHintId}
             placeholder={t('mqtt.clientIdPlaceholder')}
             spellCheck={false}
             autoComplete="off"
@@ -127,6 +130,15 @@ export default function MqttConnectionBar() {
           <Shuffle size={14} />
         </button>
       </div>
+      {/* What an empty client id means — a wrapping helper line, not a placeholder
+          that a normal-width field cuts off (G-18). Socket.IO token-hint style. */}
+      <p
+        id={clientIdHintId}
+        data-testid="mqtt-client-id-hint"
+        className="m-0 text-[11px] text-[var(--muted)]"
+      >
+        {t('mqtt.clientIdHint')}
+      </p>
       {(state === 'error' || isConnected) && errorMessage && (
         <div data-testid="mqtt-error" role="alert" className={CB_ERROR_BOX}>
           {errorMessage}

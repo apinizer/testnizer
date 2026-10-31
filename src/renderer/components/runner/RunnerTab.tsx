@@ -31,6 +31,7 @@ import { lockDragStyles } from '../../lib/drag-lock'
 import { setRunnerBusy } from '../../lib/runner-activity'
 import { revealRunResult, revealTargetFor, type RunOrigin } from '../../lib/reveal-run-result'
 import { asRunOrigin, runOriginFromSourceLabel } from '../../lib/runner-source-label'
+import { CONFIG_PANE_CLASS, RUNNER_CONFIG_MIN_WIDTH, sequencePaneStyle } from './runner-layout'
 
 /**
  * After a run, refresh the renderer env store from the DB so script-written
@@ -1480,10 +1481,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           />
         ) : view === 'config' ? (
           <>
-            {/* Run Sequence (left) — resizable */}
-            <div
-              style={{ width: sequenceWidth, flexShrink: 0, overflow: 'hidden', display: 'flex' }}
-            >
+            {/* Run Sequence (left) — resizable; shrinks first when the window is
+                narrow so the config column never overflows (G-16). */}
+            <div data-testid="runner-sequence-pane" style={sequencePaneStyle(sequenceWidth)}>
               <RunnerSequence
                 endpoints={endpoints}
                 folderGroups={folderGroups}
@@ -1521,8 +1521,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
               />
             </div>
             <ResizeDivider onDrag={handleSequenceResize} />
-            {/* Config (middle) */}
-            <div className="flex flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+            {/* Config (middle) — keeps a floor; the sequence pane gives way. */}
+            <div
+              data-testid="runner-config-pane"
+              className={CONFIG_PANE_CLASS}
+              style={{ minWidth: RUNNER_CONFIG_MIN_WIDTH }}
+            >
               <RunnerConfig
                 delay={delay}
                 setDelay={setDelay}

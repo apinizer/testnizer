@@ -362,7 +362,13 @@ describe('issue #248 follow-up — History sidebar in Turkish', () => {
     act(() => {
       fireEvent.click(screen.getByRole('button', { name: /Commit’ler/ }))
     })
-    expect(await screen.findByText('2 sa önce')).toBeTruthy()
+    // The shared relative formatter (G-17): Intl in the UI locale ("2 sa. önce").
+    const twoHours = new Intl.RelativeTimeFormat('tr-TR', {
+      numeric: 'auto',
+      style: 'short',
+    }).format(-2, 'hour')
+    expect(twoHours).toMatch(/önce/)
+    expect(await screen.findByText(twoHours)).toBeTruthy()
     expect(screen.getByText('Commit Geçmişi')).toBeTruthy()
     expect(screen.getByLabelText('Commit geçmişini yenile')).toBeTruthy()
     expect(englishLeftovers(ENGLISH.history)).toEqual([])

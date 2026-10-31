@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { X, Search, Trash2, Clock } from 'lucide-react'
 import { useUIStore } from '../../stores/ui.store'
 import { formatDateTime, formatTime, type DateTimeLocale } from '../../lib/format-datetime'
+import { historyStatusDisplay } from '../../lib/history-status'
+import { useTranslation } from '../../lib/i18n'
 import { useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useRequestStore } from '../../stores/request.store'
@@ -239,16 +241,7 @@ export default function HistoryPanel() {
                     >
                       <RequestBadge protocol={entry.protocol} method={entry.method} small />
                       <span className="flex-1 truncate">{shortUrl(entry.url)}</span>
-                      {entry.status_code != null && (
-                        <span
-                          className="shrink-0 rounded px-1 font-medium"
-                          style={{
-                            color: statusColor(entry.status_code),
-                          }}
-                        >
-                          {entry.status_code}
-                        </span>
-                      )}
+                      <StatusLabel entry={entry} className="shrink-0 rounded px-1 font-medium" />
                       <span className="shrink-0" style={{ color: 'var(--muted)' }}>
                         {formatTime(entry.executed_at, locale)}
                       </span>
@@ -299,7 +292,7 @@ export default function HistoryPanel() {
 // ────────────────────────────────────────────────────────────────
 
 function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => void }) {
-  const locale = useUIStore((s) => s.locale)
+  const { t, locale } = useTranslation()
   const resp = entry.response_snapshot
   return (
     <div className="p-4">
@@ -321,15 +314,12 @@ function HistoryDetail({ entry, onOpen }: { entry: HistoryEntry; onOpen: () => v
       <div className="mb-3 flex items-center gap-4" style={{ color: 'var(--muted)' }}>
         {entry.status_code != null && (
           <span>
-            Status:{' '}
-            <span className="font-semibold" style={{ color: statusColor(entry.status_code) }}>
-              {entry.status_code}
-            </span>
+            {t('history.detailStatus')} <StatusLabel entry={entry} className="font-semibold" />
           </span>
         )}
         {entry.duration_ms != null && (
           <span>
-            Time:{' '}
+            {t('history.detailTime')}{' '}
             <span className="font-semibold" style={{ color: 'var(--green)' }}>
               {entry.duration_ms} ms
             </span>
@@ -437,11 +427,16 @@ function shortUrl(url: string): string {
   }
 }
 
-function statusColor(code: number): string {
-  if (code >= 200 && code < 300) return 'var(--green)'
-  if (code >= 300 && code < 400) return 'var(--blue)'
-  if (code >= 400 && code < 500) return 'var(--orange)'
-  return 'var(--red)'
+/** Status label + colour — the shared History rule (G-15). */
+function StatusLabel({ entry, className }: { entry: HistoryEntry; className: string }) {
+  const { t } = useTranslation()
+  const status = historyStatusDisplay(entry, t)
+  if (!status) return null
+  return (
+    <span className={className} style={{ color: status.color }} title={status.title}>
+      {status.label}
+    </span>
+  )
 }
 
 function formatBody(body: string): string {

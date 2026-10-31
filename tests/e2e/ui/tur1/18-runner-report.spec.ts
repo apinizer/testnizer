@@ -1,7 +1,7 @@
 /**
  * MST-177 P1  HTML report export (IPC path + the real Export buttons, issue #266)
  * MST-181 P2  Failed item drill-down filter
- * MST-255     Start run is visible without scrolling (issue #255)
+ * MST-255     Start run is visible without scrolling (issue #255); narrow Schedule mode
  */
 import { expect, type ElectronApplication } from '@playwright/test'
 import fs from 'node:fs'
@@ -38,6 +38,7 @@ import {
 } from '../../helpers/ui/suite-flow'
 import { exportRunnerReportHtml } from '../../helpers/ui/runner-extra'
 import { localHttpBin } from '../../helpers/test-servers'
+import { setContentSize } from '../../helpers/ui/layout-extra'
 
 const http = () => localHttpBin()
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -215,6 +216,58 @@ uiTest.describe('Tur1 — Runner report [MST-177, MST-181]', () => {
     expect(after?.y).toBe(before?.y)
     await expect(start).toBeInViewport({ ratio: 1 })
   })
+
+  /**
+   * MST-255 narrow (1.6.0 screen review G-16) — at 1024x700 in Schedule mode
+   * the Run Sequence pane kept its full width, the config column overflowed
+   * horizontally and "Save configuration" was clipped at the right edge. The
+   * sequence pane now shrinks first, the fields stack and the action bar wraps:
+   * every footer button lies inside the bar, each label stays on one line, and
+   * the config body never needs a horizontal scrollbar.
+   */
+  uiTest(
+    'MST-255 narrow: Schedule mode at 1024x700 — no clipped footer, no horizontal overflow',
+    async ({ app, window }) => {
+      const suiteName = `Narrow255-${uid()}`
+      await createTestSuite(window, suiteName)
+      await addSuiteItem(window, suiteName)
+      await fillUrl(window, `${http()}/get?mst255=narrow`)
+      await saveActiveSuiteItem(window)
+
+      await runSuiteFromContextMenu(window, suiteName)
+      await waitRunnerConfigReady(window)
+      await window
+        .getByTestId('workbench')
+        .getByLabel(/Schedule runs/i)
+        .check()
+
+      const original = await setContentSize(app, window, 1024, 700)
+      try {
+        const bar = window.getByTestId('runner-action-bar')
+        await expect(bar).toBeInViewport({ ratio: 1 })
+        const barBox = (await bar.boundingBox())!
+        for (const id of ['runner-start', 'runner-save-config']) {
+          const button = window.getByTestId(id)
+          await expect(button).toBeVisible()
+          const b = (await button.boundingBox())!
+          expect(b.x + b.width, `${id} right edge past the bar`).toBeLessThanOrEqual(
+            barBox.x + barBox.width + 1,
+          )
+          expect(b.x, `${id} left edge before the bar`).toBeGreaterThanOrEqual(barBox.x - 1)
+          // One line: a two-line label roughly doubles the 13 px button (~34 px).
+          expect(b.height, `${id} label wrapped`).toBeLessThanOrEqual(44)
+        }
+        const body = window.getByTestId('runner-config-body')
+        const spill = await body.evaluate((el) => el.scrollWidth - el.clientWidth)
+        expect(spill, 'config body overflows horizontally').toBeLessThanOrEqual(1)
+        const column = window.getByTestId('runner-config-pane')
+        const columnSpill = await column.evaluate((el) => el.scrollWidth - el.clientWidth)
+        expect(columnSpill, 'config column overflows horizontally').toBeLessThanOrEqual(1)
+      } finally {
+        await setContentSize(app, window, original.width, original.height)
+      }
+    },
+  )
 
   /**
    * MST-181 P2 — Failed item drill-down filter
