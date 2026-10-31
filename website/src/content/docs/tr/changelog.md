@@ -481,7 +481,7 @@ paneli geliyor; Electron 44 — ve secret'lar makinenizde kalıyor.**
   kalır; `{{değişkenler}}` okunur kalır.
 
 - **Dar pencereler ve sekme şeridi:** editör çok daraldığında sağ panel kendi
-  kendine kenara çekiliyor (ve geri geliyor), URL kullanılabilir bir genişliği
+  kendine kenara çekiliyor (ve geri geliyor) — elle açılırsa editörün üstüne açılıyor — URL kullanılabilir bir genişliği
   koruyor ve ikincil eylemler bir menüye taşınıyor; environment seçici ve **+**
   düğmesi, kaç sekme açık olursa olsun sekme şeridinin sağında sabit kalıyor.
 

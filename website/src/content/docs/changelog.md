@@ -462,7 +462,7 @@ your machine.**
   readable.
 
 - **Narrow windows and the tab strip:** when the editor
-  gets too narrow the right panel steps aside on its own (and comes back),
+  gets too narrow the right panel steps aside on its own (and comes back) — opened by hand, it slides over the editor —
   the URL keeps a usable width and secondary actions move into a menu; the
   environment picker and the **+** button stay pinned at the right of the
   tab strip however many tabs are open.
