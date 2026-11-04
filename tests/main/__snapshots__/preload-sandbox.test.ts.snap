@@ -286,6 +286,7 @@ exports[`preload under the renderer sandbox (issue #294) > window.api surface is
   "runner.historyStats (function)",
   "runner.onPhase (function)",
   "runner.onProgress (function)",
+  "runner.setRequestCritical (function)",
   "runner.stop (function)",
   "saml.build (function)",
   "saml.decode (function)",

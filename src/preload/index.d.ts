@@ -855,6 +855,8 @@ interface RunnerHistoryStats {
 
 interface RunnerApi {
   execute(options: RunnerExecuteOptions): Promise<IpcResult<RunnerReport>>
+  /** Set the Critical flag of an endpoint, saved request or suite item (issue #315). */
+  setRequestCritical(id: string, critical: boolean): Promise<IpcResult<void>>
   /**
    * End the run (issue #91).
    *

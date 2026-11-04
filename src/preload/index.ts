@@ -385,6 +385,8 @@ const api = {
     stop: (opts?: { mode?: 'graceful' | 'direct'; skipTeardown?: boolean }): Promise<unknown> =>
       ipcRenderer.invoke('runner:stop', opts),
     export: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:export', options),
+    setRequestCritical: (id: string, critical: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('runner:setRequestCritical', id, critical),
     onProgress: (callback: (progress: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)

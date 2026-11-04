@@ -48,7 +48,9 @@ import {
   resolveMcpTimeout,
   resolveProxy,
   resolveSslVerification,
+  withCriticalFlag,
 } from '../../shared/request-settings'
+import { NotFoundError, ipcResult } from '../lib/ipc-helpers'
 import { resolveTlsPayload } from '../lib/tls-presets'
 import { decryptSecret } from '../lib/secure-storage'
 import { soapTransportForRow, withSoapTransportHeaders } from '../../shared/soap-transport'
@@ -2954,6 +2956,29 @@ export function criticalRequestIds(ids: readonly string[]): Set<string> {
   return out
 }
 
+/**
+ * Set a row's Critical flag from the run sequence (issue #315), which holds
+ * only ids. Same lookup order as `getRunnableEntity`, same column as the
+ * Settings tab's Ctrl+S.
+ */
+export function setRequestCritical(id: string, critical: boolean): void {
+  const endpoint = endpointRepo.getEndpointById(id)
+  if (endpoint) {
+    endpointRepo.updateEndpoint(id, {
+      request_schema: withCriticalFlag(endpoint.request_schema, critical),
+    })
+    return
+  }
+  const saved = endpointRepo.getSavedRequestById(id)
+  if (saved) {
+    endpointRepo.updateSavedRequest(id, { metadata: withCriticalFlag(saved.metadata, critical) })
+    return
+  }
+  const item = tsiRepo.getItemById(id)
+  if (!item) throw new NotFoundError('Request not found')
+  tsiRepo.updateItem(id, { request_schema: withCriticalFlag(item.request_schema, critical) })
+}
+
 async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<RunnerReport> {
   const options: RunnerExecuteOptions = {
     ...rawOptions,
@@ -3591,6 +3616,10 @@ export function registerRunnerHandlers(): void {
         return { success: false, error: (e as Error).message }
       }
     },
+  )
+
+  ipcMain.handle('runner:setRequestCritical', (_event, id: string, critical: boolean) =>
+    ipcResult(() => setRequestCritical(id, critical === true)),
   )
 
   ipcMain.handle('runner:export', async (_event, options: RunnerExportOptions) => {

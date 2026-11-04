@@ -311,6 +311,8 @@ interface RequestStore extends TabRequestState {
   setSslVerification: (v: boolean | null) => void
   setRequestTimeout: (v: number | null) => void
   setCritical: (v: boolean) => void
+  /** The row's flag changed outside this tab (issue #315): follow it, not dirty. */
+  syncSavedCritical: (tabId: string, critical: boolean) => void
   sendRequest: () => Promise<void>
   /** Abort the in-flight HTTP request, if any. No-op when nothing is in flight. */
   cancelRequest: () => Promise<void>
@@ -591,6 +593,19 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   setCritical: (v) => {
     set({ critical: v })
     markActiveDirty()
+  },
+
+  syncSavedCritical: (tabId, critical) => {
+    const state = get()
+    if (state._currentTabId === tabId) {
+      set({ critical })
+      return
+    }
+    const cached = state._tabStates.get(tabId)
+    if (!cached) return // Not loaded: it reads the row when it next opens.
+    const tabStates = new Map(state._tabStates)
+    tabStates.set(tabId, { ...cached, critical })
+    set({ _tabStates: tabStates })
   },
 
   switchToTab: (tabId) => {

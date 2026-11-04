@@ -17,6 +17,7 @@ import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { runnerKey } from '../../lib/runner-storage'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
+import { setRequestCritical } from '../../lib/request-critical'
 import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatDateTime } from '../../lib/format-datetime'
@@ -65,7 +66,7 @@ export interface RunnerEndpointItem {
   selected: boolean
   /** Non-HTTP rows (MCP runs, issue #161) show the protocol chip, not their placeholder method. */
   protocol?: string
-  /** Marked Critical in its Settings tab — a failure stops the run (issue #304). */
+  /** Marked Critical, in its Settings tab or the sequence — a failure stops the run (issue #304). */
   critical?: boolean
   folderName?: string
   /**
@@ -174,6 +175,22 @@ function collectFolderGroups(nodes: TreeNode[]): RunnerFolderGroup[] {
   return groups
 }
 
+/**
+ * Rows rebuilt from a changed tree keep this tab's selection and phases: they
+ * are the plan being prepared, and the tree says nothing about them. Same rule
+ * as the suite path's refetch.
+ */
+function keepRunChoices(
+  built: RunnerEndpointItem[],
+  prev: RunnerEndpointItem[],
+): RunnerEndpointItem[] {
+  const prevById = new Map(prev.map((ep) => [ep.id, ep]))
+  return built.map((ep) => {
+    const p = prevById.get(ep.id)
+    return p ? { ...ep, selected: p.selected, phase: p.phase } : ep
+  })
+}
+
 function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
   for (const node of nodes) {
     if (node.id === id) return node
@@ -256,6 +273,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed)
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
+  const treeScopeRef = useRef<{
+    folderId: string | undefined
+    suiteFilterIds: Set<string> | null
+  } | null>(null)
   const [folderGroups, setFolderGroups] = useState<RunnerFolderGroup[]>([])
   // Persist runner view + selected run id under the tab so tab switches don't
   // bounce the user back to "config" (v1.3.1 §5.11 E11). The key intentionally
@@ -815,14 +836,29 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     // suite items live in their own table, not in the APIs treeData.
     if (suiteIdForRunner) return
 
+    // Another folder or suite is a new plan; the same scope with a changed tree
+    // (a save, a Critical toggle) is the plan being prepared.
+    const sameScope =
+      treeScopeRef.current?.folderId === folderId &&
+      treeScopeRef.current?.suiteFilterIds === suiteFilterIds
+    treeScopeRef.current = { folderId, suiteFilterIds }
+    const applyEndpoints = (eps: RunnerEndpointItem[]): void =>
+      setEndpoints((prev) => (sameScope ? keepRunChoices(eps, prev) : eps))
+    const applyGroups = (groups: RunnerFolderGroup[]): void =>
+      setFolderGroups((prev) => {
+        if (!sameScope) return groups
+        const prevRows = prev.flatMap((g) => g.endpoints)
+        return groups.map((g) => ({ ...g, endpoints: keepRunChoices(g.endpoints, prevRows) }))
+      })
+
     if (!folderId) {
       const all: RunnerEndpointItem[] = []
       for (const root of treeData) {
         all.push(...collectEndpointsFromNode(root))
       }
       const eps = suiteFilterIds ? all.filter((ep) => suiteFilterIds.has(ep.id)) : all
-      setEndpoints(eps)
-      setFolderGroups(suiteFilterIds ? [] : collectFolderGroups(treeData))
+      applyEndpoints(eps)
+      applyGroups(suiteFilterIds ? [] : collectFolderGroups(treeData))
       setRunFolderName(suiteFilterIds ? runFolderName || 'Suite' : treeData[0]?.label || 'All')
       return
     }
@@ -831,12 +867,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     if (node) {
       const collected = collectEndpointsFromNode(node)
       const eps = suiteFilterIds ? collected.filter((ep) => suiteFilterIds.has(ep.id)) : collected
-      setEndpoints(eps)
+      applyEndpoints(eps)
       setRunFolderName(node.label)
       if (node.type === 'folder' || node.type === 'module') {
         const groups: RunnerFolderGroup[] = []
         collectFolderGroupsFromNode(node, groups)
-        setFolderGroups(
+        applyGroups(
           groups.length > 0
             ? groups
             : [
@@ -1054,6 +1090,21 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setEndpoints((eps) => eps.map(apply))
     setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
   }, [])
+
+  const setEndpointCritical = useCallback(
+    async (id: string, critical: boolean) => {
+      if (!(await setRequestCritical(id, critical))) return
+      const apply = (ep: RunnerEndpointItem): RunnerEndpointItem =>
+        ep.id === id ? { ...ep, critical } : ep
+      setEndpoints((eps) => eps.map(apply))
+      setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
+      // The tree and the suite list read the flag off the row; a Runner opened
+      // later builds its rows from them.
+      if (suiteIdForRunner) window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
+      else void useWorkspaceStore.getState().refreshTree()
+    },
+    [suiteIdForRunner],
+  )
 
   /**
    * Every request id at or below `folderId`, including nested folders.
@@ -1494,6 +1545,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
                 onDeselectAll={deselectAll}
                 onReset={selectAll}
                 onSetPhase={setEndpointPhase}
+                onSetCritical={setEndpointCritical}
                 onSetFolderPhase={setFolderPhase}
                 onToggleFolder={toggleFolder}
                 onReorder={
