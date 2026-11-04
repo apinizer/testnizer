@@ -53,14 +53,20 @@ export function graphqlJson(query: string, variables: string): string {
   return JSON.stringify({ query, variables: parsed })
 }
 
+/**
+ * A `graphql` body has two shapes (issue #313): the GraphQL tab's
+ * `{graphql: {query, variables}}` and a saved row's `{content: query}`, which
+ * `request.store` holds for that tab. Read it through this, never `body.graphql`.
+ */
+export function graphqlParts(body: CodegenInputBody): { query: string; variables: string } {
+  return body.graphql ?? { query: body.content ?? '', variables: '{}' }
+}
+
 function normalizeBody(body: CodegenInputBody | undefined): CodegenBody | undefined {
   if (!body || body.type === 'none') return undefined
-  if (body.type === 'graphql' && body.graphql) {
-    return {
-      mode: 'raw',
-      format: 'json',
-      content: graphqlJson(body.graphql.query, body.graphql.variables),
-    }
+  if (body.type === 'graphql') {
+    const { query, variables } = graphqlParts(body)
+    return { mode: 'raw', format: 'json', content: graphqlJson(query, variables) }
   }
   if (RAW_FORMATS.has(body.type)) {
     return body.content

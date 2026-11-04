@@ -7,7 +7,7 @@
  *   mask-credentials — "Include secret values" OFF: typed credentials → `***` (issue #256)
  */
 export * from './types'
-export { normalizeRequest, graphqlJson } from './normalize'
+export { normalizeRequest, graphqlJson, graphqlParts } from './normalize'
 export {
   CODEGEN_LANGUAGES,
   ALL_VARIANTS,

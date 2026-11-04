@@ -17,6 +17,7 @@ import { applyPathVariables, type PathVariableLike } from '../../shared/path-var
 import {
   curlVariantId,
   findVariant,
+  graphqlParts,
   maskCredentialLiterals,
   normalizeRequest,
   renderSnippet,
@@ -93,7 +94,7 @@ function resolveBody(
 ): CodeGenRequest['body'] {
   if (!body) return body
   if (body.type === 'graphql') {
-    const g = (body as GraphqlCodeBody).graphql
+    const g = graphqlParts(body as CodegenInputBody)
     // Resolved BEFORE the JSON is built (Send's order), so a value with a
     // quote cannot break the JSON body.
     return {
