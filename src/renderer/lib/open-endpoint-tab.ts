@@ -4,6 +4,7 @@ import type {
   KeyValuePair,
   RequestBody,
   AuthConfig,
+  Tab,
   TestAssertion,
 } from '../types'
 import {
@@ -26,6 +27,19 @@ import {
 } from '../../shared/request-settings'
 import { switchActiveTab } from './activate-tab'
 
+/** The open tab showing the row `id`, if any. */
+export function findOpenTabFor(id: string): Tab | undefined {
+  return useTabsStore
+    .getState()
+    .tabs.find(
+      (tab) =>
+        tab.id === `tab-${id}` ||
+        tab.endpointId === id ||
+        tab.savedRequestId === id ||
+        tab.testSuiteItemId === id,
+    )
+}
+
 /**
  * If `id` already has a tab open, focus it and report that nothing else is
  * needed.
@@ -43,15 +57,7 @@ import { switchActiveTab } from './activate-tab'
  * open path, which predates this helper.
  */
 export function focusOpenTabFor(id: string): boolean {
-  const existing = useTabsStore
-    .getState()
-    .tabs.find(
-      (tab) =>
-        tab.id === `tab-${id}` ||
-        tab.endpointId === id ||
-        tab.savedRequestId === id ||
-        tab.testSuiteItemId === id,
-    )
+  const existing = findOpenTabFor(id)
   if (!existing) return false
   switchActiveTab(existing.id)
   return true

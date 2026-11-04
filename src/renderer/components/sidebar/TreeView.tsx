@@ -25,7 +25,7 @@ import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { defaultRequestFor } from '../../lib/endpoint-name'
 import { openFolderRunner } from '../../lib/open-runner-tab'
-import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
+import { openEndpointTab, findOpenTabFor, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { exportProjectAs, type ProjectExportFormat } from '../../lib/project-export'
 import { openExampleTab } from '../../lib/open-example-tab'
 import { releaseTabsForDeletedRows, treeRowIds } from '../../lib/orphan-tab'
@@ -231,6 +231,7 @@ export default function TreeView() {
   const setActiveNode = useWorkspaceStore((s) => s.setActiveNode)
   const loadFromEndpoint = useRequestStore((s) => s.loadFromEndpoint)
   const openPreviewTab = useTabsStore((s) => s.openPreviewTab)
+  const pinTab = useTabsStore((s) => s.pinTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
@@ -355,7 +356,7 @@ export default function TreeView() {
     return useTabsStore.getState().activeTabId || ''
   }
 
-  const handleSelect = useCallback(
+  const openNode = useCallback(
     async (node: TreeNode) => {
       setActiveNode(node.id)
 
@@ -611,6 +612,34 @@ export default function TreeView() {
       loadSoapFromEndpoint,
       switchSoapToTab,
     ],
+  )
+
+  /*
+   * Opens in flight, by row. Opening reads the row over IPC before the tab
+   * exists, so the second click of a double-click arrives mid-open: it joins
+   * that open instead of hydrating the tab twice, and the pin below can wait
+   * for the tab it needs (issue #314).
+   */
+  const opening = useRef(new Map<string, Promise<void>>())
+  const handleSelect = useCallback(
+    (node: TreeNode): Promise<void> => {
+      const running = opening.current.get(node.id)
+      if (running) return running
+      const open = openNode(node).finally(() => opening.current.delete(node.id))
+      opening.current.set(node.id, open)
+      return open
+    },
+    [openNode],
+  )
+
+  /** Double-click on a request row: open it pinned (issue #314). */
+  const handleOpenPinned = useCallback(
+    async (node: TreeNode) => {
+      await handleSelect(node)
+      const tab = findOpenTabFor(node.id)
+      if (tab?.isPreview) pinTab(tab.id)
+    },
+    [handleSelect, pinTab],
   )
 
   // Delete confirmation dialog state
@@ -1247,6 +1276,7 @@ export default function TreeView() {
                   depth={depth}
                   activeId={activeNodeId}
                   onSelect={handleSelect}
+                  onOpenPinned={handleOpenPinned}
                   onToggle={handleToggle}
                   onDelete={handleDeleteRequest}
                   onRename={handleRename}
