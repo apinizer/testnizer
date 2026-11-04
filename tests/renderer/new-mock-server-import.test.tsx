@@ -242,6 +242,17 @@ describe('New mock server: start from a file', () => {
   })
 })
 
+describe('a file that repeats itself through YAML aliases', () => {
+  it('a folder containing itself ends in an error and leaves the dialog usable', async () => {
+    openOnImport()
+    await pick('info: {name: X}\nitem: &loop [{item: *loop}]\n', 'loop.yaml')
+    expect(screen.getByTestId('mock-new-import-error').textContent).toBe(
+      t('mockNew.importTooComplex'),
+    )
+    expect(screen.getByTestId('mock-new-import-choose')).not.toBeDisabled()
+  })
+})
+
 describe('Endpoints tab import reports the same way', () => {
   /** Runs the button's file dialog with `file` (the input is created on click). */
   function chooseOnClick(file: File): void {

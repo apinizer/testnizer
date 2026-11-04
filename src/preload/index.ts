@@ -383,8 +383,12 @@ const api = {
   // ─── Collection Runner ──────────────────────────────────────
   runner: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:execute', options),
-    stop: (opts?: { mode?: 'graceful' | 'direct'; skipTeardown?: boolean }): Promise<unknown> =>
-      ipcRenderer.invoke('runner:stop', opts),
+    stop: (opts?: {
+      mode?: 'graceful' | 'direct'
+      skipTeardown?: boolean
+      runTabId?: string
+      projectId?: string
+    }): Promise<unknown> => ipcRenderer.invoke('runner:stop', opts),
     export: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:export', options),
     setRequestCritical: (id: string, critical: boolean): Promise<unknown> =>
       ipcRenderer.invoke('runner:setRequestCritical', id, critical),

@@ -98,10 +98,13 @@ export default function NewMockServerModal({
     setReading(true)
     setImportError(null)
     setError(null)
-    const inspected = await readMockImportFile(file)
-    setReading(false)
-    setImportFile(inspected.ok ? inspected.file : null)
-    setImportError(inspected.ok ? null : inspected.error)
+    try {
+      const inspected = await readMockImportFile(file)
+      setImportFile(inspected.ok ? inspected.file : null)
+      setImportError(inspected.ok ? null : inspected.error)
+    } finally {
+      setReading(false)
+    }
   }
 
   async function submit(e: FormEvent): Promise<void> {

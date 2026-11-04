@@ -24,6 +24,67 @@ const postman = (item: unknown, name = 'Shop'): string =>
     item,
   })
 
+const aliasedFolders = (levels: number): string => {
+  let out = `info: {name: X, schema: "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"}\n`
+  out += `defs:\n  a0: &a0 [{name: r, request: {method: GET, url: "http://x/a"}}]\n`
+  for (let i = 1; i <= levels; i++) {
+    out += `  a${i}: &a${i} [{name: f, item: *a${i - 1}}, {name: f, item: *a${i - 1}}]\n`
+  }
+  return `${out}item: *a${levels}\n`
+}
+
+describe('a file that repeats itself through YAML aliases', () => {
+  it('refuses folders that double at each level, before counting them', () => {
+    const r = inspectMockImportText(aliasedFolders(22), 'bomb.yaml')
+    expect(r).toEqual({ ok: false, error: t('mockNew.importTooComplex') })
+  })
+
+  // Not run against old code: 2^40 visits never end.
+  it('forty levels answer at once', () => {
+    const started = Date.now()
+    const r = inspectMockImportText(aliasedFolders(40), 'bomb.yaml')
+    expect(r).toEqual({ ok: false, error: t('mockNew.importTooComplex') })
+    expect(Date.now() - started).toBeLessThan(2000)
+  })
+
+  it('refuses a folder that contains itself, without overflowing the stack', () => {
+    const text = 'info: {name: X}\nitem: &loop [{item: *loop}]\n'
+    expect(inspectMockImportText(text, 'loop.yaml')).toEqual({
+      ok: false,
+      error: t('mockNew.importTooComplex'),
+    })
+  })
+
+  it('has Turkish text', () => {
+    setLocale('tr')
+    expect(t('mockNew.importTooComplex')).toMatch(/büyük/)
+    expect(t('mockNew.importNoVersion')).toMatch(/sürümü/)
+    expect(t('mockNew.importUnsupportedVersion')).toMatch(/desteklenmiyor/)
+  })
+})
+
+describe('an OpenAPI file with no version it can read', () => {
+  it('a paths section alone is refused before a server exists', () => {
+    expect(inspectMockImportText('{"paths":{"/health":{"get":{}}}}', 'x.json')).toEqual({
+      ok: false,
+      error: t('mockNew.importNoVersion'),
+    })
+  })
+
+  it('a version it cannot read is refused', () => {
+    const text = '{"openapi":"9.9.9","paths":{"/health":{"get":{}}}}'
+    expect(inspectMockImportText(text, 'x.json')).toEqual({
+      ok: false,
+      error: t('mockNew.importUnsupportedVersion'),
+    })
+  })
+
+  it('a newer minor version is still taken', () => {
+    const r = inspectMockImportText('{"openapi":"3.2.0","paths":{"/a":{"get":{}}}}', 'x.json')
+    expect(r.ok).toBe(true)
+  })
+})
+
 describe('inspectMockImportText', () => {
   it('recognises OpenAPI JSON, counts operations and takes the title', () => {
     const r = inspectMockImportText(

@@ -875,7 +875,13 @@ interface RunnerApi {
    * `skipTeardown: true` is the pre-#91 spelling of `mode: 'direct'`, still
    * honoured so an older renderer cannot silently get a graceful stop.
    */
-  stop(opts?: { mode?: RunStopMode; skipTeardown?: boolean }): Promise<IpcResult<boolean>>
+  stop(opts?: {
+    mode?: RunStopMode
+    skipTeardown?: boolean
+    /** The run to stop. Without `projectId` the call is unaddressed: every run stops. */
+    runTabId?: string
+    projectId?: string
+  }): Promise<IpcResult<boolean>>
   export(options: RunnerExportOptions): Promise<IpcResult<string>>
   onProgress(callback: (progress: RunnerProgress) => void): () => void
   /**
@@ -908,6 +914,8 @@ interface RunnerApi {
 type SchedulerScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
 
 interface ScheduledTaskRow {
+  /** A run is in flight right now. */
+  running?: boolean
   id: string
   project_id: string
   name: string
@@ -967,7 +975,8 @@ interface SchedulerUpdatePayload extends SchedulerCreatePayload {
 interface SchedulerRunCompletedEvent {
   taskId: string
   taskName: string
-  report: RunnerReport
+  /** Absent when the run failed to complete or the task had nothing to run. */
+  report?: RunnerReport
 }
 
 interface SchedulerHistoryRow {
@@ -1012,7 +1021,8 @@ interface SchedulerApi {
       source: 'suite' | 'apis' | 'empty'
     }>
   >
-  runNow(taskId: string): Promise<IpcResult<boolean>>
+  /** `started: false`: the task was already running, and no second run began. */
+  runNow(taskId: string): Promise<IpcResult<{ started: boolean }>>
   validateCron(expr: string): Promise<IpcResult<{ valid: boolean }>>
   onRunCompleted(callback: (event: SchedulerRunCompletedEvent) => void): () => void
 }

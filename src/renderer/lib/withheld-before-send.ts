@@ -43,6 +43,22 @@ export async function reloadWithheldBeforeSend(): Promise<void> {
 }
 
 /**
+ * Reload, then say whether the tab that asked is still on screen. The read-back
+ * takes an IPC round trip: a store's `get()` afterwards reads whichever tab the
+ * user moved to, so the send would go out with that tab's configuration. Call it
+ * behind the withheld check, so a tab with nothing withheld does not wait a tick.
+ */
+export async function reloadedOnSameTab(
+  read: () => {
+    _currentTabId: string | null
+  },
+): Promise<boolean> {
+  const tabId = read()._currentTabId
+  await reloadWithheldBeforeSend()
+  return read()._currentTabId === tabId
+}
+
+/**
  * A copy inside a tab's state — a saved message into the composer, the
  * composer into a saved message (issue #284) — never copies a value that is
  * only blank because the snapshot withheld it. The destination would carry no

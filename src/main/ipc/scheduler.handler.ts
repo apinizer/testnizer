@@ -15,6 +15,7 @@ import { ipcMain, BrowserWindow } from 'electron'
 import { getDb } from '../db/database'
 import { withRunEnvironmentNames, withTaskEnvironmentNames } from '../lib/run-environment'
 import { randomUUID } from 'crypto'
+import type { RunnerReport } from '../../shared/runner-types'
 
 /* ── Types ────────────────────────────────────────────────────── */
 
@@ -262,8 +263,20 @@ function parseIdList(raw: string | null): string[] | undefined {
   }
 }
 
+/** Tasks with a run in flight. A task never overlaps itself: the timer skips too. */
+const runningTasks = new Set<string>()
+
+/** False when the task is already running: nothing was started. */
+function startScheduledRun(task: ScheduledTask): boolean {
+  if (runningTasks.has(task.id)) return false
+  runningTasks.add(task.id)
+  void executeScheduledRun(task)
+  return true
+}
+
 async function executeScheduledRun(task: ScheduledTask): Promise<void> {
   const db = getDb()
+  let report: RunnerReport | undefined
   try {
     const endpointIds = JSON.parse(task.endpoint_ids) as string[]
     if (endpointIds.length === 0) {
@@ -273,7 +286,7 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
     }
 
     const { executeCollectionForScheduler } = await import('./runner.handler')
-    const report = await executeCollectionForScheduler({
+    report = await executeCollectionForScheduler({
       projectId: task.project_id,
       endpointIds,
       environmentId: task.environment_id || undefined,
@@ -303,17 +316,6 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
       nextRun,
       task.id,
     )
-
-    const windows = BrowserWindow.getAllWindows()
-    for (const win of windows) {
-      if (!win.isDestroyed()) {
-        win.webContents.send('scheduler:runCompleted', {
-          taskId: task.id,
-          taskName: task.name,
-          report,
-        })
-      }
-    }
   } catch (e) {
     console.error(`Scheduled task "${task.name}" failed:`, (e as Error).message)
     const nextRun = computeNextRunFor(task)
@@ -323,6 +325,18 @@ async function executeScheduledRun(task: ScheduledTask): Promise<void> {
       task.id,
     )
   } finally {
+    // Every ending is announced, a failed or empty run too (no `report` then): the
+    // view's spinner stops on this, after `scheduler:list` has stopped saying so.
+    runningTasks.delete(task.id)
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('scheduler:runCompleted', {
+          taskId: task.id,
+          taskName: task.name,
+          report,
+        })
+      }
+    }
     // Re-arm the timer for the next fire regardless of run outcome.
     scheduleNextFire(task.id)
   }
@@ -340,7 +354,8 @@ function scheduleNextFire(taskId: string): void {
   const next = task.next_run_at ?? computeNextRunFor(task)
   const delay = Math.max(0, next - Date.now())
   const timer = setTimeout(() => {
-    void executeScheduledRun(task)
+    // Already running (Run now): that run's ending re-arms this timer.
+    startScheduledRun(task)
   }, delay)
   activeTimers.set(task.id, timer)
 }
@@ -575,9 +590,17 @@ export function registerSchedulerHandlers(): void {
       const db = getDb()
       const tasks = db
         .prepare('SELECT * FROM scheduled_tasks WHERE project_id = ? ORDER BY created_at DESC')
-        .all(projectId) as Array<{ environment_id?: unknown; project_id?: unknown }>
+        .all(projectId) as Array<{ id: string; environment_id?: unknown; project_id?: unknown }>
       // The environment's current name, never its id (issue #307).
-      return { success: true, data: withTaskEnvironmentNames(db, tasks) }
+      return {
+        success: true,
+        data: withTaskEnvironmentNames(db, tasks).map((task) => ({
+          ...task,
+          // From here, not the view's memory: it unmounts with its tab and comes
+          // back to a run that is still going.
+          running: runningTasks.has(task.id),
+        })),
+      }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -727,8 +750,7 @@ export function registerSchedulerHandlers(): void {
         | ScheduledTask
         | undefined
       if (!task) return { success: false, error: 'Task not found' }
-      void executeScheduledRun(task)
-      return { success: true }
+      return { success: true, data: { started: startScheduledRun(task) } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

@@ -85,6 +85,7 @@ describe('header session menu → Manage password… (issue #268)', () => {
     expect(buttons.map((b) => b.textContent)).toEqual([
       'Manage password…',
       'Lock',
+      'Report an issue or request a feature',
       'About Testnizer',
     ])
   })

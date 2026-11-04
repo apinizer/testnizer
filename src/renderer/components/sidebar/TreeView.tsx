@@ -22,7 +22,7 @@ import CreateSuiteFromFolderModal from '../modals/CreateSuiteFromFolderModal'
 import { collectRequestIds } from '../../lib/folder-request-selection'
 import { createMockFromRequests, type MockFromFolderApi } from '../mock/mock-from-folder'
 import { toastMockImportResult } from '../mock/mock-import-file'
-import { isHttpMockableProtocol } from '../../../shared/request-protocols'
+import { protocolMetadataOf } from '../../../shared/grpc-import-meta'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { defaultRequestFor } from '../../lib/endpoint-name'
@@ -520,7 +520,7 @@ export default function TreeView() {
                 postScript = schema.postScript ?? ''
                 endpointAssertions = schema.assertions ?? []
                 soapMeta = schema.soap
-                metadata = schema.metadata
+                metadata = protocolMetadataOf(schema)
                 if (schema.url) schemaUrl = schema.url
                 if (schema.method) schemaMethod = schema.method
               } catch {
@@ -1174,9 +1174,8 @@ export default function TreeView() {
   const handleCreateMockServer = useCallback(
     async (folderNode: TreeNode) => {
       if (!activeProjectId) return
-      // Only what an HTTP mock can stand in for: an MQTT / WebSocket / gRPC…
-      // request has no method + path to mirror (issue #284 audit).
-      const ids = collectRequestIds(folderNode, (n) => isHttpMockableProtocol(n.protocol))
+      // The flow skips what an HTTP mock cannot stand in for, and names it.
+      const ids = collectRequestIds(folderNode)
       if (ids.length === 0) return
       try {
         const result = await createMockFromRequests(window.api as unknown as MockFromFolderApi, {

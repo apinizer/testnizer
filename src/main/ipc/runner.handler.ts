@@ -54,6 +54,8 @@ import { NotFoundError, ipcResult } from '../lib/ipc-helpers'
 import { resolveTlsPayload } from '../lib/tls-presets'
 import { decryptSecret } from '../lib/secure-storage'
 import { soapTransportForRow, withSoapTransportHeaders } from '../../shared/soap-transport'
+import { graphqlJson } from '../../shared/codegen/normalize'
+import { readSavedGraphql } from '../../shared/graphql-row'
 import {
   projectAuthToAuthConfig,
   resolveEffectiveAuth,
@@ -139,6 +141,8 @@ interface KeyValuePair {
 interface RequestBody {
   type: string
   content?: string
+  /** A saved GraphQL row until `resolveRequestOptions` turns it into its JSON body. */
+  graphql?: { query: string; variables: string }
   formData?: KeyValuePair[]
   urlEncoded?: KeyValuePair[]
   binaryPath?: string
@@ -235,6 +239,11 @@ interface RunState {
    * teardown DELETE with a green 200 (also reported 5 Aug).
    */
   teardownSkipped: boolean
+  /** Whose run: `runner:stop` addresses one by these, like the progress events. */
+  runTabId?: string
+  projectId: string
+  /** Has no tab, so no tab's Stop can ever be meant for it. */
+  scheduled: boolean
 }
 const activeRuns = new Map<string, RunState>()
 let nextRunId = 1
@@ -324,7 +333,7 @@ export function buildRequestFromEndpoint(
     headers?: KeyValuePair[]
     body?: RequestBody
     auth?: AuthConfig
-    metadata?: { soap?: unknown }
+    metadata?: { soap?: unknown; graphql?: unknown }
   }>(endpoint.request_schema, {})
   // Timeout / redirects / SSL as Ctrl+S wrote them (issue #185) — the same
   // reader the tab-open paths use.
@@ -350,13 +359,30 @@ export function buildRequestFromEndpoint(
     ) as KeyValuePair[]
   }
 
+  // A row saved from the GraphQL tab holds the query in a body the engine has no
+  // case for and its headers in the metadata, so Run sent nothing and no
+  // Authorization. Same inputs as `graphql.store.executeQuery`: no Params table and
+  // no auth, so nothing inherited either (that tab has no Auth section; credentials
+  // are its headers). The JSON is built after `{{var}}` resolution, like Send's: a
+  // value holding a quote, or `{"n": {{n}}}` in the variables, is not JSON until then.
+  const graphql =
+    endpoint.protocol === 'graphql' ? readSavedGraphql(schema.body, schema.metadata) : null
+  if (graphql?.headers) headers = graphql.headers as KeyValuePair[]
+  const body: RequestBody | undefined = graphql
+    ? {
+        type: 'graphql',
+        content: graphql.query,
+        graphql: { query: graphql.query, variables: graphql.variables },
+      }
+    : schema.body
+
   return {
     method: schema.method || endpoint.method || 'GET',
     url,
-    params: schema.params,
+    params: graphql ? [] : schema.params,
     headers,
-    body: schema.body as HttpRequestOptions['body'],
-    auth: schema.auth as HttpRequestOptions['auth'],
+    body: body as HttpRequestOptions['body'],
+    auth: (graphql ? { type: 'none' } : schema.auth) as HttpRequestOptions['auth'],
     // Send's chain (issue #185): per-request (explicit 0 = no timeout, issue
     // #24) → project → app-wide → the engine's 30 s.
     timeout:
@@ -764,7 +790,7 @@ interface ScriptContext {
   /** pm.variables.set writes. Visible to later requests IN THIS RUN but
    *  deliberately NOT persisted to the DB. Empty-string value = unset. */
   varUpdates: Record<string, string>
-  iterationData: Record<string, string>
+  iterationData: Record<string, unknown>
   iterationIndex: number
   iterationCount: number
   /** `pm.info.eventName` for the next script: 'prerequest' or 'test'. It was
@@ -853,7 +879,7 @@ function scriptTestToAssertion(t: ScriptTestResult): AssertionResult {
 
 function newScriptContext(
   scopes: RunVarScopes,
-  iterationData: Record<string, string>,
+  iterationData: Record<string, unknown>,
   iterationIndex: number,
   iterationCount: number,
 ): ScriptContext {
@@ -1199,11 +1225,25 @@ function resolveRunnerVariables(template: string, vars: Record<string, string>):
   return resolveVariables(template, vars)
 }
 
+/** A saved GraphQL body → what goes on the wire, once its parts are resolved. */
+function graphqlWireOptions(
+  options: HttpRequestOptions,
+  vars: Record<string, string>,
+): HttpRequestOptions {
+  const parts = (options.body as RequestBody | undefined)?.graphql
+  if (!parts) return options
+  const content = graphqlJson(
+    resolveRunnerVariables(parts.query, vars),
+    resolveRunnerVariables(parts.variables, vars),
+  )
+  return { ...options, body: { type: 'json', content } as HttpRequestOptions['body'] }
+}
+
 function resolveRequestOptions(
   options: HttpRequestOptions,
   vars: Record<string, string>,
 ): HttpRequestOptions {
-  if (Object.keys(vars).length === 0) return options
+  if (Object.keys(vars).length === 0) return graphqlWireOptions(options, vars)
 
   const resolved = { ...options }
   resolved.url = resolveRunnerVariables(resolved.url, vars)
@@ -1306,7 +1346,7 @@ function resolveRequestOptions(
     resolved.auth = next as HttpRequestOptions['auth']
   }
 
-  return resolved
+  return graphqlWireOptions(resolved, vars)
 }
 
 // ─── Runner Execution ────────────────────────────────────────────
@@ -1345,7 +1385,7 @@ interface RunContext {
   /** SSL / redirects / TLS / proxy below a request's own — Send's chain (issue #287). */
   inheritedNetwork: InheritedNetwork
   projectAuth: AuthConfigLike | null
-  iterationData: Record<string, string>[]
+  iterationData: Record<string, unknown>[]
   iterations: number
   persistResponses: boolean
   runEnvUpdates: Record<string, string>
@@ -3006,6 +3046,9 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     cancelInFlight: null,
     teardownStarted: false,
     teardownSkipped: false,
+    runTabId: options.runTabId,
+    projectId: options.projectId,
+    scheduled: options.source === 'Scheduler',
   }
   activeRuns.set(runId, runState)
 
@@ -3582,20 +3625,31 @@ export function registerRunnerHandlers(): void {
 
   ipcMain.handle(
     'runner:stop',
-    async (_event, opts?: { mode?: RunStopMode; skipTeardown?: boolean }) => {
+    async (
+      _event,
+      opts?: { mode?: RunStopMode; skipTeardown?: boolean; runTabId?: string; projectId?: string },
+    ) => {
       try {
-        // Stop every in-flight run. Today the renderer doesn't pass a run id,
-        // and there's no UI affordance to target one of several concurrent
-        // runs, so "Stop" is project-wide by design. The shouldStop flag is
-        // per-RunState now, so this only nudges currently-registered runs
-        // — finished runs are no longer in the map.
+        // A tab stops ITS run. A run outlives its tab (issue #317), so another
+        // tab can be running, and so can a scheduled run; a Stop that reached
+        // those aborted them with nothing on their tab to say why. `projectId`
+        // is what makes a call addressed: `runner-main` exists in every project,
+        // and a tabless runner has no `runTabId` at all. An unaddressed call has
+        // no tab to speak for, so it stops everything.
         //
         // `skipTeardown` is the pre-#91 spelling of `mode: 'direct'`, still
         // accepted so an older renderer talking to a newer main doesn't
         // silently get a graceful stop when it asked to abandon cleanup.
         const direct = opts?.mode === 'direct' || opts?.skipTeardown === true
         let stopped = 0
+        const addressed = opts?.projectId !== undefined
         for (const run of activeRuns.values()) {
+          if (
+            addressed &&
+            (run.scheduled || run.projectId !== opts.projectId || run.runTabId !== opts.runTabId)
+          ) {
+            continue
+          }
           run.shouldStop = true
           // Graceful Stop ends the flow and leaves cleanup alone — deliberately
           // including the request already on the wire, because killing it is how

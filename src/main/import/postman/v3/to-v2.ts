@@ -56,6 +56,8 @@ export interface V3Conversion {
   nativeOf: WeakMap<object, NativeV3Item>
   /** Requests skipped because Testnizer has no such protocol. */
   skipped: number
+  /** The same requests, one sentence each, by name. */
+  skippedItems: string[]
 }
 
 const SCHEMA_V3 = 'https://schema.postman.com/collection/json/v3.0.0/draft-07/collection.json'
@@ -373,6 +375,7 @@ function kindLabel(kind: string): string {
 export function convertV3Collection(root: Doc, warnings: string[]): V3Conversion {
   const nativeOf = new WeakMap<object, NativeV3Item>()
   let skipped = 0
+  const skippedItems: string[] = []
   const collName = str(root.name)?.trim() || 'Postman collection'
 
   const convertItems = (list: unknown, path: string[]): PostmanItem[] => {
@@ -420,13 +423,12 @@ export function convertV3Collection(root: Doc, warnings: string[]): V3Conversion
         continue
       }
       skipped++
-      if (kind === 'kafka-request' || kind === 'data-request') {
-        warnings.push(
-          `"${label}": ${kind === 'kafka-request' ? 'Kafka' : 'Data (database / file)'} request skipped — Testnizer does not support ${kindLabel(kind)} requests.`,
-        )
-      } else {
-        warnings.push(`"${label}": unknown request kind "${kind || '(none)'}" skipped.`)
-      }
+      const skippedNote =
+        kind === 'kafka-request' || kind === 'data-request'
+          ? `"${label}": ${kind === 'kafka-request' ? 'Kafka' : 'Data (database / file)'} request skipped — Testnizer does not support ${kindLabel(kind)} requests.`
+          : `"${label}": unknown request kind "${kind || '(none)'}" skipped.`
+      skippedItems.push(skippedNote)
+      warnings.push(skippedNote)
     }
     return out
   }
@@ -443,5 +445,5 @@ export function convertV3Collection(root: Doc, warnings: string[]): V3Conversion
   if (auth) collection.auth = auth
   const ev = v3Events(root.scripts, 'container', `Collection "${collName}"`, warnings)
   if (ev) collection.event = ev
-  return { collection, nativeOf, skipped }
+  return { collection, nativeOf, skipped, skippedItems }
 }

@@ -1,0 +1,16 @@
+type: collection.insomnia.rest/5.0
+name: Pets
+meta:
+  id: wrk_v5
+  name: Pets
+collection:
+  - name: List pets
+    meta:
+      id: req_1
+    method: GET
+    url: "__BASE__/pets"
+  - name: Get pet
+    meta:
+      id: req_2
+    method: GET
+    url: "__BASE__/pets/{{petId}}"

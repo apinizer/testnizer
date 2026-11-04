@@ -7,6 +7,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Play,
+  Loader2,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -46,6 +47,8 @@ interface ScheduledTask {
   schedule_days: string | null
   schedule_cron: string | null
   suite_id: string | null
+  /** A run is in flight: main's answer, so it survives leaving this tab. */
+  running?: boolean
 }
 
 interface ScheduledTaskHistoryRow {
@@ -197,6 +200,15 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
     }
   }, [loadTasks])
 
+  const runTaskNow = useCallback(
+    async (taskId: string) => {
+      setTasks((list) => list.map((t) => (t.id === taskId ? { ...t, running: true } : t)))
+      await window.api?.scheduler?.runNow?.(taskId)
+      loadTasks()
+    },
+    [loadTasks],
+  )
+
   const toggleTask = useCallback(
     async (taskId: string) => {
       await window.api?.scheduler?.toggle(taskId)
@@ -324,6 +336,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
                   key={task.id}
                   task={task}
                   formatDate={formatStamp}
+                  onRunNow={() => void runTaskNow(task.id)}
                   onToggle={() => toggleTask(task.id)}
                   onDelete={() => setDeleteTarget(task)}
                 />
@@ -348,11 +361,13 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
 function TaskRow({
   task,
   formatDate,
+  onRunNow,
   onToggle,
   onDelete,
 }: {
   task: ScheduledTask
   formatDate: (ts: number) => string
+  onRunNow: () => void
   onToggle: () => void
   onDelete: () => void
 }) {
@@ -510,19 +525,25 @@ function TaskRow({
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
+              data-testid="scheduled-task-run-now"
+              disabled={task.running === true}
               onClick={() => {
-                void window.api?.scheduler?.runNow?.(task.id)
+                onRunNow()
                 if (!expanded) setExpanded(true)
                 // Optimistic refresh prompt: clear cached history so the
                 // useEffect re-fetches once the run lands.
                 setHistory(null)
               }}
-              title={t('scheduledTasks.runNow')}
-              aria-label={t('scheduledTasks.runNow')}
-              className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1"
+              title={t(task.running ? 'scheduledTasks.running' : 'scheduledTasks.runNow')}
+              aria-label={t(task.running ? 'scheduledTasks.running' : 'scheduledTasks.runNow')}
+              className="flex cursor-pointer items-center justify-center rounded-[4px] border-none bg-transparent p-1 disabled:cursor-default"
               style={{ color: 'var(--accent)' }}
             >
-              <Play size={14} />
+              {task.running ? (
+                <Loader2 size={14} className="animate-spin" data-testid="scheduled-task-running" />
+              ) : (
+                <Play size={14} />
+              )}
             </button>
             <button
               type="button"

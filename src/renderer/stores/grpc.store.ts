@@ -6,8 +6,9 @@ import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
+import { patchTabSlice, readTabSlice, withoutTab } from '../lib/tab-slice'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -357,6 +358,26 @@ function idleGrpc(st: TabGrpcState): TabGrpcState {
 const STORAGE_KEY = 'testnizer-grpc'
 const persisted = loadTabbedState<TabGrpcState>(STORAGE_KEY, emptyTabState, persistableGrpc)
 
+/** Loaded services as a slice patch: the first service and method get selected. */
+function loadedProtoPatch(data: EngineLoadProtoResult): Partial<TabGrpcState> {
+  const services = mapEngineServices(data)
+  const svc = services[0]
+  return {
+    services,
+    protoPath: data.protoPath,
+    protoLoaded: true,
+    isLoading: false,
+    errorMessage: null,
+    ...(svc ? { selectedService: svc.name } : {}),
+    ...(svc?.methods.length ? { selectedMethod: svc.methods[0].name } : {}),
+  }
+}
+
+/** Writes into the tab that started the load, wherever the user is when it ends. */
+function ownerPatcher(ownerTabId: string | null): (patch: Partial<TabGrpcState>) => void {
+  return (patch) => patchTabSlice<TabGrpcState, GrpcStore>(useGrpcStore, ownerTabId, patch)
+}
+
 export const useGrpcStore = create<GrpcStore>((set, get) => ({
   ...persisted.current,
   _tabStates: persisted._tabStates,
@@ -380,6 +401,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   },
 
   loadProto: async () => {
+    const patchOwner = ownerPatcher(get()._currentTabId)
     set({ isLoading: true, errorMessage: null })
 
     const grpcApi = window.api?.grpc
@@ -387,25 +409,9 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       const result = grpcApi ? await grpcApi.loadProto() : null
 
       if (result?.success && result.data) {
-        const data = result.data
-        const services = mapEngineServices(data)
-        set({
-          services,
-          protoPath: data.protoPath,
-          protoLoaded: true,
-          isLoading: false,
-        })
-
-        // Auto-select first service/method
-        if (services.length > 0) {
-          const svc = services[0]
-          set({ selectedService: svc.name })
-          if (svc.methods.length > 0) {
-            set({ selectedMethod: svc.methods[0].name })
-          }
-        }
+        patchOwner(loadedProtoPatch(result.data))
       } else if (result && !result.success) {
-        set({
+        patchOwner({
           errorMessage: result.error || 'Failed to load proto file',
           isLoading: false,
         })
@@ -414,7 +420,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         throw new Error('grpc bridge unavailable')
       } else {
         // result.data was null (user cancelled the file dialog).
-        set({ isLoading: false })
+        patchOwner({ isLoading: false })
       }
     } catch {
       // Demo mode: generate sample services
@@ -462,7 +468,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         },
       ]
 
-      set({
+      patchOwner({
         services: demoServices,
         protoPath: '/demo/greeter.proto',
         protoLoaded: true,
@@ -479,6 +485,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       set({ errorMessage: 'URL is required' })
       return
     }
+    const patchOwner = ownerPatcher(get()._currentTabId)
     set({ isLoading: true, errorMessage: null })
 
     const grpcApi = window.api?.grpc
@@ -488,22 +495,9 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     }
     const result = await grpcApi.loadProtoFromUrl(protoUrl.trim())
     if (result.success && result.data) {
-      const data = result.data
-      const services = mapEngineServices(data)
-      set({
-        services,
-        protoPath: data.protoPath,
-        protoLoaded: true,
-        isLoading: false,
-        errorMessage: null,
-      })
-      if (services.length > 0) {
-        const svc = services[0]
-        set({ selectedService: svc.name })
-        if (svc.methods.length > 0) set({ selectedMethod: svc.methods[0].name })
-      }
+      patchOwner(loadedProtoPatch(result.data))
     } else {
-      set({
+      patchOwner({
         errorMessage: result.error || 'Failed to download proto from URL',
         isLoading: false,
       })
@@ -516,6 +510,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       set({ errorMessage: 'Server address is required' })
       return
     }
+    const patchOwner = ownerPatcher(get()._currentTabId)
     set({ isLoading: true, errorMessage: null })
 
     const grpcApi = window.api?.grpc
@@ -525,22 +520,9 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     }
     const result = await grpcApi.reflect(address.trim(), useTls)
     if (result.success && result.data) {
-      const data = result.data
-      const services = mapEngineServices(data)
-      set({
-        services,
-        protoPath: data.protoPath,
-        protoLoaded: true,
-        isLoading: false,
-        errorMessage: null,
-      })
-      if (services.length > 0) {
-        const svc = services[0]
-        set({ selectedService: svc.name })
-        if (svc.methods.length > 0) set({ selectedMethod: svc.methods[0].name })
-      }
+      patchOwner(loadedProtoPatch(result.data))
     } else {
-      set({
+      patchOwner({
         errorMessage: result.error || 'Server reflection failed',
         isLoading: false,
       })
@@ -585,7 +567,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
   execute: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const { address, useTls, selectedService, selectedMethod, requestBody, metadata, protoPath } =
       get()
     if (!address.trim() || !selectedService || !selectedMethod) return
@@ -700,33 +682,14 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
     // Helper that writes a partial state into the owning tab — either live
     // or cached, depending on which tab is currently active.
-    const applyToOwner = (patch: Partial<TabGrpcState>): void => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) {
-        set(patch as Partial<GrpcStore>)
-      } else if (ownerTabId !== null) {
-        const map = new Map(current._tabStates)
-        const existing = map.get(ownerTabId) ?? emptyTabState()
-        map.set(ownerTabId, { ...existing, ...patch })
-        set({ _tabStates: map })
-      }
-    }
+    const applyToOwner = ownerPatcher(ownerTabId)
 
     const appendStreamEventToOwner = (evt: GrpcStreamEvent): void => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) {
-        set((s) => ({
-          streamEvents: [...s.streamEvents, { ...evt, index: s.streamEvents.length }],
-        }))
-      } else if (ownerTabId !== null) {
-        const map = new Map(current._tabStates)
-        const existing = map.get(ownerTabId) ?? emptyTabState()
-        map.set(ownerTabId, {
-          ...existing,
-          streamEvents: [...existing.streamEvents, { ...evt, index: existing.streamEvents.length }],
-        })
-        set({ _tabStates: map })
-      }
+      const slice = readTabSlice<TabGrpcState, GrpcStore>(useGrpcStore, ownerTabId)
+      if (!slice) return
+      applyToOwner({
+        streamEvents: [...slice.streamEvents, { ...evt, index: slice.streamEvents.length }],
+      })
     }
 
     const getOwnerActiveStreamId = (): string | null => {
@@ -738,16 +701,23 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       return current.activeStreamId
     }
 
+    /** False when the tab closed before main answered: the stream has no owner. */
+    const adoptStream = (streamId: string): boolean => {
+      if (!readTabSlice<TabGrpcState, GrpcStore>(useGrpcStore, ownerTabId)) {
+        void grpcApi.cancelStream(streamId).catch(() => {})
+        return false
+      }
+      applyToOwner({ activeStreamId: streamId })
+      return true
+    }
+
     const finishUnary = (apiResp: ApiResponse): void => {
       applyToOwner({ response: apiResp, isLoading: false })
-      // Only push into the global response pane if THIS tab is currently
-      // active — otherwise the user is looking at another tab's response.
-      const current = get()
-      if (current._currentTabId === ownerTabId) {
-        responseStore.setResponse(apiResp, activeTabId)
-        responseStore.setLoading(false, activeTabId)
-        if (activeTabId) tabsStore.markLoading(activeTabId, false)
-      }
+      // The response store is keyed by tab: this lands on the tab that called,
+      // and its spinner ends even if the user has moved to another tab.
+      responseStore.setResponse(apiResp, activeTabId)
+      responseStore.setLoading(false, activeTabId)
+      if (activeTabId) tabsStore.markLoading(activeTabId, false)
     }
 
     try {
@@ -798,11 +768,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
             activeStreamId: null,
             halfClosed: false,
           })
-          const cur = get()
-          if (cur._currentTabId === ownerTabId) {
-            responseStore.setLoading(false, activeTabId)
-            if (activeTabId) tabsStore.markLoading(activeTabId, false)
-          }
+          responseStore.setLoading(false, activeTabId)
+          if (activeTabId) tabsStore.markLoading(activeTabId, false)
         } else if (evt.type === 'error') {
           applyToOwner({
             isStreaming: false,
@@ -811,11 +778,8 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
             activeStreamId: null,
             halfClosed: false,
           })
-          const cur = get()
-          if (cur._currentTabId === ownerTabId) {
-            responseStore.setLoading(false, activeTabId)
-            if (activeTabId) tabsStore.markLoading(activeTabId, false)
-          }
+          responseStore.setLoading(false, activeTabId)
+          if (activeTabId) tabsStore.markLoading(activeTabId, false)
         }
       })
       applyToOwner({ streamUnsubscribe: unsubscribe })
@@ -826,7 +790,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           requestBody: resolvedBody,
         })
         if (result.success && result.data) {
-          applyToOwner({ activeStreamId: result.data.streamId })
+          adoptStream(result.data.streamId)
         } else {
           applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
         }
@@ -841,7 +805,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           responseStream: false,
         })
         if (result.success && result.data) {
-          applyToOwner({ activeStreamId: result.data.streamId })
+          if (!adoptStream(result.data.streamId)) return
           if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
             await grpcApi.sendStreamMessage(result.data.streamId, resolvedBody).catch(() => {})
           }
@@ -854,7 +818,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           responseStream: true,
         })
         if (result.success && result.data) {
-          applyToOwner({ activeStreamId: result.data.streamId })
+          if (!adoptStream(result.data.streamId)) return
           // Push the initial message immediately if the user typed one.
           if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
             await grpcApi.sendStreamMessage(result.data.streamId, resolvedBody).catch(() => {})
@@ -876,12 +840,9 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         isStreaming: false,
         errorMessage: errResp.error ?? null,
       })
-      const cur = get()
-      if (cur._currentTabId === ownerTabId) {
-        responseStore.setResponse(errResp, activeTabId)
-        responseStore.setLoading(false, activeTabId)
-        if (activeTabId) tabsStore.markLoading(activeTabId, false)
-      }
+      responseStore.setResponse(errResp, activeTabId)
+      responseStore.setLoading(false, activeTabId)
+      if (activeTabId) tabsStore.markLoading(activeTabId, false)
     }
   },
 
@@ -899,12 +860,13 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     if (halfClosed) return
     const grpcApi = window.api?.grpc
     if (!grpcApi) return
+    const patchOwner = ownerPatcher(get()._currentTabId)
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedBody = resolveVariables(requestBody, activeVars)
     try {
       await grpcApi.sendStreamMessage(activeStreamId, resolvedBody)
     } catch (err) {
-      set({ errorMessage: (err as Error).message })
+      patchOwner({ errorMessage: (err as Error).message })
     }
   },
 
@@ -921,19 +883,21 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     if (halfClosed) return
     const grpcApi = window.api?.grpc
     if (!grpcApi) return
+    const patchOwner = ownerPatcher(get()._currentTabId)
     try {
       await grpcApi.endStream(activeStreamId)
       // Stay subscribed to the receive side: bidi server can still push,
       // and client_streaming's unary response is still pending. We just
       // block further writes until the stream actually closes.
-      set({ halfClosed: true })
+      patchOwner({ halfClosed: true })
     } catch (err) {
-      set({ errorMessage: (err as Error).message })
+      patchOwner({ errorMessage: (err as Error).message })
     }
   },
 
   cancelStream: async () => {
     const { activeStreamId, streamUnsubscribe } = get()
+    const patchOwner = ownerPatcher(get()._currentTabId)
     set({ isStreaming: false, isLoading: false, halfClosed: false })
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
@@ -950,13 +914,14 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       // Ignore — cancellation is best-effort.
     } finally {
       if (streamUnsubscribe) streamUnsubscribe()
-      set({ activeStreamId: null, streamUnsubscribe: null })
+      patchOwner({ activeStreamId: null, streamUnsubscribe: null })
     }
   },
 
   cancelUnary: async () => {
     const id = get()._unaryRequestId
     if (!id) return
+    const patchOwner = ownerPatcher(get()._currentTabId)
     const grpcApi = window.api?.grpc
     try {
       if (grpcApi) await grpcApi.cancelUnary(id)
@@ -966,7 +931,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     // The execute() try/finally clears _unaryRequestId, but if the request
     // already finished without us catching the resolution (race), clear here
     // defensively so the UI flips back to "Send".
-    set({ _unaryRequestId: null })
+    patchOwner({ _unaryRequestId: null })
   },
 
   getSelectedService: () => {
@@ -986,8 +951,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const state = get()
     const tabStates = new Map(state._tabStates)
 
-    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
-    tabStates.set(currentKey, extractState(state))
+    if (state._currentTabId) tabStates.set(state._currentTabId, extractState(state))
 
     const target = tabStates.get(tabId) || emptyTabState()
 
@@ -999,19 +963,21 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   },
 
   removeTabState: (tabId) => {
-    const tabStates = new Map(get()._tabStates)
-    const removed = tabStates.get(tabId)
+    const state = get()
+    const removed = state._tabStates.get(tabId)
     if (removed?.streamUnsubscribe) {
       removed.streamUnsubscribe()
     }
-    tabStates.delete(tabId)
-    set({ _tabStates: tabStates })
-
-    if (get()._currentTabId === tabId) {
-      const liveUnsub = get().streamUnsubscribe
+    // Closing the tab ends its stream: nothing else can cancel it.
+    const streamId = state._currentTabId === tabId ? state.activeStreamId : removed?.activeStreamId
+    if (streamId) void window.api?.grpc?.cancelStream?.(streamId)?.catch?.(() => {})
+    if (state._currentTabId === tabId) {
+      const liveUnsub = state.streamUnsubscribe
       if (liveUnsub && liveUnsub !== removed?.streamUnsubscribe) liveUnsub()
-      set({ streamUnsubscribe: null })
+      set({ ...withoutTab<TabGrpcState>(state, tabId), streamUnsubscribe: null })
+      return
     }
+    set(withoutTab<TabGrpcState>(state, tabId))
   },
 
   reset: () => {

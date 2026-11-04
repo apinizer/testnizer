@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { afterWithheldReloaded, reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
@@ -38,6 +38,7 @@ import {
 } from '../../shared/mqtt'
 import { mqttMetaOf, type MqttRequestFields } from '../lib/realtime-meta'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
+import { withoutTab } from '../lib/tab-slice'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -500,7 +501,7 @@ export const useMqttStore = create<MqttStore>((set, get) => {
 
     connect: async () => {
       // Issue #244: a credential still withheld after a restart is reloaded first.
-      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+      if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
       const start = get()
       if (!start.url.trim()) return
       // Issue #195: a History mask left in a credential field is never sent.
@@ -631,7 +632,12 @@ export const useMqttStore = create<MqttStore>((set, get) => {
         _configured: { url: start.url, meta: { mqtt: mqttMetaOf(start) } },
       })
 
-      if (res?.success && res.data) {
+      if (res?.success && res.data && sliceOf(ownerTabId)?._pendingConnectId !== pendingConnectId) {
+        // The handshake finished just as it was given up (Cancel, the tab
+        // closed, its project left): close the connection nobody owns.
+        unsubscribe()
+        void api.disconnect(res.data.connectionId).catch(() => {})
+      } else if (res?.success && res.data) {
         connId = res.data.connectionId
         const detail = `${res.data.url} · ${res.data.clientId}`
         patchTab(ownerTabId, (sl) => ({
@@ -657,7 +663,13 @@ export const useMqttStore = create<MqttStore>((set, get) => {
     },
 
     disconnect: async () => {
-      const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
+      const {
+        connectionId,
+        _unsubscribe,
+        _pendingConnectId,
+        connectionState,
+        _currentTabId: ownerTabId,
+      } = get()
       const api = getMqttApi()
       if (api) {
         if (connectionState === 'connecting' && _pendingConnectId) {
@@ -671,7 +683,7 @@ export const useMqttStore = create<MqttStore>((set, get) => {
       }
       _unsubscribe?.()
       // The request configuration stays (issue #21); the log keeps a closing row.
-      set((s) => ({
+      patchTab(ownerTabId, (s) => ({
         connectionId: null,
         connectionState: 'disconnected',
         reconnecting: false,
@@ -684,7 +696,7 @@ export const useMqttStore = create<MqttStore>((set, get) => {
 
     publish: async () => {
       // Issue #284: a message body credential withheld after a restart is reloaded first.
-      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+      if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
       const s = get()
       if (!s.connectionId || s.connectionState !== 'connected') return
       const c = s.composer
@@ -736,9 +748,7 @@ export const useMqttStore = create<MqttStore>((set, get) => {
           _unsubscribe: undefined,
         })
       }
-      const tabStates = new Map(get()._tabStates)
-      tabStates.delete(tabId)
-      set({ _tabStates: tabStates })
+      set(withoutTab<TabMqttState>(get(), tabId))
     },
   }
 })

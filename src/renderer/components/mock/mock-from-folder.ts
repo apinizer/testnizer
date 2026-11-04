@@ -8,7 +8,9 @@
  * the seam between the importers and the mock, so its test feeds it what the
  * OpenAPI importer really writes.
  */
+import { importedMockText } from '../../../shared/mock-imported-text'
 import { requestUrlToMockPath } from '../../../shared/mock-path'
+import { isHttpMockableProtocol } from '../../../shared/request-protocols'
 import { t } from '../../lib/i18n'
 import type { SavedResponse, SavedResponseOwnerType } from '../../types'
 import type { MockImportResult } from './mock-import-file'
@@ -50,9 +52,21 @@ export interface MockFromFolderApi {
       ): Promise<IpcRow<unknown>>
     }
   }
-  endpoint: { get(id: string): Promise<IpcRow<{ name?: string; path?: string; method?: string }>> }
+  endpoint: {
+    get(id: string): Promise<
+      IpcRow<{
+        name?: string
+        path?: string
+        method?: string
+        protocol?: string | null
+        request_schema?: string | null
+      }>
+    >
+  }
   savedRequest: {
-    get(id: string): Promise<IpcRow<{ name?: string; url?: string; method?: string }>>
+    get(
+      id: string,
+    ): Promise<IpcRow<{ name?: string; url?: string; method?: string; protocol?: string | null }>>
   }
   savedResponse: {
     list(ownerType: SavedResponseOwnerType, ownerId: string): Promise<IpcRow<SavedResponse[]>>
@@ -63,10 +77,22 @@ interface RequestTarget {
   name: string
   url: string
   method: string
+  protocol: string | null | undefined
   ownerType: SavedResponseOwnerType
 }
 
-/** Endpoint rows hold the URL in `path`, saved requests in `url`. */
+/** The URL the editor shows. `path` is what an importer kept for the tree; old rows say `/pets/*`. */
+function endpointUrl(row: { path?: string; request_schema?: string | null }): string {
+  try {
+    const url = (JSON.parse(row.request_schema ?? '{}') as { url?: unknown } | null)?.url
+    if (typeof url === 'string' && url) return url
+  } catch {
+    /* A broken schema still has a path. */
+  }
+  return row.path ?? ''
+}
+
+/** Endpoint rows hold the URL in `request_schema`, saved requests in `url`. */
 async function readRequestTarget(
   api: MockFromFolderApi,
   id: string,
@@ -75,8 +101,9 @@ async function readRequestTarget(
   if (ep?.success && ep.data) {
     return {
       name: ep.data.name || ep.data.path || id,
-      url: ep.data.path ?? '',
+      url: endpointUrl(ep.data),
       method: ep.data.method || 'GET',
+      protocol: ep.data.protocol,
       ownerType: 'endpoint',
     }
   }
@@ -86,6 +113,7 @@ async function readRequestTarget(
       name: saved.data.name || saved.data.url || id,
       url: saved.data.url ?? '',
       method: saved.data.method || 'GET',
+      protocol: saved.data.protocol,
       ownerType: 'saved_request',
     }
   }
@@ -108,7 +136,10 @@ function bodyTypeOf(contentType: string): MockResponseFromExample['bodyType'] {
   return contentType ? 'text' : 'json'
 }
 
-/** Null when the example cannot be replayed: a mock body is text, this one is binary. */
+/**
+ * Null when the example cannot be replayed: a mock body is text, this one is binary.
+ * An imported example is somebody else's text: it cannot read project variables.
+ */
 export function exampleToMockResponse(row: SavedResponse): MockResponseFromExample | null {
   let saved: {
     status?: number
@@ -124,7 +155,7 @@ export function exampleToMockResponse(row: SavedResponse): MockResponseFromExamp
   if (saved.bodyEncoding === 'base64') return null
   const headers = Object.entries(saved.headers ?? {})
     .filter(([name]) => !NOT_REPLAYED_HEADERS.has(name.toLowerCase()))
-    .map(([name, value]) => ({ name, value: String(value) }))
+    .map(([name, value]) => ({ name, value: importedMockText(String(value)) }))
   const contentType =
     headers.find((header) => header.name.toLowerCase() === 'content-type')?.value ?? ''
   return {
@@ -132,9 +163,14 @@ export function exampleToMockResponse(row: SavedResponse): MockResponseFromExamp
     statusCode: row.status_code ?? saved.status ?? 200,
     headers,
     bodyType: bodyTypeOf(contentType),
-    body: saved.body ?? '',
+    body: importedMockText(saved.body ?? ''),
   }
 }
+
+const holdsEscapedText = (response: MockResponseFromExample): boolean =>
+  [response.body, ...response.headers.map((header) => header.value)].some((text) =>
+    text.includes('\\{{'),
+  )
 
 async function responsesFor(
   api: MockFromFolderApi,
@@ -143,8 +179,10 @@ async function responsesFor(
   warnings: string[],
 ): Promise<MockResponseFromExample[]> {
   const listed = await api.savedResponse.list(target.ownerType, id)
+  // Newest first from the repository; a request answers with its first example.
+  const rows = [...(listed?.data ?? [])].sort((a, b) => a.created_at - b.created_at)
   const out: MockResponseFromExample[] = []
-  for (const row of listed?.data ?? []) {
+  for (const row of rows) {
     const response = exampleToMockResponse(row)
     if (response) out.push(response)
     else {
@@ -155,11 +193,18 @@ async function responsesFor(
       )
     }
   }
+  if (out.some(holdsEscapedText)) {
+    warnings.push(t('mock.fromFolderLiteralVariables').replace('{name}', target.name))
+  }
   if (out.length > 0) return out
   return [{ name: 'default', statusCode: 200, headers: [], bodyType: 'json', body: '' }]
 }
 
-/** Creates the server, its endpoints and their responses. Nothing created, no server left. */
+/**
+ * Creates the server, its endpoints and their responses. Nothing created, no
+ * server left. Only an HTTP-family request becomes an endpoint; the others are
+ * named in the warnings, so a folder's WebSocket request does not just vanish.
+ */
 export async function createMockFromRequests(
   api: MockFromFolderApi,
   o: { projectId: string; name: string; ids: readonly string[] },
@@ -186,7 +231,8 @@ export async function createMockFromRequests(
   const serverId = server.data.id
 
   try {
-    for (const id of o.ids) await addRequest(api, serverId, id, result)
+    const bound = new Map<string, string>()
+    for (const id of o.ids) await addRequest(api, serverId, id, result, bound)
   } catch (e) {
     await api.mock.server.delete(serverId).catch(() => undefined)
     return { ...result, ok: false, error: e instanceof Error ? e.message : String(e) }
@@ -202,22 +248,45 @@ async function addRequest(
   serverId: string,
   id: string,
   result: MockImportResult,
+  bound: Map<string, string>,
 ): Promise<void> {
   const target = await readRequestTarget(api, id)
   if (!target) {
     result.warnings.push(t('mock.fromFolderUnreadable'))
     return
   }
-  const bound = requestUrlToMockPath(target.url)
-  if (!bound) {
+  if (!isHttpMockableProtocol(target.protocol)) {
+    result.warnings.push(
+      t('mock.fromFolderOtherProtocol')
+        .replace('{name}', target.name)
+        .replace('{protocol}', String(target.protocol)),
+    )
+    return
+  }
+  const mockPath = requestUrlToMockPath(target.url)
+  if (!mockPath) {
     result.warnings.push(t('mock.fromFolderSkipped').replace('{name}', target.name))
     return
   }
+  // Only the first of two rows on one method + path could ever answer: SOAP
+  // operations of one service, GraphQL queries, the repeats of a HAR.
+  const slot = `${target.method.toUpperCase()} ${mockPath.path}`
+  const taken = bound.get(slot)
+  if (taken !== undefined) {
+    result.warnings.push(
+      t('mock.fromFolderDuplicate')
+        .replace('{name}', target.name)
+        .replace('{first}', taken)
+        .replace('{slot}', slot),
+    )
+    return
+  }
+  bound.set(slot, target.name)
   const endpoint = await api.mock.endpoint.create({
     serverId,
     method: target.method,
-    path: bound.path,
-    pathMode: bound.mode,
+    path: mockPath.path,
+    pathMode: mockPath.mode,
   })
   if (!endpoint?.success || !endpoint.data) {
     result.warnings.push(

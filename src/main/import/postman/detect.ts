@@ -4,6 +4,7 @@
  * CORE schema — plain JSON types only: no custom tags, unquoted dates stay
  * strings, no `<<` merge keys (issue #276 part 2).
  */
+import { assertTextBounded } from '../../../shared/bounded-document'
 import { classifyPostmanDocument, type PostmanDetection } from '../../../shared/postman-detect'
 
 export interface ParsedPostmanInput {
@@ -13,13 +14,19 @@ export interface ParsedPostmanInput {
 
 export function parsePostmanText(text: string): unknown {
   const trimmed = text.replace(/^\uFEFF/, '').trimStart()
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return JSON.parse(trimmed)
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    const doc: unknown = JSON.parse(trimmed)
+    assertTextBounded(doc, trimmed, 'Postman file')
+    return doc
+  }
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const yaml = require('js-yaml') as {
     load: (s: string, o?: { schema?: unknown }) => unknown
     CORE_SCHEMA: unknown
   }
-  return yaml.load(trimmed, { schema: yaml.CORE_SCHEMA })
+  const doc = yaml.load(trimmed, { schema: yaml.CORE_SCHEMA })
+  assertTextBounded(doc, trimmed, 'Postman file')
+  return doc
 }
 
 /** Parse + classify. Throws on unparseable text (the caller reports it). */

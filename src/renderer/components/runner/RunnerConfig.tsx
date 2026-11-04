@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import { assertIterationFileSize, parseIterationData } from '../../lib/iteration-data'
 import { formatCount } from '../../lib/plural'
 import { useNumberDraft } from '../../lib/number-draft'
 import { toast } from '../../lib/toast'
@@ -33,8 +34,8 @@ interface RunnerConfigProps {
   setPersistResponses: (v: boolean) => void
   keepVariableValues: boolean
   setKeepVariableValues: (v: boolean) => void
-  iterationData?: Record<string, string>[]
-  setIterationData?: (rows: Record<string, string>[]) => void
+  iterationData?: Record<string, unknown>[]
+  setIterationData?: (rows: Record<string, unknown>[]) => void
   /** Run-level hook scripts (issue #72) — one shot each, per run. */
   runPreScript: string
   setRunPreScript: (v: string) => void
@@ -719,8 +720,8 @@ function IterationDataPicker({
   rows,
   onChange,
 }: {
-  rows: Record<string, string>[]
-  onChange: (rows: Record<string, string>[]) => void
+  rows: Record<string, unknown>[]
+  onChange: (rows: Record<string, unknown>[]) => void
 }) {
   const { t } = useTranslation()
   const [error, setError] = useState<string | null>(null)
@@ -736,6 +737,7 @@ function IterationDataPicker({
       if (!file) return
       setFilename(file.name)
       try {
+        assertIterationFileSize(file.size, t)
         const text = await file.text()
         const parsed = parseIterationData(text, file.name, t)
         onChange(parsed)
@@ -796,71 +798,6 @@ function IterationDataPicker({
       )}
     </div>
   )
-}
-
-/** Parse iteration data from a Postman-compatible JSON array or a CSV. */
-function parseIterationData(
-  text: string,
-  filename: string,
-  t: (key: string) => string,
-): Record<string, string>[] {
-  const lower = filename.toLowerCase()
-  if (lower.endsWith('.json')) {
-    const parsed = JSON.parse(text) as unknown
-    if (!Array.isArray(parsed)) throw new Error(t('runnerConfig.dataNotArray'))
-    return parsed.map((row, i) => {
-      if (!row || typeof row !== 'object') {
-        throw new Error(t('runnerConfig.dataRowNotObject').replace('{index}', String(i)))
-      }
-      const out: Record<string, string> = {}
-      for (const [k, v] of Object.entries(row as Record<string, unknown>)) {
-        out[k] = v == null ? '' : String(v)
-      }
-      return out
-    })
-  }
-  if (lower.endsWith('.csv')) {
-    const lines = text.split(/\r?\n/).filter((l) => l.length > 0)
-    if (lines.length < 2) throw new Error(t('runnerConfig.csvTooShort'))
-    const headers = parseCsvRow(lines[0])
-    return lines.slice(1).map((line) => {
-      const cells = parseCsvRow(line)
-      const out: Record<string, string> = {}
-      headers.forEach((h, i) => {
-        out[h] = cells[i] ?? ''
-      })
-      return out
-    })
-  }
-  throw new Error(t('runnerConfig.dataUnsupported'))
-}
-
-function parseCsvRow(line: string): string[] {
-  const cells: string[] = []
-  let cur = ''
-  let inQuotes = false
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i]
-    if (inQuotes) {
-      if (c === '"' && line[i + 1] === '"') {
-        cur += '"'
-        i++
-      } else if (c === '"') {
-        inQuotes = false
-      } else {
-        cur += c
-      }
-    } else if (c === '"') {
-      inQuotes = true
-    } else if (c === ',') {
-      cells.push(cur)
-      cur = ''
-    } else {
-      cur += c
-    }
-  }
-  cells.push(cur)
-  return cells
 }
 
 function Chk({

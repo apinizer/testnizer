@@ -222,7 +222,9 @@ describe('a run in flight survives leaving its tab', () => {
     await leaveAndReturn()
 
     fireEvent.click(screen.getByTestId('runner-stop'))
-    expect(bridge.stop).toHaveBeenCalledWith({ mode: 'graceful' })
+    expect(bridge.stop).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'graceful', runTabId: TAB }),
+    )
   })
 
   it('stays busy while away, so a Run aimed at the tab focuses the run instead of re-arming it', async () => {

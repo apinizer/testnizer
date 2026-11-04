@@ -5,6 +5,12 @@
  */
 import { createElement } from 'react'
 import yaml from 'js-yaml'
+import {
+  assertTextBounded,
+  InputDocumentError,
+  MAX_IMPORT_BYTES,
+} from '../../../shared/bounded-document'
+import { openApiProblem } from '../../../shared/openapi-detect'
 import { classifyPostmanDocument } from '../../../shared/postman-detect'
 import { t } from '../../lib/i18n'
 import { formatCount } from '../../lib/plural'
@@ -34,7 +40,7 @@ export interface MockImportResult {
 export type MockImportInspection = { ok: true; file: MockImportFile } | { ok: false; error: string }
 
 export const MOCK_IMPORT_ACCEPT = '.json,.yaml,.yml'
-export const MOCK_IMPORT_MAX_BYTES = 50 * 1024 * 1024
+export const MOCK_IMPORT_MAX_BYTES = MAX_IMPORT_BYTES
 const TITLE_MAX = 80
 const REPORT_TOAST_ID = 'mock-import-report'
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
@@ -97,18 +103,36 @@ function postmanCollection(kind: string, root: Rec): { name: unknown; count: num
 }
 
 function parse(text: string): { root: unknown } | null {
+  let root: unknown
   try {
-    return { root: JSON.parse(text) }
+    root = JSON.parse(text)
   } catch {
     try {
-      return { root: yaml.load(text) }
-    } catch {
+      root = yaml.load(text)
+    } catch (e) {
+      // js-yaml recurses: deep nesting overflows inside `load`.
+      if (e instanceof RangeError) throw e
       return null
+    }
+  }
+  // Before any walk: a YAML alias costs one line and a walker's whole subtree.
+  assertTextBounded(root, text, 'File')
+  return { root }
+}
+
+export function inspectMockImportText(text: string, fileName: string): MockImportInspection {
+  try {
+    return inspect(text, fileName)
+  } catch (e) {
+    const tooComplex = e instanceof InputDocumentError || e instanceof RangeError
+    return {
+      ok: false,
+      error: t(tooComplex ? 'mockNew.importTooComplex' : 'mockNew.importUnreadable'),
     }
   }
 }
 
-export function inspectMockImportText(text: string, fileName: string): MockImportInspection {
+function inspect(text: string, fileName: string): MockImportInspection {
   const parsed = parse(text)
   if (!parsed || !isRec(parsed.root)) return { ok: false, error: t('mockNew.importNotRecognised') }
   const { root } = parsed
@@ -128,6 +152,12 @@ export function inspectMockImportText(text: string, fileName: string): MockImpor
   if (root.openapi === undefined && root.swagger === undefined && root.paths === undefined) {
     return { ok: false, error: t('mockNew.importNotRecognised') }
   }
+  const problem = openApiProblem(root)
+  if (problem === 'not-openapi') return { ok: false, error: t('mockNew.importNoVersion') }
+  if (problem === 'unsupported-version') {
+    return { ok: false, error: t('mockNew.importUnsupportedVersion') }
+  }
+  if (problem) return { ok: false, error: t('mockNew.importEmpty') }
   const endpointCount = countOpenApiOperations(root.paths)
   if (endpointCount === 0) return { ok: false, error: t('mockNew.importEmpty') }
   const title = titleOf(isRec(root.info) ? root.info.title : undefined, fileName)

@@ -659,7 +659,7 @@ describe('importPostman: every collection version', () => {
       { status_code: 201, body: '{"id":1}' },
     ])
     expect(r.warnings.join('\n')).toContain('"Socket"')
-    expect(r.warnings.join('\n')).toContain('1 request(s)')
+    expect(r.warnings.join('\n')).toContain('"Topic"')
   })
 
   it('reads a collection in YAML', () => {
@@ -695,5 +695,64 @@ describe('importPostman: every collection version', () => {
     const r = importPostman('server-1', JSON.stringify(doc))
     expect(r.ok).toBe(false)
     expect(r.error).toBeTruthy()
+  })
+})
+
+describe('schema composition next to a type (outside review)', () => {
+  const sampleBody = async (schema: object): Promise<string> => {
+    const serverId = crypto.randomUUID()
+    memDb.prepare('INSERT INTO mock_servers (id) VALUES (?)').run(serverId)
+    const r = await importOpenApi(
+      serverId,
+      JSON.stringify({
+        openapi: '3.0.3',
+        info: { title: 'T', version: '1' },
+        paths: {
+          '/a': {
+            get: {
+              responses: {
+                200: { description: 'ok', content: { 'application/json': { schema } } },
+              },
+            },
+          },
+        },
+      }),
+    )
+    expect(r.ok, r.error).toBe(true)
+    const row = memDb.prepare('SELECT body FROM mock_responses').get() as { body: string }
+    return row.body
+  }
+
+  it('type + oneOf samples the enum, not the word "string"', async () => {
+    const body = await sampleBody({ type: 'string', oneOf: [{ enum: ['cat'] }, { enum: ['dog'] }] })
+    expect(JSON.parse(body)).toBe('cat')
+  })
+
+  it('type + allOf samples the enum', async () => {
+    expect(JSON.parse(await sampleBody({ type: 'string', allOf: [{ enum: ['cat'] }] }))).toBe('cat')
+  })
+
+  it('a plain type still samples as before', async () => {
+    expect(JSON.parse(await sampleBody({ type: 'string' }))).toBe('string')
+  })
+})
+
+describe('a Postman v3 item a mock cannot answer (outside review)', () => {
+  it('the warning names it', async () => {
+    const serverId = crypto.randomUUID()
+    memDb.prepare('INSERT INTO mock_servers (id) VALUES (?)').run(serverId)
+    const r = await importPostman(
+      serverId,
+      JSON.stringify({
+        $kind: 'collection',
+        name: 'Shop',
+        items: [
+          { $kind: 'http-request', name: 'List', method: 'GET', url: 'http://x/list' },
+          { $kind: 'kafka-request', name: 'Billing events' },
+        ],
+      }),
+    )
+    expect(r.ok, r.error).toBe(true)
+    expect(r.warnings.join(' ')).toMatch(/Billing events/)
   })
 })

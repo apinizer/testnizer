@@ -391,8 +391,8 @@ describe('OpenAPI 3.0.3 import — Petstore', () => {
     const methods = rows.map((r) => `${r.method} ${r.path}`)
     expect(methods).toContain('GET https://petstore.example.com/api/v1/pets')
     expect(methods).toContain('POST https://petstore.example.com/api/v1/pets')
-    expect(methods).toContain('GET https://petstore.example.com/api/v1/pets/{petId}')
-    expect(methods).toContain('DELETE https://petstore.example.com/api/v1/pets/{petId}')
+    expect(methods).toContain('GET https://petstore.example.com/api/v1/pets/:petId')
+    expect(methods).toContain('DELETE https://petstore.example.com/api/v1/pets/:petId')
   })
 
   it('a mock made from these rows binds the path — `endpoints.path` is the full URL', async () => {
@@ -428,7 +428,7 @@ describe('OpenAPI 3.0.3 import — Petstore', () => {
     expect(names).toEqual(['pets', 'store'])
   })
 
-  it('maps query and header parameters; path params remain in URL', async () => {
+  it('maps query and header parameters; path params become :name in the URL', async () => {
     const projectId = randomUUID()
     seedProject(projectId)
     await importOpenApi(projectId, JSON.stringify(petstoreSpec))
@@ -526,7 +526,7 @@ describe('Swagger 2.0 import', () => {
       .all(projectId) as Array<{ method: string; path: string }>
     expect(rows).toHaveLength(3)
     expect(rows.map((r) => r.method).sort()).toEqual(['GET', 'GET', 'POST'])
-    expect(rows.find((r) => r.path.endsWith('/orders/{orderId}'))).toBeDefined()
+    expect(rows.find((r) => r.path.endsWith('/orders/:orderId'))).toBeDefined()
   })
 })
 

@@ -26,6 +26,7 @@ import {
   type RequestSettings,
 } from '../../shared/request-settings'
 import { switchActiveTab } from './activate-tab'
+import { protocolMetadataOf } from '../../shared/grpc-import-meta'
 
 /** The open tab showing the row `id`, if any. */
 export function findOpenTabFor(id: string): Tab | undefined {
@@ -201,7 +202,7 @@ export async function openEndpointTab(id: string): Promise<void> {
           assertions = schema.assertions ?? []
           if (schema.url) url = schema.url
           if (schema.method) method = schema.method
-          metadata = schema.metadata
+          metadata = protocolMetadataOf(schema)
         } catch {
           /* ignore */
         }
@@ -361,10 +362,8 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
     // that have no metadata field. (Imported the helper at the top of
     // this file.)
     try {
-      const schemaForMeta = JSON.parse(item.request_schema || '{}') as { metadata?: unknown }
-      if (schemaForMeta.metadata) {
-        restoreProtocolFromMetadata(protocol, schemaForMeta.metadata)
-      }
+      const suiteMeta = protocolMetadataOf(JSON.parse(item.request_schema || '{}'))
+      if (suiteMeta) restoreProtocolFromMetadata(protocol, suiteMeta)
     } catch {
       /* malformed schema — protocol-specific restore skipped */
     }

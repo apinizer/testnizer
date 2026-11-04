@@ -1,0 +1,17 @@
+{
+  "$kind": "collection",
+  "name": "Pets",
+  "items": [
+    { "$kind": "http-request", "name": "List pets", "method": "GET", "url": "__BASE__/pets" },
+    { "$kind": "http-request", "name": "Get pet", "method": "GET", "url": "__BASE__/pets/{{petId}}" },
+    {
+      "$kind": "graphql-request",
+      "name": "Search",
+      "url": "__BASE__/graphql",
+      "query": "query Search { pets { id } }",
+      "variables": "{\"first\":1}",
+      "headers": [{ "key": "X-Gql", "value": "1" }]
+    },
+    { "$kind": "websocket-request", "name": "Live", "url": "wss://ws.example.test/live" }
+  ]
+}

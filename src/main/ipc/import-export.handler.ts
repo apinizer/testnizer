@@ -16,6 +16,7 @@ import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import { orderTreeLevel, orderTreeRequests } from '../../shared/tree-order'
 import {
   applyPathVariables,
+  pathVariableNames,
   readPathVariables,
   type PathVariableLike,
 } from '../../shared/path-variables'
@@ -52,6 +53,23 @@ import {
 } from '../../shared/collection-export'
 import { stripProjectSharedSettings } from '../lib/local-secrets'
 import { importPostman, importPostmanEnvironment } from '../import/postman'
+import { InputDocumentError } from '../../shared/bounded-document'
+import {
+  openApiProblem,
+  openApiProblemMessage,
+  openApiServersProblem,
+} from '../../shared/openapi-detect'
+import { boundedJson, dereferenceLocalRefs, newJsonBudget } from '../import/openapi-refs'
+import { withoutExternalWsdlRefs, wsdlRefsWarning } from '../import/wsdl-refs'
+import { assertProtoStaysLocal } from '../import/proto-refs'
+import {
+  assertImportableFile,
+  importErrorText,
+  MAX_IMPORT_BYTES,
+  parseJsonFile,
+  parseJsonOrYamlBounded,
+  parseYamlBounded,
+} from '../import/safe-input'
 import {
   pickedFolderSummary,
   rememberPickedFolder,
@@ -82,6 +100,7 @@ import type {
   PostmanVariable,
 } from '../import/postman/types'
 import { extractPath, genKvId } from '../import/postman/normalize'
+import { importedGrpcMetadata } from '../../shared/grpc-import-meta'
 import {
   insomniaEnvRows,
   writeInsomniaBaseEnvironment,
@@ -216,6 +235,9 @@ interface OpenApiDoc {
 
 type JsonSchema = Record<string, unknown>
 
+/** Enough for any starter body a person reads. */
+const SAMPLE_NODE_LIMIT = 2000
+
 /**
  * Produces a sample JSON value from a JSON Schema definition.
  * Used as a fallback when an OpenAPI spec has no inline `example`/`examples`.
@@ -225,9 +247,27 @@ function generateJsonExample(
   schema: JsonSchema,
   schemas?: Record<string, JsonSchema> | null,
   _visited: Set<string> = new Set(),
+  walk: { path: Set<object>; left: number } = { path: new Set(), left: SAMPLE_NODE_LIMIT },
 ): unknown {
   if (!schema || typeof schema !== 'object') return null
+  // Resolved refs leave no names to remember: a self-referencing schema is a cycle
+  // and a shared one multiplies, so the walk watches the objects themselves.
+  if (walk.path.has(schema) || walk.left <= 0) return null
+  walk.left -= 1
+  walk.path.add(schema)
+  try {
+    return sampleOfSchema(schema, schemas, _visited, walk)
+  } finally {
+    walk.path.delete(schema)
+  }
+}
 
+function sampleOfSchema(
+  schema: JsonSchema,
+  schemas: Record<string, JsonSchema> | null | undefined,
+  _visited: Set<string>,
+  walk: { path: Set<object>; left: number },
+): unknown {
   // $ref resolution
   const ref = schema['$ref'] as string | undefined
   if (ref) {
@@ -237,7 +277,7 @@ function generateJsonExample(
     if (resolved) {
       const next = new Set(_visited)
       next.add(name)
-      return generateJsonExample(resolved, schemas, next)
+      return generateJsonExample(resolved, schemas, next, walk)
     }
     return {}
   }
@@ -246,7 +286,7 @@ function generateJsonExample(
   for (const key of ['allOf', 'oneOf', 'anyOf'] as const) {
     const arr = schema[key]
     if (Array.isArray(arr) && arr.length > 0) {
-      return generateJsonExample(arr[0] as JsonSchema, schemas, _visited)
+      return generateJsonExample(arr[0] as JsonSchema, schemas, _visited, walk)
     }
   }
 
@@ -262,14 +302,14 @@ function generateJsonExample(
     if (!props) return {}
     const out: Record<string, unknown> = {}
     for (const [key, propSchema] of Object.entries(props)) {
-      out[key] = generateJsonExample(propSchema, schemas, _visited)
+      out[key] = generateJsonExample(propSchema, schemas, _visited, walk)
     }
     return out
   }
 
   if (resolvedType === 'array') {
     const items = schema['items'] as JsonSchema | undefined
-    if (items) return [generateJsonExample(items, schemas, _visited)]
+    if (items) return [generateJsonExample(items, schemas, _visited, walk)]
     return []
   }
 
@@ -295,10 +335,21 @@ export function registerImportExportHandlers(): void {
   ipcMain.handle('import:fetchUrl', async (_event, url: string) => {
     try {
       const axios = (await import('axios')).default
-      const response = await axios.get(url, { timeout: 30000, responseType: 'text' })
+      const response = await axios.get(url, {
+        timeout: 30000,
+        responseType: 'text',
+        maxContentLength: MAX_IMPORT_BYTES,
+        maxBodyLength: MAX_IMPORT_BYTES,
+      })
       return { success: true, data: response.data }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      const message = (e as Error).message
+      return {
+        success: false,
+        error: /maxContentLength/.test(message)
+          ? `The file at this URL is larger than ${MAX_IMPORT_BYTES / (1024 * 1024)} MB, too large to import.`
+          : message,
+      }
     }
   })
 
@@ -338,6 +389,8 @@ export function registerImportExportHandlers(): void {
       }
       const filePath = result.filePaths[0]
       assertNotFolder(filePath)
+      // Before anything opens it: opening a FIFO blocks until a writer comes.
+      assertImportableFile(filePath, Number.POSITIVE_INFINITY)
       // The first bytes decide; a zip's size is checked before it is read.
       const head = Buffer.alloc(4)
       const fd = openSync(filePath, 'r')
@@ -372,6 +425,7 @@ export function registerImportExportHandlers(): void {
           },
         }
       }
+      assertImportableFile(filePath)
       return { success: true, data: { filePath, content: readFileSync(filePath, 'utf-8') } }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -399,7 +453,7 @@ export function registerImportExportHandlers(): void {
         )
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -455,7 +509,7 @@ export function registerImportExportHandlers(): void {
         )
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -507,7 +561,7 @@ export function registerImportExportHandlers(): void {
         )
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -565,7 +619,7 @@ export function registerImportExportHandlers(): void {
         const result = await importHar(payload.projectId, payload.content, payload.folderId ?? null)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -578,11 +632,11 @@ export function registerImportExportHandlers(): void {
     'import:postmanEnvironment',
     async (_event, payload: { projectId: string; content: string }) => {
       try {
-        const parsed = JSON.parse(payload.content) as Record<string, unknown>
+        const parsed = parseJsonFile(payload.content, 'Postman environment export')
         // Environment AND globals exports (issue #276): globals become the
         // "Globals" project environment.
-        const scope = parsed?.['_postman_variable_scope']
-        if (!parsed || (scope !== 'environment' && scope !== 'globals')) {
+        const scope = isRecord(parsed) ? parsed['_postman_variable_scope'] : undefined
+        if (scope !== 'environment' && scope !== 'globals') {
           return {
             success: false,
             error: 'Not a Postman environment export (`_postman_variable_scope` missing).',
@@ -594,7 +648,7 @@ export function registerImportExportHandlers(): void {
         )
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -603,14 +657,7 @@ export function registerImportExportHandlers(): void {
     'import:insomniaEnvironment',
     async (_event, payload: { projectId: string; content: string }) => {
       try {
-        let doc: unknown
-        try {
-          doc = JSON.parse(payload.content)
-        } catch {
-          // eslint-disable-next-line @typescript-eslint/no-require-imports
-          const yaml = require('js-yaml') as { load: (s: string) => unknown }
-          doc = yaml.load(payload.content)
-        }
+        const doc = parseJsonOrYamlBounded(payload.content, 'Insomnia environment')
         if (!isInsomniaV5Environment(doc)) {
           return {
             success: false,
@@ -618,10 +665,12 @@ export function registerImportExportHandlers(): void {
               'Not an Insomnia environment export (expected `type: environment.insomnia.rest/5.0`).',
           }
         }
-        const result = importInsomniaV5Environment(payload.projectId, doc, [])
+        const result = getDb().transaction(() =>
+          importInsomniaV5Environment(payload.projectId, doc, []),
+        )()
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -645,7 +694,7 @@ export function registerImportExportHandlers(): void {
         )
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -675,7 +724,7 @@ export function registerImportExportHandlers(): void {
         const result = importCurl(payload.projectId, payload.curlCommand, payload.folderId ?? null)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -707,7 +756,7 @@ export function registerImportExportHandlers(): void {
         const result = await importProto(payload)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -723,10 +772,13 @@ export function registerImportExportHandlers(): void {
 
   ipcMain.handle('import:wsdl:parseFile', async (_event, content: string) => {
     try {
-      const result = await parseWsdlFromContent(content)
+      const result = await parseOwnWsdlContent(content)
+      if (!result.services?.length) {
+        return { success: false, error: 'No services found in this WSDL file.' }
+      }
       return { success: true, data: result }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, error: importErrorText(e) }
     }
   })
 
@@ -749,7 +801,7 @@ export function registerImportExportHandlers(): void {
         const result = await importWsdl(payload)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -769,7 +821,7 @@ export function registerImportExportHandlers(): void {
         const result = await importSoapUi(payload)
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -793,7 +845,7 @@ export function registerImportExportHandlers(): void {
         )
         return { success: true, data: result }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -808,15 +860,16 @@ function mapOpenApiSecurityToAuth(
   securityRef: Array<Record<string, string[]>> | undefined,
   schemes: Record<string, OpenApiSecurityScheme> | undefined,
 ): Record<string, unknown> {
-  if (!securityRef || !schemes || securityRef.length === 0) {
+  if (!Array.isArray(securityRef) || !isRecord(schemes)) {
     return { type: 'none' }
   }
   // securityRef[0] is the first OR-alternative — keys are scheme names.
-  const firstAlt = securityRef[0]
+  const firstAlt: unknown = securityRef[0]
+  if (!isRecord(firstAlt)) return { type: 'none' }
   const schemeName = Object.keys(firstAlt)[0]
   if (!schemeName) return { type: 'none' }
   const scheme = schemes[schemeName]
-  if (!scheme) return { type: 'none' }
+  if (!isRecord(scheme)) return { type: 'none' }
 
   if (scheme.type === 'http') {
     if (scheme.scheme === 'bearer') {
@@ -842,6 +895,101 @@ function mapOpenApiSecurityToAuth(
   return { type: 'none' }
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** A value from a file, when it has to be text. */
+const textOf = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback)
+
+const isText = (v: unknown): v is string => typeof v === 'string'
+
+type OpenApiParameter = {
+  name: string
+  in: string
+  required?: boolean
+  schema?: { type?: string; default?: unknown; example?: unknown }
+  description?: string
+  example?: unknown
+  default?: unknown
+}
+
+/** A path item's parameters, then the operation's: on the same `in` + `name` the operation wins. */
+function openApiParameters(
+  pathLevel: unknown,
+  operationLevel: unknown,
+  where: string,
+  warnings: string[],
+): OpenApiParameter[] {
+  const byKey = new Map<string, OpenApiParameter>()
+  for (const list of [pathLevel, operationLevel]) {
+    if (!Array.isArray(list)) continue
+    for (const p of list) {
+      if (isRecord(p) && isText(p.name) && isText(p.in)) {
+        byKey.set(`${p.in}:${p.name}`, p as unknown as OpenApiParameter)
+      } else if (isRecord(p) && isText(p.$ref)) {
+        warnings.push(`${where}: the parameter reference "${p.$ref}" was not followed.`)
+      } else {
+        warnings.push(`${where}: skipped a parameter with no name.`)
+      }
+    }
+  }
+  return [...byKey.values()]
+}
+
+/** A default of any JSON type as editor text: the Params table reads strings only. */
+function defaultText(raw: unknown): string {
+  if (raw === undefined || raw === null) return ''
+  if (typeof raw === 'string') return raw
+  return typeof raw === 'object' ? JSON.stringify(raw) : String(raw)
+}
+
+/**
+ * `/pets/{petId}` as `/pets/:petId`: a `{x}` left in a URL goes out percent-encoded
+ * and gets no row in the Params tab. `:name` is a whole path segment
+ * (`src/shared/path-variables.ts`), so `/{name}.json` stays as written and is warned.
+ */
+function openApiPathTemplate(path: string, warnings: string[]): string {
+  const segments = path.split('/').map((seg) => {
+    const whole = /^\{([^{}]+)\}$/.exec(seg)
+    return whole ? `:${whole[1]}` : seg
+  })
+  if (segments.some((seg) => /\{[^{}]+\}/.test(seg))) {
+    warnings.push(
+      `"${path}" has a variable inside a path segment, which cannot have a Path Variables row: edit the URL before sending.`,
+    )
+  }
+  return segments.join('/')
+}
+
+function openApiBaseUrl(
+  doc: OpenApiDoc,
+  sourceUrl: string | undefined,
+  warnings: string[],
+): string {
+  const serversProblem = openApiServersProblem(doc)
+  if (serversProblem) {
+    warnings.push(serversProblem)
+    return ''
+  }
+  if (Array.isArray(doc.servers) && doc.servers.length > 0) {
+    const serverUrl = doc.servers[0].url
+    if (serverUrl.startsWith('http://') || serverUrl.startsWith('https://')) return serverUrl
+    // Relative server URL — resolve from source URL if available
+    if (!sourceUrl) return serverUrl
+    try {
+      const parsed = new URL(sourceUrl)
+      return `${parsed.protocol}//${parsed.host}${serverUrl}`
+    } catch {
+      return serverUrl
+    }
+  }
+  if (isText(doc.host)) {
+    const scheme = Array.isArray(doc.schemes) && isText(doc.schemes[0]) ? doc.schemes[0] : 'https'
+    return `${scheme}://${doc.host}${textOf(doc.basePath)}`
+  }
+  return ''
+}
+
 async function importOpenApi(
   projectId: string,
   content: string,
@@ -849,25 +997,23 @@ async function importOpenApi(
   sourceUrl?: string,
 ): Promise<ImportResult> {
   const warnings: string[] = []
-  let doc: OpenApiDoc
-
+  let parsed: unknown
   try {
-    // Try JSON first
-    doc = JSON.parse(content) as OpenApiDoc
-  } catch {
-    // Try YAML
-    try {
-      const yaml = await import('js-yaml')
-      doc = yaml.load(content) as OpenApiDoc
-    } catch {
-      return { success: false, error: 'Failed to parse file as JSON or YAML' }
+    parsed = parseJsonOrYamlBounded(content, 'OpenAPI document')
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof InputDocumentError ? e.message : 'Failed to parse file as JSON or YAML',
     }
   }
 
-  // Validate it's an OpenAPI or Swagger doc
-  if (!doc.openapi && !doc.swagger) {
-    return { success: false, error: 'Not a valid OpenAPI/Swagger document' }
-  }
+  const problem = openApiProblem(parsed)
+  if (problem) return { success: false, error: openApiProblemMessage(problem) }
+
+  // Every async step is above this line: the rows below go in one transaction.
+  const doc = await dereferenceLocalRefs(parsed as OpenApiDoc, warnings)
+  const budget = newJsonBudget()
+  const jsonOf = (value: unknown, indent?: number): string => boundedJson(value, budget, indent)
 
   const db = getDb()
   const now = Date.now()
@@ -875,85 +1021,74 @@ async function importOpenApi(
   let folderCount = 0
   const suggestedEnvVars: Record<string, string> = {}
 
-  // Extract base URL
-  let baseUrl = ''
-  if (doc.servers && doc.servers.length > 0) {
-    const serverUrl = doc.servers[0].url
-    if (serverUrl.startsWith('http://') || serverUrl.startsWith('https://')) {
-      baseUrl = serverUrl
-    } else {
-      // Relative server URL — resolve from source URL if available
-      if (sourceUrl) {
-        try {
-          const parsed = new URL(sourceUrl)
-          baseUrl = `${parsed.protocol}//${parsed.host}${serverUrl}`
-        } catch {
-          baseUrl = serverUrl
-        }
-      } else {
-        baseUrl = serverUrl
-      }
-    }
-  } else if (doc.host) {
-    const scheme = doc.schemes ? doc.schemes[0] : 'https'
-    baseUrl = `${scheme}://${doc.host}${doc.basePath || ''}`
-  }
-
+  const baseUrl = openApiBaseUrl(doc, sourceUrl, warnings)
   if (baseUrl) {
     suggestedEnvVars['baseUrl'] = baseUrl
   }
 
-  // Create folders from tags
-  const tagFolderMap: Record<string, string> = {}
-  if (doc.tags) {
-    for (const tag of doc.tags) {
-      const folderId = randomUUID()
-      db.prepare(
-        `
-        INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-        VALUES (?, ?, ?, ?, ?)
-      `,
-      ).run(folderId, projectId, parentFolderId, tag.name, folderCount)
-      tagFolderMap[tag.name] = folderId
-      folderCount++
-    }
-  }
-
-  // Import paths
+  const insertFolder = db.prepare(
+    `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+  )
   const httpMethods = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options']
 
-  if (doc.paths) {
-    for (const [path, pathItem] of Object.entries(doc.paths)) {
+  db.transaction(() => {
+    // Create folders from tags
+    const tagFolderMap = new Map<string, string>()
+    const folderForTag = (tagName: string): string => {
+      const existing = tagFolderMap.get(tagName)
+      if (existing) return existing
+      const folderId = randomUUID()
+      insertFolder.run(folderId, projectId, parentFolderId, tagName, folderCount)
+      tagFolderMap.set(tagName, folderId)
+      folderCount++
+      return folderId
+    }
+    for (const tag of Array.isArray(doc.tags) ? doc.tags : []) {
+      if (isRecord(tag) && isText(tag.name)) folderForTag(tag.name)
+      else warnings.push('Skipped a tag with no name.')
+    }
+
+    // Import paths
+    for (const [path, pathItem] of Object.entries(doc.paths ?? {})) {
+      if (!isRecord(pathItem)) {
+        warnings.push(`Skipped "${path}": it is not a path definition.`)
+        continue
+      }
       for (const method of httpMethods) {
-        const operation = pathItem[method]
-        if (!operation) continue
-
-        const endpointId = randomUUID()
-        const name = operation.summary || operation.operationId || `${method.toUpperCase()} ${path}`
-
-        // Determine folder
-        let folderId: string | null = parentFolderId
-        if (operation.tags && operation.tags.length > 0) {
-          const tagName = operation.tags[0]
-          if (tagFolderMap[tagName]) {
-            folderId = tagFolderMap[tagName]
-          } else {
-            // Create folder for this tag
-            const newFolderId = randomUUID()
-            db.prepare(
-              `
-              INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-              VALUES (?, ?, ?, ?, ?)
-            `,
-            ).run(newFolderId, projectId, parentFolderId, tagName, folderCount)
-            tagFolderMap[tagName] = newFolderId
-            folderId = newFolderId
-            folderCount++
-          }
+        const rawOperation: unknown = pathItem[method]
+        if (rawOperation === undefined || rawOperation === null) continue
+        const where = `${method.toUpperCase()} ${path}`
+        if (!isRecord(rawOperation)) {
+          warnings.push(`Skipped ${where}: it is not an operation.`)
+          continue
+        }
+        const operation = rawOperation as OpenApiPath[string]
+        const unreadable = (
+          [
+            ['requestBody', isRecord],
+            ['responses', isRecord],
+            ['tags', Array.isArray],
+            ['security', Array.isArray],
+          ] as const
+        )
+          .filter(([key, fits]) => rawOperation[key] != null && !fits(rawOperation[key]))
+          .map(([key]) => key)
+        if (unreadable.length > 0) {
+          warnings.push(
+            `${where}: ignored ${unreadable.join(', ')}, in a form that cannot be read.`,
+          )
         }
 
+        const endpointId = randomUUID()
+        const name = textOf(operation.summary) || textOf(operation.operationId) || where
+        const operationTags = Array.isArray(operation.tags) ? operation.tags.filter(isText) : []
+
+        // Determine folder
+        const folderId = operationTags[0] ? folderForTag(operationTags[0]) : parentFolderId
+
         // Build full URL
-        const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${path}` : path
+        const template = openApiPathTemplate(path, warnings)
+        const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${template}` : template
 
         // Convert OpenAPI parameters to app format
         const params: Array<{
@@ -980,93 +1115,92 @@ async function importOpenApi(
           | undefined
         const swagger2FormParams: Array<{ name: string; type?: string; description?: string }> = []
 
-        if (operation.parameters) {
-          for (const param of operation.parameters) {
-            // Coerce numeric / boolean / null defaults to string. The
-            // KeyValuePair `value` field is rendered through string-only
-            // APIs (input value, .toLowerCase(), .includes(), .replace()),
-            // so passing a raw `1` from `schema.default: 1` crashed the
-            // request editor on tab open → white screen for the rest of
-            // the session (v1.4.3 user-reported OpenAPI 3 import crash).
-            const rawDefault = param.schema?.default
-            const value =
-              rawDefault === undefined || rawDefault === null
-                ? ''
-                : typeof rawDefault === 'string'
-                  ? rawDefault
-                  : typeof rawDefault === 'object'
-                    ? JSON.stringify(rawDefault)
-                    : String(rawDefault)
-            const item = {
-              id: randomUUID(),
-              key: param.name,
-              value,
-              description: param.description || '',
-              enabled: true,
+        const parameters = openApiParameters(
+          pathItem.parameters,
+          operation.parameters,
+          where,
+          warnings,
+        )
+        for (const param of parameters) {
+          // Coerced to string: the KeyValuePair `value` field is rendered through
+          // string-only APIs, so a raw `1` from `schema.default: 1` crashed the
+          // request editor on tab open → white screen for the rest of the session
+          // (v1.4.3 user-reported OpenAPI 3 import crash).
+          const item = {
+            id: randomUUID(),
+            key: param.name,
+            value: defaultText(param.schema?.default),
+            description: textOf(param.description),
+            enabled: true,
+          }
+          if (param.in === 'query') params.push(item)
+          else if (param.in === 'header') headers.push(item)
+          else if (param.in === 'body') {
+            swagger2BodyParam = {
+              name: param.name,
+              schema: param.schema as Record<string, unknown> | undefined,
+              description: param.description,
             }
-            if (param.in === 'query') params.push(item)
-            else if (param.in === 'header') headers.push(item)
-            else if (param.in === 'body') {
-              swagger2BodyParam = {
-                name: param.name,
-                schema: param.schema as Record<string, unknown> | undefined,
-                description: param.description,
-              }
-            } else if (param.in === 'formData') {
-              swagger2FormParams.push({
-                name: param.name,
-                type: (param as { type?: string }).type,
-                description: param.description,
-              })
-            }
-            // path params are embedded in URL
+          } else if (param.in === 'formData') {
+            swagger2FormParams.push({
+              name: param.name,
+              type: (param as { type?: string }).type,
+              description: param.description,
+            })
           }
         }
+
+        // The URL's `:name` segments, with the values the spec gives them.
+        const pathVariables = pathVariableNames(fullUrl).map((key) => {
+          const param = parameters.find((p) => p.in === 'path' && p.name === key)
+          return {
+            id: randomUUID(),
+            key,
+            value: defaultText(
+              param?.schema?.default ?? param?.schema?.example ?? param?.default ?? param?.example,
+            ),
+            description: textOf(param?.description),
+          }
+        })
 
         // Convert request body — prefer the operation's `example` /
         // first `examples.*.value` over a JSON-schema dump (which is far
         // less useful as a starter request body).
+        const schemasByName = () => ({ ...doc.definitions, ...doc.components?.schemas })
+        const rawRequestBody: unknown = operation.requestBody
+        const requestBodyMedia =
+          isRecord(rawRequestBody) && isRecord(rawRequestBody.content)
+            ? rawRequestBody.content
+            : null
+        if (isRecord(rawRequestBody) && isText(rawRequestBody.$ref)) {
+          warnings.push(
+            `${where}: the request body reference "${rawRequestBody.$ref}" was not followed.`,
+          )
+        }
         let body: { type: string; content?: string; formData?: unknown[] } = { type: 'none' }
-        if (operation.requestBody?.content) {
-          const contentTypes = Object.keys(operation.requestBody.content)
+        if (requestBodyMedia) {
+          const contentTypes = Object.keys(requestBodyMedia)
           const pickExample = (mt: string): string | undefined => {
-            const entry = operation.requestBody!.content![mt] as
-              | {
-                  example?: unknown
-                  examples?: Record<string, { value?: unknown }>
-                  schema?: Record<string, unknown>
-                }
-              | undefined
-            if (!entry) return undefined
+            const entry: unknown = requestBodyMedia[mt]
+            if (!isRecord(entry)) return undefined
             if (entry.example !== undefined) {
-              return typeof entry.example === 'string'
-                ? entry.example
-                : JSON.stringify(entry.example, null, 2)
+              return isText(entry.example) ? entry.example : jsonOf(entry.example, 2)
             }
-            if (entry.examples) {
+            if (isRecord(entry.examples)) {
               const first = Object.values(entry.examples)[0]
-              if (first?.value !== undefined) {
-                return typeof first.value === 'string'
-                  ? first.value
-                  : JSON.stringify(first.value, null, 2)
+              if (isRecord(first) && first.value !== undefined) {
+                return isText(first.value) ? first.value : jsonOf(first.value, 2)
               }
             }
-            return entry.schema
-              ? JSON.stringify(
-                  generateJsonExample(entry.schema, {
-                    ...doc.definitions,
-                    ...doc.components?.schemas,
-                  }),
-                  null,
-                  2,
-                )
+            return isRecord(entry.schema)
+              ? jsonOf(generateJsonExample(entry.schema, schemasByName()), 2)
               : undefined
           }
-          if (contentTypes.some((ct) => ct.includes('json'))) {
-            const content = pickExample('application/json') ?? '{}'
-            body = { type: 'json', content }
-          } else if (contentTypes.some((ct) => ct.includes('xml'))) {
-            const xmlMt = contentTypes.find((ct) => ct.includes('xml'))!
+          const jsonMt = contentTypes.find((ct) => ct.includes('json'))
+          const xmlMt = contentTypes.find((ct) => ct.includes('xml'))
+          if (jsonMt) {
+            body = { type: 'json', content: pickExample(jsonMt) ?? '{}' }
+          } else if (xmlMt) {
             body = { type: 'xml', content: pickExample(xmlMt) ?? '' }
           } else if (contentTypes.some((ct) => ct.includes('form'))) {
             body = { type: 'form-data' }
@@ -1075,13 +1209,10 @@ async function importOpenApi(
           // Swagger 2.0 JSON body parameter — generate a JSON example from
           // its schema so the user sees a starter payload instead of an
           // empty editor (v1.4.2 #6).
-          const example = swagger2BodyParam.schema
-            ? generateJsonExample(swagger2BodyParam.schema, {
-                ...doc.definitions,
-                ...doc.components?.schemas,
-              })
+          const example = isRecord(swagger2BodyParam.schema)
+            ? generateJsonExample(swagger2BodyParam.schema, schemasByName())
             : {}
-          body = { type: 'json', content: JSON.stringify(example, null, 2) }
+          body = { type: 'json', content: jsonOf(example, 2) }
         } else if (swagger2FormParams.length > 0) {
           // Swagger 2.0 formData — populate the form-data list with each
           // form parameter so the body editor opens pre-filled.
@@ -1091,7 +1222,7 @@ async function importOpenApi(
               id: randomUUID(),
               key: p.name,
               value: '',
-              description: p.description ?? '',
+              description: textOf(p.description),
               type: 'text',
               enabled: true,
             })),
@@ -1107,8 +1238,9 @@ async function importOpenApi(
         // uses these to round-trip the operation-level `security[]` block and
         // rebuild `components.securitySchemes` with the original names.
         const securitySchemeNames: string[] = []
-        if (securityRef && securityRef.length > 0) {
+        if (Array.isArray(securityRef)) {
           for (const alt of securityRef) {
+            if (!isRecord(alt)) continue
             for (const name of Object.keys(alt)) {
               if (!securitySchemeNames.includes(name)) securitySchemeNames.push(name)
             }
@@ -1119,45 +1251,40 @@ async function importOpenApi(
         // `openApi` namespace so other importers (Postman, Insomnia, …) don't
         // bump into it.
         const paramMeta: Record<string, { required?: boolean; type?: string }> = {}
-        if (operation.parameters) {
-          for (const p of operation.parameters) {
-            paramMeta[`${p.in}:${p.name}`] = {
-              required: p.required ?? false,
-              type: p.schema?.type ?? 'string',
-            }
+        for (const p of parameters) {
+          paramMeta[`${p.in}:${p.name}`] = {
+            required: p.required === true,
+            type: textOf(p.schema?.type, 'string'),
           }
         }
         const requestBodyContent: Record<string, string> = {}
         const requestBodyExamples: Record<string, Record<string, unknown>> = {}
-        if (operation.requestBody?.content) {
-          for (const [mt, entry] of Object.entries(operation.requestBody.content)) {
-            const e = entry as {
-              example?: unknown
-              examples?: Record<string, { value?: unknown }>
+        for (const [mt, entry] of Object.entries(requestBodyMedia ?? {})) {
+          if (!isRecord(entry)) continue
+          if (entry.example !== undefined) {
+            requestBodyContent[mt] = isText(entry.example)
+              ? entry.example
+              : jsonOf(entry.example, 2)
+          } else if (isRecord(entry.examples)) {
+            // Plural named `examples` — keep EVERY entry so the exporter can
+            // round-trip them back to `examples`, and seed requestBodyContent
+            // from the first so non-JSON (xml/html) bodies retain a payload (B-08).
+            const named: Record<string, unknown> = {}
+            for (const [exName, exVal] of Object.entries(entry.examples)) {
+              if (isRecord(exVal) && exVal.value !== undefined) {
+                named[exName] = JSON.parse(jsonOf(exVal.value))
+              }
             }
-            if (e.example !== undefined) {
-              requestBodyContent[mt] =
-                typeof e.example === 'string' ? e.example : JSON.stringify(e.example, null, 2)
-            } else if (e.examples) {
-              // Plural named `examples` — keep EVERY entry so the exporter can
-              // round-trip them back to `examples`, and seed requestBodyContent
-              // from the first so non-JSON (xml/html) bodies retain a payload (B-08).
-              const named: Record<string, unknown> = {}
-              for (const [exName, exVal] of Object.entries(e.examples)) {
-                if (exVal?.value !== undefined) named[exName] = exVal.value
-              }
-              if (Object.keys(named).length > 0) {
-                requestBodyExamples[mt] = named
-                const firstVal = Object.values(named)[0]
-                requestBodyContent[mt] =
-                  typeof firstVal === 'string' ? firstVal : JSON.stringify(firstVal, null, 2)
-              }
+            if (Object.keys(named).length > 0) {
+              requestBodyExamples[mt] = named
+              const firstVal = Object.values(named)[0]
+              requestBodyContent[mt] = isText(firstVal) ? firstVal : jsonOf(firstVal, 2)
             }
           }
         }
         const openApiMeta: OpenApiRoundtripMeta = {
-          tags: operation.tags && operation.tags.length > 0 ? [...operation.tags] : undefined,
-          operationId: operation.operationId,
+          tags: operationTags.length > 0 ? operationTags : undefined,
+          operationId: isText(operation.operationId) ? operation.operationId : undefined,
           securitySchemeNames: securitySchemeNames.length > 0 ? securitySchemeNames : undefined,
           parameters: Object.keys(paramMeta).length > 0 ? paramMeta : undefined,
           requestBodyContent:
@@ -1174,11 +1301,12 @@ async function importOpenApi(
           headers,
           body,
           auth,
+          ...(pathVariables.length > 0 ? { pathVariables } : {}),
           openApi: openApiMeta,
         }
 
         // Build response schemas
-        const responseSchemas = operation.responses ? JSON.stringify(operation.responses) : null
+        const responseSchemas = isRecord(operation.responses) ? jsonOf(operation.responses) : null
 
         db.prepare(
           `
@@ -1190,7 +1318,7 @@ async function importOpenApi(
           projectId,
           folderId,
           name,
-          operation.description ?? null,
+          isText(operation.description) ? operation.description : null,
           'http',
           method.toUpperCase(),
           fullUrl,
@@ -1204,10 +1332,15 @@ async function importOpenApi(
         endpointCount++
       }
     }
-  }
+  })()
 
   if (endpointCount === 0) {
     warnings.push('No endpoints found in the document')
+  }
+  if (budget.trimmed > 0) {
+    warnings.push(
+      `${budget.trimmed} response or example value(s) were too large and were cut short.`,
+    )
   }
 
   return {
@@ -1329,32 +1462,16 @@ function toOpenApiTemplates(path: string): string {
 function openApiPathOf(base: string): string {
   if (!base) return '/'
   if (base.startsWith('/')) return base
+  // By hand: `new URL` percent-encodes `{id}` and rejects `{{host}}:{{port}}`.
+  // A host, variable or not, goes with its scheme and port; what is left is the path.
+  const noOrigin = base.replace(/^(?:[a-z][a-z0-9+.-]*|\{\{[^{}]+\}\}):\/\/[^/]*/i, '')
+  if (noOrigin !== base) return noOrigin || '/'
   // `{{baseUrl}}/users` — the form Ctrl+S-saved requests (issue #197) and
-  // requests built in the app store: the host is the variable, the rest is
-  // the OpenAPI path.
-  const templated = base.match(/^\{\{[^{}]+\}\}(\/.*)?/)
+  // requests built in the app store: the host is the variable.
+  const templated = base.match(/^\{\{[^{}]+\}\}(?::\d+)?(\/.*)?$/)
   if (templated) return templated[1] || '/'
-  // Full URL. Swap `{{envVar}}` and `{pathParam}` for plain-text placeholders
-  // so `new URL()` neither chokes on nor percent-encodes the braces, then
-  // restore them in the pathname (a host variable is dropped with the host).
-  const vars: string[] = []
-  const safe = base
-    .replace(/\{\{[^{}]+\}\}/g, (match) => {
-      vars.push(match)
-      return `__TNZ_VAR_${vars.length - 1}__`
-    })
-    .replace(/\{([^{}]+)\}/g, (match) => {
-      vars.push(match)
-      return `__TNZ_VAR_${vars.length - 1}__`
-    })
-  try {
-    const u = new URL(safe)
-    const tail = u.pathname || '/'
-    return tail.replace(/__TNZ_VAR_(\d+)__/g, (_m, i: string) => vars[Number(i)] ?? '')
-  } catch {
-    // Other templated URL or a bare path without a leading slash — as-is.
-    return base
-  }
+  // A bare path without a leading slash — as-is.
+  return base
 }
 
 export function buildOpenApiProjectExport(projectId: string): CollectionExportResult {
@@ -1388,13 +1505,16 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
     if (!ep.request_schema) continue
     try {
       const schema = JSON.parse(ep.request_schema) as { url?: string }
-      if (schema.url) {
+      // Only a host known here: `https://{{host}}/v1` has no server to name, and
+      // the path keys below still carry `/v1`.
+      const origin = schema.url?.match(/^([a-z][a-z0-9+.-]*:\/\/[^/?#]*)/i)?.[1]
+      if (origin && !/[{}]/.test(origin)) {
         try {
-          const u = new URL(schema.url.replace(/\{\{[^}]+\}\}/g, 'placeholder'))
+          const u = new URL(origin)
           baseServer = `${u.protocol}//${u.host}`
           break
         } catch {
-          // Templated url — skip, try next.
+          // Not a URL after all — try next.
         }
       }
     } catch {
@@ -1411,7 +1531,18 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
   const projectAuth = readProjectAuthConfig(projectId)
 
   for (const ep of endpoints) {
-    const { path, query: urlQuery } = openApiPathAndQuery(ep.path || '/')
+    let schema: UiRequestSchema = {}
+    if (ep.request_schema) {
+      try {
+        schema = JSON.parse(ep.request_schema) as UiRequestSchema
+      } catch {
+        // Skip schema-derived fields for this endpoint; basic operation
+        // (summary/responses/path parameters) still emits.
+      }
+    }
+    // The URL, not `ep.path`: an import kept only the path there, and older rows
+    // have `/pets/*` for `/pets/{{id}}`.
+    const { path, query: urlQuery } = openApiPathAndQuery(schema.url || ep.path || '/')
     if (!paths[path]) {
       paths[path] = {}
     }
@@ -1445,15 +1576,6 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
     // Tags from the round-trip metadata, falling back to the parent folder
     // name. This keeps imported docs round-trippable even after the user
     // moves an endpoint between folders.
-    let schema: UiRequestSchema = {}
-    if (ep.request_schema) {
-      try {
-        schema = JSON.parse(ep.request_schema) as UiRequestSchema
-      } catch {
-        // Skip schema-derived fields for this endpoint; basic operation
-        // (summary/responses/path parameters) still emits.
-      }
-    }
     const openApiMeta: OpenApiRoundtripMeta | undefined = schema.openApi
     const storedAuth = (resolveEffectiveAuth(
       schema.auth as AuthConfigLike | undefined,
@@ -1757,8 +1879,14 @@ function buildPostmanUrl(
   params: UiKeyValuePair[] = [],
   pathVariables: readonly PathVariableLike[] = [],
 ): PostmanUrl {
-  const PLACEHOLDER = '__VAR__'
-  const safe = (rawUrl || '').replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
+  // `new URL` rejects `{{…}}` and lowercases a host: a stand-in that survives both.
+  const vars: string[] = []
+  const safe = (rawUrl || '').replace(/\{\{[^}]+\}\}/g, (variable) => {
+    vars.push(variable)
+    return `tnzvar${vars.length - 1}tnz`
+  })
+  const restore = (part: string): string =>
+    part.replace(/tnzvar(\d+)tnz/g, (_, i: string) => vars[Number(i)] ?? '')
   let parsed: URL | null = null
   try {
     parsed = new URL(safe)
@@ -1769,13 +1897,17 @@ function buildPostmanUrl(
   const result: PostmanUrl = { raw: rawUrl }
   if (parsed) {
     result.protocol = parsed.protocol.replace(':', '')
-    const hostStr = parsed.hostname.replace(new RegExp(PLACEHOLDER, 'g'), '{{var}}')
-    result.host = hostStr.split('.')
+    result.host = parsed.hostname.split('.').map(restore)
     if (parsed.port) result.port = parsed.port
-    const pathnameRestored = parsed.pathname.replace(new RegExp(PLACEHOLDER, 'g'), '*')
-    result.path = pathnameRestored.split('/').filter((s) => s.length > 0)
+    result.path = parsed.pathname
+      .split('/')
+      .filter((s) => s.length > 0)
+      .map(restore)
   } else {
-    result.path = (rawUrl ?? '').split('/').filter((s) => s && !s.startsWith('{{'))
+    // `{{baseUrl}}/users/{{id}}`: the first part is the host, as Postman writes it.
+    const [first, ...rest] = (rawUrl ?? '').split(/[?#]/, 1)[0].split('/')
+    if (first.startsWith('{{')) result.host = [first]
+    result.path = (first.startsWith('{{') ? rest : [first, ...rest]).filter((s) => s)
   }
 
   if (params.length > 0) {
@@ -2126,6 +2258,29 @@ function savedRequestToExportRow(row: SavedRequestExportRow): ExportEndpointRow 
 }
 
 /**
+ * The same fold for an endpoint row, whose schema keeps the protocol editor's
+ * state in `metadata`: without it a GraphQL endpoint lost its query (an unknown
+ * body type to the writers) and its headers.
+ */
+function endpointToExportRow<T extends ExportEndpointRow>(row: T): T {
+  const schema = parseJsonColumn<(UiRequestSchema & { metadata?: unknown }) | null>(
+    row.request_schema,
+    null,
+  )
+  if (!schema) return row
+  const metadata =
+    schema.metadata && typeof schema.metadata === 'object'
+      ? (schema.metadata as Record<string, unknown>)
+      : null
+  const request_schema = JSON.stringify({
+    ...schema,
+    headers: protocolHeadersForExport(row.protocol ?? null, schema.headers ?? [], metadata),
+    body: graphqlBodyForExport(schema.body, metadata),
+  })
+  return { ...row, request_schema }
+}
+
+/**
  * Every request of a project in tree order: imported / created endpoints AND
  * the requests saved with Ctrl+S (`saved_requests`). Exports read only
  * `endpoints` before issue #197, so saved requests vanished from every
@@ -2145,7 +2300,7 @@ function loadProjectExportRows(
     .all(projectId) as SavedRequestExportRow[]
   return orderTreeRequests<ExportEndpointRow>(
     [
-      ...endpoints.map((e) => ({ ...e, owner_type: 'endpoint' as const })),
+      ...endpoints.map((e) => ({ ...endpointToExportRow(e), owner_type: 'endpoint' as const })),
       ...saved.map(savedRequestToExportRow),
     ],
     (r) => r.owner_type === 'saved_request',
@@ -3013,6 +3168,8 @@ interface HarEntry {
 
 // ─── HAR Import ─────────────────────────────────────────────
 
+type HarEntryRow = { name: string; value: string; disabled?: boolean }
+
 async function importHar(
   projectId: string,
   content: string,
@@ -3022,146 +3179,172 @@ async function importHar(
   let har: HarLog
 
   try {
-    har = JSON.parse(content) as HarLog
-  } catch {
-    return { success: false, error: 'Failed to parse HAR file as JSON' }
+    har = parseJsonFile(content, 'HAR file') as HarLog
+  } catch (e) {
+    return {
+      success: false,
+      error:
+        e instanceof InputDocumentError && !/not JSON/.test(e.message)
+          ? e.message
+          : 'Failed to parse HAR file as JSON',
+    }
   }
 
-  if (!har.log || har.log.version !== '1.2') {
+  if (!isRecord(har) || !isRecord(har.log) || har.log.version !== '1.2') {
     return { success: false, error: 'Not a valid HAR 1.2 file (expected log.version === "1.2")' }
   }
 
-  if (!har.log.entries || har.log.entries.length === 0) {
+  if (!Array.isArray(har.log.entries) || har.log.entries.length === 0) {
     return { success: false, error: 'HAR file contains no entries' }
   }
 
   const db = getDb()
   const now = Date.now()
   let endpointCount = 0
-
-  for (const entry of har.log.entries) {
-    const req = entry.request
-    if (!req || !req.url) {
-      warnings.push('Skipped entry with missing URL')
-      continue
+  /** `{name, value}` rows of an entry; one without a name is skipped, and said so. */
+  const namedRows = <T extends { name: string; value: string; disabled?: boolean }>(
+    rows: unknown,
+    what: string,
+    where: string,
+  ): T[] => {
+    if (rows === undefined || rows === null) return []
+    const list = Array.isArray(rows) ? rows : []
+    const good = list.filter((r): r is T => isRecord(r) && isText(r.name))
+    if (good.length < list.length || !Array.isArray(rows)) {
+      warnings.push(`${where}: skipped ${what} with no name.`)
     }
+    return good.map((r) => ({ ...r, value: defaultText(r.value) }))
+  }
 
-    const method = (req.method || 'GET').toUpperCase()
-    let path = ''
-    let urlForName = req.url
-
-    try {
-      const parsedUrl = new URL(req.url)
-      path = parsedUrl.pathname
-      urlForName = parsedUrl.pathname
-    } catch {
-      path = req.url
-    }
-
-    const endpointId = randomUUID()
-    const name = `${method} ${urlForName}`
-
-    const requestSchema: Record<string, unknown> = { method, url: req.url }
-
-    // Query string parameters → KeyValuePair[]
-    if (req.queryString && req.queryString.length > 0) {
-      requestSchema.params = req.queryString.map((q) => ({
-        id: genKvId(),
-        key: q.name,
-        value: q.value,
-        enabled: !q.disabled,
-      }))
-    }
-
-    // Headers → KeyValuePair[]
-    if (req.headers && req.headers.length > 0) {
-      const headerList: Array<{
-        id: string
-        key: string
-        value: string
-        enabled: boolean
-      }> = []
-      for (const h of req.headers) {
-        const lowerName = h.name.toLowerCase()
-        if (lowerName.startsWith(':') || lowerName === 'host' || lowerName === 'connection') {
-          continue
-        }
-        headerList.push({ id: genKvId(), key: h.name, value: h.value, enabled: !h.disabled })
+  db.transaction(() => {
+    for (const entry of har.log.entries) {
+      const req = isRecord(entry) ? entry.request : undefined
+      if (!isRecord(req) || !isText(req.url) || !req.url) {
+        warnings.push('Skipped entry with missing URL')
+        continue
       }
-      if (headerList.length > 0) requestSchema.headers = headerList
-    }
 
-    // Body → RequestBody (UI shape)
-    if (req.postData) {
-      const postData = req.postData
-      const mimeType = postData.mimeType || ''
-      if (postData.text && postData.text.length <= 1_000_000) {
-        let bodyType: 'json' | 'xml' | 'html' | 'text' | 'javascript' | 'urlencoded' = 'text'
-        if (mimeType.includes('json')) bodyType = 'json'
-        else if (mimeType.includes('xml')) bodyType = 'xml'
-        else if (mimeType.includes('html')) bodyType = 'html'
-        else if (mimeType.includes('javascript')) bodyType = 'javascript'
-        else if (mimeType.includes('x-www-form-urlencoded')) bodyType = 'urlencoded'
-        if (bodyType === 'urlencoded' && postData.params && postData.params.length > 0) {
+      const method = textOf(req.method, 'GET').toUpperCase() || 'GET'
+      let path = ''
+      let urlForName = req.url
+
+      try {
+        const parsedUrl = new URL(req.url)
+        path = parsedUrl.pathname
+        urlForName = parsedUrl.pathname
+      } catch {
+        path = req.url
+      }
+
+      const endpointId = randomUUID()
+      const name = `${method} ${urlForName}`
+
+      const requestSchema: Record<string, unknown> = { method, url: req.url }
+
+      // Query string parameters → KeyValuePair[]
+      const queryRows = namedRows<HarEntryRow>(req.queryString, 'a query parameter', name)
+      if (queryRows.length > 0) {
+        requestSchema.params = queryRows.map((q) => ({
+          id: genKvId(),
+          key: q.name,
+          value: q.value,
+          enabled: !q.disabled,
+        }))
+      }
+
+      // Headers → KeyValuePair[]
+      const headerRows = namedRows<HarEntryRow>(req.headers, 'a header', name)
+      if (headerRows.length > 0) {
+        const headerList: Array<{
+          id: string
+          key: string
+          value: string
+          enabled: boolean
+        }> = []
+        for (const h of headerRows) {
+          const lowerName = h.name.toLowerCase()
+          if (lowerName.startsWith(':') || lowerName === 'host' || lowerName === 'connection') {
+            continue
+          }
+          headerList.push({ id: genKvId(), key: h.name, value: h.value, enabled: !h.disabled })
+        }
+        if (headerList.length > 0) requestSchema.headers = headerList
+      }
+
+      // Body → RequestBody (UI shape)
+      if (isRecord(req.postData)) {
+        const postData = req.postData
+        const mimeType = textOf(postData.mimeType)
+        const params = namedRows<HarEntryRow>(postData.params, 'a form field', name)
+        const text = textOf(postData.text)
+        if (text && text.length <= 1_000_000) {
+          let bodyType: 'json' | 'xml' | 'html' | 'text' | 'javascript' | 'urlencoded' = 'text'
+          if (mimeType.includes('json')) bodyType = 'json'
+          else if (mimeType.includes('xml')) bodyType = 'xml'
+          else if (mimeType.includes('html')) bodyType = 'html'
+          else if (mimeType.includes('javascript')) bodyType = 'javascript'
+          else if (mimeType.includes('x-www-form-urlencoded')) bodyType = 'urlencoded'
+          if (bodyType === 'urlencoded' && params.length > 0) {
+            requestSchema.body = {
+              type: 'urlencoded',
+              urlEncoded: params.map((p) => ({
+                id: genKvId(),
+                key: p.name,
+                value: p.value,
+                enabled: !p.disabled,
+              })),
+            }
+          } else {
+            requestSchema.body = { type: bodyType, content: text }
+          }
+        } else if (params.length > 0) {
           requestSchema.body = {
             type: 'urlencoded',
-            urlEncoded: postData.params.map((p) => ({
+            urlEncoded: params.map((p) => ({
               id: genKvId(),
               key: p.name,
               value: p.value,
               enabled: !p.disabled,
             })),
           }
-        } else {
-          requestSchema.body = { type: bodyType, content: postData.text }
+        } else if (text.length > 1_000_000) {
+          warnings.push(`Skipped large body for ${method} ${path} (${text.length} bytes)`)
         }
-      } else if (postData.params && postData.params.length > 0) {
-        requestSchema.body = {
-          type: 'urlencoded',
-          urlEncoded: postData.params.map((p) => ({
-            id: genKvId(),
-            key: p.name,
-            value: p.value,
-            enabled: !p.disabled,
-          })),
+      }
+
+      // Map response status as metadata
+      const responseSchemas: Record<string, unknown> = {}
+      if (isRecord(entry.response)) {
+        const statusCode = String(entry.response.status)
+        responseSchemas[statusCode] = {
+          description: textOf(entry.response.statusText, 'Response') || 'Response',
         }
-      } else if (postData.text && postData.text.length > 1_000_000) {
-        warnings.push(`Skipped large body for ${method} ${path} (${postData.text.length} bytes)`)
       }
-    }
 
-    // Map response status as metadata
-    const responseSchemas: Record<string, unknown> = {}
-    if (entry.response) {
-      const statusCode = String(entry.response.status)
-      responseSchemas[statusCode] = {
-        description: entry.response.statusText || 'Response',
-      }
-    }
-
-    db.prepare(
-      `
+      db.prepare(
+        `
       INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-    ).run(
-      endpointId,
-      projectId,
-      folderId,
-      name,
-      null,
-      'http',
-      method,
-      path,
-      'developing',
-      Object.keys(requestSchema).length > 0 ? JSON.stringify(requestSchema) : null,
-      Object.keys(responseSchemas).length > 0 ? JSON.stringify(responseSchemas) : null,
-      endpointCount,
-      now,
-      now,
-    )
-    endpointCount++
-  }
+      ).run(
+        endpointId,
+        projectId,
+        folderId,
+        name,
+        null,
+        'http',
+        method,
+        path,
+        'developing',
+        Object.keys(requestSchema).length > 0 ? JSON.stringify(requestSchema) : null,
+        Object.keys(responseSchemas).length > 0 ? JSON.stringify(responseSchemas) : null,
+        endpointCount,
+        now,
+        now,
+      )
+      endpointCount++
+    }
+  })()
 
   if (endpointCount === 0) {
     warnings.push('No valid entries found in HAR file')
@@ -3319,10 +3502,7 @@ function isInsomniaV5Environment(doc: unknown): doc is {
   if (!doc || typeof doc !== 'object') return false
   const d = doc as Record<string, unknown>
   return (
-    typeof d.type === 'string' &&
-    /\benvironment\.insomnia\.rest\b/.test(d.type) &&
-    typeof d.data === 'object' &&
-    d.data !== null
+    typeof d.type === 'string' && /\benvironment\.insomnia\.rest\b/.test(d.type) && isRecord(d.data)
   )
 }
 
@@ -3336,18 +3516,17 @@ export async function importInsomnia(
 
   // Try JSON first; fall back to YAML for v5 exports.
   try {
-    doc = JSON.parse(content)
-  } catch {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const yaml = require('js-yaml') as { load: (s: string) => unknown }
-      doc = yaml.load(content)
-    } catch (e) {
-      return {
-        success: false,
-        error: 'Failed to parse Insomnia export (not valid JSON or YAML): ' + (e as Error).message,
-      }
+    doc = parseJsonOrYamlBounded(content, 'Insomnia export')
+  } catch (e) {
+    if (e instanceof InputDocumentError) return { success: false, error: e.message }
+    return {
+      success: false,
+      error: 'Failed to parse Insomnia export (not valid JSON or YAML): ' + (e as Error).message,
     }
+  }
+
+  if (!isRecord(doc)) {
+    return { success: false, error: 'This file is not an Insomnia export.' }
   }
 
   if (isInsomniaV5Environment(doc)) {
@@ -3358,9 +3537,11 @@ export async function importInsomnia(
     }
   }
   if (isInsomniaV5(doc)) {
-    return importInsomniaV5(projectId, doc, rootFolderId, warnings)
+    const v5 = doc
+    return getDb().transaction(() => importInsomniaV5(projectId, v5, rootFolderId, warnings))()
   }
-  return importInsomniaV4(projectId, doc as InsomniaExport, rootFolderId, warnings)
+  const v4 = doc as InsomniaExport
+  return getDb().transaction(() => importInsomniaV4(projectId, v4, rootFolderId, warnings))()
 }
 
 /**
@@ -3376,7 +3557,7 @@ function importInsomniaV5Environment(
 ): ImportResult & { environmentId?: string; environmentName?: string } {
   const db = getDb()
   const now = Date.now()
-  const envName = doc.name || 'Imported Insomnia Environment'
+  const envName = textOf(doc.name) || 'Imported Insomnia Environment'
 
   const projectRow = db.prepare('SELECT workspace_id FROM projects WHERE id = ?').get(projectId) as
     | { workspace_id: string }
@@ -3447,13 +3628,40 @@ export function insomniaUrlWithParams(
   return qs ? `${url}?${qs}` : url
 }
 
+/** Insomnia's `{name, value, disabled}` rows; a row with no name is skipped, and said so. */
+function insomniaRows(
+  rows: unknown,
+  what: string,
+  label: string,
+  warnings: string[],
+): Array<{ id: string; key: string; value: string; enabled: boolean }> {
+  if (rows === undefined || rows === null) return []
+  const list = Array.isArray(rows) ? rows : []
+  const good = list.filter(
+    (r): r is { name: string; value?: unknown; disabled?: boolean } =>
+      isRecord(r) && isText(r.name),
+  )
+  if (good.length < list.length || !Array.isArray(rows)) {
+    warnings.push(`"${label}": skipped ${what} with no name.`)
+  }
+  return good.map((r) => ({
+    id: genKvId(),
+    key: r.name,
+    value: defaultText(r.value),
+    enabled: !r.disabled,
+  }))
+}
+
+const scriptText = (script: unknown): string | undefined =>
+  isText(script) && script ? normalizeInsomniaScript(script) : undefined
+
 function importInsomniaV4(
   projectId: string,
   doc: InsomniaExport,
   rootFolderId: string | null,
   warnings: string[],
 ): ImportResult {
-  if (!doc.resources || doc.resources.length === 0) {
+  if (!Array.isArray(doc.resources) || doc.resources.length === 0) {
     return { success: false, error: 'Insomnia v4 export contains no resources' }
   }
 
@@ -3484,12 +3692,8 @@ function importInsomniaV4(
     if (resource._type === 'request_group' && resource._id) {
       const folderId = randomUUID()
       const folderAuthUi = mapInsomniaAuthToUi(resource.authentication)
-      const folderPre = resource.preRequestScript
-        ? normalizeInsomniaScript(resource.preRequestScript)
-        : null
-      const folderPost = resource.afterResponseScript
-        ? normalizeInsomniaScript(resource.afterResponseScript)
-        : null
+      const folderPre = scriptText(resource.preRequestScript) ?? null
+      const folderPost = scriptText(resource.afterResponseScript) ?? null
       db.prepare(
         `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -3497,7 +3701,7 @@ function importInsomniaV4(
         folderId,
         projectId,
         rootFolderId,
-        resource.name || 'Folder',
+        textOf(resource.name) || 'Folder',
         folderCount,
         folderAuthUi ? JSON.stringify(folderAuthUi) : null,
         folderPre,
@@ -3522,34 +3726,23 @@ function importInsomniaV4(
   for (const resource of resources) {
     if (!resource || typeof resource !== 'object') continue
     if (resource._type !== 'request') continue
-    const method = (resource.method ?? 'GET').toUpperCase()
-    const url = resource.url ?? ''
+    const method = textOf(resource.method, 'GET').toUpperCase()
+    const url = textOf(resource.url)
     const path = extractPath(url)
+    const label = textOf(resource.name) || `${method} ${path}`
     const parentFolderId = resource.parentId
       ? (folderMap.get(resource.parentId) ?? rootFolderId)
       : rootFolderId
 
-    const params = (resource.parameters ?? []).map((p) => ({
-      id: genKvId(),
-      key: p.name,
-      value: p.value,
-      enabled: !p.disabled,
-    }))
-    const headers = (resource.headers ?? []).map((h) => ({
-      id: genKvId(),
-      key: h.name,
-      value: h.value,
-      enabled: !h.disabled,
-    }))
-    const body = mapInsomniaBodyToUi(resource.body)
-    const auth = mapInsomniaAuthToUi(resource.authentication)
+    const params = insomniaRows(resource.parameters, 'a query parameter', label, warnings)
+    const headers = insomniaRows(resource.headers, 'a header', label, warnings)
+    const body = mapInsomniaBodyToUi(isRecord(resource.body) ? resource.body : undefined)
+    const auth = mapInsomniaAuthToUi(
+      isRecord(resource.authentication) ? resource.authentication : undefined,
+    )
 
-    const preScript = resource.preRequestScript
-      ? normalizeInsomniaScript(resource.preRequestScript)
-      : undefined
-    const postScript = resource.afterResponseScript
-      ? normalizeInsomniaScript(resource.afterResponseScript)
-      : undefined
+    const preScript = scriptText(resource.preRequestScript)
+    const postScript = scriptText(resource.afterResponseScript)
 
     const requestSchema: Record<string, unknown> = {
       url: insomniaUrlWithParams(url, params),
@@ -3570,8 +3763,8 @@ function importInsomniaV4(
       endpointId,
       projectId,
       parentFolderId,
-      resource.name || `${method} ${path}`,
-      resource.description ?? null,
+      label,
+      textOf(resource.description) || null,
       'http',
       method,
       path || '/',
@@ -3659,6 +3852,10 @@ function importInsomniaV5(
     inheritedAuth: InsomniaAuth | undefined,
   ): void {
     for (const item of sortByInsomniaSortKey(items)) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        warnings.push('Skipped an entry that is not a request or a folder.')
+        continue
+      }
       const isFolder = Array.isArray(item.children)
       if (isFolder) {
         const folderId = randomUUID()
@@ -3668,12 +3865,8 @@ function importInsomniaV5(
         // We KEEP the down-cascade into child requests below (childAuth) too, so
         // existing per-request 401 fixes don't regress — belt and suspenders.
         const folderAuthUi = mapInsomniaAuthToUi(item.authentication)
-        const folderPre = item.scripts?.preRequest
-          ? normalizeInsomniaScript(item.scripts.preRequest)
-          : null
-        const folderPost = item.scripts?.afterResponse
-          ? normalizeInsomniaScript(item.scripts.afterResponse)
-          : null
+        const folderPre = scriptText(item.scripts?.preRequest) ?? null
+        const folderPost = scriptText(item.scripts?.afterResponse) ?? null
         db.prepare(
           `INSERT INTO folders (id, project_id, parent_id, name, sort_order, auth, pre_script, post_script)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -3681,7 +3874,7 @@ function importInsomniaV5(
           folderId,
           projectId,
           parentFolderId,
-          item.name ?? 'Folder',
+          textOf(item.name, 'Folder'),
           folderCount,
           folderAuthUi ? JSON.stringify(folderAuthUi) : null,
           folderPre,
@@ -3696,23 +3889,14 @@ function importInsomniaV5(
         continue
       }
 
-      const method = (item.method ?? 'GET').toUpperCase()
-      const url = item.url ?? ''
+      const method = textOf(item.method, 'GET').toUpperCase()
+      const url = textOf(item.url)
       const path = extractPath(url)
+      const label = textOf(item.name) || `${method} ${path}`
 
-      const params = (item.parameters ?? []).map((p) => ({
-        id: genKvId(),
-        key: p.name,
-        value: p.value,
-        enabled: !p.disabled,
-      }))
-      const headers = (item.headers ?? []).map((h) => ({
-        id: genKvId(),
-        key: h.name,
-        value: h.value,
-        enabled: !h.disabled,
-      }))
-      const body = mapInsomniaBodyToUi(item.body)
+      const params = insomniaRows(item.parameters, 'a query parameter', label, warnings)
+      const headers = insomniaRows(item.headers, 'a header', label, warnings)
+      const body = mapInsomniaBodyToUi(isRecord(item.body) ? item.body : undefined)
       // A request with no `authentication` block inherits the nearest ancestor's
       // (folder → collection root). Insomnia exports the common "Bearer
       // {{accessToken}}" once at the collection root and leaves child requests
@@ -3732,12 +3916,8 @@ function importInsomniaV5(
       if (auth) requestSchema.auth = auth
 
       // Insomnia v5 scripts → pm-compatible scripts
-      const preScript = item.scripts?.preRequest
-        ? normalizeInsomniaScript(item.scripts.preRequest)
-        : undefined
-      const postScript = item.scripts?.afterResponse
-        ? normalizeInsomniaScript(item.scripts.afterResponse)
-        : undefined
+      const preScript = scriptText(item.scripts?.preRequest)
+      const postScript = scriptText(item.scripts?.afterResponse)
       if (preScript) requestSchema.preScript = preScript
       if (postScript) requestSchema.postScript = postScript
 
@@ -3749,8 +3929,8 @@ function importInsomniaV5(
         endpointId,
         projectId,
         parentFolderId,
-        item.name || `${method} ${path}`,
-        item.description ?? null,
+        label,
+        textOf(item.description) || null,
         'http',
         method,
         path || '/',
@@ -4391,8 +4571,10 @@ export async function importProto(payload: {
 
   let parsed: GrpcServiceDescription
   try {
+    assertProtoStaysLocal(payload.protoPath)
     parsed = await loadProto(payload.protoPath)
   } catch (e) {
+    if (e instanceof InputDocumentError) return { success: false, error: e.message }
     return { success: false, error: 'Failed to parse proto file: ' + (e as Error).message }
   }
 
@@ -4403,35 +4585,29 @@ export async function importProto(payload: {
   const rootFolderId = payload.folderId ?? null
   const serverAddress = payload.serverAddress ?? 'localhost:50051'
 
-  for (const service of parsed.services) {
-    // One folder per service so the tree mirrors `package.Service`.
-    const serviceFolderId = randomUUID()
-    db.prepare(
-      `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
-    ).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
-    folderCount++
+  db.transaction(() => {
+    for (const service of parsed.services) {
+      // One folder per service so the tree mirrors `package.Service`.
+      const serviceFolderId = randomUUID()
+      db.prepare(
+        `INSERT INTO folders (id, project_id, parent_id, name, sort_order) VALUES (?, ?, ?, ?, ?)`,
+      ).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
+      folderCount++
 
-    for (const method of service.methods) {
-      const endpointId = randomUUID()
+      for (const method of service.methods) {
+        const endpointId = randomUUID()
 
-      const streamingType =
-        method.requestStream && method.responseStream
-          ? 'bidi'
-          : method.requestStream
-            ? 'client-stream'
-            : method.responseStream
-              ? 'server-stream'
-              : 'unary'
+        const streamingType =
+          method.requestStream && method.responseStream
+            ? 'bidi'
+            : method.requestStream
+              ? 'client-stream'
+              : method.responseStream
+                ? 'server-stream'
+                : 'unary'
 
-      const skeletonContent = method.requestSkeleton ?? '{}'
-      const requestSchema = JSON.stringify({
-        method: 'POST',
-        url: serverAddress,
-        body: { type: 'json', content: skeletonContent },
-        headers: [],
-        params: [],
-        auth: { type: 'none' },
-        grpc: {
+        const skeletonContent = method.requestSkeleton ?? '{}'
+        const grpc = {
           protoPath: payload.protoPath,
           packageName: parsed.packageName,
           serviceName: service.fullName || service.name,
@@ -4442,31 +4618,42 @@ export async function importProto(payload: {
           responseStream: method.responseStream,
           streamingType,
           serverAddress,
-        },
-      })
+        }
+        const requestSchema = JSON.stringify({
+          method: 'POST',
+          url: serverAddress,
+          body: { type: 'json', content: skeletonContent },
+          headers: [],
+          params: [],
+          auth: { type: 'none' },
+          // `metadata` is what a tab opens with; `grpc` is what the Postman v3 export reads.
+          metadata: importedGrpcMetadata(grpc, skeletonContent),
+          grpc,
+        })
 
-      db.prepare(
-        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+        db.prepare(
+          `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        endpointId,
-        payload.projectId,
-        serviceFolderId,
-        method.name,
-        `gRPC ${streamingType} method: ${service.fullName || service.name}.${method.name} (${method.requestType} → ${method.responseType})`,
-        'grpc',
-        'POST',
-        `${service.fullName || service.name}/${method.name}`,
-        'developing',
-        requestSchema,
-        null,
-        endpointCount,
-        now,
-        now,
-      )
-      endpointCount++
+        ).run(
+          endpointId,
+          payload.projectId,
+          serviceFolderId,
+          method.name,
+          `gRPC ${streamingType} method: ${service.fullName || service.name}.${method.name} (${method.requestType} → ${method.responseType})`,
+          'grpc',
+          'POST',
+          `${service.fullName || service.name}/${method.name}`,
+          'developing',
+          requestSchema,
+          null,
+          endpointCount,
+          now,
+          now,
+        )
+        endpointCount++
+      }
     }
-  }
+  })()
 
   if (endpointCount === 0) {
     warnings.push('No gRPC methods found in proto file')
@@ -4484,6 +4671,15 @@ export async function importProto(payload: {
 // ─── WSDL Import (Postman-like flow) ───────────────────────
 // Kullanıcı WSDL URL verir → uygulama parse eder → klasör seçimi sorar → tüm operasyonları endpoint olarak oluşturur
 
+type ParsedWsdl = WsdlParseResult & { warnings?: string[] }
+
+/** The preview's parse and the import's: a file's references to elsewhere are not followed. */
+async function parseOwnWsdlContent(raw: string): Promise<ParsedWsdl> {
+  const { content, removed } = withoutExternalWsdlRefs(raw)
+  const parsed: ParsedWsdl = await parseWsdlFromContent(content)
+  return removed > 0 ? { ...parsed, warnings: [wsdlRefsWarning(removed)] } : parsed
+}
+
 async function importWsdl(payload: {
   projectId: string
   targetFolderId?: string | null
@@ -4500,13 +4696,13 @@ async function importWsdl(payload: {
   let folderCount = 0
 
   // Step 1: Get parsed WSDL (either pre-parsed or parse now)
-  let parsed: WsdlParseResult
+  let parsed: ParsedWsdl
   if (payload.parsedWsdl) {
     parsed = payload.parsedWsdl
   } else if (payload.wsdlUrl) {
     parsed = await parseWsdl(payload.wsdlUrl)
   } else if (payload.wsdlContent) {
-    parsed = await parseWsdlFromContent(payload.wsdlContent)
+    parsed = await parseOwnWsdlContent(payload.wsdlContent)
   } else {
     return { success: false, error: 'No WSDL URL or content provided' }
   }
@@ -4514,125 +4710,128 @@ async function importWsdl(payload: {
   if (!parsed.services || parsed.services.length === 0) {
     return { success: false, error: 'No services found in WSDL' }
   }
+  warnings.push(...(parsed.warnings ?? []))
 
-  // Step 2: Determine target folder
-  let rootFolderId: string | null = payload.targetFolderId ?? null
+  db.transaction(() => {
+    // Step 2: Determine target folder
+    let rootFolderId: string | null = payload.targetFolderId ?? null
 
-  if (payload.createNewFolder) {
-    rootFolderId = randomUUID()
-    const folderName = payload.newFolderName || parsed.services[0]?.name || 'WSDL Import'
-    db.prepare(
-      `
+    if (payload.createNewFolder) {
+      rootFolderId = randomUUID()
+      const folderName = payload.newFolderName || parsed.services[0]?.name || 'WSDL Import'
+      db.prepare(
+        `
       INSERT INTO folders (id, project_id, parent_id, name, sort_order)
       VALUES (?, ?, ?, ?, ?)
     `,
-    ).run(rootFolderId, payload.projectId, payload.targetFolderId ?? null, folderName, 0)
-    folderCount++
-  }
-
-  // Step 3: Create folder hierarchy and endpoints for each service/port/operation
-  // Matches Postman/Apidog: Service folder > Port folders > Operations
-  // When user created a new folder AND there's only 1 service, use the new folder as the
-  // service container (avoids double-nesting like Calculator > Calculator > CalculatorSoap)
-  const skipServiceFolder = payload.createNewFolder && parsed.services.length === 1
-
-  for (const service of parsed.services) {
-    let serviceFolderId: string
-
-    if (skipServiceFolder) {
-      // The user-created folder IS the service folder
-      serviceFolderId = rootFolderId!
-    } else {
-      // Create a service-level folder (matches Postman/Apidog behavior)
-      serviceFolderId = randomUUID()
-      db.prepare(
-        `
-        INSERT INTO folders (id, project_id, parent_id, name, sort_order)
-        VALUES (?, ?, ?, ?, ?)
-      `,
-      ).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
+      ).run(rootFolderId, payload.projectId, payload.targetFolderId ?? null, folderName, 0)
       folderCount++
     }
 
-    for (const port of service.ports) {
-      // Always create port-level folders under the service folder
-      const portFolderId = randomUUID()
-      db.prepare(
-        `
+    // Step 3: Create folder hierarchy and endpoints for each service/port/operation
+    // Matches Postman/Apidog: Service folder > Port folders > Operations
+    // When user created a new folder AND there's only 1 service, use the new folder as the
+    // service container (avoids double-nesting like Calculator > Calculator > CalculatorSoap)
+    const skipServiceFolder = payload.createNewFolder && parsed.services.length === 1
+
+    for (const service of parsed.services) {
+      let serviceFolderId: string
+
+      if (skipServiceFolder) {
+        // The user-created folder IS the service folder
+        serviceFolderId = rootFolderId!
+      } else {
+        // Create a service-level folder (matches Postman/Apidog behavior)
+        serviceFolderId = randomUUID()
+        db.prepare(
+          `
         INSERT INTO folders (id, project_id, parent_id, name, sort_order)
         VALUES (?, ?, ?, ?, ?)
       `,
-      ).run(portFolderId, payload.projectId, serviceFolderId, port.name, folderCount)
-      folderCount++
-      const parentForEndpoints = portFolderId
+        ).run(serviceFolderId, payload.projectId, rootFolderId, service.name, folderCount)
+        folderCount++
+      }
 
-      for (const operation of port.operations) {
-        const endpointId = randomUUID()
-        const endpointUrl = port.endpointUrl || parsed.endpointUrl
-
-        const requestSchema = JSON.stringify({
-          method: 'POST',
-          url: endpointUrl,
-          headers: [
-            {
-              id: randomUUID(),
-              key: 'Content-Type',
-              value:
-                parsed.soapVersion === 'soap12'
-                  ? 'application/soap+xml; charset=utf-8'
-                  : 'text/xml; charset=utf-8',
-              enabled: true,
-            },
-            { id: randomUUID(), key: 'SOAPAction', value: operation.soapAction, enabled: true },
-          ],
-          body: { type: 'xml', content: operation.exampleRequest },
-          soap: {
-            wsdlUrl: payload.wsdlUrl || '',
-            serviceName: service.name,
-            portName: port.name,
-            operationName: operation.name,
-            soapAction: operation.soapAction,
-            soapVersion: parsed.soapVersion,
-            endpointUrl,
-            inputSchema: operation.inputSchema,
-            outputSchema: operation.outputSchema,
-            exampleRequest: operation.exampleRequest,
-            exampleResponse: operation.exampleResponse,
-          },
-        })
-
-        const responseSchemas = JSON.stringify({
-          '200': {
-            description: 'SOAP Response',
-            content: { 'text/xml': { example: operation.exampleResponse } },
-          },
-        })
-
+      for (const port of service.ports) {
+        // Always create port-level folders under the service folder
+        const portFolderId = randomUUID()
         db.prepare(
           `
+        INSERT INTO folders (id, project_id, parent_id, name, sort_order)
+        VALUES (?, ?, ?, ?, ?)
+      `,
+        ).run(portFolderId, payload.projectId, serviceFolderId, port.name, folderCount)
+        folderCount++
+        const parentForEndpoints = portFolderId
+
+        for (const operation of port.operations) {
+          const endpointId = randomUUID()
+          const endpointUrl = port.endpointUrl || parsed.endpointUrl
+
+          const requestSchema = JSON.stringify({
+            method: 'POST',
+            url: endpointUrl,
+            headers: [
+              {
+                id: randomUUID(),
+                key: 'Content-Type',
+                value:
+                  parsed.soapVersion === 'soap12'
+                    ? 'application/soap+xml; charset=utf-8'
+                    : 'text/xml; charset=utf-8',
+                enabled: true,
+              },
+              { id: randomUUID(), key: 'SOAPAction', value: operation.soapAction, enabled: true },
+            ],
+            body: { type: 'xml', content: operation.exampleRequest },
+            soap: {
+              wsdlUrl: payload.wsdlUrl || '',
+              serviceName: service.name,
+              portName: port.name,
+              operationName: operation.name,
+              soapAction: operation.soapAction,
+              soapVersion: parsed.soapVersion,
+              endpointUrl,
+              inputSchema: operation.inputSchema,
+              outputSchema: operation.outputSchema,
+              exampleRequest: operation.exampleRequest,
+              exampleResponse: operation.exampleResponse,
+            },
+          })
+
+          const responseSchemas = JSON.stringify({
+            '200': {
+              description: 'SOAP Response',
+              content: { 'text/xml': { example: operation.exampleResponse } },
+            },
+          })
+
+          db.prepare(
+            `
           INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
-        ).run(
-          endpointId,
-          payload.projectId,
-          parentForEndpoints,
-          operation.name,
-          `SOAP operation: ${operation.name} (${service.name}/${port.name})`,
-          'soap',
-          'POST',
-          endpointUrl,
-          'developing',
-          requestSchema,
-          responseSchemas,
-          endpointCount,
-          now,
-          now,
-        )
-        endpointCount++
+          ).run(
+            endpointId,
+            payload.projectId,
+            parentForEndpoints,
+            operation.name,
+            `SOAP operation: ${operation.name} (${service.name}/${port.name})`,
+            'soap',
+            'POST',
+            endpointUrl,
+            'developing',
+            requestSchema,
+            responseSchemas,
+            endpointCount,
+            now,
+            now,
+          )
+          endpointCount++
+        }
       }
     }
-  }
+  })()
 
   if (endpointCount === 0) {
     warnings.push('No operations found in WSDL')
@@ -5030,65 +5229,115 @@ async function importSoapUi(payload: {
 
   const rootFolderId: string | null = payload.folderId ?? null
 
-  for (const iface of parsed.interfaces) {
-    // Each interface gets its own folder so SoapUI services stay grouped.
-    const interfaceFolderId = randomUUID()
-    db.prepare(
-      `INSERT INTO folders (id, project_id, parent_id, name, sort_order)
+  db.transaction(() => {
+    for (const iface of parsed.interfaces) {
+      // Each interface gets its own folder so SoapUI services stay grouped.
+      const interfaceFolderId = randomUUID()
+      db.prepare(
+        `INSERT INTO folders (id, project_id, parent_id, name, sort_order)
        VALUES (?, ?, ?, ?, ?)`,
-    ).run(interfaceFolderId, payload.projectId, rootFolderId, iface.name, folderCount)
-    folderCount++
+      ).run(interfaceFolderId, payload.projectId, rootFolderId, iface.name, folderCount)
+      folderCount++
 
-    for (const op of iface.operations) {
-      for (const call of op.calls) {
-        const endpointId = randomUUID()
-        const endpointName = `${op.name} - ${call.name}`
+      for (const op of iface.operations) {
+        for (const call of op.calls) {
+          const endpointId = randomUUID()
+          const endpointName = `${op.name} - ${call.name}`
 
-        if (!call.endpointUrl) {
-          warnings.push(`Endpoint URL missing for ${iface.name}/${op.name}/${call.name}`)
+          if (!call.endpointUrl) {
+            warnings.push(`Endpoint URL missing for ${iface.name}/${op.name}/${call.name}`)
+          }
+
+          const requestSchema = JSON.stringify({
+            method: 'POST',
+            url: call.endpointUrl,
+            headers: [
+              {
+                id: randomUUID(),
+                key: 'Content-Type',
+                value: 'text/xml; charset=utf-8',
+                enabled: true,
+              },
+              {
+                id: randomUUID(),
+                key: 'SOAPAction',
+                value: op.soapAction || call.soapAction || '',
+                enabled: true,
+              },
+            ],
+            body: { type: 'xml', content: call.rawXml },
+            soap: {
+              wsdlUrl: iface.definition,
+              serviceName: iface.name,
+              operationName: op.name,
+              soapAction: op.soapAction || call.soapAction || '',
+              endpointUrl: call.endpointUrl,
+              rawXml: call.rawXml,
+              contentType: 'text/xml; charset=utf-8',
+            },
+          })
+
+          db.prepare(
+            `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ).run(
+            endpointId,
+            payload.projectId,
+            interfaceFolderId,
+            endpointName,
+            `SoapUI call: ${iface.name}/${op.name}/${call.name}`,
+            'soap',
+            'POST',
+            call.endpointUrl,
+            'developing',
+            requestSchema,
+            null,
+            endpointCount,
+            now,
+            now,
+          )
+          endpointCount++
         }
+      }
 
+      // v1.3.1 B20: REST methods nested inside `con:resource` elements were
+      // silently dropped because we only walked `con:operation`. The parser now
+      // hands us a flat list of REST methods per interface; insert each as a
+      // plain HTTP endpoint with whatever headers/params SoapUI captured.
+      for (const restMethod of iface.restMethods) {
+        const endpointId = randomUUID()
+        if (!restMethod.url) {
+          warnings.push(`Endpoint URL missing for REST method ${iface.name}/${restMethod.name}`)
+        }
         const requestSchema = JSON.stringify({
-          method: 'POST',
-          url: call.endpointUrl,
-          headers: [
-            {
-              id: randomUUID(),
-              key: 'Content-Type',
-              value: 'text/xml; charset=utf-8',
-              enabled: true,
-            },
-            {
-              id: randomUUID(),
-              key: 'SOAPAction',
-              value: op.soapAction || call.soapAction || '',
-              enabled: true,
-            },
-          ],
-          body: { type: 'xml', content: call.rawXml },
-          soap: {
-            wsdlUrl: iface.definition,
-            serviceName: iface.name,
-            operationName: op.name,
-            soapAction: op.soapAction || call.soapAction || '',
-            endpointUrl: call.endpointUrl,
-            rawXml: call.rawXml,
-            contentType: 'text/xml; charset=utf-8',
-          },
+          method: restMethod.method,
+          url: restMethod.url,
+          params: restMethod.params.map((p) => ({
+            id: randomUUID(),
+            key: p.key,
+            value: p.value,
+            enabled: true,
+          })),
+          headers: restMethod.headers.map((h) => ({
+            id: randomUUID(),
+            key: h.key,
+            value: h.value,
+            enabled: true,
+          })),
+          body: restMethod.body ? { type: 'json', content: restMethod.body } : { type: 'none' },
         })
-
         db.prepare(
           `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         ).run(
           endpointId,
           payload.projectId,
           interfaceFolderId,
-          endpointName,
-          `SoapUI call: ${iface.name}/${op.name}/${call.name}`,
-          'soap',
-          'POST',
-          call.endpointUrl,
+          restMethod.name,
+          `SoapUI REST: ${iface.name}/${restMethod.name}`,
+          'http',
+          restMethod.method,
+          restMethod.url,
           'developing',
           requestSchema,
           null,
@@ -5099,55 +5348,7 @@ async function importSoapUi(payload: {
         endpointCount++
       }
     }
-
-    // v1.3.1 B20: REST methods nested inside `con:resource` elements were
-    // silently dropped because we only walked `con:operation`. The parser now
-    // hands us a flat list of REST methods per interface; insert each as a
-    // plain HTTP endpoint with whatever headers/params SoapUI captured.
-    for (const restMethod of iface.restMethods) {
-      const endpointId = randomUUID()
-      if (!restMethod.url) {
-        warnings.push(`Endpoint URL missing for REST method ${iface.name}/${restMethod.name}`)
-      }
-      const requestSchema = JSON.stringify({
-        method: restMethod.method,
-        url: restMethod.url,
-        params: restMethod.params.map((p) => ({
-          id: randomUUID(),
-          key: p.key,
-          value: p.value,
-          enabled: true,
-        })),
-        headers: restMethod.headers.map((h) => ({
-          id: randomUUID(),
-          key: h.key,
-          value: h.value,
-          enabled: true,
-        })),
-        body: restMethod.body ? { type: 'json', content: restMethod.body } : { type: 'none' },
-      })
-      db.prepare(
-        `INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        endpointId,
-        payload.projectId,
-        interfaceFolderId,
-        restMethod.name,
-        `SoapUI REST: ${iface.name}/${restMethod.name}`,
-        'http',
-        restMethod.method,
-        restMethod.url,
-        'developing',
-        requestSchema,
-        null,
-        endpointCount,
-        now,
-        now,
-      )
-      endpointCount++
-    }
-  }
+  })()
 
   if (endpointCount === 0) {
     warnings.push('No <con:call> or REST <con:method> entries found in any interface')
@@ -5210,6 +5411,8 @@ export interface ParsedRamlSpec {
   baseUri: string | null
   resolvedBaseUri: string | null
   endpoints: ParsedRamlEndpoint[]
+  /** Parts of the document in a form that could not be read. */
+  skipped: string[]
 }
 
 const RAML_HTTP_METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head', 'options'] as const
@@ -5291,6 +5494,7 @@ function walkRamlResource(
   resource: Record<string, unknown>,
   parentSegments: string[],
   acc: ParsedRamlEndpoint[],
+  skipped: string[],
 ): void {
   const displayName = asRamlString(resource.displayName)
   const newParents = [...parentSegments, displayName ?? resourcePath]
@@ -5298,6 +5502,15 @@ function walkRamlResource(
   for (const method of RAML_HTTP_METHODS) {
     if (method in resource) {
       const parsed = parseRamlMethod(method, resource[method])
+      const declared = resource[method]
+      if (isPlainObject(declared)) {
+        for (const section of ['queryParameters', 'headers', 'body']) {
+          const value = declared[section]
+          if (value !== undefined && value !== null && !isPlainObject(value)) {
+            skipped.push(`${method.toUpperCase()} ${resourcePath}: ${section}`)
+          }
+        }
+      }
       acc.push({
         fullPath: resourcePath,
         resourceDisplayName: displayName,
@@ -5310,7 +5523,7 @@ function walkRamlResource(
   // Recurse into nested resources (any key that starts with '/')
   for (const [key, value] of Object.entries(resource)) {
     if (key.startsWith('/') && isPlainObject(value)) {
-      walkRamlResource(resourcePath + key, value, newParents, acc)
+      walkRamlResource(resourcePath + key, value, newParents, acc, skipped)
     }
   }
 }
@@ -5356,8 +5569,9 @@ export function parseRamlSpec(content: string): ParsedRamlSpec {
 
   let parsed: unknown
   try {
-    parsed = yamlMod.load(stripped, { schema: ramlSchema })
+    parsed = parseYamlBounded(stripped, 'RAML document', ramlSchema)
   } catch (e) {
+    if (e instanceof InputDocumentError) throw e
     throw new Error('Failed to parse RAML as YAML: ' + (e as Error).message)
   }
 
@@ -5371,13 +5585,15 @@ export function parseRamlSpec(content: string): ParsedRamlSpec {
   const resolvedBaseUri = resolveRamlBaseUri(baseUri, version)
 
   const endpoints: ParsedRamlEndpoint[] = []
+  const skipped: string[] = []
   for (const [key, value] of Object.entries(parsed)) {
-    if (key.startsWith('/') && isPlainObject(value)) {
-      walkRamlResource(key, value, [], endpoints)
-    }
+    if (!key.startsWith('/')) continue
+    if (isPlainObject(value)) walkRamlResource(key, value, [], endpoints, skipped)
+    else if (value !== null) skipped.push(key)
   }
+  if (parsed.baseUri !== undefined && parsed.baseUri !== null && !baseUri) skipped.push('baseUri')
 
-  return { title, version, baseUri, resolvedBaseUri, endpoints }
+  return { title, version, baseUri, resolvedBaseUri, endpoints, skipped }
 }
 
 async function importRaml(
@@ -5406,80 +5622,83 @@ async function importRaml(
   // Group endpoints by their top-level resource segment so we get a tidy folder
   // tree (one folder per top-level resource).
   const topLevelFolderMap: Record<string, string> = {}
+  for (const key of spec.skipped) warnings.push(`Skipped "${key}": it could not be read.`)
 
-  for (const ep of spec.endpoints) {
-    const topSegment = '/' + (ep.fullPath.split('/').filter(Boolean)[0] ?? '')
+  db.transaction(() => {
+    for (const ep of spec.endpoints) {
+      const topSegment = '/' + (ep.fullPath.split('/').filter(Boolean)[0] ?? '')
 
-    let folderId: string | null = parentFolderId
-    if (topSegment !== '/') {
-      if (!topLevelFolderMap[topSegment]) {
-        const newFolderId = randomUUID()
-        db.prepare(
-          `
+      let folderId: string | null = parentFolderId
+      if (topSegment !== '/') {
+        if (!topLevelFolderMap[topSegment]) {
+          const newFolderId = randomUUID()
+          db.prepare(
+            `
           INSERT INTO folders (id, project_id, parent_id, name, sort_order)
           VALUES (?, ?, ?, ?, ?)
         `,
-        ).run(newFolderId, projectId, parentFolderId, topSegment, folderCount)
-        topLevelFolderMap[topSegment] = newFolderId
-        folderCount++
+          ).run(newFolderId, projectId, parentFolderId, topSegment, folderCount)
+          topLevelFolderMap[topSegment] = newFolderId
+          folderCount++
+        }
+        folderId = topLevelFolderMap[topSegment]
       }
-      folderId = topLevelFolderMap[topSegment]
-    }
 
-    const baseUrl = spec.resolvedBaseUri ?? ''
-    const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${ep.fullPath}` : ep.fullPath
+      const baseUrl = spec.resolvedBaseUri ?? ''
+      const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${ep.fullPath}` : ep.fullPath
 
-    const params = ep.method.queryParameters.map((p) => ({
-      id: randomUUID(),
-      key: p.name,
-      value: p.defaultValue,
-      description: p.description ?? '',
-      enabled: true,
-    }))
-    const headers = ep.method.headers.map((h) => ({
-      id: randomUUID(),
-      key: h.name,
-      value: h.defaultValue,
-      description: h.description ?? '',
-      enabled: true,
-    }))
+      const params = ep.method.queryParameters.map((p) => ({
+        id: randomUUID(),
+        key: p.name,
+        value: p.defaultValue,
+        description: p.description ?? '',
+        enabled: true,
+      }))
+      const headers = ep.method.headers.map((h) => ({
+        id: randomUUID(),
+        key: h.name,
+        value: h.defaultValue,
+        description: h.description ?? '',
+        enabled: true,
+      }))
 
-    const requestSchema = {
-      method: ep.method.method,
-      url: fullUrl,
-      params,
-      headers,
-      body: ep.method.body,
-      auth: { type: 'none' },
-    }
+      const requestSchema = {
+        method: ep.method.method,
+        url: fullUrl,
+        params,
+        headers,
+        body: ep.method.body,
+        auth: { type: 'none' },
+      }
 
-    const name =
-      ep.method.displayName ?? ep.resourceDisplayName ?? `${ep.method.method} ${ep.fullPath}`
+      const name =
+        ep.method.displayName ?? ep.resourceDisplayName ?? `${ep.method.method} ${ep.fullPath}`
 
-    const endpointId = randomUUID()
-    db.prepare(
-      `
+      const endpointId = randomUUID()
+      db.prepare(
+        `
       INSERT INTO endpoints (id, project_id, folder_id, name, description, protocol, method, path, status, request_schema, response_schemas, sort_order, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
-    ).run(
-      endpointId,
-      projectId,
-      folderId,
-      name,
-      ep.method.description ?? null,
-      'http',
-      ep.method.method,
-      fullUrl,
-      'developing',
-      JSON.stringify(requestSchema),
-      null,
-      endpointCount,
-      now,
-      now,
-    )
-    endpointCount++
-  }
+      ).run(
+        endpointId,
+        projectId,
+        folderId,
+        name,
+        ep.method.description ?? null,
+        'http',
+        ep.method.method,
+        fullUrl,
+        'developing',
+        JSON.stringify(requestSchema),
+        null,
+        endpointCount,
+        now,
+        now,
+      )
+      endpointCount++
+    }
+  })()
 
   if (endpointCount === 0) {
     warnings.push('No endpoints found in the RAML document')

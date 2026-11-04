@@ -261,7 +261,9 @@ export default function EndpointSaveModal() {
       // orphaning the original DB row and turning the next Save into a
       // duplicate-creating "create" branch.
       if (savedId) {
-        const tabId = useTabsStore.getState().activeTabId
+        // The tab Save was pressed on — the user can move to another one during
+        // the awaits above, and that one must not get this row.
+        const tabId = activeTab?.id
         if (tabId) {
           // An unsaved AI tab's conversations follow it to the new row (issue
           // #199). A tab already backed by a row keeps its conversations there

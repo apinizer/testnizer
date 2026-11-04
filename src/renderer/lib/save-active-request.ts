@@ -18,7 +18,7 @@ import { useWebSocketStore } from '../stores/websocket.store'
 import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
 import { useMqttStore } from '../stores/mqtt.store'
-import { useGrpcStore } from '../stores/grpc.store'
+import { useGrpcStore, type GrpcService } from '../stores/grpc.store'
 import { useGraphQLStore } from '../stores/graphql.store'
 import { restoreMcpCall, useMcpStore, type McpTransport } from '../stores/mcp.store'
 import { restoreAiConfig, savedAiConfigOf, useAiChatStore } from '../stores/ai-chat.store'
@@ -214,6 +214,7 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           protoPath: grpc.protoPath,
           selectedService: grpc.selectedService,
           selectedMethod: grpc.selectedMethod,
+          services: grpc.services,
           requestBody: grpc.requestBody,
           metadata: grpc.metadata,
         },
@@ -628,11 +629,20 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     // Metadata was snapshotted but never restored, so reopened gRPC tabs lost
     // their auth / tracing metadata (found with issue #182).
     if (Array.isArray(g.metadata)) useGrpcStore.setState({ metadata: g.metadata as KeyValuePair[] })
-    // `services` and `selectedService/Method` aren't restored here —
-    // services need to be re-parsed by reloading the proto, otherwise
-    // we'd be writing dropdown selections that the editor can't render.
-    // The user clicks "Load Proto" once and selection state comes back
-    // via per-tab cache. Tracked as a known limitation.
+    // The selection needs its `services`: the dropdowns list them and Send reads
+    // the streaming type from them. A row saved before `services` was written
+    // comes back through "Load Proto" and the per-tab cache.
+    if (typeof g.protoPath === 'string' && g.protoPath) {
+      useGrpcStore.setState({ protoPath: g.protoPath })
+    }
+    if (Array.isArray(g.services) && g.services.length > 0) {
+      useGrpcStore.setState({
+        services: g.services as GrpcService[],
+        protoLoaded: true,
+        selectedService: typeof g.selectedService === 'string' ? g.selectedService : null,
+        selectedMethod: typeof g.selectedMethod === 'string' ? g.selectedMethod : null,
+      })
+    }
     return
   }
 

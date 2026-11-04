@@ -3,13 +3,17 @@
  *
  * YAML is loaded with js-yaml's CORE schema: plain JSON-like types only — no
  * custom tags, no JS types, unquoted dates stay strings and `<<` merge keys
- * are not applied. js-yaml resolves an alias to the SAME object instead of a
- * copy, so a document with nested aliases ("billion laughs") is small in
- * memory but explodes for anything that walks it (`JSON.stringify`, the
- * importer). Every parsed document — YAML or JSON — therefore goes through
- * `assertBounded`: a walk that counts every visit (an alias seen twice counts
- * twice), caps the nesting depth and refuses a recursive alias.
+ * are not applied. Every parsed document — YAML or JSON — goes through
+ * `assertBounded` (`src/shared/bounded-document.ts`, the alias-bomb check every
+ * importer shares).
  */
+import {
+  assertBounded,
+  DOCUMENT_LIMITS,
+  InputDocumentError,
+} from '../../../../shared/bounded-document'
+
+export { assertBounded }
 
 /** Limits for one import (a whole folder or one file). */
 export const V3_LIMITS = {
@@ -24,9 +28,9 @@ export const V3_LIMITS = {
   /** Folder nesting below the picked folder. */
   maxDirDepth: 32,
   /** Nesting of one parsed document. */
-  maxNodeDepth: 64,
+  maxNodeDepth: DOCUMENT_LIMITS.maxNodeDepth,
   /** Values visited in one document (aliases counted per use). */
-  maxNodesPerDocument: 200_000,
+  maxNodesPerDocument: DOCUMENT_LIMITS.maxNodesPerDocument,
   // ── A .zip import (`../zip.ts`): checked while the archive is read in
   // memory, before any entry reaches a reader. `maxEntries` above caps the
   // entry count of an archive too; the v3 caps above still apply to a zipped
@@ -43,42 +47,8 @@ export const V3_LIMITS = {
   ratioCheckFromBytes: 1024 * 1024,
 } as const
 
-export class V3InputError extends Error {}
-
-const isRecord = (v: unknown): v is Record<string, unknown> =>
-  !!v && typeof v === 'object' && !Array.isArray(v)
-
-/**
- * Throw a `V3InputError` when `doc` is deeper than `maxNodeDepth`, has more
- * than `maxNodesPerDocument` values (alias uses counted) or contains a
- * recursive alias. `label` names the file in the message.
- */
-export function assertBounded(doc: unknown, label: string): void {
-  let visits = 0
-  const ancestors = new Set<object>()
-  const walk = (v: unknown, depth: number): void => {
-    visits++
-    if (visits > V3_LIMITS.maxNodesPerDocument) {
-      throw new V3InputError(
-        `${label}: the document is too large (more than ${V3_LIMITS.maxNodesPerDocument} values, YAML aliases counted per use).`,
-      )
-    }
-    if (!v || typeof v !== 'object') return
-    if (depth > V3_LIMITS.maxNodeDepth) {
-      throw new V3InputError(
-        `${label}: the document is nested deeper than ${V3_LIMITS.maxNodeDepth} levels.`,
-      )
-    }
-    if (ancestors.has(v)) {
-      throw new V3InputError(`${label}: the document contains a recursive YAML alias.`)
-    }
-    ancestors.add(v)
-    if (Array.isArray(v)) for (const x of v) walk(x, depth + 1)
-    else if (isRecord(v)) for (const x of Object.values(v)) walk(x, depth + 1)
-    ancestors.delete(v)
-  }
-  walk(doc, 0)
-}
+export const V3InputError = InputDocumentError
+export type V3InputError = InputDocumentError
 
 interface JsYaml {
   load: (s: string, o?: { schema?: unknown; filename?: string; json?: boolean }) => unknown

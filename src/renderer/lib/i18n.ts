@@ -313,6 +313,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'scheduledTasks.lastRun': 'Last run: {date}',
     'scheduledTasks.environmentDeleted': 'Deleted environment',
     'scheduledTasks.runNow': 'Run now',
+    'scheduledTasks.running': 'Running…',
     'scheduledTasks.pause': 'Pause',
     'scheduledTasks.resume': 'Resume',
     'scheduledTasks.delete': 'Delete',
@@ -1770,6 +1771,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerConfig.dataRowNotObject': 'Row {index} is not an object',
     'runnerConfig.csvTooShort': 'CSV must have a header row and at least one data row',
     'runnerConfig.dataUnsupported': 'Unsupported file format — use .json or .csv',
+    'runnerConfig.dataEmpty': 'The JSON array has no rows, so there is nothing to iterate over',
+    'runnerConfig.dataNotText': 'This is not a text file — save it as UTF-8 CSV or JSON',
+    'runnerConfig.dataTooLarge': 'The file is larger than the {max} MB limit',
+    'runnerConfig.dataTooManyRows': 'The file has more than the {max} row limit',
+    'runnerConfig.csvInvalid': 'The CSV file could not be read: {detail}',
+    'runnerConfig.jsonInvalid': 'The JSON file could not be read: {detail}',
     'runnerConfig.advancedSettings': 'Advanced Settings',
     'runnerConfig.persistResponses': 'Persist responses for a session',
     'runnerConfig.stopOnError': 'Stop run if an error occurs',
@@ -2919,6 +2926,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.fromFolderNoRequests': 'None of these requests has a URL a mock can bind.',
     'mock.fromFolderSkipped': '"{name}" was skipped: it has no URL a mock can bind.',
     'mock.fromFolderUnreadable': 'A request could not be read and was skipped.',
+    'mock.fromFolderOtherProtocol': '"{name}" was skipped: a {protocol} request has no HTTP mock.',
+    'mock.fromFolderDuplicate':
+      '"{name}" was skipped: "{first}" already answers {slot}, and only one can.',
+    'mock.fromFolderLiteralVariables':
+      'Examples of "{name}" hold {{…}} text that is sent as written, not read from project variables. To use a variable, remove the backslash in the mock editor.',
     'mock.fromFolderEndpointFailed': '"{name}" could not be added: {error}',
     'mock.fromFolderResponseFailed': 'A response of "{name}" could not be added: {error}',
     'mock.fromFolderBinaryExample':
@@ -3917,6 +3929,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.importUnreadable': 'This file could not be read.',
     'mockNew.importTooLarge': 'This file is larger than 50 MB.',
     'mockNew.importNotRecognised': 'This is not an OpenAPI spec or a Postman collection.',
+    'mockNew.importTooComplex':
+      'This file is too large or too deeply nested to read. It may repeat itself through YAML aliases.',
+    'mockNew.importNoVersion':
+      'This file has no openapi or swagger version. Testnizer reads OpenAPI 3.x and Swagger 2.0.',
+    'mockNew.importUnsupportedVersion':
+      'This OpenAPI version is not supported. Testnizer reads OpenAPI 3.x and Swagger 2.0.',
     'mockNew.importUnsupportedPostman':
       'This Postman file is not a collection. A single file of a Postman v3 folder is imported from the APIs panel, with its folder.',
     'mockNew.importEmpty': 'This file has no requests to mock.',
@@ -4841,6 +4859,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'scheduledTasks.lastRun': 'Son çalıştırma: {date}',
     'scheduledTasks.environmentDeleted': 'Silinmiş ortam',
     'scheduledTasks.runNow': 'Şimdi çalıştır',
+    'scheduledTasks.running': 'Çalışıyor…',
     'scheduledTasks.pause': 'Duraklat',
     'scheduledTasks.resume': 'Sürdür',
     'scheduledTasks.delete': 'Sil',
@@ -6300,6 +6319,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerConfig.dataRowNotObject': '{index}. satır bir nesne değil',
     'runnerConfig.csvTooShort': 'CSV bir başlık satırı ve en az bir veri satırı içermeli',
     'runnerConfig.dataUnsupported': 'Desteklenmeyen dosya biçimi — .json veya .csv kullanın',
+    'runnerConfig.dataEmpty': 'JSON dizisinde satır yok, yinelenecek veri bulunmuyor',
+    'runnerConfig.dataNotText': 'Bu bir metin dosyası değil — UTF-8 CSV veya JSON olarak kaydedin',
+    'runnerConfig.dataTooLarge': 'Dosya {max} MB sınırından büyük',
+    'runnerConfig.dataTooManyRows': 'Dosyada {max} satır sınırından fazla satır var',
+    'runnerConfig.csvInvalid': 'CSV dosyası okunamadı: {detail}',
+    'runnerConfig.jsonInvalid': 'JSON dosyası okunamadı: {detail}',
     'runnerConfig.advancedSettings': 'Gelişmiş Ayarlar',
     'runnerConfig.persistResponses': 'Yanıtları oturum boyunca sakla',
     'runnerConfig.stopOnError': 'Hata olursa çalıştırmayı durdur',
@@ -7455,6 +7480,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.fromFolderNoRequests': "Bu isteklerin hiçbirinde mock'un bağlanabileceği bir URL yok.",
     'mock.fromFolderSkipped': '"{name}" atlandı: mock\'un bağlanabileceği bir URL\'si yok.',
     'mock.fromFolderUnreadable': 'Bir istek okunamadı ve atlandı.',
+    'mock.fromFolderOtherProtocol': '"{name}" atlandı: {protocol} isteğinin HTTP mock\'u olmaz.',
+    'mock.fromFolderDuplicate':
+      '"{name}" atlandı: {slot} isteğini zaten "{first}" yanıtlıyor ve yalnız biri yanıtlayabilir.',
+    'mock.fromFolderLiteralVariables':
+      '"{name}" örneklerindeki {{…}} metni proje değişkenlerinden okunmaz, yazıldığı gibi gönderilir. Değişken kullanmak için mock düzenleyicisinde ters eğik çizgiyi silin.',
     'mock.fromFolderEndpointFailed': '"{name}" eklenemedi: {error}',
     'mock.fromFolderResponseFailed': '"{name}" için bir yanıt eklenemedi: {error}',
     'mock.fromFolderBinaryExample':
@@ -8456,6 +8486,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.importUnreadable': 'Bu dosya okunamadı.',
     'mockNew.importTooLarge': "Bu dosya 50 MB'tan büyük.",
     'mockNew.importNotRecognised': 'Bu dosya bir OpenAPI belgesi ya da Postman koleksiyonu değil.',
+    'mockNew.importTooComplex':
+      'Bu dosya okunamayacak kadar büyük ya da iç içe. YAML takma adlarıyla kendini tekrar ediyor olabilir.',
+    'mockNew.importNoVersion':
+      'Bu dosyada openapi ya da swagger sürümü yok. Testnizer OpenAPI 3.x ve Swagger 2.0 okur.',
+    'mockNew.importUnsupportedVersion':
+      'Bu OpenAPI sürümü desteklenmiyor. Testnizer OpenAPI 3.x ve Swagger 2.0 okur.',
     'mockNew.importUnsupportedPostman':
       'Bu Postman dosyası bir koleksiyon değil. Postman v3 klasöründeki tek bir dosya, klasörüyle birlikte APIs panelinden içe aktarılır.',
     'mockNew.importEmpty': "Bu dosyada mock'lanacak istek yok.",

@@ -42,6 +42,7 @@ vi.mock('../../src/main/protocols/grpc.engine', () => ({
 
 import { initDatabase, getDb } from '../../src/main/db/database'
 import { createSavedRequest } from '../../src/main/db/endpoint.repo'
+import { importPostman } from '../../src/main/import/postman'
 import {
   registerImportExportHandlers,
   buildPostmanSuiteExport,
@@ -410,11 +411,22 @@ describe('issue #197 — OpenAPI export turns {{var}} path segments into path pa
     expect(params.map((p) => p.name)).not.toContain('baseUrl')
   })
 
-  it('endpoint rows get the same treatment — with a full URL and without a request_schema', async () => {
-    insertEndpoint('List members', 'GET', '{{baseUrl}}/orgs/{{orgId}}/members')
-    insertEndpoint('Get item', 'GET', 'https://api.example.com/items/{{itemId}}', {
-      url: 'https://api.example.com/items/{{itemId}}',
-    })
+  it('endpoint rows get the same treatment — from what a Postman import writes', async () => {
+    await importPostman(
+      projectId,
+      JSON.stringify({
+        info: {
+          name: 'Members',
+          schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+        },
+        item: [
+          { name: 'List members', request: { method: 'GET', url: '{{baseUrl}}/orgs/{{orgId}}/members' } },
+          { name: 'Get item', request: { method: 'GET', url: 'https://api.example.com/items/{{itemId}}' } },
+        ],
+      }),
+      folderId,
+      { apisTree: true },
+    )
     const res = await exportVia('export:openApi', projectId)
     const spec = JSON.parse(res.data ?? '{}') as OpenApiSpec
 

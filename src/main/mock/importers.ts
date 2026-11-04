@@ -16,18 +16,30 @@
  * empty body when none are provided).
  */
 
-import OpenAPIParser from '@readme/openapi-parser'
-import yaml from 'js-yaml'
+import { InputDocumentError } from '../../shared/bounded-document'
+import { importedMockText } from '../../shared/mock-imported-text'
 import { requestUrlToMockPath, templatedPathToMockPath } from '../../shared/mock-path'
+import {
+  openApiProblem,
+  openApiProblemMessage,
+  openApiServersProblem,
+} from '../../shared/openapi-detect'
+import { getDb } from '../db/database'
 import {
   createMockEndpoint as repoCreateEndpoint,
   createMockResponse as repoCreateResponse,
   getMockServer,
 } from '../db/mock.repo'
+import {
+  boundedJson,
+  dereferenceLocalRefs,
+  newJsonBudget,
+  type JsonBudget,
+} from '../import/openapi-refs'
 import { detectPostman } from '../import/postman/detect'
 import { convertV1Collection } from '../import/postman/v1'
-import { assertBounded } from '../import/postman/v3/safe-parse'
 import { convertV3Collection } from '../import/postman/v3/to-v2'
+import { importErrorText, parseJsonOrYamlBounded } from '../import/safe-input'
 
 export interface ImportResult {
   ok: boolean
@@ -72,151 +84,176 @@ type OpenApiDoc = {
 
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
 
+/**
+ * Response text from the file, unable to read project variables
+ * (`src/shared/mock-imported-text.ts`). `report` names what changed, once.
+ */
+function importedTextGuard(): {
+  text: (value: string) => string
+  report: (warnings: string[]) => void
+} {
+  let escaped = 0
+  return {
+    text(value) {
+      const out = importedMockText(value)
+      if (out !== value) escaped++
+      return out
+    },
+    report(warnings) {
+      if (escaped === 0) return
+      warnings.push(
+        `${escaped} imported response value(s) hold {{…}} text that is sent as written, not read from project variables. To use a variable, remove the backslash in the mock editor.`,
+      )
+    },
+  }
+}
+
+/** A file claiming more than this is refused: aliases can multiply a small file's requests. */
+const MAX_ENDPOINTS = 20_000
+
+function endpointSlot(created: number): void {
+  if (created >= MAX_ENDPOINTS) {
+    throw new InputDocumentError(`This file holds more than ${MAX_ENDPOINTS} requests.`)
+  }
+}
+
 export async function importOpenApi(serverId: string, sourceText: string): Promise<ImportResult> {
   const warnings: string[] = []
+  const failed = (error: string): ImportResult => ({
+    ok: false,
+    endpointsCreated: 0,
+    responsesCreated: 0,
+    warnings,
+    error,
+  })
   let parsed: unknown
   try {
-    // Try JSON first, then YAML.
-    try {
-      parsed = JSON.parse(sourceText)
-    } catch {
-      parsed = yaml.load(sourceText)
-    }
+    parsed = parseJsonOrYamlBounded(sourceText, 'OpenAPI spec')
   } catch (e) {
-    return {
-      ok: false,
-      endpointsCreated: 0,
-      responsesCreated: 0,
-      warnings,
-      error: 'Could not parse spec: ' + (e instanceof Error ? e.message : String(e)),
-    }
+    return failed('Could not parse spec: ' + (e instanceof Error ? e.message : String(e)))
   }
 
-  let doc: OpenApiDoc
-  try {
-    // Dereference $refs so nested schemas/examples are inlined.
-    // Internal refs only. A spec is untrusted input and main has the disk and the
-    // network: left to its defaults the parser reads `$ref: /any/file` and fetches
-    // `$ref: http://…` the moment the file is imported.
-    doc = (await OpenAPIParser.dereference(
-      parsed as never,
-      {
-        resolve: { external: false },
-      } as never,
-    )) as unknown as OpenApiDoc
-  } catch (e) {
-    warnings.push(
-      'Could not fully dereference spec; using raw document. ' +
-        (e instanceof Error ? e.message : String(e)),
-    )
-    doc = parsed as OpenApiDoc
-  }
+  // The file's format is fatal; a broken reference inside a real spec is a warning.
+  const problem = openApiProblem(parsed)
+  if (problem) return failed(openApiProblemMessage(problem))
 
-  const external = externalRefCount(parsed)
-  if (external > 0) {
-    warnings.push(`${external} reference(s) to other files or URLs were not followed.`)
-  }
+  const doc: OpenApiDoc = await dereferenceLocalRefs(parsed as OpenApiDoc, warnings)
+  if (!doc.paths) return failed('Spec has no `paths` section.')
+  const paths = doc.paths
 
-  let endpointsCreated = 0
-  let responsesCreated = 0
-  if (!doc?.paths) {
-    return {
-      ok: false,
-      endpointsCreated,
-      responsesCreated,
-      warnings,
-      error: 'Spec has no `paths` section.',
-    }
-  }
-
-  const prefixes = new Set((doc.servers ?? []).map(serverPrefix))
+  const serversProblem = openApiServersProblem(doc)
+  if (serversProblem) warnings.push(serversProblem)
+  const servers = Array.isArray(doc.servers) ? doc.servers : []
+  const prefixes = new Set(servers.map(serverPrefix))
   if (prefixes.size > 1) {
-    const used = serverPrefix(doc.servers?.[0]) || '/'
+    const used = serverPrefix(servers[0]) || '/'
     warnings.push(`The spec's servers have different paths; the first one (${used}) was used.`)
   }
   const ownBasePath = getMockServer(serverId)?.base_path ?? ''
+  const budget = newJsonBudget()
+  const imported = importedTextGuard()
 
-  for (const [rawPath, pathItem] of Object.entries(doc.paths)) {
-    if (!pathItem || typeof pathItem !== 'object') continue
-    for (const [methodLower, op] of Object.entries(pathItem)) {
-      if (!HTTP_METHODS.has(methodLower)) continue
-      const method = methodLower.toUpperCase()
-      const opt = op as OpenApiOperation
-      const prefix = withoutBasePath(operationPrefix(doc, pathItem, opt), ownBasePath)
-      const { path, mode } = templatedPathToMockPath(joinPrefix(prefix, rawPath))
-      const ep = repoCreateEndpoint({
-        serverId,
-        method,
-        path,
-        pathMode: mode,
-        description: opt.summary || opt.description || '',
-        priority: 0,
-        enabled: true,
-      })
-      endpointsCreated++
-
-      const responses = opt.responses ?? {}
-      const responseEntries = Object.entries(responses)
-      if (responseEntries.length === 0) {
-        // Default 200 placeholder
-        repoCreateResponse({
-          endpointId: ep.id,
-          name: 'default',
-          statusCode: 200,
-          headers: [],
-          bodyType: 'json',
-          body: '',
-          delayMs: 0,
-          condition: { type: 'always' },
-          order: 0,
-          enabled: true,
-        })
-        responsesCreated++
-        continue
-      }
-
-      let order = 0
-      for (const [statusKey, responseDef] of responseEntries) {
-        const status = parseStatusKey(statusKey)
-        const contentEntries = Object.entries(
-          responseMedia(responseDef, opt.produces ?? doc.produces),
-        )
-        if (contentEntries.length === 0) {
-          repoCreateResponse({
-            endpointId: ep.id,
-            name: responseDef?.description ?? statusKey,
-            statusCode: status,
-            headers: [],
-            bodyType: 'json',
-            body: '',
-            delayMs: 0,
-            condition: { type: 'always' },
-            order: order++,
-            enabled: true,
-          })
-          responsesCreated++
+  let endpointsCreated = 0
+  let responsesCreated = 0
+  try {
+    getDb().transaction(() => {
+      for (const [rawPath, pathItem] of Object.entries(paths)) {
+        if (!isPlainObject(pathItem)) {
+          warnings.push(`Skipped "${rawPath}": it is not a path definition.`)
           continue
         }
-        for (const [contentType, media] of contentEntries) {
-          const bodyType = mediaTypeToBodyType(contentType)
-          const body = sampleFromMedia(media)
-          repoCreateResponse({
-            endpointId: ep.id,
-            name: `${statusKey} ${contentType}`,
-            statusCode: status,
-            headers: [{ name: 'Content-Type', value: contentType }],
-            bodyType,
-            body,
-            delayMs: 0,
-            condition: { type: 'always' },
-            order: order++,
+        for (const [methodLower, op] of Object.entries(pathItem)) {
+          if (!HTTP_METHODS.has(methodLower)) continue
+          const method = methodLower.toUpperCase()
+          if (!isPlainObject(op)) {
+            warnings.push(`Skipped ${method} ${rawPath}: it is not an operation.`)
+            continue
+          }
+          endpointSlot(endpointsCreated)
+          const opt = op as OpenApiOperation
+          const prefix = withoutBasePath(operationPrefix(doc, pathItem, opt), ownBasePath)
+          const { path, mode } = templatedPathToMockPath(joinPrefix(prefix, rawPath))
+          const ep = repoCreateEndpoint({
+            serverId,
+            method,
+            path,
+            pathMode: mode,
+            description: textOf(opt.summary) || textOf(opt.description),
+            priority: 0,
             enabled: true,
           })
-          responsesCreated++
+          endpointsCreated++
+
+          const responses = isPlainObject(opt.responses) ? opt.responses : {}
+          const responseEntries = Object.entries(responses)
+          if (responseEntries.length === 0) {
+            // Default 200 placeholder
+            repoCreateResponse({
+              endpointId: ep.id,
+              name: 'default',
+              statusCode: 200,
+              headers: [],
+              bodyType: 'json',
+              body: '',
+              delayMs: 0,
+              condition: { type: 'always' },
+              order: 0,
+              enabled: true,
+            })
+            responsesCreated++
+            continue
+          }
+
+          let order = 0
+          for (const [statusKey, responseDef] of responseEntries) {
+            const status = parseStatusKey(statusKey)
+            const contentEntries = Object.entries(
+              responseMedia(responseDef, opt.produces ?? doc.produces),
+            )
+            if (contentEntries.length === 0) {
+              repoCreateResponse({
+                endpointId: ep.id,
+                name: textOf(responseDef?.description) || statusKey,
+                statusCode: status,
+                headers: [],
+                bodyType: 'json',
+                body: '',
+                delayMs: 0,
+                condition: { type: 'always' },
+                order: order++,
+                enabled: true,
+              })
+              responsesCreated++
+              continue
+            }
+            for (const [contentType, media] of contentEntries) {
+              const bodyType = mediaTypeToBodyType(contentType)
+              const body = imported.text(sampleFromMedia(media, budget))
+              repoCreateResponse({
+                endpointId: ep.id,
+                name: `${statusKey} ${contentType}`,
+                statusCode: status,
+                headers: [{ name: 'Content-Type', value: contentType }],
+                bodyType,
+                body,
+                delayMs: 0,
+                condition: { type: 'always' },
+                order: order++,
+                enabled: true,
+              })
+              responsesCreated++
+            }
+          }
         }
       }
-    }
+    })()
+  } catch (e) {
+    return failed(importErrorText(e))
   }
+  if (budget.trimmed > 0) {
+    warnings.push(`${budget.trimmed} response example(s) were too large and were cut short.`)
+  }
+  imported.report(warnings)
 
   return {
     ok: true,
@@ -238,9 +275,11 @@ function serverPrefix(server: OpenApiServer | undefined): string {
 
 /** The nearest `servers` wins: operation, then path item, then document (spec order). */
 function operationPrefix(doc: OpenApiDoc, pathItem: OpenApiPathItem, op: OpenApiOperation): string {
-  const servers = [op.servers, pathItem.servers, doc.servers].find((list) => list?.length)
+  const servers = [op.servers, pathItem.servers, doc.servers].find(
+    (list) => Array.isArray(list) && list.length > 0,
+  )
   if (servers) return serverPrefix(servers[0])
-  return (doc.basePath ?? '').replace(/\/+$/, '')
+  return textOf(doc.basePath).replace(/\/+$/, '')
 }
 
 /** A mock with its own base path already strips it from every request. */
@@ -256,27 +295,16 @@ function joinPrefix(prefix: string, path: string): string {
   return path === '/' ? prefix : `${prefix}${path}`
 }
 
-/** `$ref`s leaving the document. A YAML alias can make the tree cyclic, hence `seen`. */
-function externalRefCount(node: unknown, seen = new WeakSet<object>()): number {
-  if (!node || typeof node !== 'object' || seen.has(node)) return 0
-  seen.add(node)
-  let count = 0
-  for (const [key, value] of Object.entries(node)) {
-    if (key === '$ref' && typeof value === 'string' && !value.startsWith('#')) count += 1
-    else count += externalRefCount(value, seen)
-  }
-  return count
-}
-
 /** The response's bodies by media type, for OpenAPI 3 (`content`) and Swagger 2.0 alike. */
 function responseMedia(
   response: OpenApiResponse | null | undefined,
   produces: string[] | undefined,
 ): Record<string, OpenApiMediaType> {
-  if (!response) return {}
-  if (response.content) return response.content
+  if (!response || typeof response !== 'object' || Array.isArray(response)) return {}
+  if (isPlainObject(response.content)) return response.content as Record<string, OpenApiMediaType>
   const media: Record<string, OpenApiMediaType> = {}
-  for (const [type, example] of Object.entries(response.examples ?? {})) {
+  const examples = isPlainObject(response.examples) ? response.examples : {}
+  for (const [type, example] of Object.entries(examples)) {
     media[type] = { example }
   }
   if (Object.keys(media).length > 0 || !response.schema) return media
@@ -297,13 +325,16 @@ function mediaTypeToBodyType(ct: string): 'json' | 'xml' | 'text' | 'html' {
   return 'text'
 }
 
-function sampleFromMedia(media: OpenApiMediaType): string {
-  if (media.example !== undefined) return JSON.stringify(media.example, null, 2)
-  if (media.examples) {
+function sampleFromMedia(media: OpenApiMediaType, budget: JsonBudget): string {
+  if (!isPlainObject(media)) return ''
+  if (media.example !== undefined) return boundedJson(media.example, budget, 2)
+  if (isPlainObject(media.examples)) {
     const first = Object.values(media.examples)[0]
-    if (first && first.value !== undefined) return JSON.stringify(first.value, null, 2)
+    if (isPlainObject(first) && first.value !== undefined) {
+      return boundedJson(first.value, budget, 2)
+    }
   }
-  if (media.schema) return JSON.stringify(sampleFromSchema(media.schema), null, 2)
+  if (media.schema) return boundedJson(sampleFromSchema(media.schema), budget, 2)
   return ''
 }
 
@@ -313,10 +344,15 @@ const SAMPLE_NODE_LIMIT = 2000
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v)
 
+const textOf = (v: unknown): string => (typeof v === 'string' ? v : '')
+
 /**
  * Generate a tiny sample value from a JSON Schema. Best-effort, draft-07-ish.
  * Dereferencing turns a self-referencing schema into a cycle: a schema already on
  * the way down samples as null, or a tree type would overflow the stack mid-import.
+ *
+ * A declared type alone only says what shape a value has: `oneOf` and `allOf` can
+ * narrow it, so their samples come before the type's placeholder.
  */
 function sampleFromSchema(
   schema: unknown,
@@ -332,18 +368,29 @@ function sampleFromSchema(
 
   // OpenAPI 3.1 writes a nullable type as `['string', 'null']`.
   const type = Array.isArray(s.type) ? s.type.find((t) => t !== 'null') : s.type
-  if (type === 'string') return typeof s.default === 'string' ? s.default : 'string'
-  if (type === 'integer' || type === 'number') return typeof s.default === 'number' ? s.default : 0
-  if (type === 'boolean') return typeof s.default === 'boolean' ? s.default : true
+  if (type === 'string' && typeof s.default === 'string') return s.default
+  if ((type === 'integer' || type === 'number') && typeof s.default === 'number') return s.default
+  if (type === 'boolean' && typeof s.default === 'boolean') return s.default
   walk.path.add(schema)
   try {
-    if (type === 'array') return [sampleFromSchema(s.items, walk)]
-    const own: unknown =
-      type === 'object' || s.properties ? sampleProperties(s.properties, walk) : null
-    return mergeSamples([...composedSamples(s, walk), own])
+    const composed = composedSamples(s, walk)
+    return mergeSamples([...composed, ownSample(s, type, walk)])
   } finally {
     walk.path.delete(schema)
   }
+}
+
+/** The value the schema's own type and properties stand for, with no composition. */
+function ownSample(
+  s: Record<string, unknown>,
+  type: unknown,
+  walk: { path: Set<object>; left: number },
+): unknown {
+  if (type === 'string') return 'string'
+  if (type === 'integer' || type === 'number') return 0
+  if (type === 'boolean') return true
+  if (type === 'array') return [sampleFromSchema(s.items, walk)]
+  return type === 'object' || s.properties ? sampleProperties(s.properties, walk) : null
 }
 
 function sampleProperties(
@@ -414,8 +461,8 @@ interface PostmanCollection {
 
 /**
  * Any Postman collection file as the v2 shape the walker reads. The converters'
- * own notes (auth, scripts) are dropped: a mock uses neither, so they would only
- * bury what the mock did lose.
+ * own notes about auth and scripts are dropped: a mock uses neither, so they would
+ * only bury what the mock did lose. A request the conversion skipped is kept, by name.
  */
 function readPostmanCollection(
   sourceText: string,
@@ -427,14 +474,16 @@ function readPostmanCollection(
     case 'v1-collection':
       return { collection: convertV1Collection(doc, notes) as unknown as PostmanCollection }
     case 'v3-collection': {
-      assertBounded(doc, 'Postman v3 collection')
-      const { collection, skipped } = convertV3Collection(doc as Record<string, unknown>, notes)
-      if (skipped > 0) warnings.push(`${skipped} request(s) of an unsupported kind were skipped.`)
+      const { collection, skippedItems } = convertV3Collection(
+        doc as Record<string, unknown>,
+        notes,
+      )
+      warnings.push(...skippedItems)
       return { collection: collection as unknown as PostmanCollection }
     }
     case 'v2-collection':
     case undefined:
-      return (doc as PostmanCollection | null)?.item
+      return Array.isArray((doc as PostmanCollection | null)?.item)
         ? { collection: doc as PostmanCollection }
         : { error: 'Collection has no `item` array (is this a Postman collection?).' }
     default:
@@ -455,29 +504,68 @@ export function importPostman(serverId: string, sourceText: string): ImportResul
   try {
     read = readPostmanCollection(sourceText, warnings)
   } catch (e) {
-    return failed('Could not read the collection: ' + (e instanceof Error ? e.message : String(e)))
+    return failed('Could not read the collection: ' + importErrorText(e))
   }
   if ('error' in read) return failed(read.error)
   const parsed = read.collection
+  const imported = importedTextGuard()
 
   let endpointsCreated = 0
   let responsesCreated = 0
 
+  function createResponses(endpointId: string, resps: unknown[]): void {
+    let order = 0
+    for (const r of resps) {
+      if (!isPlainObject(r)) continue
+      const res = r as PostmanResponse
+      const status = typeof res.code === 'number' ? res.code : Number(res.status) || 200
+      const headersArr: { name: string; value: string }[] = []
+      const headers = Array.isArray(res.header) ? res.header : res.header ? [res.header] : []
+      for (const h of headers) {
+        if (isPlainObject(h)) {
+          headersArr.push({ name: textOf(h.key), value: imported.text(textOf(h.value)) })
+        }
+      }
+      const lang = textOf(res._postman_previewlanguage).toLowerCase()
+      const bodyType =
+        lang === 'xml' ? 'xml' : lang === 'html' ? 'html' : lang === 'text' ? 'text' : 'json'
+      repoCreateResponse({
+        endpointId,
+        name: textOf(res.name) || `Response ${order + 1}`,
+        statusCode: status,
+        headers: headersArr,
+        bodyType,
+        body: imported.text(textOf(res.body)),
+        delayMs: 0,
+        condition: { type: 'always' },
+        order: order++,
+        enabled: true,
+      })
+      responsesCreated++
+    }
+  }
+
   function walk(items: PostmanItem[]): void {
     for (const it of items) {
+      if (!it || typeof it !== 'object' || Array.isArray(it)) {
+        warnings.push('Skipped an entry that is not a request or a folder.')
+        continue
+      }
       if (it.item) {
-        walk(it.item)
+        if (Array.isArray(it.item)) walk(it.item)
+        else
+          warnings.push(`Skipped "${textOf(it.name) || '?'}": its folder contents are unreadable.`)
         continue
       }
       const req = it.request
       if (!req) {
-        warnings.push(`Skipped "${it.name ?? '?'}" — not an HTTP request.`)
+        warnings.push(`Skipped "${textOf(it.name) || '?'}" — not an HTTP request.`)
         continue
       }
-      const method = (typeof req === 'string' ? 'GET' : req.method) ?? 'GET'
+      const method = textOf(typeof req === 'string' ? 'GET' : req.method) || 'GET'
       const path = postmanUrlToPath(typeof req === 'string' ? req : req.url)
       if (!path) {
-        warnings.push(`Skipped "${it.name ?? '?'}" — could not parse URL.`)
+        warnings.push(`Skipped "${textOf(it.name) || '?'}" — could not parse URL.`)
         continue
       }
       const description =
@@ -485,21 +573,23 @@ export function importPostman(serverId: string, sourceText: string): ImportResul
           ? ''
           : typeof req.description === 'string'
             ? req.description
-            : (req.description?.content ?? '')
+            : textOf(req.description?.content)
+      const name = textOf(it.name)
 
+      endpointSlot(endpointsCreated)
       const { path: pathOut, mode } = templatedPathToMockPath(path)
       const ep = repoCreateEndpoint({
         serverId,
         method: method.toUpperCase(),
         path: pathOut,
         pathMode: mode,
-        description: it.name ? `${it.name}${description ? ' — ' + description : ''}` : description,
+        description: name ? `${name}${description ? ' — ' + description : ''}` : description,
         priority: 0,
         enabled: true,
       })
       endpointsCreated++
 
-      const resps = it.response ?? []
+      const resps = Array.isArray(it.response) ? it.response : []
       if (resps.length === 0) {
         repoCreateResponse({
           endpointId: ep.id,
@@ -516,36 +606,16 @@ export function importPostman(serverId: string, sourceText: string): ImportResul
         responsesCreated++
         continue
       }
-      let order = 0
-      for (const r of resps) {
-        const status = typeof r.code === 'number' ? r.code : Number(r.status) || 200
-        const headersArr: { name: string; value: string }[] = []
-        if (Array.isArray(r.header)) {
-          for (const h of r.header) headersArr.push({ name: h.key, value: h.value })
-        } else if (r.header && typeof r.header === 'object') {
-          headersArr.push({ name: r.header.key, value: r.header.value })
-        }
-        const lang = (r._postman_previewlanguage ?? '').toLowerCase()
-        const bodyType =
-          lang === 'xml' ? 'xml' : lang === 'html' ? 'html' : lang === 'text' ? 'text' : 'json'
-        repoCreateResponse({
-          endpointId: ep.id,
-          name: r.name ?? `Response ${order + 1}`,
-          statusCode: status,
-          headers: headersArr,
-          bodyType,
-          body: r.body ?? '',
-          delayMs: 0,
-          condition: { type: 'always' },
-          order: order++,
-          enabled: true,
-        })
-        responsesCreated++
-      }
+      createResponses(ep.id, resps)
     }
   }
 
-  walk(parsed.item ?? [])
+  try {
+    getDb().transaction(() => walk(parsed.item ?? []))()
+  } catch (e) {
+    return failed(importErrorText(e))
+  }
+  imported.report(warnings)
 
   return {
     ok: true,
@@ -566,6 +636,7 @@ function postmanUrlToPath(
   if (typeof url === 'string') {
     return requestUrlToMockPath(url)?.path ?? null
   }
+  if (typeof url !== 'object') return null
   if (Array.isArray(url.path)) {
     return '/' + url.path.join('/')
   }

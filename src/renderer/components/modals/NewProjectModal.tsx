@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useRef, useState, useEffect } from 'react'
 import { toast } from '../../lib/toast'
 import {
   Check,
@@ -212,6 +212,11 @@ export default function NewProjectModal() {
   const [gitToken, setGitToken] = useState('')
   const [showToken, setShowToken] = useState(false)
   const [isCreating, setIsCreating] = useState(false)
+  /** The done screen's move to the new project, until the timer or a close runs it. */
+  const pendingActivation = useRef<{
+    timer: ReturnType<typeof setTimeout>
+    projectId: string
+  } | null>(null)
   /** Why project creation failed — keeps the wizard open instead of closing. */
   const [createError, setCreateError] = useState<string | null>(null)
 
@@ -263,7 +268,19 @@ export default function NewProjectModal() {
 
   if (!show) return null
 
+  /** A create or clone cannot be cancelled: the dialog stays open until it ends. */
+  const busy = isCreating || cloning
+
   function handleClose() {
+    if (busy) return
+    // Closed from the done screen: go to the new project now, so the timer
+    // cannot fire later and close a dialog the user has reopened.
+    const pending = pendingActivation.current
+    if (pending) {
+      clearTimeout(pending.timer)
+      pendingActivation.current = null
+      setActiveProject(pending.projectId)
+    }
     setGitToken('')
     setGitCloneToken('')
     setShow(false)
@@ -576,10 +593,14 @@ export default function NewProjectModal() {
 
           if (warnings.length > 0) toast.warning(warnings.join(' · '))
           setDone(true)
-          setTimeout(() => {
-            setActiveProject(projectId)
-            setShow(false)
-          }, 1200)
+          pendingActivation.current = {
+            projectId,
+            timer: setTimeout(() => {
+              pendingActivation.current = null
+              setActiveProject(projectId)
+              setShow(false)
+            }, 1200),
+          }
         }
       } catch (e) {
         // The project itself could not be created — that IS the operation, so
@@ -601,6 +622,7 @@ export default function NewProjectModal() {
     <Modal
       open={show}
       onOpenChange={(o) => !o && handleClose()}
+      preventClose={busy}
       title={t('newProject.title')}
       testId="new-project-modal"
     >
@@ -622,13 +644,17 @@ export default function NewProjectModal() {
             </div>
             <button
               type="button"
+              data-testid="new-project-close"
+              aria-label={t('a11y.closeDialog')}
               onClick={handleClose}
+              disabled={busy}
               style={{
                 background: 'transparent',
                 border: 'none',
                 fontSize: 20,
                 color: 'var(--hint)',
-                cursor: 'pointer',
+                cursor: busy ? 'not-allowed' : 'pointer',
+                opacity: busy ? 0.5 : 1,
               }}
             >
               ×
@@ -766,6 +792,7 @@ export default function NewProjectModal() {
                     <Label text={t('newProject.git.localDir')} />
                     <div className="flex gap-2">
                       <input
+                        data-testid="new-project-clone-dir"
                         value={gitCloneDir}
                         readOnly
                         placeholder={t('newProject.git.localDirPlaceholder')}
@@ -778,6 +805,7 @@ export default function NewProjectModal() {
                       />
                       <button
                         type="button"
+                        data-testid="new-project-clone-browse"
                         onClick={() => handleSelectDir(setGitCloneDir)}
                         style={{
                           padding: '7px 12px',
@@ -1346,6 +1374,7 @@ export default function NewProjectModal() {
               </div>
               <button
                 type="button"
+                data-testid="new-project-done"
                 onClick={handleClose}
                 className="cursor-pointer"
                 style={{
@@ -1373,6 +1402,7 @@ export default function NewProjectModal() {
             <button
               type="button"
               onClick={() => setStep((s) => Math.max(1, s - 1))}
+              disabled={busy}
               className="cursor-pointer"
               style={{
                 padding: '6px 14px',

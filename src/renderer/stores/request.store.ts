@@ -10,8 +10,9 @@ import type {
   Tab,
 } from '../types'
 import { loadTabbedState, attachTabbedPersist, storedBoundTabs } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
+import { withoutTab } from '../lib/tab-slice'
 import {
   credentialRows,
   remapWithheldRows,
@@ -659,9 +660,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
   removeTabState: (tabId) => {
     unloadedTabIds.delete(tabId)
-    const tabStates = new Map(get()._tabStates)
-    tabStates.delete(tabId)
-    set({ _tabStates: tabStates })
+    set(withoutTab<TabRequestState>(get(), tabId))
   },
 
   cloneTabState: (srcTabId, dstTabId) =>
@@ -696,9 +695,18 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
   sendRequest: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
     // A saved tab whose state was dropped from the cache is reloaded from its row.
-    if (get().withheldCredentials.length > 0 || get().unloaded) await reloadWithheldBeforeSend()
-    const { method, url, params, headers, body, auth, preScript } = get()
-    const pathVariables = get().pathVariables ?? []
+    if (
+      (get().withheldCredentials.length > 0 || get().unloaded) &&
+      !(await reloadedOnSameTab(get))
+    ) {
+      return
+    }
+    // Everything this send reads from the request slice is read here, with the
+    // tab id: the user can switch tabs during any await below, and the slice
+    // then belongs to another tab.
+    const reqCfg = get()
+    const { method, url, params, headers, body, auth, preScript, assertions: asserts } = reqCfg
+    const pathVariables = reqCfg.pathVariables ?? []
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const envStore = useEnvironmentStore.getState()
@@ -729,7 +737,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       testSuiteItemId: activeTab?.testSuiteItemId,
       requestAuth: auth,
       requestPre: preScript,
-      requestPost: get().postScript,
+      requestPost: reqCfg.postScript,
     })
     const effectiveAuth = inheritance.auth
     const preScripts = inheritance.preScripts
@@ -985,7 +993,6 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // defaults. These now actually reach the engine: timeout (0 = no timeout),
     // maxRedirects, followRedirects, and SSL verification. Falling back to the
     // project value only when a per-request field is somehow absent.
-    const reqCfg = get()
 
     // Timeout resolution hierarchy (Postman-style, least surprise):
     //   per-request explicit (incl. 0 = no timeout) → project general →
@@ -1048,7 +1055,6 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
 
       if (result?.success && result.data) {
         const apiResp = result.data as ApiResponse
-        const { assertions: asserts } = get()
 
         // Run post-response script and assertions
         const allTestResults = [...(apiResp.testResults || [])]

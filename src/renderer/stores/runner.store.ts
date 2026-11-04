@@ -35,7 +35,7 @@ interface RunnerStore {
   endpoints: RunnerEndpoint[]
   delay: number
   iterations: number
-  iterationData: Record<string, string>[]
+  iterationData: Record<string, unknown>[]
   stopOnError: boolean
   persistResponses: boolean
   keepVariableValues: boolean
@@ -57,7 +57,7 @@ interface RunnerStore {
   deselectAll: () => void
   setDelay: (ms: number) => void
   setIterations: (n: number) => void
-  setIterationData: (rows: Record<string, string>[]) => void
+  setIterationData: (rows: Record<string, unknown>[]) => void
   setStopOnError: (v: boolean) => void
   setPersistResponses: (v: boolean) => void
   setKeepVariableValues: (v: boolean) => void

@@ -1,0 +1,10 @@
+{
+  "id": "matrix-v1",
+  "name": "Pets",
+  "order": ["r1", "r2"],
+  "folders": [],
+  "requests": [
+    { "id": "r1", "name": "List pets", "method": "GET", "url": "__BASE__/pets", "headers": "" },
+    { "id": "r2", "name": "Get pet", "method": "GET", "url": "__BASE__/pets/{{petId}}", "headers": "" }
+  ]
+}

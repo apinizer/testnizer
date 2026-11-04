@@ -63,8 +63,10 @@ export function matchPath(
   template: string,
   actual: string,
 ): Record<string, string> | null {
-  const norm = stripTrailingSlash(actual)
-  const tpl = stripTrailingSlash(template)
+  // A stored path is whatever was typed or imported (`/café`, `/hello world`);
+  // the server compares `URL.pathname` (`/caf%C3%A9`). Both go to that one form.
+  const norm = stripTrailingSlash(wirePath(actual))
+  const tpl = stripTrailingSlash(wirePath(template))
 
   if (mode === 'exact') {
     return norm === tpl ? {} : null
@@ -99,6 +101,18 @@ export function matchPath(
   }
 
   return null
+}
+
+/** Each segment as `URL.pathname` writes it; `%20` stays, `:id` and `*` are untouched. */
+function wirePath(path: string): string {
+  return path.split('/').map(wireSegment).join('/')
+}
+
+function wireSegment(segment: string): string {
+  if (segment.startsWith(':') || /^[\w.~:*-]*$/.test(segment)) return segment
+  const safe = segment.replace(/\?/g, '%3F').replace(/#/g, '%23').replace(/\\/g, '%5C')
+  const encoded = new URL(`http://h/${safe}`).pathname.slice(1)
+  return encoded.replace(/%[0-9a-f]{2}/gi, (hex) => hex.toUpperCase())
 }
 
 function stripTrailingSlash(p: string): string {

@@ -200,6 +200,72 @@ describe('certificate:pickFile', () => {
     expect(res.success).toBe(false)
   })
 
+  const pick = async (
+    kind: string,
+    name: string,
+    content: string | Buffer,
+  ): Promise<{ success: boolean; data?: string; error?: string }> => {
+    const src = join(srcDir, name)
+    writeFileSync(src, content)
+    dialogMock.showOpenDialog.mockResolvedValueOnce({ canceled: false, filePaths: [src] })
+    return (await harness.invoke('certificate:pickFile', kind)) as {
+      success: boolean
+      data?: string
+      error?: string
+    }
+  }
+
+  it.each(['crt', 'key', 'ca'])('refuses an empty %s at pick time', async (kind) => {
+    const res = await pick(kind, 'empty.pem', '')
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/empty/i)
+  })
+
+  it.each(['crt', 'ca'])('refuses a %s that is not a PEM certificate', async (kind) => {
+    const res = await pick(kind, 'notes.pem', 'hello, this is not a certificate')
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/PEM certificate/)
+  })
+
+  it('refuses a binary DER file, and says to convert it', async () => {
+    const res = await pick('crt', 'der.cer', Buffer.from([0x30, 0x82, 0x01, 0x0a, 0x02, 0x82]))
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/converted to PEM/)
+  })
+
+  it('refuses a certificate picked as the key', async () => {
+    const res = await pick(
+      'key',
+      'cert-as-key.pem',
+      '-----BEGIN CERTIFICATE-----\nA\n-----END CERTIFICATE-----',
+    )
+    expect(res.success).toBe(false)
+    expect(res.error).toMatch(/private key/)
+  })
+
+  it.each([
+    '-----BEGIN PRIVATE KEY-----\nA\n-----END PRIVATE KEY-----',
+    '-----BEGIN RSA PRIVATE KEY-----\nA\n-----END RSA PRIVATE KEY-----',
+    '-----BEGIN EC PRIVATE KEY-----\nA\n-----END EC PRIVATE KEY-----',
+    '-----BEGIN ENCRYPTED PRIVATE KEY-----\nA\n-----END ENCRYPTED PRIVATE KEY-----',
+  ])('accepts the key %s', async (pem) => {
+    expect((await pick('key', 'k.pem', pem)).success).toBe(true)
+  })
+
+  it('accepts a certificate with text ahead of the PEM block', async () => {
+    const res = await pick(
+      'crt',
+      'bag.pem',
+      'Bag Attributes\n  friendlyName: x\n-----BEGIN CERTIFICATE-----\nA\n-----END CERTIFICATE-----',
+    )
+    expect(res.success).toBe(true)
+  })
+
+  it('leaves a PFX alone: binary, and its password decides', async () => {
+    const res = await pick('pfx', 'store.p12', Buffer.from([0x30, 0x82, 0x01, 0x0a]))
+    expect(res.success).toBe(true)
+  })
+
   it('copies the picked file into app storage at pick time (Postman-style capture)', async () => {
     // The fix for the reported mTLS bug: reading the file NOW (while the picker
     // grant is live) and storing a copy — instead of storing the original path

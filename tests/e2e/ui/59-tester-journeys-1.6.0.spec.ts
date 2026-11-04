@@ -159,7 +159,7 @@ uiTest.describe('Tester journeys on 1.6.0', () => {
     const port = randomMockPort()
 
     try {
-      // The real importer: `endpoints.path` = https://petstore.example.com/v1/pets/{petId}
+      // The real importer: `endpoints.path` = https://petstore.example.com/v1/pets/:petId
       await importFixtureViaIpc(window, 'openapi', 'openapi-3.0.json', folderName)
       await refreshWorkspaceTree(window)
       await treeSearch(window, folderName)

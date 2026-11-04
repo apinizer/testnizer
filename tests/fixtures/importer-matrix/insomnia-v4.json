@@ -1,0 +1,9 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "resources": [
+    { "_id": "wrk_1", "_type": "workspace", "name": "Pets" },
+    { "_id": "req_1", "_type": "request", "parentId": "wrk_1", "name": "List pets", "method": "GET", "url": "__BASE__/pets" },
+    { "_id": "req_2", "_type": "request", "parentId": "wrk_1", "name": "Get pet", "method": "GET", "url": "__BASE__/pets/{{petId}}" }
+  ]
+}

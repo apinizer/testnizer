@@ -107,6 +107,39 @@ describe('createPm', () => {
     expect(makePm({ requestName: 'Only' }).pm.execution.location?.current).toBe('Only')
   })
 
+  describe('a JSON data row keeps its values as parsed', () => {
+    const row = () =>
+      makePm({
+        scopes: {
+          globals: { values: new Map() },
+          environment: { values: new Map() },
+          locals: { values: new Map() },
+          data: { user: { id: 1 }, tags: ['a'], n: 2, ok: false, none: null, text: 'Ada' },
+        },
+      }).pm
+
+    it('pm.iterationData.get returns the value, not its JSON text', () => {
+      expect(row().iterationData.get('user')).toEqual({ id: 1 })
+      expect(row().iterationData.get('tags')).toEqual(['a'])
+      expect(row().iterationData.get('n')).toBe(2)
+      expect(row().iterationData.get('ok')).toBe(false)
+      expect(row().iterationData.get('none')).toBeNull()
+      expect(row().iterationData.toObject().user).toEqual({ id: 1 })
+    })
+
+    it('pm.variables.get reads the same value through the data tier', () => {
+      expect(row().variables.get('user')).toEqual({ id: 1 })
+      expect(row().variables.get('n')).toBe(2)
+    })
+
+    it('{{var}} is text: nested values as JSON, null as empty', () => {
+      const replaceIn = row().variables.replaceIn
+      expect(replaceIn('/{{text}}/{{n}}/{{ok}}')).toBe('/Ada/2/false')
+      expect(replaceIn('{{user}}{{tags}}')).toBe('{"id":1}["a"]')
+      expect(replaceIn('[{{none}}]')).toBe('[]')
+    })
+  })
+
   it('iterationData has toJSON() and unset()', () => {
     const { pm } = makePm()
     expect(pm.iterationData.toJSON?.()).toEqual({ row: 'R1' })

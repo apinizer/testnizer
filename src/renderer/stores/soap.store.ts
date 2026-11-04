@@ -10,8 +10,9 @@ import type {
 import { useResponseStore } from './response.store'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { stripWsSecuritySecrets } from '../lib/key-material'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
+import { patchTabSlice, withoutTab } from '../lib/tab-slice'
 import {
   trackCredentialEdits,
   withholdCredentials,
@@ -59,6 +60,9 @@ interface SoapEndpointMeta {
 interface TabSoapState extends WithheldState {
   wsdlUrl: string
   parsedWsdl: WsdlParseResult | null
+  /** A WSDL parse started on this tab is in flight. */
+  isLoading: boolean
+  parseError: string | null
   selectedService: string | null
   selectedPort: string | null
   selectedOperation: string | null
@@ -87,8 +91,8 @@ interface SoapStore extends WithheldState {
   parsedWsdl: WsdlParseResult | null
   isLoading: boolean
   parseError: string | null
-  /** request:send IPC id for the in-flight SOAP call (used for cancel). */
-  _inflightRequestId: string | null
+  /** request:send IPC id of each tab's in-flight SOAP call (used for cancel). */
+  _inflightByTab: Record<string, string>
 
   selectedService: string | null
   selectedPort: string | null
@@ -184,6 +188,8 @@ function extractSoapTabState(s: SoapStore): TabSoapState {
   return {
     wsdlUrl: s.wsdlUrl,
     parsedWsdl: s.parsedWsdl,
+    isLoading: s.isLoading,
+    parseError: s.parseError,
     selectedService: s.selectedService,
     selectedPort: s.selectedPort,
     selectedOperation: s.selectedOperation,
@@ -205,6 +211,8 @@ function emptySoapTabState(): TabSoapState {
   return {
     wsdlUrl: '',
     parsedWsdl: null,
+    isLoading: false,
+    parseError: null,
     selectedService: null,
     selectedPort: null,
     selectedOperation: null,
@@ -251,11 +259,13 @@ export const SOAP_CREDENTIALS: CredentialSpec = {
 function persistableSoap(st: TabSoapState): TabSoapState {
   const wsSecurity = stripWsSecuritySecrets(st.wsSecurity)
   const stripped = wsSecurity === st.wsSecurity ? st : { ...st, wsSecurity }
-  return withholdCredentials(stripped, SOAP_CREDENTIALS)
+  return idleSoap(withholdCredentials(stripped, SOAP_CREDENTIALS))
 }
 
-/** What Duplicate Tab copies: the whole slice — it holds no request in flight. */
-const idleSoap = (st: TabSoapState): TabSoapState => ({ ...st })
+/** What is stored and what Duplicate Tab copies: the slice without a parse in flight. */
+function idleSoap(st: TabSoapState): TabSoapState {
+  return { ...st, isLoading: false, parseError: null }
+}
 
 const STORAGE_KEY = 'testnizer-soap'
 const persisted = loadTabbedState<TabSoapState>(STORAGE_KEY, emptySoapTabState, persistableSoap)
@@ -314,7 +324,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
   // Transient — never restored
   isLoading: false,
   parseError: null,
-  _inflightRequestId: null,
+  _inflightByTab: {},
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
 
@@ -325,7 +335,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
 
   parseWsdl: async () => {
     // Issue #247: a WSDL URL credential still withheld after a restart.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const rawUrl = get().wsdlUrl.trim()
     if (!rawUrl) return
 
@@ -340,6 +350,12 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
       set({ wsdlUrl: normalizedUrl })
     }
 
+    // The tab that asked gets the result, also when the user has moved on: its
+    // envelope is replaced, the envelope of the tab on screen is not.
+    const ownerTabId = get()._currentTabId
+    const patchOwner = (patch: Partial<TabSoapState>): void =>
+      patchTabSlice<TabSoapState, SoapStore>(useSoapStore, ownerTabId, patch)
+
     set({ isLoading: true, parseError: null, parsedWsdl: null })
 
     try {
@@ -347,36 +363,28 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
 
       if (result?.success && result.data) {
         const parsed = result.data
-        set({ parsedWsdl: parsed, isLoading: false })
-
         // Auto-select first service/port/operation
-        if (parsed.services.length > 0) {
-          const svc = parsed.services[0]
-          set({ selectedService: svc.name })
-          if (svc.ports.length > 0) {
-            const port = svc.ports[0]
-            set({ selectedPort: port.name, endpointUrl: port.endpointUrl })
-            if (port.operations.length > 0) {
-              const op = port.operations[0]
-              set({
+        const svc = parsed.services[0]
+        const port = svc?.ports[0]
+        const op = port?.operations[0]
+        patchOwner({
+          parsedWsdl: parsed,
+          isLoading: false,
+          ...(svc ? { selectedService: svc.name } : {}),
+          ...(port ? { selectedPort: port.name, endpointUrl: port.endpointUrl } : {}),
+          ...(op
+            ? {
                 selectedOperation: op.name,
                 rawXml: op.exampleRequest,
                 formValues: flattenSchema(op.inputSchema),
-              })
-            }
-          }
-        }
-      } else {
-        set({
-          parseError: result?.error || 'Failed to parse WSDL',
-          isLoading: false,
+              }
+            : {}),
         })
+      } else {
+        patchOwner({ parseError: result?.error || 'Failed to parse WSDL', isLoading: false })
       }
     } catch (e) {
-      set({
-        parseError: (e as Error).message || 'Failed to parse WSDL',
-        isLoading: false,
-      })
+      patchOwner({ parseError: (e as Error).message || 'Failed to parse WSDL', isLoading: false })
     }
   },
 
@@ -490,12 +498,19 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     // the WS-Security one (this store) and the Auth tab's (request store; its
     // reload adapter covers every protocol, so one reload does both).
     const req = useRequestStore.getState()
-    if (get().withheldCredentials.length > 0 || req.withheldCredentials.length > 0 || req.unloaded)
-      await reloadWithheldBeforeSend()
+    if (
+      (get().withheldCredentials.length > 0 ||
+        req.withheldCredentials.length > 0 ||
+        req.unloaded) &&
+      !(await reloadedOnSameTab(get))
+    ) {
+      return
+    }
     const { rawXml, wsSecurity } = get()
     // Read after the reload: the Auth and Headers tabs of this SOAP request
     // (the editor renders the request store's tabs — issue #298 follow-up).
-    const { auth, headers: userHeaders } = useRequestStore.getState()
+    const requestSlice = useRequestStore.getState()
+    const { auth, headers: userHeaders } = requestSlice
     const responseStore = useResponseStore.getState()
     const tabsStore = useTabsStore.getState()
     const activeTabId = tabsStore.activeTabId
@@ -568,13 +583,11 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     // Certificates pane and the app Settings through the shared resolvers —
     // what Run applies to this row (`buildRequestFromEndpoint`). SOAP used to
     // send none of them, so it always verified.
-    const network = networkPayload(
-      useRequestStore.getState(),
-      await loadInheritedNetwork(originProjectId),
-    )
+    const network = networkPayload(requestSlice, await loadInheritedNetwork(originProjectId))
 
     const requestId = makeId()
-    set({ _inflightRequestId: requestId })
+    if (activeTabId)
+      set((s) => ({ _inflightByTab: { ...s._inflightByTab, [activeTabId]: requestId } }))
     try {
       const result = await window.api?.request?.send({
         method: 'POST',
@@ -632,19 +645,30 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     } finally {
       responseStore.setLoading(false, activeTabId)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
-      set((s) => (s._inflightRequestId === requestId ? { _inflightRequestId: null } : s))
+      set((s) => {
+        if (!activeTabId || s._inflightByTab[activeTabId] !== requestId) return s
+        const next = { ...s._inflightByTab }
+        delete next[activeTabId]
+        return { _inflightByTab: next }
+      })
     }
   },
 
   cancelSoap: async () => {
-    const id = get()._inflightRequestId
-    if (!id) return
+    // Cancel THIS tab's request, not the one sent last from any tab.
+    const tabId = useTabsStore.getState().activeTabId
+    const id = tabId ? get()._inflightByTab[tabId] : undefined
+    if (!tabId || !id) return
     try {
       await window.api?.request?.cancel(id)
     } catch {
       // engine already finished
     }
-    set({ _inflightRequestId: null })
+    set((s) => {
+      const next = { ...s._inflightByTab }
+      delete next[tabId]
+      return { _inflightByTab: next }
+    })
   },
 
   loadFromEndpoint: (data) => {
@@ -741,18 +765,12 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
 
     set({
       ...target,
-      isLoading: false,
-      parseError: null,
       _tabStates: tabStates,
       _currentTabId: tabId,
     })
   },
 
-  removeTabState: (tabId) => {
-    const tabStates = new Map(get()._tabStates)
-    tabStates.delete(tabId)
-    set({ _tabStates: tabStates })
-  },
+  removeTabState: (tabId) => set(withoutTab<TabSoapState>(get(), tabId)),
 
   reset: () =>
     set({

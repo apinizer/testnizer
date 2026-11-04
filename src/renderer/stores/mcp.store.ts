@@ -29,7 +29,7 @@ import type {
   McpTransport,
 } from '../types/mcp'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import {
   credentialRows,
@@ -1464,7 +1464,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
 
   startOAuth: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const st = get()
     if (st.oauthRunning) return
     if (st.transport === 'stdio') {
@@ -1589,7 +1589,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
 
   startSecurityScan: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const st = get()
     if (st.securityRunning) return
     if (st.transport === 'stdio') {
@@ -1660,7 +1660,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
 
   connect: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const {
       transport,
       url,
@@ -1807,7 +1807,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
 
   callTool: async (opts) => {
     // Issue #247: tool arguments still withheld after a restart are reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const { connectionId, selectedTool, toolArgs, tools, toolCallId, url } = get()
     const tabId = get()._currentTabId
     if (!connectionId || !selectedTool || toolCallId) return

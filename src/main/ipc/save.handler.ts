@@ -1,13 +1,5 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
-import {
-  writeFileSync,
-  readFileSync,
-  readdirSync,
-  existsSync,
-  mkdirSync,
-  rmSync,
-  statSync,
-} from 'fs'
+import { writeFileSync, existsSync, mkdirSync, rmSync, statSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
@@ -17,6 +9,17 @@ import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 import { sealMcpBearerRows, sealMockAuthRows, sealVariableRows } from '../lib/secret-at-rest'
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
 import { safeFileName } from '../lib/filename-safe'
+import { InputDocumentError } from '../../shared/bounded-document'
+import {
+  clearIrregularFile,
+  importErrorText,
+  listCheckoutJsonFiles,
+  parseJsonFile,
+  parseJsonOrYamlBounded,
+  pickCheckoutProjectFile,
+  readCheckoutFile,
+  readImportFile,
+} from '../import/safe-input'
 import {
   importPostman,
   importInsomnia,
@@ -59,7 +62,7 @@ import {
   unreachableRemoteError,
   redactToken,
 } from '../lib/git-config'
-import { projectFileSlug, pickProjectFile } from '../lib/project-file'
+import { projectFileSlug } from '../lib/project-file'
 import { sameExport } from '../lib/same-export'
 import { remapAiToolServerRefs, type ToolServerIdMap } from '../lib/ai-tool-server-remap'
 import { repairedSuiteItemUrl } from '../lib/suite-url-repair'
@@ -414,6 +417,58 @@ function insertPresentColumns(
   ).run(...present.map((c) => row[c]))
 }
 
+const PROJECT_FILE = 'Testnizer project file'
+const PROJECT_FILE_SECTIONS = [
+  'folders',
+  'endpoints',
+  'endpointCases',
+  'savedRequests',
+  'environments',
+  'environmentVariables',
+  'globalVariables',
+  'testSuites',
+  'testSuiteItems',
+  'testSuiteFolders',
+  'mockServers',
+  'mockEndpoints',
+  'mockResponses',
+  'certificates',
+  'savedResponses',
+  'mockMcpServers',
+] as const satisfies ReadonlyArray<keyof ProjectExport>
+
+const isRow = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * Every section the importers iterate: a list of rows, or absent (older exports
+ * lack the newer sections). Row ids are what the upserts key on.
+ */
+function damagedProjectSection(doc: Record<string, unknown>): string | null {
+  for (const section of PROJECT_FILE_SECTIONS) {
+    const rows = doc[section]
+    if (rows === undefined || rows === null) continue
+    if (!Array.isArray(rows) || !rows.every(isRow)) {
+      return `This project file is damaged: "${section}" is not a list of rows.`
+    }
+  }
+  return null
+}
+
+/**
+ * The lax check for files that reach the upsert path (Open local, git). Older
+ * exports have no `kind`, and a pull must still read them.
+ */
+function projectFileProblem(parsed: unknown): string | null {
+  const wrongType = 'This is not a Testnizer project file.'
+  if (!isRow(parsed)) return wrongType
+  if (parsed.kind !== undefined && parsed.kind !== 'project') return wrongType
+  if (!parsed.version || typeof parsed.version !== 'string' || !isRow(parsed.project)) {
+    return wrongType
+  }
+  return damagedProjectSection(parsed)
+}
+
 // Returns null when the export shape is acceptable, or a specific user-facing
 // error string. Lets the importer point users at the actual problem (empty
 // project, missing top-level field, wrong file kind) instead of the generic
@@ -427,7 +482,7 @@ export function validateProjectExport(parsed: unknown): string | null {
   const WRONG_TYPE =
     "This is not a Testnizer project file. You can't upload this file type from here."
 
-  if (!parsed || typeof parsed !== 'object') return WRONG_TYPE
+  if (!isRow(parsed)) return WRONG_TYPE
   const doc = parsed as Partial<ProjectExport>
 
   // Testnizer exports always carry `kind: 'project'` and a string `version`.
@@ -443,6 +498,8 @@ export function validateProjectExport(parsed: unknown): string | null {
   ) {
     return WRONG_TYPE
   }
+  const damaged = damagedProjectSection(doc as Record<string, unknown>)
+  if (damaged) return damaged
 
   // Shape is right but the export is empty — surface this separately so
   // users with a genuinely-empty export know to re-export instead of
@@ -668,8 +725,10 @@ export function importProjectDataFromJson(
   projectId: string,
   options: ImportProjectOptions = {},
 ): Promise<void> {
-  const data = JSON.parse(jsonString) as ProjectExport
-  return importProjectData(data, projectId, options)
+  const data = parseJsonFile(jsonString, PROJECT_FILE)
+  const problem = projectFileProblem(data)
+  if (problem) throw new InputDocumentError(problem)
+  return importProjectData(data as ProjectExport, projectId, options)
 }
 
 /** `display_name` is what the Project Hub shows; `name` is the internal key. */
@@ -682,6 +741,19 @@ function importProjectData(
   projectId: string,
   options: ImportProjectOptions = {},
 ): Promise<void> {
+  // One transaction: a row the database refuses leaves the project as it was.
+  getDb().transaction(() => writeProjectRows(data, projectId, options))()
+  // Mock servers running off these rows: the prune may have deleted a row (stop
+  // it) and the upserts may have rewritten one (reload it) — issue #154. A
+  // running server never outlives or drifts from its row.
+  return syncRunningMocksWithDb()
+}
+
+function writeProjectRows(
+  data: ProjectExport,
+  projectId: string,
+  options: ImportProjectOptions,
+): void {
   const db = getDb()
 
   // Every project-scoped row in the export carries the SOURCE project's id
@@ -1043,11 +1115,6 @@ function importProjectData(
   }
 
   if (options.adoptProjectHeader) adoptProjectHeader(db, data, projectId)
-
-  // Mock servers running off these rows: the prune above may have deleted
-  // a row (stop it) and the upserts may have rewritten one (reload it) —
-  // issue #154. A running server never outlives or drifts from its row.
-  return syncRunningMocksWithDb()
 }
 
 /**
@@ -1711,21 +1778,16 @@ export async function importTestSuiteFromFile(
   format: TestSuiteImportFormat
   warnings?: string[]
 }> {
+  if (content.trim() === '') throw new InputDocumentError('This test suite file is empty.')
   let parsed: unknown
   try {
-    parsed = JSON.parse(content)
-  } catch {
-    // Insomnia v5 ships YAML by default; fall back to js-yaml so suite import
-    // accepts the same files the APIs-tree importer already handles. We keep
-    // JSON as the fast path because it covers Testnizer-native exports and
-    // every Postman collection.
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const yaml = require('js-yaml') as { load: (s: string) => unknown }
-      parsed = yaml.load(content)
-    } catch (e) {
-      throw new Error('Could not parse file as JSON or YAML: ' + (e as Error).message)
-    }
+    // Insomnia v5 ships YAML by default, so suite import accepts the same files
+    // the APIs-tree importer already handles. JSON is the fast path: it covers
+    // Testnizer-native exports and every Postman collection.
+    parsed = parseJsonOrYamlBounded(content, 'Test suite file')
+  } catch (e) {
+    if (e instanceof InputDocumentError) throw e
+    throw new Error('Could not parse file as JSON or YAML: ' + (e as Error).message)
   }
 
   const format = detectTestSuiteImportFormat(parsed)
@@ -2004,7 +2066,7 @@ export function importProjectAsNew(
   for (const f of data.folders) folderIdMap.set(f.id as string, randomUUID())
   for (const e of data.endpoints) endpointIdMap.set(e.id as string, randomUUID())
   for (const s of data.savedRequests) savedReqIdMap.set(s.id as string, randomUUID())
-  for (const env of data.environments) envIdMap.set(env.id as string, randomUUID())
+  for (const env of data.environments || []) envIdMap.set(env.id as string, randomUUID())
   for (const s of data.testSuites || []) suiteIdMap.set(s.id as string, randomUUID())
   // AI Chat Tools: references to the project's saved MCP requests follow the
   // copy's new row ids; unmapped ones are dropped + marked missing (issue #180).
@@ -2453,8 +2515,37 @@ function removeTempClone(dir: string): void {
 function writeExportUnlessSame(dir: string, fileName: string, data: ProjectExport): void {
   const target = join(dir, fileName)
   const doc = data as unknown as Record<string, unknown>
-  if (existsSync(target) && sameExport(readFileSync(target, 'utf-8'), doc)) return
+  clearIrregularFile(target)
+  if (existsSync(target) && sameExport(readCheckoutFile(target), doc)) return
   writeFileSync(target, JSON.stringify(data, null, 2), 'utf-8')
+}
+
+function projectNameOf(projectId: string): string | undefined {
+  const row = getDb().prepare('SELECT name FROM projects WHERE id = ?').get(projectId) as
+    | { name: string }
+    | undefined
+  return row?.name
+}
+
+/** A folder file's sections are all iterated: each a list of rows, or absent. */
+function damagedFolderExport(doc: Record<string, unknown>): string | null {
+  if (!Array.isArray(doc.folders) || !doc.rootFolderId) {
+    return 'This folder export file is damaged: it does not list its folders.'
+  }
+  for (const section of [
+    'folders',
+    'endpoints',
+    'endpointCases',
+    'savedRequests',
+    'savedResponses',
+  ]) {
+    const rows = doc[section]
+    if (rows === undefined || rows === null) continue
+    if (!Array.isArray(rows) || !rows.every(isRow)) {
+      return `This folder export file is damaged: "${section}" is not a list of rows.`
+    }
+  }
+  return null
 }
 
 // ─── Register all handlers ───────────────────────────────────────
@@ -2642,7 +2733,7 @@ export function registerSaveHandlers(): void {
     'save:importProjectFromContent',
     async (_event, payload: { workspaceId: string; content: string; name?: string }) => {
       try {
-        const parsed = JSON.parse(payload.content) as ProjectExport
+        const parsed = parseJsonFile(payload.content, PROJECT_FILE) as ProjectExport
         const validationError = validateProjectExport(parsed)
         if (validationError) {
           return { success: false, error: validationError }
@@ -2650,7 +2741,7 @@ export function registerSaveHandlers(): void {
         const res = importProjectAsNew(parsed, payload.workspaceId, { name: payload.name })
         return { success: true, data: { projectId: res.projectId } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -2672,8 +2763,8 @@ export function registerSaveHandlers(): void {
         if (result.canceled || !result.filePaths[0]) {
           return { success: false, error: 'Cancelled' }
         }
-        const content = readFileSync(result.filePaths[0], 'utf-8')
-        const parsed = JSON.parse(content) as ProjectExport
+        const content = readImportFile(result.filePaths[0])
+        const parsed = parseJsonFile(content, PROJECT_FILE) as ProjectExport
         const validationError = validateProjectExport(parsed)
         if (validationError) {
           return { success: false, error: validationError }
@@ -2681,7 +2772,7 @@ export function registerSaveHandlers(): void {
         const res = importProjectAsNew(parsed, payload.workspaceId, { name: payload.name })
         return { success: true, data: { projectId: res.projectId } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -2699,7 +2790,7 @@ export function registerSaveHandlers(): void {
         // in charge — mirrors save:importProjectFromContent. Falls back to a
         // picker for the standalone "Import Folder" entry point.
         let content = payload.content
-        if (!content) {
+        if (content === undefined) {
           const win = BrowserWindow.getFocusedWindow()
           const result = await dialog.showOpenDialog(
             win!,
@@ -2712,16 +2803,22 @@ export function registerSaveHandlers(): void {
           if (result.canceled || !result.filePaths[0]) {
             return { success: false, error: 'Cancelled' }
           }
-          content = readFileSync(result.filePaths[0], 'utf-8')
+          content = readImportFile(result.filePaths[0])
         }
-        const parsed = JSON.parse(content) as FolderExport
-        if (!parsed.version || parsed.kind !== 'folder') {
+        const parsed = parseJsonFile(content, 'folder export file')
+        if (!isRow(parsed) || !parsed.version || parsed.kind !== 'folder') {
           return { success: false, error: 'Invalid folder export file.' }
         }
-        const out = importFolderData(parsed, payload.projectId, payload.parentFolderId ?? null)
+        const damaged = damagedFolderExport(parsed)
+        if (damaged) return { success: false, error: damaged }
+        const out = importFolderData(
+          parsed as unknown as FolderExport,
+          payload.projectId,
+          payload.parentFolderId ?? null,
+        )
         return { success: true, data: out }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -2735,7 +2832,7 @@ export function registerSaveHandlers(): void {
     async (_event, payload: { projectId: string; content?: string; suiteName?: string }) => {
       try {
         let content = payload.content
-        if (!content) {
+        if (content === undefined) {
           const win = BrowserWindow.getFocusedWindow()
           const result = await dialog.showOpenDialog(
             win!,
@@ -2756,13 +2853,13 @@ export function registerSaveHandlers(): void {
           if (result.canceled || !result.filePaths[0]) {
             return { success: false, error: 'Cancelled' }
           }
-          content = readFileSync(result.filePaths[0], 'utf-8')
+          content = readImportFile(result.filePaths[0])
         }
 
         const out = await importTestSuiteFromFile(content, payload.projectId, payload.suiteName)
         return { success: true, data: out }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -2832,14 +2929,12 @@ export function registerSaveHandlers(): void {
       }
       // Read and validate JSON
       const filePath = result.filePaths[0]
-      const content = readFileSync(filePath, 'utf-8')
-      const data = JSON.parse(content) as ProjectExport
-      if (!data.version || !data.project) {
-        return { success: false, error: 'Invalid project file format.' }
-      }
-      return { success: true, data: { filePath, project: data } }
+      const data = parseJsonFile(readImportFile(filePath), PROJECT_FILE)
+      const problem = projectFileProblem(data)
+      if (problem) return { success: false, error: problem }
+      return { success: true, data: { filePath, project: data as ProjectExport } }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, error: importErrorText(e) }
     }
   })
 
@@ -2855,11 +2950,10 @@ export function registerSaveHandlers(): void {
     ) => {
       try {
         const safePath = assertImportFilePath(payload.filePath)
-        const content = readFileSync(safePath, 'utf-8')
-        const data = JSON.parse(content) as ProjectExport
-        if (!data.version || !data.project) {
-          return { success: false, error: 'Invalid project file format.' }
-        }
+        const parsed = parseJsonFile(readImportFile(safePath), PROJECT_FILE)
+        const problem = projectFileProblem(parsed)
+        if (problem) return { success: false, error: problem }
+        const data = parsed as ProjectExport
         await importProjectData(data, payload.projectId)
         return {
           success: true,
@@ -2874,7 +2968,7 @@ export function registerSaveHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, error: importErrorText(e) }
       }
     },
   )
@@ -3190,24 +3284,15 @@ export function registerSaveHandlers(): void {
           }
         }
 
-        // Find JSON files
-        const files = readdirSync(tmpDir).filter((f) => f.endsWith('.json') && !f.startsWith('.'))
-        if (files.length === 0) {
+        // The file that belongs to THIS project (slug match, or the only one).
+        const ownFile = pickCheckoutProjectFile(tmpDir, projectNameOf(payload.projectId))
+        if (!ownFile) {
           return { success: false, error: "Git repository'de proje dosyası bulunamadı." }
         }
-
-        // The file that belongs to THIS project (slug match, or the only one).
-        const ownName = (
-          getDb().prepare('SELECT name FROM projects WHERE id = ?').get(payload.projectId) as
-            | { name: string }
-            | undefined
-        )?.name
-        const content = readFileSync(join(tmpDir, pickProjectFile(files, ownName)), 'utf-8')
-        const data = JSON.parse(content) as ProjectExport
-
-        if (!data.version || !data.project) {
-          return { success: false, error: 'Geçersiz proje dosyası formatı.' }
-        }
+        const parsed = parseJsonFile(readCheckoutFile(join(tmpDir, ownFile)), PROJECT_FILE)
+        const problem = projectFileProblem(parsed)
+        if (problem) return { success: false, error: problem }
+        const data = parsed as ProjectExport
 
         // Import into DB
         await importProjectData(data, payload.projectId)
@@ -3343,16 +3428,13 @@ export function registerSaveHandlers(): void {
           }
         }
 
-        const files = isEmpty
-          ? []
-          : readdirSync(tmpDir)
-              .filter((f) => f.endsWith('.json') && !f.startsWith('.'))
-              .map((f) => {
-                const stat = statSync(join(tmpDir, f))
-                return { name: f, path: join(tmpDir, f), size: stat.size }
-              })
+        const listed = isEmpty ? { files: [], skipped: [] } : listCheckoutJsonFiles(tmpDir)
+        const files = listed.files.map((f) => {
+          const stat = statSync(join(tmpDir, f))
+          return { name: f, path: join(tmpDir, f), size: stat.size }
+        })
 
-        return { success: true, data: { tmpDir, files, isEmpty } }
+        return { success: true, data: { tmpDir, files, isEmpty, skipped: listed.skipped } }
       } catch (e) {
         return { success: false, error: describeGitError(e, payload.token) }
       }
@@ -3365,11 +3447,10 @@ export function registerSaveHandlers(): void {
       if (!existsSync(safePath)) {
         return { success: false, error: 'File not found' }
       }
-      const content = readFileSync(safePath, 'utf-8')
-      const data = JSON.parse(content)
+      const data = parseJsonFile(readCheckoutFile(safePath), PROJECT_FILE)
       return { success: true, data }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, error: importErrorText(e) }
     }
   })
 
@@ -3431,16 +3512,16 @@ export function registerSaveHandlers(): void {
 
         let remoteData: ProjectExport | null = null
         if (cloned) {
-          const files = readdirSync(tmpDir).filter((f) => f.endsWith('.json') && !f.startsWith('.'))
-          if (files.length > 0) {
-            try {
-              const content = readFileSync(join(tmpDir, files[0]), 'utf-8')
-              remoteData = JSON.parse(content) as ProjectExport
-            } catch {
-              /* ignore */
+          try {
+            // The same file Pull would take; the first listed could be another project's.
+            const ownFile = pickCheckoutProjectFile(tmpDir, projectNameOf(payload.projectId))
+            if (ownFile) {
+              const content = parseJsonFile(readCheckoutFile(join(tmpDir, ownFile)), PROJECT_FILE)
+              if (!projectFileProblem(content)) remoteData = content as ProjectExport
             }
+          } finally {
+            rmSync(tmpDir, { recursive: true, force: true })
           }
-          rmSync(tmpDir, { recursive: true, force: true })
         }
 
         // Compare what Push WOULD write: secrets never reach the file (issue #177).

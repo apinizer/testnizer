@@ -31,6 +31,9 @@ export function isRunnableProtocol(protocol: string | null | undefined): boolean
   return isRunnerHttpLike(protocol) || norm(protocol) === 'mcp'
 }
 
+/** Everything `isRunnableProtocol` accepts, for the guard that needs one row per protocol. */
+export const RUNNABLE_PROTOCOLS: readonly string[] = [...RUNNER_HTTP_LIKE, 'mcp']
+
 /**
  * A row the HTTP mock server can stand in for: a method + path over HTTP —
  * the HTTP family and SSE (an SSE response body mode exists, issue #221).

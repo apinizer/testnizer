@@ -1,0 +1,20 @@
+#%RAML 1.0
+title: Pets
+version: v1
+baseUri: "__BASE__"
+
+/pets:
+  get:
+    displayName: List pets
+    responses:
+      200:
+        description: OK
+  /{petId}:
+    uriParameters:
+      petId:
+        type: string
+    get:
+      displayName: Get pet
+      responses:
+        200:
+          description: OK

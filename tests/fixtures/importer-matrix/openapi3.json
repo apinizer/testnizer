@@ -1,0 +1,15 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Pets", "version": "1" },
+  "servers": [{ "url": "__BASE__" }],
+  "paths": {
+    "/pets": { "get": { "summary": "List pets", "responses": { "200": { "description": "ok" } } } },
+    "/pets/{petId}": {
+      "get": {
+        "summary": "Get pet",
+        "parameters": [{ "name": "petId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "ok" } }
+      }
+    }
+  }
+}

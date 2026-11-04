@@ -4,8 +4,10 @@ import { useEnvironmentStore } from './environment.store'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
+import { patchTabSlice, readTabSlice, updateTabSlice, withoutTab } from '../lib/tab-slice'
+import { releaseConnection } from '../lib/realtime-connections'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -231,7 +233,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
 
   connect: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const { url, customHeaders, lastEventId, method, body, bodyType } = get()
     if (!url.trim()) return
 
@@ -274,29 +276,16 @@ export const useSseStore = create<SseStore>((set, get) => ({
     // state (live or cached), not the currently-active tab.
     const ownerTabId = get()._currentTabId
 
-    const applyToOwner = (patch: Partial<TabSseState>): void => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) {
-        set(patch as Partial<SseStore>)
-      } else if (ownerTabId !== null) {
-        const map = new Map(current._tabStates)
-        const existing = map.get(ownerTabId) ?? emptyTabState()
-        map.set(ownerTabId, { ...existing, ...patch })
-        set({ _tabStates: map })
-      }
-    }
+    const ownerSlice = (): TabSseState | undefined =>
+      readTabSlice<TabSseState, SseStore>(useSseStore, ownerTabId)
 
-    const appendEventToOwner = (event: SseEvent): void => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) {
-        set({ events: [...current.events, event] })
-      } else if (ownerTabId !== null) {
-        const map = new Map(current._tabStates)
-        const existing = map.get(ownerTabId) ?? emptyTabState()
-        map.set(ownerTabId, { ...existing, events: [...existing.events, event] })
-        set({ _tabStates: map })
-      }
-    }
+    const applyToOwner = (patch: Partial<TabSseState>): void =>
+      patchTabSlice<TabSseState, SseStore>(useSseStore, ownerTabId, patch)
+
+    const appendEventToOwner = (event: SseEvent): void =>
+      updateTabSlice<TabSseState, SseStore>(useSseStore, ownerTabId, (slice) => ({
+        events: [...slice.events, event],
+      }))
 
     const getOwnerConnectionState = (): ConnectionState => {
       const current = get()
@@ -429,27 +418,23 @@ export const useSseStore = create<SseStore>((set, get) => ({
       if (closedByServer) {
         // The stream already opened AND ended (a short finite stream can beat
         // this IPC reply) — the close handler set the final state.
+      } else if (
+        result?.success &&
+        result.data &&
+        ownerSlice()?._pendingConnectId !== pendingConnectId
+      ) {
+        // The handshake finished just as it was given up (Cancel, the tab
+        // closed): close the connection nobody owns.
+        unsub()
+        void sse.disconnect(result.data.connectionId).catch(() => {})
       } else if (result?.success && result.data) {
-        const newId = result.data.connectionId
-        const current = get()
-        if (current._currentTabId === ownerTabId) {
-          set({
-            connectionId: newId,
-            // Keep the state set by the 'open' event when it has already fired.
-            connectionState: current.connectionState === 'connected' ? 'connected' : 'connecting',
-            _pendingConnectId: undefined,
-          })
-        } else if (ownerTabId !== null) {
-          const map = new Map(current._tabStates)
-          const existing = map.get(ownerTabId) ?? emptyTabState()
-          map.set(ownerTabId, {
-            ...existing,
-            connectionId: newId,
-            connectionState: existing.connectionState === 'connected' ? 'connected' : 'connecting',
-            _pendingConnectId: undefined,
-          })
-          set({ _tabStates: map })
-        }
+        applyToOwner({
+          connectionId: result.data.connectionId,
+          // Keep the state set by the 'open' event when it has already fired.
+          connectionState:
+            ownerSlice()?.connectionState === 'connected' ? 'connected' : 'connecting',
+          _pendingConnectId: undefined,
+        })
       } else {
         unsub()
         applyToOwner({
@@ -471,7 +456,13 @@ export const useSseStore = create<SseStore>((set, get) => ({
   },
 
   disconnect: async () => {
-    const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
+    const {
+      connectionId,
+      _unsubscribe,
+      _pendingConnectId,
+      connectionState,
+      _currentTabId: ownerTabId,
+    } = get()
     const sse = getSseApi()
     if (sse) {
       if (connectionState === 'connecting' && _pendingConnectId) {
@@ -490,7 +481,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       }
     }
     if (_unsubscribe) _unsubscribe()
-    set({
+    patchTabSlice<TabSseState, SseStore>(useSseStore, ownerTabId, {
       connectionState: 'disconnected',
       connectionId: null,
       // A user Disconnect clears the last reconnect / close message too.
@@ -502,8 +493,11 @@ export const useSseStore = create<SseStore>((set, get) => ({
   },
 
   reconnect: async () => {
+    const ownerTabId = get()._currentTabId
     await get().disconnect()
-    await get().connect()
+    // `connect()` works on the live slice: if the user moved while the old
+    // connection closed, it would connect the tab they moved to.
+    if (get()._currentTabId === ownerTabId) await get().connect()
   },
 
   clearEvents: () => set({ events: [] }),
@@ -556,8 +550,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
     const state = get()
     const tabStates = new Map(state._tabStates)
 
-    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
-    tabStates.set(currentKey, extractState(state))
+    if (state._currentTabId) tabStates.set(state._currentTabId, extractState(state))
 
     const target = tabStates.get(tabId) || emptyTabState()
 
@@ -569,19 +562,26 @@ export const useSseStore = create<SseStore>((set, get) => ({
   },
 
   removeTabState: (tabId) => {
-    const tabStates = new Map(get()._tabStates)
-    const removed = tabStates.get(tabId)
-    if (removed?._unsubscribe) {
-      removed._unsubscribe()
+    const state = get()
+    const live = state._currentTabId === tabId
+    const cached = state._tabStates.get(tabId)
+    // Closing the tab closes its connection: nothing else can disconnect it.
+    releaseConnection(live ? extractState(state) : cached, getSseApi())
+    if (live && cached?._unsubscribe && cached._unsubscribe !== state._unsubscribe) {
+      cached._unsubscribe()
     }
-    tabStates.delete(tabId)
-    set({ _tabStates: tabStates })
-
-    if (get()._currentTabId === tabId) {
-      const liveUnsub = get()._unsubscribe
-      if (liveUnsub && liveUnsub !== removed?._unsubscribe) liveUnsub()
-      set({ _unsubscribe: undefined })
-    }
+    const gone = withoutTab<TabSseState>(state, tabId)
+    set(
+      live
+        ? {
+            ...gone,
+            connectionId: null,
+            connectionState: 'disconnected',
+            _pendingConnectId: undefined,
+            _unsubscribe: undefined,
+          }
+        : gone,
+    )
   },
 
   reset: () => {

@@ -19,7 +19,11 @@
  * `request.body.messages.[-1]` cannot express them. Empty when the body has
  * no such shape, which is exactly what an unknown name rendered before.
  * Note: the env pre-pass runs first, so a project variable of the same name
- * (e.g. `model`) wins over the shortcut.
+ * (e.g. `model`) wins over the shortcut. Not over `request.*`, which imported
+ * text may use (`src/shared/mock-imported-text.ts`).
+ *
+ * `\\{{x}}` is Handlebars' escape and prints `{{x}}`; neither pre-pass looks
+ * inside it. Imported text relies on this to stay out of the project variables.
  *
  * `{{offeredTool 'echo'}}` (issue #226) is the name under which the request
  * offers the MCP tool `echo` (`offeredToolName`): `echo` itself, or AI Chat's
@@ -185,6 +189,13 @@ hb.registerHelper('offeredTool', function (tool: unknown, options?: Handlebars.H
   return offeredToolName(root?.request?.body ?? root?.request?.bodyText, tool) ?? tool
 })
 
+/** A single backslash before `{{`; two run the tag (Handlebars' own rule). */
+const ESCAPED_TAG = /(?<!\\)\\\{\{/
+
+function withoutRequestNames(vars: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(vars).filter(([name]) => !name.startsWith('request.')))
+}
+
 /** Render a template against a context. Errors return the literal source.
  *
  *  Pass order: dynamic values → env vars → Handlebars. Both pre-passes
@@ -197,9 +208,11 @@ export function renderTemplate(source: string, ctx: TemplateContext): string {
   // and plain `{{varName}}` against the provided env map. If no env vars
   // were supplied, fall back to the standalone dynamic-only pass so
   // existing tests / call sites keep working.
-  const resolved = ctx.envVars
-    ? resolveVariables(source, ctx.envVars)
-    : resolveDynamicPlaceholders(source)
+  const env = ctx.envVars && withoutRequestNames(ctx.envVars)
+  const resolved = source
+    .split(ESCAPED_TAG)
+    .map((part) => (env ? resolveVariables(part, env) : resolveDynamicPlaceholders(part)))
+    .join('\\{{')
   // An unknown `{{$name}}` survives the pre-pass as written (issue #281).
   // Escape it so Handlebars prints it literally instead of looking up `$name`
   // and emitting an empty string.

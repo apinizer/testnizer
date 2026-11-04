@@ -35,8 +35,8 @@ import RunnerConfigSplit from './RunnerConfigSplit'
 import RunnerLiveBanner from './RunnerLiveBanner'
 import {
   liveRunKey,
-  markLiveRunStop,
   startLiveRun,
+  stopLiveRun,
   takeFinishedRun,
   useRunnerLiveStore,
 } from '../../stores/runner-live.store'
@@ -334,7 +334,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [delay, setDelay] = useState(RUNNER_DEFAULTS.delay)
   const [iterationDelay, setIterationDelay] = useState(RUNNER_DEFAULTS.iterationDelay)
   const [iterations, setIterations] = useState(RUNNER_DEFAULTS.iterations)
-  const [iterationData, setIterationData] = useState<Record<string, string>[]>([])
+  const [iterationData, setIterationData] = useState<Record<string, unknown>[]>([])
   const [environmentId, setEnvironmentId] = useState('')
   const [stopOnError, setStopOnError] = useState(RUNNER_DEFAULTS.stopOnError)
   const [persistResponses, setPersistResponses] = useState(RUNNER_DEFAULTS.persistResponses)
@@ -366,7 +366,17 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const liveRun = useRunnerLiveStore((s) => s.runs[liveKey])
   const isRunning = liveRun?.running ?? false
   /** A past run opened from All Runs / Overview: its rows show, not the live ones. */
-  const [pastRunOpen, setPastRunOpen] = useState(false)
+  const pastRunStorageKey = runnerKey('past-run', tabId)
+  const [pastRunOpen, setPastRunOpen] = useState(
+    () => !!pastRunStorageKey && sessionStorage.getItem(pastRunStorageKey) === '1',
+  )
+  // Survives a tab switch: a report being read does not give way to the live
+  // run just because the user looked at another tab.
+  useEffect(() => {
+    if (!pastRunStorageKey) return
+    if (pastRunOpen) sessionStorage.setItem(pastRunStorageKey, '1')
+    else sessionStorage.removeItem(pastRunStorageKey)
+  }, [pastRunOpen, pastRunStorageKey])
   const live = pastRunOpen ? undefined : liveRun
   /** Why the last run produced nothing (main's error), for the empty results view. */
   const [runError, setRunError] = useState<string | null>(null)
@@ -388,6 +398,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     report: RunnerReport | null
     startedAt: number | null
     origin?: RunOrigin
+    sourceLabel?: string
   } | null => {
     if (!runDataStorageKey) return null
     try {
@@ -398,6 +409,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         report: RunnerReport | null
         startedAt: number | null
         origin?: RunOrigin
+        sourceLabel?: string
       }
     } catch {
       return null
@@ -411,6 +423,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   )
   const [localStartedAt, setRunStartedAt] = useState<number | null>(
     () => readStoredRunData()?.startedAt ?? null,
+  )
+  const [runSourceLabel, setRunSourceLabel] = useState<string>(
+    () => readStoredRunData()?.sourceLabel ?? 'Runner',
   )
   const results = live ? live.results : localResults
   const report = live ? live.report : localReport
@@ -467,15 +482,23 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // the main thread, plus a real risk of `QuotaExceededError` on big
   // runs). We only need the final snapshot — the next `isRunning=false`
   // transition will trigger this effect once with the complete data,
-  // because `results`/`report` change on completion too.
+  // because `results`/`report` change on completion too. A past report open
+  // during a run is a different matter: it does not tick, it is what a tab
+  // switch must bring back, and the run's own snapshot comes when it ends.
   useEffect(() => {
     if (!runDataStorageKey) return
-    if (isRunning) return
+    if (isRunning && !pastRunOpen) return
     if (results.length > 0 || report) {
       try {
         sessionStorage.setItem(
           runDataStorageKey,
-          JSON.stringify({ results, report, startedAt: runStartedAt, origin: resultsOrigin }),
+          JSON.stringify({
+            results,
+            report,
+            startedAt: runStartedAt,
+            origin: resultsOrigin,
+            sourceLabel: runSourceLabel,
+          }),
         )
       } catch (err) {
         // QuotaExceededError on a huge run — drop the snapshot rather
@@ -486,13 +509,21 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     } else {
       sessionStorage.removeItem(runDataStorageKey)
     }
-  }, [isRunning, results, report, runStartedAt, resultsOrigin, runDataStorageKey])
+  }, [
+    isRunning,
+    pastRunOpen,
+    results,
+    report,
+    runStartedAt,
+    resultsOrigin,
+    runSourceLabel,
+    runDataStorageKey,
+  ])
 
   // Origin tracking: 'apis' if opened via right-click Run on APIs tree, 'suite' if from Test Suite, 'runner' otherwise
   const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(
     folderId ? 'apis' : 'runner',
   )
-  const [runSourceLabel, setRunSourceLabel] = useState<string>('Runner')
 
   // A run that ended becomes this tab's results — also when it ended while the
   // tab was not on screen (then this runs on the way back).
@@ -657,7 +688,16 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     const spentKey = runnerKey('report-spent', tabId) ?? ''
     const token = sessionKey ?? ''
     if (sessionStorage.getItem(spentKey) === token) return
-    sessionStorage.setItem(spentKey, token)
+    // An auto-run is spent when it is picked up, once the endpoints have loaded
+    // (the effect below). Leaving before that unmounts this component with the
+    // pending ref, and the run has to be armed again on return.
+    const armsAutoRun =
+      !data.viewHome &&
+      !data.viewAllRuns &&
+      !data.viewScheduledTasks &&
+      !!data.autoRun &&
+      Array.isArray(data.endpointIds)
+    if (!armsAutoRun) sessionStorage.setItem(spentKey, token)
 
     if (data.viewHome) {
       setView('home')
@@ -709,6 +749,11 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     const pending = pendingAutoRunRef.current
     if (!pending || endpoints.length === 0) return
     pendingAutoRunRef.current = null
+    // Spent here and not in the timer below: the timer is not cancelled by an
+    // unmount, so a return within it must not arm a second run.
+    const spentKey = runnerKey('report-spent', tabId)
+    if (spentKey) sessionStorage.setItem(spentKey, sessionKey ?? '')
+    setPastRunOpen(false)
 
     const targetIds = new Set(pending.endpointIds)
     // Select only the target endpoints
@@ -732,7 +777,6 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       await saveDirtyRunItemsBeforeRun(matched.map((ep) => ep.id))
 
       setView('results')
-      setPastRunOpen(false)
       setRunError(null)
       setResults([])
       setReport(null)
@@ -796,6 +840,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     stopOnError,
     persistResponses,
     tabId,
+    sessionKey,
   ])
 
   // Collect endpoints and folder groups from the target folder/module.
@@ -884,6 +929,14 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         // runner simply never read it, which is why a two-level suite arrived
         // here as one flat level of groups (issue #90).
         folders: Array<{ id: string; name: string; parent_id?: string | null }>
+      }
+
+      // Nothing to run: a Quick Run waiting on this load is over, so it cannot
+      // start by itself on a later visit if the suite has gained items by then.
+      if (items.length === 0 && pendingAutoRunRef.current) {
+        pendingAutoRunRef.current = null
+        const spentKey = runnerKey('report-spent', tabId)
+        if (spentKey) sessionStorage.setItem(spentKey, sessionKey ?? '')
       }
 
       // Persisted per-suite run configuration (issue #100): loaded once per
@@ -1261,8 +1314,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
    * be pressed any number of times, at any moment, and cleanup still completes.
    */
   const handleStop = useCallback(() => {
-    markLiveRunStop(tabId, 'graceful')
-    window.api?.runner?.stop({ mode: 'graceful' })
+    stopLiveRun(tabId, 'graceful')
   }, [tabId])
 
   /**
@@ -1271,8 +1323,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
    * the old single control had to guess which of the two the user meant.
    */
   const handleStopDirect = useCallback(() => {
-    markLiveRunStop(tabId, 'direct')
-    window.api?.runner?.stop({ mode: 'direct' })
+    stopLiveRun(tabId, 'direct')
   }, [tabId])
 
   const handleNewRun = useCallback((mode?: 'manual' | 'schedule' | unknown) => {

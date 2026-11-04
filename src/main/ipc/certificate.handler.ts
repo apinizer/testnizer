@@ -1,5 +1,5 @@
 import { ipcMain, dialog, app } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { readFileSync, statSync, writeFileSync, mkdirSync } from 'fs'
 import { join, basename } from 'path'
 import { randomUUID } from 'crypto'
 import {
@@ -17,6 +17,28 @@ import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
 // Cap the file we're willing to ingest as certificate material (mirror the
 // request-time reader) so a mis-pick can't copy a multi-GB file into userData.
 const MAX_CERT_BYTES = 1024 * 1024 // 1 MiB
+
+const PEM_CERTIFICATE = /-----BEGIN (?:TRUSTED |X509 )?CERTIFICATE-----/
+const PEM_PRIVATE_KEY = /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/
+
+/**
+ * TLS reads these as PEM at request time, where a wrong file only surfaces as a
+ * failed request to some host. A PFX stays binary and its password decides.
+ */
+function pickedFileProblem(kind: 'crt' | 'key' | 'pfx' | 'ca', bytes: Buffer): string | null {
+  if (kind === 'pfx') return null
+  const what = kind === 'key' ? 'key file' : 'certificate file'
+  if (bytes.length === 0) return `That ${what} is empty.`
+  const text = bytes.toString('latin1')
+  if (kind === 'key') {
+    return PEM_PRIVATE_KEY.test(text)
+      ? null
+      : 'That file has no PEM private key (-----BEGIN PRIVATE KEY-----). Convert it to PEM and choose it again.'
+  }
+  return PEM_CERTIFICATE.test(text)
+    ? null
+    : 'That file has no PEM certificate (-----BEGIN CERTIFICATE-----). A DER file must be converted to PEM first.'
+}
 
 interface Ok<T> {
   success: true
@@ -191,13 +213,21 @@ export function registerCertificateHandlers(): void {
     // client cert (the reported mTLS bug). Postman avoids this by capturing the
     // content at pick time; we do the same, and store the safe copy's path.
     try {
-      const bytes = readFileSync(src)
-      if (bytes.length > MAX_CERT_BYTES) {
+      // Stat first: reading a FIFO would never return, and a size check after
+      // the read would come too late for a huge file.
+      const stat = statSync(src)
+      if (!stat.isFile()) {
+        return { success: false as const, error: 'That is not a regular file.' }
+      }
+      if (stat.size > MAX_CERT_BYTES) {
         return {
           success: false as const,
           error: 'That file is larger than 1 MiB — it does not look like a certificate/key.',
         }
       }
+      const bytes = readFileSync(src)
+      const problem = pickedFileProblem(kind, bytes)
+      if (problem) return { success: false as const, error: problem }
       const destDir = join(app.getPath('userData'), 'certs')
       mkdirSync(destDir, { recursive: true })
       // Keep the original filename (so the settings row stays recognisable),

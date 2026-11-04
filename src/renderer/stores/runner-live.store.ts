@@ -41,6 +41,9 @@ export interface LiveRun {
   /** Cleanup has begun — a progress tick cannot say so before its first step ends. */
   teardownStarted: boolean
   stopRequested: StopMode | null
+  /** Who `runner:stop` must address: what this run was started with. */
+  runTabId: string | undefined
+  projectId: string
 }
 
 interface RunnerLiveState {
@@ -61,8 +64,13 @@ export function liveRunKey(tabId: string | undefined): string {
   return runnerKey('run-data', tabId ?? 'detached') as string
 }
 
-export function markLiveRunStop(tabId: string | undefined, mode: StopMode): void {
-  patchRun(liveRunKey(tabId), () => ({ stopRequested: mode }))
+/** Stop this tab's run and no other (another tab or a schedule may be running). */
+export function stopLiveRun(tabId: string | undefined, mode: StopMode): void {
+  const key = liveRunKey(tabId)
+  const run = useRunnerLiveStore.getState().runs[key]
+  if (!run) return
+  patchRun(key, () => ({ stopRequested: mode }))
+  void window.api?.runner?.stop({ mode, runTabId: run.runTabId, projectId: run.projectId })
 }
 
 /** Hand a finished run to the mounted tab and forget it. Null while still running. */
@@ -152,6 +160,8 @@ export async function startLiveRun(o: StartLiveRun): Promise<void> {
         origin: o.origin,
         teardownStarted: false,
         stopRequested: null,
+        runTabId: payload.runTabId,
+        projectId: payload.projectId,
       },
     },
   }))
