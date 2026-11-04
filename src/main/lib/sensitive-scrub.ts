@@ -908,11 +908,18 @@ const URL_KEYS = new Set(['url', 'address', 'serverAddress', 'endpointUrl', 'wsd
 /** Keys whose value is a request body. */
 const BODY_KEYS = new Set(['body', 'requestBody', 'envelope'])
 /**
- * Keys whose value is a JSON payload — GraphQL `variables`, a WebSocket
- * composer, a Socket.IO emit payload, gRPC `messages`, any `payload`. The
+ * Keys whose value is a JSON payload — GraphQL `variables` and subscription
+ * `connectionInit`, a WebSocket composer, a Socket.IO emit payload, gRPC `messages`, any `payload`. The
  * name rule is applied recursively (`maskJsonBody`).
  */
-const PAYLOAD_KEYS = new Set(['variables', 'composerContent', 'emitPayload', 'messages', 'payload'])
+const PAYLOAD_KEYS = new Set([
+  'variables',
+  'connectionInit',
+  'composerContent',
+  'emitPayload',
+  'messages',
+  'payload',
+])
 /** Keys that hold one credential by themselves. */
 const CREDENTIAL_KEYS = new Set(['bearerToken'])
 

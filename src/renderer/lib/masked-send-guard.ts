@@ -59,11 +59,14 @@ export function graphqlMaskedSendError(req: {
   url: string
   variables?: string
   headers: KeyValuePair[]
+  /** The subscription `connection_init` payload. */
+  connectionInit?: string
 }): string | null {
   return maskedCredentialsGuard({
     url: req.url,
     variables: req.variables ?? '',
     headers: req.headers,
+    connectionInit: req.connectionInit ?? '',
   })
 }
 

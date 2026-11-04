@@ -29,6 +29,7 @@ import { useMqttStore } from '../../src/renderer/stores/mqtt.store'
 import { useMcpStore } from '../../src/renderer/stores/mcp.store'
 import { resetAiKeySessionForTests, useAiChatStore } from '../../src/renderer/stores/ai-chat.store'
 import type { ApiResponse, Tab, TestAssertion, WsdlParseResult } from '../../src/renderer/types'
+import type { GqlWsEvent } from '../../src/shared/graphql-ws'
 
 const A = 'tab-a'
 const B = 'tab-b'
@@ -225,6 +226,43 @@ const realtimeBridge = (connect: ReturnType<typeof vi.fn>) => ({
   onEvent: () => () => {},
   onClosed: () => () => {},
 })
+
+/** A `graphqlWs` bridge whose connect stays open and whose frames the test pushes. */
+function heldSubscription() {
+  const connect = held<unknown>()
+  const listeners = new Set<(e: GqlWsEvent) => void>()
+  const disconnect = vi.fn(async (_id: string) => ok(true))
+  const cancelConnect = vi.fn(async (_id: string) => ok({ canceled: true }))
+  setApi({
+    graphqlWs: {
+      connect: connect.spy,
+      disconnect,
+      cancelConnect,
+      onEvent: (cb: (e: GqlWsEvent) => void) => {
+        listeners.add(cb)
+        return () => listeners.delete(cb)
+      },
+    },
+  })
+  useGraphQLStore.setState({ url: 'ws://a.example/graphql', query: 'subscription { a }' })
+  const id = (): string =>
+    ((connect.spy.mock.calls as unknown as Array<[{ connectionId: string }]>)[0] ?? [])[0]
+      ?.connectionId
+  const emit = (e: Record<string, unknown>): void => {
+    for (const cb of [...listeners]) {
+      cb({ connectionId: id(), timestamp: 1, ...e } as GqlWsEvent)
+    }
+  }
+  return {
+    connect,
+    disconnect,
+    cancelConnect,
+    id,
+    emit,
+    emitData: (data: string) => emit({ type: 'data', data }),
+    start: () => useGraphQLStore.getState().subscribe(),
+  }
+}
 
 interface TabRow {
   store:
@@ -702,24 +740,129 @@ const ROWS: TabRow[] = [
   {
     store: 'graphql',
     action: 'subscribe',
-    op: 'subscribe marks the tab that subscribed',
+    op: 'subscription events stay on the tab that subscribed, across a switch and back',
     run: async () => {
-      const send = held<unknown>()
-      setApi({ request: { send: send.spy, cancel: vi.fn() } })
-      useGraphQLStore.setState({
-        url: 'ws://a.example/graphql',
-        query: 'subscription { a }',
-      })
-      const done = useGraphQLStore.getState().subscribe()
-      await send.calledTimes(1)
+      const sub = heldSubscription()
+      const done = sub.start()
+      await sub.connect.calledTimes(1)
+      sub.emitData('{"n":1}')
 
       switchActiveTab(B)
-      send.resolve(ok(null))
+      expect(useGraphQLStore.getState().subscriptionState).toBe('disconnected')
+      sub.connect.resolve(ok({ connectionId: sub.id() }))
       await done
 
+      // A frame while B is on screen goes to A; B stays empty and idle.
+      sub.emitData('{"n":2}')
+      expect(useGraphQLStore.getState().subscriptionEvents).toEqual([])
       expect(useGraphQLStore.getState().subscriptionState).toBe('disconnected')
+      expect(useGraphQLStore.getState().connectionId).toBeNull()
+
       switchActiveTab(A)
       expect(useGraphQLStore.getState().subscriptionState).toBe('connected')
+      expect(useGraphQLStore.getState().connectionId).toBe(sub.id())
+      expect(useGraphQLStore.getState().subscriptionEvents.map((e) => e.data)).toEqual([
+        '{"n":1}',
+        '{"n":2}',
+      ])
+      expect(sub.disconnect).not.toHaveBeenCalled()
+    },
+  },
+  {
+    store: 'graphql',
+    action: 'subscribe',
+    op: 'the server ending the subscription while B is on screen ends it on A only',
+    run: async () => {
+      const sub = heldSubscription()
+      const done = sub.start()
+      await sub.connect.calledTimes(1)
+      sub.connect.resolve(ok({ connectionId: sub.id() }))
+      await done
+
+      switchActiveTab(B)
+      sub.emit({ type: 'ended', reason: 'complete' })
+      expect(useGraphQLStore.getState().subscriptionEnd).toBeNull()
+
+      switchActiveTab(A)
+      expect(useGraphQLStore.getState().subscriptionState).toBe('disconnected')
+      expect(useGraphQLStore.getState().subscriptionEnd).toEqual({ kind: 'completed' })
+    },
+  },
+  {
+    store: 'graphql',
+    action: 'subscribe',
+    op: 'closing the tab that subscribed disconnects its subscription, B keeps running',
+    run: async () => {
+      const sub = heldSubscription()
+      const done = sub.start()
+      await sub.connect.calledTimes(1)
+      sub.connect.resolve(ok({ connectionId: sub.id() }))
+      await done
+
+      switchActiveTab(B)
+      useGraphQLStore.setState({ url: 'ws://b.example/graphql' })
+      cleanupTabState(A)
+      expect(sub.disconnect).toHaveBeenCalledTimes(1)
+      expect(sub.disconnect).toHaveBeenCalledWith(sub.id())
+      expect(useGraphQLStore.getState().url).toBe('ws://b.example/graphql')
+      expect(useGraphQLStore.getState()._tabStates.has(A)).toBe(false)
+    },
+  },
+  {
+    store: 'graphql',
+    action: 'subscribe',
+    op: 'closing the tab on screen disconnects its subscription',
+    run: async () => {
+      const sub = heldSubscription()
+      const done = sub.start()
+      await sub.connect.calledTimes(1)
+      sub.connect.resolve(ok({ connectionId: sub.id() }))
+      await done
+
+      cleanupTabState(A)
+      expect(sub.disconnect).toHaveBeenCalledWith(sub.id())
+      expect(useGraphQLStore.getState().connectionId).toBeNull()
+    },
+  },
+  {
+    store: 'graphql',
+    action: 'subscribe',
+    op: 'leaving the project disconnects a subscription on a tab that is not on screen',
+    run: async () => {
+      useWorkspaceStore.setState({ activeProjectId: 'project-a' })
+      const sub = heldSubscription()
+      const done = sub.start()
+      await sub.connect.calledTimes(1)
+      sub.connect.resolve(ok({ connectionId: sub.id() }))
+      await done
+
+      switchActiveTab(B)
+      useWorkspaceStore.setState({ activeProjectId: 'project-b' })
+      expect(sub.disconnect).toHaveBeenCalledTimes(1)
+      expect(sub.disconnect).toHaveBeenCalledWith(sub.id())
+
+      switchActiveTab(A)
+      expect(useGraphQLStore.getState().subscriptionState).toBe('disconnected')
+      expect(useGraphQLStore.getState().connectionId).toBeNull()
+      expect(useGraphQLStore.getState().subscriptionEnd).toEqual({ kind: 'projectLeft' })
+    },
+  },
+  {
+    store: 'graphql',
+    action: 'subscribe',
+    op: 'leaving the project during the handshake cancels it',
+    run: async () => {
+      useWorkspaceStore.setState({ activeProjectId: 'project-a' })
+      const sub = heldSubscription()
+      const done = sub.start()
+      await sub.connect.calledTimes(1)
+
+      useWorkspaceStore.setState({ activeProjectId: 'project-b' })
+      expect(sub.cancelConnect).toHaveBeenCalledWith(sub.id())
+      sub.connect.resolve(fail('Connection cancelled'))
+      await done
+      expect(useGraphQLStore.getState().subscriptionError).toBeNull()
+      expect(useGraphQLStore.getState().subscriptionState).toBe('disconnected')
     },
   },
   connectRow(
@@ -927,12 +1070,15 @@ const ACTION_ROWS: TabRow[] = [
   heldRow({
     store: 'graphql',
     action: 'unsubscribe',
-    bridge: (spy) => ({ request: { cancel: spy } }),
-    onA: () => useGraphQLStore.setState({ subscriptionState: 'connected' }),
+    bridge: (spy) => ({ graphqlWs: { disconnect: spy, cancelConnect: vi.fn() } }),
+    onA: () => useGraphQLStore.setState({ subscriptionState: 'connected', connectionId: 'sub-a' }),
     start: () => useGraphQLStore.getState().unsubscribe(),
-    onB: () => useGraphQLStore.setState({ subscriptionState: 'connected' }),
+    onB: () => useGraphQLStore.setState({ subscriptionState: 'connected', connectionId: 'sub-b' }),
     reply: ok(null),
-    expectA: () => expect(useGraphQLStore.getState().subscriptionState).toBe('disconnected'),
+    expectA: () => {
+      expect(useGraphQLStore.getState().subscriptionState).toBe('disconnected')
+      expect(useGraphQLStore.getState().connectionId).toBeNull()
+    },
   }),
   heldRow({
     store: 'websocket',
@@ -1321,7 +1467,14 @@ const WITHHELD_ROWS: TabRow[] = [
   withheldRow({
     store: 'graphql',
     action: 'subscribe',
-    bridge: (send) => ({ request: { send, cancel: vi.fn() } }),
+    bridge: (send) => ({
+      graphqlWs: {
+        connect: send,
+        disconnect: vi.fn(),
+        cancelConnect: vi.fn(),
+        onEvent: () => () => {},
+      },
+    }),
     configure: () =>
       useGraphQLStore.setState({ url: 'http://x.example/graphql', query: 'subscription { a }' }),
     start: () => useGraphQLStore.getState().subscribe(),

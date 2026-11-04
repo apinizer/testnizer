@@ -8,7 +8,7 @@ import BranchDropdown from '../sidebar/BranchDropdown'
 import UserMenu from './UserMenu'
 import PushCommitModal, { type PushChoice } from '../modals/PushCommitModal'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
-import { emptySecretsMessage } from '../../lib/pull-messages'
+import { emptySecretsMessage, skippedFilesMessage } from '../../lib/pull-messages'
 import { toast } from '../../lib/toast'
 import { formatShortcut } from '../../lib/shortcut-format'
 import { T } from '../../styles/tokens'
@@ -187,8 +187,13 @@ export default function Header() {
         } else {
           setStatusMsg(`${t('toast.pulled')} (${branch})`)
           setPullStatus('success')
-          const empty = (result.data as { emptySecrets?: number } | undefined)?.emptySecrets
-          if (empty) toast.warning(emptySecretsMessage(t, empty))
+          const pulled = result.data as
+            | { emptySecrets?: number; skippedFiles?: string[] }
+            | undefined
+          if (pulled?.emptySecrets) toast.warning(emptySecretsMessage(t, pulled.emptySecrets))
+          if (pulled?.skippedFiles?.length) {
+            toast.warning(skippedFilesMessage(t, pulled.skippedFiles))
+          }
         }
 
         // git:pull already re-imported the pulled project file into the DB;

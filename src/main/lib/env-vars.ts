@@ -9,8 +9,9 @@
  * Used by:
  *   - The Collection Runner (`runner.handler.ts`) when executing a
  *     request without an explicit environmentId.
- *   - The Mock Server (`mock/server.ts`) when rendering response
- *     templates that reference `{{var}}` placeholders.
+ *   - The Mock Server (`mock/server.ts`) and Mock MCP when rendering response
+ *     templates that reference `{{var}}` placeholders, without the secret ones
+ *     (`loadMockTemplateVars`).
  *
  * Both surfaces previously had their own subset of this loader and the
  * resulting drift was a recurring source of "why is `{{baseUrl}}` empty
@@ -31,7 +32,7 @@ interface DualValueRow {
   initial_value: string | null
 }
 
-interface GlobalRow extends DualValueRow {
+interface SecretFlaggedRow extends DualValueRow {
   secret: number | null
 }
 
@@ -85,10 +86,13 @@ export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
   globals: Record<string, string>
   environment: Record<string, string>
   vaultKeys: string[]
+  /** Keys of `environment` marked secret. */
+  environmentSecretKeys: string[]
 } {
   const globals: Record<string, string> = {}
   const environment: Record<string, string> = {}
   const vaultKeys: string[] = []
+  const environmentSecretKeys: string[] = []
   const db = getDb()
 
   // Project rows ONLY. This used to start from every row of the WORKSPACE
@@ -101,7 +105,7 @@ export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
       .prepare(
         'SELECT key, value, initial_value, secret FROM global_variables WHERE project_id = ? AND enabled = 1',
       )
-      .all(opts.projectId) as GlobalRow[]
+      .all(opts.projectId) as SecretFlaggedRow[]
     for (const r of rows) {
       globals[r.key] = effectiveValue(r)
       if (r.secret === 1) vaultKeys.push(r.key)
@@ -122,16 +126,43 @@ export function loadEnvVarScopes(opts: EnvVarLoadOptions): {
   if (effectiveEnvId) {
     const rows = db
       .prepare(
-        'SELECT key, value, initial_value FROM environment_variables WHERE environment_id = ? AND enabled = 1',
+        'SELECT key, value, initial_value, secret FROM environment_variables WHERE environment_id = ? AND enabled = 1',
       )
-      .all(effectiveEnvId) as DualValueRow[]
-    for (const r of rows) environment[r.key] = effectiveValue(r)
+      .all(effectiveEnvId) as SecretFlaggedRow[]
+    for (const r of rows) {
+      environment[r.key] = effectiveValue(r)
+      if (r.secret === 1) environmentSecretKeys.push(r.key)
+    }
   }
 
-  return { globals, environment, vaultKeys }
+  return { globals, environment, vaultKeys, environmentSecretKeys }
 }
 
 export function loadEnvVars(opts: EnvVarLoadOptions): Record<string, string> {
   const { globals, environment } = loadEnvVarScopes(opts)
   return { ...globals, ...environment }
+}
+
+/** What a mock template may see (`TemplateContext`). */
+export interface MockTemplateVars {
+  envVars?: Record<string, string>
+  secretVarNames?: string[]
+}
+
+/**
+ * The variables a mock response may be rendered with: never a secret one. A
+ * mock answers whoever reaches its port, so it must not hand out a value marked
+ * secret, whether the template is hand-written or imported. The winning
+ * definition decides: a secret environment value hides a plain global of the
+ * same name instead of falling through to it. `secretVarNames` lets
+ * `renderTemplate` print those tags literally.
+ */
+export function loadMockTemplateVars(opts: EnvVarLoadOptions): MockTemplateVars {
+  const { globals, environment, vaultKeys, environmentSecretKeys } = loadEnvVarScopes(opts)
+  const secret = new Set(environmentSecretKeys)
+  for (const key of vaultKeys) if (!(key in environment)) secret.add(key)
+  const envVars = Object.fromEntries(
+    Object.entries({ ...globals, ...environment }).filter(([key]) => !secret.has(key)),
+  )
+  return { envVars, secretVarNames: [...secret] }
 }

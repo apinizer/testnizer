@@ -198,23 +198,63 @@ describe('a .proto file’s imports', () => {
     expect(res.data?.success).toBe(true)
   })
 
-  it('the bundled google/protobuf types are not "outside"', async () => {
+  it('the bundled google/protobuf types are read from nowhere', async () => {
     const main = join(protoFolder(), 'main.proto')
     fs.writeFileSync(main, `import "google/protobuf/empty.proto";\n${SERVICE}`)
     expect((await importProto(main)).success).toBe(true)
   })
 
+  it('a file above its folder is read: ../common.proto', async () => {
+    const parent = protoFolder()
+    const dir = join(parent, 'svc')
+    fs.mkdirSync(dir)
+    fs.writeFileSync(
+      join(parent, 'common.proto'),
+      'syntax = "proto3";\nmessage M { string a = 1; }\n',
+    )
+    const main = join(dir, 'main.proto')
+    fs.writeFileSync(
+      main,
+      'syntax = "proto3";\nimport "../common.proto";\nservice S { rpc Do (M) returns (M); }\n',
+    )
+    const res = await importProto(main)
+    expect(res.success, res.error).toBe(true)
+    expect(res.data?.success).toBe(true)
+  })
+
+  it('a sibling tree is read, as protoc -I lays one out', async () => {
+    const parent = protoFolder()
+    fs.mkdirSync(join(parent, 'common'))
+    fs.mkdirSync(join(parent, 'svc'))
+    fs.writeFileSync(
+      join(parent, 'common', 'types.proto'),
+      'syntax = "proto3";\nmessage M { string a = 1; }\n',
+    )
+    const service = 'service S { rpc Do (M) returns (M); }\n'
+    for (const [path, line] of [
+      [join(parent, 'svc', 'main.proto'), 'import "../common/types.proto";'],
+      [join(parent, 'top.proto'), 'import "common/types.proto";'],
+    ]) {
+      fs.writeFileSync(path, `syntax = "proto3";\n${line}\n${service}`)
+      const res = await importProto(path)
+      expect(res.success, res.error).toBe(true)
+      expect(res.data?.success).toBe(true)
+    }
+  })
+
   it.each([
-    ['above its folder', () => '../secret.proto'],
-    ['an absolute path', () => join(work, 'secret.proto')],
-    ['a device', () => '/dev/zero'],
-  ])('%s is refused, naming the import', async (_label, target) => {
+    ['a file that is not a proto', () => '../secret.txt', /not a \.proto file/],
+    ['a system file', () => '/etc/passwd', /not a \.proto file/],
+    ['an absolute path to one', () => join(work, 'secret.txt'), /not a \.proto file/],
+    ['a device', () => '/dev/zero', /not a \.proto file/],
+  ])('%s is refused, naming the import', async (_label, target, reason) => {
     const main = join(protoFolder(), 'main.proto')
-    fs.writeFileSync(join(work, 'secret.proto'), 'syntax = "proto3";\nmessage Secret {}\n')
+    fs.writeFileSync(join(work, 'secret.txt'), 'token: abc\n')
     fs.writeFileSync(main, `import "${target()}";\n${SERVICE}`)
     const res = await importProto(main)
     const message = res.error ?? (res.data as { error?: string } | undefined)?.error ?? ''
-    expect(message).toMatch(/outside its folder/)
+    expect(message).toMatch(reason)
+    expect(message).toContain(target())
   })
 
   it('a commented-out import is not an import', async () => {

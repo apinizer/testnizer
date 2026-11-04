@@ -55,7 +55,7 @@ import { resolveTlsPayload } from '../lib/tls-presets'
 import { decryptSecret } from '../lib/secure-storage'
 import { soapTransportForRow, withSoapTransportHeaders } from '../../shared/soap-transport'
 import { graphqlJson } from '../../shared/codegen/normalize'
-import { readSavedGraphql } from '../../shared/graphql-row'
+import { isSavedSubscription, readSavedGraphql } from '../../shared/graphql-row'
 import {
   projectAuthToAuthConfig,
   resolveEffectiveAuth,
@@ -319,6 +319,11 @@ export function inheritedNetworkFor(
           }
         : undefined,
   }
+}
+
+function isSavedGraphqlSubscription(requestSchema: string | null): boolean {
+  const schema = parseJsonSafe<{ body?: unknown; metadata?: unknown }>(requestSchema, {})
+  return isSavedSubscription(schema.body, schema.metadata)
 }
 
 export function buildRequestFromEndpoint(
@@ -1738,6 +1743,29 @@ async function runEndpointStep(
       skipped: 1,
       assertions: [],
       error: `Protocol "${proto}" is not supported in the collection runner yet`,
+      iteration,
+      phase,
+    }
+    return recordStep(ctx, result)
+  }
+
+  // A subscription stays open until someone ends it, and POSTing its query would
+  // only earn a server error. Same neutral skip as a protocol the Run cannot drive.
+  if (proto === 'graphql' && isSavedGraphqlSubscription(endpoint.request_schema)) {
+    const result: EndpointRunResult = {
+      endpointId,
+      endpointName: endpoint.name,
+      method: 'SUBSCRIBE',
+      url: endpoint.path,
+      status: null,
+      statusText: 'UNSUPPORTED',
+      duration: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 1,
+      assertions: [],
+      error:
+        'GraphQL subscriptions cannot run in the collection runner: open the request and use Subscribe',
       iteration,
       phase,
     }

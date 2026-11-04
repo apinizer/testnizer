@@ -18,7 +18,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
-import { emptySecretsMessage } from '../../lib/pull-messages'
+import { emptySecretsMessage, skippedFilesMessage } from '../../lib/pull-messages'
 import ProjectIcon from '../shared/ProjectIcon'
 import Modal from '../shared/Modal'
 
@@ -563,7 +563,11 @@ export default function NewProjectModal() {
                   | {
                       success?: boolean
                       error?: string
-                      data?: { imported?: boolean; emptySecrets?: number }
+                      data?: {
+                        imported?: boolean
+                        emptySecrets?: number
+                        skippedFiles?: string[]
+                      }
                     }
                   | undefined
                 if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
@@ -575,6 +579,9 @@ export default function NewProjectModal() {
                 }
                 if (res?.data?.emptySecrets) {
                   warnings.push(emptySecretsMessage(t, res.data.emptySecrets))
+                }
+                if (res?.data?.skippedFiles?.length) {
+                  warnings.push(skippedFilesMessage(t, res.data.skippedFiles))
                 }
               } else {
                 // New project with a git remote — seed the remote with the

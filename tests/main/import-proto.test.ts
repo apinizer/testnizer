@@ -16,6 +16,7 @@ import Database from 'better-sqlite3'
 
 // Stub Electron so the handler module imports cleanly under Node Vitest.
 vi.mock('electron', () => ({
+  app: { getPath: () => '/nonexistent-user-data' },
   ipcMain: { handle: vi.fn() },
   dialog: { showOpenDialog: vi.fn(), showSaveDialog: vi.fn() },
 }))

@@ -36,6 +36,7 @@ import { registerMcpOAuthHandlers } from './mcp-oauth.handler'
 import { registerMcpSecurityHandlers } from './mcp-security.handler'
 import { registerSocketIOHandlers } from './socketio.handler'
 import { registerMqttHandlers } from './mqtt.handler'
+import { registerGraphqlWsHandlers } from './graphql-ws.handler'
 import { registerMockHandlers } from './mock.handler'
 import { registerMockMcpHandlers } from './mock-mcp.handler'
 import { registerTlsHandlers } from './tls.handler'
@@ -80,6 +81,7 @@ export function registerAllHandlers(): void {
   registerMcpSecurityHandlers()
   registerSocketIOHandlers()
   registerMqttHandlers()
+  registerGraphqlWsHandlers()
   registerMockHandlers()
   registerMockMcpHandlers()
   registerTlsHandlers()

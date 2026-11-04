@@ -3315,6 +3315,7 @@ export function registerSaveHandlers(): void {
               environmentVariables: data.environmentVariables?.length || 0,
               globalVariables: data.globalVariables?.length || 0,
             },
+            skippedFiles: listCheckoutJsonFiles(tmpDir).skipped.map((s) => s.file),
           },
         }
       } catch (e) {

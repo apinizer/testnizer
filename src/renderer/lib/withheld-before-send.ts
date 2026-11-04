@@ -42,11 +42,22 @@ export async function reloadWithheldBeforeSend(): Promise<void> {
   }
 }
 
+/** The send was dropped because the user moved to another tab while it waited. */
+export async function notifySendDroppedTabChanged(): Promise<void> {
+  try {
+    const [{ toast }, { t }] = await Promise.all([import('./toast'), import('./i18n')])
+    toast.info(t('credentials.sendDroppedTabChanged'))
+  } catch {
+    // No UI to tell in (tests without a DOM).
+  }
+}
+
 /**
  * Reload, then say whether the tab that asked is still on screen. The read-back
  * takes an IPC round trip: a store's `get()` afterwards reads whichever tab the
- * user moved to, so the send would go out with that tab's configuration. Call it
- * behind the withheld check, so a tab with nothing withheld does not wait a tick.
+ * user moved to, so the send would go out with that tab's configuration. The send
+ * is dropped then, and a toast says so. Call it behind the withheld check, so a
+ * tab with nothing withheld does not wait a tick.
  */
 export async function reloadedOnSameTab(
   read: () => {
@@ -55,7 +66,9 @@ export async function reloadedOnSameTab(
 ): Promise<boolean> {
   const tabId = read()._currentTabId
   await reloadWithheldBeforeSend()
-  return read()._currentTabId === tabId
+  if (read()._currentTabId === tabId) return true
+  await notifySendDroppedTabChanged()
+  return false
 }
 
 /**

@@ -436,6 +436,7 @@ describe('git push → teammate pull: everything arrives (fidelity guarantee)', 
       // Machine-local: never travels.
       proxy: { mode: 'custom', host: 'proxy.a.local', port: 3128 },
       workingDirectory: '/Users/a/work',
+      readFilesOutsideWorkingDirectory: true,
     })
     await fx.push(A)
 
@@ -451,6 +452,7 @@ describe('git push → teammate pull: everything arrives (fidelity guarantee)', 
     expect(bSettings).toMatchObject(SETTINGS)
     // B keeps its own machine-local settings.
     expect(bSettings).toMatchObject({ proxy: { mode: 'none' }, workingDirectory: '/home/b' })
+    expect(bSettings).not.toHaveProperty('readFilesOutsideWorkingDirectory')
 
     // A edits more; B (now an existing checkout) pulls again.
     A.db.prepare("UPDATE endpoints SET name = 'Invoices v2' WHERE project_id = ?").run(A.projectId)
@@ -502,6 +504,43 @@ describe('project settings: one owner, secrets stay local (git fidelity)', () =>
     expect(await settingsOf(A)).toMatchObject({ auth: { bearerToken: 'sk-live-literal' } })
     // Nothing pending on B: its own token is not a change to commit.
     expect((await fx.ok<{ items: unknown[] }>('git:changes', fx.on(B).projectId)).items).toEqual([])
+  }, 60_000)
+
+  it('a pulled project file cannot grant itself file access: machine-local keys in shared_settings are not read', async () => {
+    const A = fx.machine('A')
+    fx.addEndpoint(A, 'Base')
+    // What a hostile (or hand-edited) project file carries.
+    A.db
+      .prepare('UPDATE projects SET shared_settings = ? WHERE id = ?')
+      .run(
+        JSON.stringify({
+          preScript: 'pre()',
+          readFilesOutsideWorkingDirectory: true,
+          workingDirectory: '/',
+          proxy: { mode: 'custom', host: 'evil.example', port: 8080 },
+        }),
+        fx.on(A).projectId,
+      )
+    await fx.push(A)
+    const B = fx.machine('B')
+    await fx.pull(B)
+    const bId = fx.on(B).projectId
+    const row = B.db.prepare('SELECT shared_settings FROM projects WHERE id = ?').get(bId) as {
+      shared_settings: string
+    }
+    expect(row.shared_settings).toContain('readFilesOutsideWorkingDirectory') // it did arrive
+
+    for (const seen of [await settingsOf(B), await projectSettings.loadProjectSettings(bId)]) {
+      expect(seen).toMatchObject({ preScript: 'pre()' })
+      expect(seen).not.toHaveProperty('readFilesOutsideWorkingDirectory')
+      expect(seen).not.toHaveProperty('workingDirectory')
+      expect(seen).not.toHaveProperty('proxy')
+    }
+    // B's own machine-local values win over whatever the file says.
+    await fx.ok('settings:set', `project.${bId}.settings`, { workingDirectory: '/home/b' })
+    expect(await projectSettings.loadProjectSettings(bId)).toMatchObject({
+      workingDirectory: '/home/b',
+    })
   }, 60_000)
 
   it('Send (settings:get) and Run (loadProjectSettings) read the same merged object', async () => {

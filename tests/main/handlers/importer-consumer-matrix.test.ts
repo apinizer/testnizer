@@ -331,7 +331,15 @@ describe.each(
       const url = useRequestStore.getState().url
       expectCleanUrl('request tab', url, row)
       expect(url, row.name).not.toBe('')
-      if (namesPathVariable(row)) expect(url).toContain('petId')
+      if (namesPathVariable(row)) {
+        expect(url, row.name).toMatch(/\/pets\/(42|:petId|\{\{petId\}\})$/)
+        if (url.includes(':petId')) {
+          expect(
+            useRequestStore.getState().pathVariables.map((v) => v.key),
+            row.name,
+          ).toEqual(['petId'])
+        }
+      }
       if (row.protocol === 'grpc') {
         const grpc = useGrpcStore.getState()
         expect(grpc.address).toBe(`${base.host}:443`)
@@ -365,11 +373,11 @@ describe.each(
       expect(sent.urls.length, row.name).toBe(1)
       const url = sent.urls[0]
       expect(url, row.name).toMatch(/^https:\/\/(run|api)\.example\.test\//)
-      // A `{petId}` of OpenAPI / RAML is named but has no value yet: it goes as written.
+      // A `:petId` of OpenAPI / RAML is named but has no value yet: it goes as written.
       expect(url, row.name).not.toContain('{{')
       expect(url, row.name).not.toContain('*')
       expect(url, row.name).not.toContain('undefined')
-      if (namesPathVariable(row)) expect(url, row.name).toMatch(/\/pets\/(42|:petId|\{petId\})$/)
+      if (namesPathVariable(row)) expect(url, row.name).toMatch(/\/pets\/(42|:petId)$/)
     }
   })
 
@@ -590,6 +598,33 @@ describe('Mock from folder: what it cannot bind is named', () => {
     expect(result.warnings[0]).toContain('POST /v1/svc')
   })
 
+  it('RAML: uriParameters fill the path variables, the nearest declaration winning', async () => {
+    const projectId = seedProject(testDb, seedWorkspace(testDb))
+    const content = `#%RAML 1.0
+title: Pets
+baseUri: https://api.example.test
+/shops/{shopId}:
+  uriParameters:
+    shopId: { example: "7", description: Shop }
+    petId: { default: "from-parent" }
+  /pets/{petId}:
+    uriParameters:
+      petId: { default: "42" }
+    get:
+      displayName: Get pet
+`
+    await harness.invoke('import:raml', { projectId, content })
+    const row = testDb
+      .prepare('SELECT path, request_schema FROM endpoints WHERE project_id = ?')
+      .get(projectId) as { path: string; request_schema: string }
+    expect(row.path).toBe('https://api.example.test/shops/:shopId/pets/:petId')
+    const vars = (JSON.parse(row.request_schema) as { pathVariables: object[] }).pathVariables
+    expect(vars).toEqual([
+      expect.objectContaining({ key: 'shopId', value: '7', description: 'Shop' }),
+      expect.objectContaining({ key: 'petId', value: '42' }),
+    ])
+  })
+
   it('a WebSocket, gRPC or MCP row is not an HTTP endpoint, and a folder of them says why', async () => {
     const projectId = seedProject(testDb, seedWorkspace(testDb))
     await harness.invoke('import:proto', { projectId, protoPath: PROTO_PATH })
@@ -606,5 +641,95 @@ describe('Mock from folder: what it cannot bind is named', () => {
     expect(result.warnings).toHaveLength(rows.length)
     const servers = (await harness.invoke('mock:server:list', projectId)) as { data: unknown[] }
     expect(servers.data).toEqual([])
+  })
+})
+
+describe('an absolute file path in an import is named in the report', () => {
+  const FILE = '/Users/x/.ssh/id_rsa'
+  const postman = JSON.stringify({
+    info: {
+      name: 'C',
+      schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+    },
+    item: [
+      {
+        name: 'Upload',
+        request: {
+          method: 'POST',
+          url: 'https://x.test',
+          body: { mode: 'formdata', formdata: [{ key: 'f', type: 'file', src: FILE }] },
+        },
+      },
+    ],
+  })
+  const insomnia = JSON.stringify({
+    _type: 'export',
+    __export_format: 4,
+    resources: [
+      {
+        _id: 'req_1',
+        _type: 'request',
+        parentId: 'wrk_1',
+        name: 'Upload',
+        method: 'POST',
+        url: 'https://x.test',
+        body: {
+          mimeType: 'multipart/form-data',
+          params: [{ name: 'f', type: 'file', fileName: FILE }],
+        },
+      },
+    ],
+  })
+
+  it.each([
+    ['Postman', 'import:postman', { content: postman }],
+    ['Insomnia', 'import:insomnia', { content: insomnia }],
+    ['cURL form part', 'import:curl', { curlCommand: `curl -F 'f=@${FILE}' https://x.test` }],
+    ['cURL -d @file', 'import:curl', { curlCommand: `curl -d @${FILE} https://x.test` }],
+    ['cURL -T', 'import:curl', { curlCommand: `curl -T ${FILE} https://x.test` }],
+  ])('%s', async (_name, channel, payload) => {
+    testDb = createTestDb()
+    harness.reset()
+    handlers.registerImportExportHandlers()
+    const projectId = seedProject(testDb, seedWorkspace(testDb))
+    const res = (await harness.invoke(channel, { projectId, ...payload })) as {
+      success: boolean
+      error?: string
+      data?: { warnings?: string[] }
+    }
+    expect(res.error).toBeUndefined()
+    const warnings = (res.data?.warnings ?? []).join('\n')
+    expect(warnings).toContain(FILE)
+    expect(warnings).toContain('Read files outside the working directory')
+  })
+
+  it('a relative path and a disabled part are not reported', async () => {
+    testDb = createTestDb()
+    harness.reset()
+    handlers.registerImportExportHandlers()
+    const projectId = seedProject(testDb, seedWorkspace(testDb))
+    const res = (await harness.invoke('import:postman', {
+      projectId,
+      content: JSON.stringify({
+        info: JSON.parse(postman).info,
+        item: [
+          {
+            name: 'Upload',
+            request: {
+              method: 'POST',
+              url: 'https://x.test',
+              body: {
+                mode: 'formdata',
+                formdata: [
+                  { key: 'a', type: 'file', src: 'data/a.bin' },
+                  { key: 'b', type: 'file', src: FILE, disabled: true },
+                ],
+              },
+            },
+          },
+        ],
+      }),
+    })) as { data?: { warnings?: string[] } }
+    expect((res.data?.warnings ?? []).join('\n')).not.toContain('Working directory')
   })
 })

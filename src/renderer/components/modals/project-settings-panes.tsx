@@ -84,6 +84,7 @@ export interface ProjectSettings {
   sslVerification?: boolean | null
   followRedirects?: boolean | null
   workingDirectory: string
+  readFilesOutsideWorkingDirectory: boolean
   // TLS protocol / cipher overrides — surfaced in Certificates pane
   tls?: ProjectTls
   /**
@@ -193,6 +194,7 @@ function Toggle({
   checked,
   onChange,
   extra,
+  testId,
 }: {
   label: string
   hint?: string
@@ -200,6 +202,7 @@ function Toggle({
   onChange: (v: boolean) => void
   /** Rendered under the row, outside the <label> (e.g. a scope note with a button). */
   extra?: React.ReactNode
+  testId?: string
 }) {
   if (extra) {
     return (
@@ -209,7 +212,9 @@ function Toggle({
       </div>
     )
   }
-  return <ToggleRow label={label} hint={hint} checked={checked} onChange={onChange} />
+  return (
+    <ToggleRow label={label} hint={hint} checked={checked} onChange={onChange} testId={testId} />
+  )
 }
 
 function ToggleRow({
@@ -218,12 +223,14 @@ function ToggleRow({
   checked,
   onChange,
   bare,
+  testId,
 }: {
   label: string
   hint?: string
   checked: boolean
   onChange: (v: boolean) => void
   bare?: boolean
+  testId?: string
 }) {
   return (
     <label
@@ -232,6 +239,7 @@ function ToggleRow({
     >
       <input
         type="checkbox"
+        data-testid={testId}
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         style={{ marginTop: 3, accentColor: 'var(--accent)' }}
@@ -1068,6 +1076,13 @@ export function GeneralPane({
               {t('general.workingDirectoryHint')}
             </div>
           </div>
+          <Toggle
+            testId="project-setting-read-files-outside"
+            label={t('general.readFilesOutsideWorkingDirectory')}
+            hint={t('general.readFilesOutsideWorkingDirectoryHint')}
+            checked={settings.readFilesOutsideWorkingDirectory}
+            onChange={(v) => onChange({ readFilesOutsideWorkingDirectory: v })}
+          />
         </SectionCard>
       </div>
     </div>

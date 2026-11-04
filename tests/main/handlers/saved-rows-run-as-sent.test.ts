@@ -549,3 +549,66 @@ describe('a GraphQL run stays masked now that its headers and variables go out',
     expect(JSON.stringify(rows)).not.toContain(secret)
   })
 })
+
+describe('a saved GraphQL subscription', () => {
+  it.each(ROW_KINDS)('%s: Run says why it cannot run and POSTs nothing', async (kind) => {
+    const id = emptyRow(kind, 'graphql')
+    openTab(kind, 'graphql', id)
+    useGraphQLStore.setState({
+      url: `${base}/graphql`,
+      query: '# the feed\nsubscription Feed { tick }',
+      variables: '',
+      headers: [] as never,
+      withheldCredentials: [],
+    })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      workspaceId,
+      endpointIds: [id],
+    })) as { success: boolean; data?: { results: Array<Record<string, unknown>> } }
+    expect(res.success).toBe(true)
+
+    expect(received).toEqual([])
+    const row = res.data?.results[0] ?? {}
+    expect(row.statusText).toBe('UNSUPPORTED')
+    expect(row.skipped).toBe(1)
+    expect(String(row.error)).toMatch(/subscriptions cannot run in the collection runner/i)
+  })
+
+  it.each(ROW_KINDS)('%s: clearing connection_init removes it from the saved row', async (kind) => {
+    const table = { endpoint: 'endpoints', savedRequest: 'saved_requests', testSuiteItem: 'test_suite_items' }[kind]
+    const row = (): string =>
+      JSON.stringify(testDb.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id))
+    const id = emptyRow(kind, 'graphql')
+    openTab(kind, 'graphql', id)
+    useGraphQLStore.setState({
+      url: `${base}/graphql`,
+      query: 'subscription { tick }',
+      connectionInit: '{"tenant":"t-canary"}',
+      withheldCredentials: [],
+    })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+    expect(row()).toContain('t-canary')
+
+    useGraphQLStore.setState({ connectionInit: '' })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+    expect(row()).not.toContain('t-canary')
+    expect(row()).not.toContain('connectionInit')
+  })
+
+  it('a query whose text only mentions a subscription still runs', async () => {
+    const id = emptyRow('endpoint', 'graphql')
+    openTab('endpoint', 'graphql', id)
+    useGraphQLStore.setState({
+      url: `${base}/graphql`,
+      query: 'query { subscription: ping } # subscription { tick }',
+      variables: '',
+      headers: [] as never,
+      withheldCredentials: [],
+    })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+    expect((await runRow(id)).method).toBe('POST')
+  })
+})

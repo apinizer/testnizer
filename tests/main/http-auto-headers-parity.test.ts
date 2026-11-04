@@ -6,7 +6,7 @@
  * value the preview states (anything not "calculated at send" or masked) must
  * be byte-identical to the wire value.
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
@@ -21,6 +21,13 @@ import {
   type AutoHeaderRow,
 } from '../../src/shared/http-auto-headers'
 import { HISTORY_MASK } from '../../src/shared/credential-headers'
+
+// These tests are about the transport; the file-read gate has its own
+// (`working-directory-outside.test.ts`). This project allows it.
+vi.mock('../../src/main/lib/project-settings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/main/lib/project-settings')>()),
+  loadProjectSettings: async () => ({ readFilesOutsideWorkingDirectory: true }),
+}))
 
 let server: Server
 let port = 0
@@ -160,6 +167,7 @@ describe('auto-header preview ≡ engine wire (issue #204)', () => {
       writeFileSync(file, Buffer.from([1, 2, 3]))
       const { onWire, preview } = await sendAndPreview({
         method: 'POST',
+        projectId: 'p',
         body: { type: 'binary', binaryPath: file },
       })
       expect(onWire.get('content-type')).toBe('application/octet-stream')

@@ -382,6 +382,12 @@ class Builder {
         }
       }
     }
+    if (str(g.connectionInit).trim()) {
+      this.note(
+        req.name,
+        'the subscription connection_init payload has no Postman v3 field and was not exported.',
+      )
+    }
     doc.url = str(g.url) || str(s.url)
     doc.query = query
     if (variables) doc.variables = variables

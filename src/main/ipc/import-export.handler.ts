@@ -16,6 +16,7 @@ import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import { orderTreeLevel, orderTreeRequests } from '../../shared/tree-order'
 import {
   applyPathVariables,
+  bracesToPathVariables,
   pathVariableNames,
   readPathVariables,
   type PathVariableLike,
@@ -53,6 +54,7 @@ import {
 } from '../../shared/collection-export'
 import { stripProjectSharedSettings } from '../lib/local-secrets'
 import { importPostman, importPostmanEnvironment } from '../import/postman'
+import { absoluteFileWarnings } from '../lib/body-file-paths'
 import { InputDocumentError } from '../../shared/bounded-document'
 import {
   openApiProblem,
@@ -61,7 +63,6 @@ import {
 } from '../../shared/openapi-detect'
 import { boundedJson, dereferenceLocalRefs, newJsonBudget } from '../import/openapi-refs'
 import { withoutExternalWsdlRefs, wsdlRefsWarning } from '../import/wsdl-refs'
-import { assertProtoStaysLocal } from '../import/proto-refs'
 import {
   assertImportableFile,
   importErrorText,
@@ -943,24 +944,6 @@ function defaultText(raw: unknown): string {
   return typeof raw === 'object' ? JSON.stringify(raw) : String(raw)
 }
 
-/**
- * `/pets/{petId}` as `/pets/:petId`: a `{x}` left in a URL goes out percent-encoded
- * and gets no row in the Params tab. `:name` is a whole path segment
- * (`src/shared/path-variables.ts`), so `/{name}.json` stays as written and is warned.
- */
-function openApiPathTemplate(path: string, warnings: string[]): string {
-  const segments = path.split('/').map((seg) => {
-    const whole = /^\{([^{}]+)\}$/.exec(seg)
-    return whole ? `:${whole[1]}` : seg
-  })
-  if (segments.some((seg) => /\{[^{}]+\}/.test(seg))) {
-    warnings.push(
-      `"${path}" has a variable inside a path segment, which cannot have a Path Variables row: edit the URL before sending.`,
-    )
-  }
-  return segments.join('/')
-}
-
 function openApiBaseUrl(
   doc: OpenApiDoc,
   sourceUrl: string | undefined,
@@ -1087,7 +1070,7 @@ async function importOpenApi(
         const folderId = operationTags[0] ? folderForTag(operationTags[0]) : parentFolderId
 
         // Build full URL
-        const template = openApiPathTemplate(path, warnings)
+        const template = bracesToPathVariables(path, warnings)
         const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${template}` : template
 
         // Convert OpenAPI parameters to app format
@@ -3737,6 +3720,7 @@ function importInsomniaV4(
     const params = insomniaRows(resource.parameters, 'a query parameter', label, warnings)
     const headers = insomniaRows(resource.headers, 'a header', label, warnings)
     const body = mapInsomniaBodyToUi(isRecord(resource.body) ? resource.body : undefined)
+    warnings.push(...absoluteFileWarnings(label, body))
     const auth = mapInsomniaAuthToUi(
       isRecord(resource.authentication) ? resource.authentication : undefined,
     )
@@ -3897,6 +3881,7 @@ function importInsomniaV5(
       const params = insomniaRows(item.parameters, 'a query parameter', label, warnings)
       const headers = insomniaRows(item.headers, 'a header', label, warnings)
       const body = mapInsomniaBodyToUi(isRecord(item.body) ? item.body : undefined)
+      warnings.push(...absoluteFileWarnings(label, body))
       // A request with no `authentication` block inherits the nearest ancestor's
       // (folder → collection root). Insomnia exports the common "Bearer
       // {{accessToken}}" once at the collection root and leaves child requests
@@ -4571,7 +4556,6 @@ export async function importProto(payload: {
 
   let parsed: GrpcServiceDescription
   try {
-    assertProtoStaysLocal(payload.protoPath)
     parsed = await loadProto(payload.protoPath)
   } catch (e) {
     if (e instanceof InputDocumentError) return { success: false, error: e.message }
@@ -5400,6 +5384,8 @@ export interface ParsedRamlMethod {
 
 export interface ParsedRamlEndpoint {
   fullPath: string
+  /** `uriParameters` of this resource and its parents; the nearest declaration wins. */
+  uriParameters: Array<{ name: string; description: string | null; defaultValue: string }>
   resourceDisplayName: string | null
   parentSegments: string[]
   method: ParsedRamlMethod
@@ -5495,9 +5481,15 @@ function walkRamlResource(
   parentSegments: string[],
   acc: ParsedRamlEndpoint[],
   skipped: string[],
+  inheritedUriParameters: ParsedRamlEndpoint['uriParameters'] = [],
 ): void {
   const displayName = asRamlString(resource.displayName)
   const newParents = [...parentSegments, displayName ?? resourcePath]
+  const own = extractRamlNamedFields(resource.uriParameters)
+  const uriParameters = [
+    ...inheritedUriParameters.filter((p) => !own.some((o) => o.name === p.name)),
+    ...own,
+  ]
 
   for (const method of RAML_HTTP_METHODS) {
     if (method in resource) {
@@ -5513,6 +5505,7 @@ function walkRamlResource(
       }
       acc.push({
         fullPath: resourcePath,
+        uriParameters,
         resourceDisplayName: displayName,
         parentSegments,
         method: parsed,
@@ -5523,7 +5516,7 @@ function walkRamlResource(
   // Recurse into nested resources (any key that starts with '/')
   for (const [key, value] of Object.entries(resource)) {
     if (key.startsWith('/') && isPlainObject(value)) {
-      walkRamlResource(resourcePath + key, value, newParents, acc, skipped)
+      walkRamlResource(resourcePath + key, value, newParents, acc, skipped, uriParameters)
     }
   }
 }
@@ -5645,7 +5638,17 @@ async function importRaml(
       }
 
       const baseUrl = spec.resolvedBaseUri ?? ''
-      const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${ep.fullPath}` : ep.fullPath
+      const template = bracesToPathVariables(ep.fullPath, warnings)
+      const fullUrl = baseUrl ? `${baseUrl.replace(/\/$/, '')}${template}` : template
+      const pathVariables = pathVariableNames(fullUrl).map((key) => {
+        const param = ep.uriParameters.find((p) => p.name === key)
+        return {
+          id: randomUUID(),
+          key,
+          value: param?.defaultValue ?? '',
+          description: param?.description ?? '',
+        }
+      })
 
       const params = ep.method.queryParameters.map((p) => ({
         id: randomUUID(),
@@ -5669,6 +5672,7 @@ async function importRaml(
         headers,
         body: ep.method.body,
         auth: { type: 'none' },
+        ...(pathVariables.length > 0 ? { pathVariables } : {}),
       }
 
       const name =

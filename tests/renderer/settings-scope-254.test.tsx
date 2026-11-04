@@ -307,6 +307,29 @@ describe('project dialog — each overridable field says follows / overrides', (
   })
 })
 
+describe('Read files outside the working directory', () => {
+  it('off by default; the row shows what is stored and a save keeps it', async () => {
+    const { set } = openProject({ project: { workingDirectory: '/w' } })
+    await goTo('general')
+    const off = (await screen.findByTestId('project-setting-read-files-outside')) as HTMLInputElement
+    expect(off.checked).toBe(false)
+    fireEvent.click(off)
+    await save()
+    await waitFor(() => expect(set).toHaveBeenCalled())
+    expect(savedProjectSettings(set)).toMatchObject({
+      workingDirectory: '/w',
+      readFilesOutsideWorkingDirectory: true,
+    })
+  })
+
+  it('a project where a pick or the upgrade turned it on opens with it on', async () => {
+    openProject({ project: { readFilesOutsideWorkingDirectory: true } })
+    await goTo('general')
+    const on = (await screen.findByTestId('project-setting-read-files-outside')) as HTMLInputElement
+    expect(on.checked).toBe(true)
+  })
+})
+
 describe('"Use app setting" — the saved payload carries the delete marker (null)', () => {
   // What every project saved before #287 / #254 holds.
   const LEGACY = { requestTimeout: 30000, sslVerification: true, followRedirects: true }

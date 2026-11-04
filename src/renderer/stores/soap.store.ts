@@ -542,7 +542,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
     if (activeTabId) tabsStore.markLoading(activeTabId, true)
 
     // Endpoint, version and action — the same helper Generate Code uses.
-    const { op, endpointUrl, version: effectiveVersion, action } = soapSendTarget(get())
+    const { endpointUrl, version: effectiveVersion, action } = soapSendTarget(get())
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedUrl = resolveVariables(endpointUrl, activeVars)
@@ -616,29 +616,13 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
           activeTabId,
         )
       }
-    } catch {
-      // Demo mode
+    } catch (e) {
       responseStore.setResponse(
         {
           requestId: makeId(),
           protocol: 'soap',
-          status: 200,
-          statusText: 'OK',
-          headers: { 'content-type': 'text/xml; charset=utf-8' },
-          body:
-            op?.exampleResponse ||
-            '<soap:Envelope><soap:Body><Response/></soap:Body></soap:Envelope>',
-          bodySize: (op?.exampleResponse || '').length,
-          timing: { total: 245 },
-          actualRequest: {
-            method: 'POST',
-            url: endpointUrl,
-            headers: {
-              'Content-Type': 'text/xml; charset=utf-8',
-              SOAPAction: op?.soapAction || '',
-            },
-            body: rawXml,
-          },
+          error: (e as Error).message || 'SOAP request failed',
+          timing: { total: 0 },
         },
         activeTabId,
       )

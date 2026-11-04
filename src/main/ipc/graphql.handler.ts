@@ -1,13 +1,6 @@
-import { ipcMain, BrowserWindow } from 'electron'
-import {
-  executeQuery,
-  introspect,
-  subscribe,
-  unsubscribe,
-  type GraphqlExecuteOptions,
-  type GraphqlSubscribeOptions,
-} from '../protocols/graphql.engine'
-import { logRequestResponse, logEvent } from '../lib/console-logger'
+import { ipcMain } from 'electron'
+import { executeQuery, introspect, type GraphqlExecuteOptions } from '../protocols/graphql.engine'
+import { logRequestResponse } from '../lib/console-logger'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import { authSecretValues } from '../lib/sensitive-scrub'
@@ -45,17 +38,6 @@ interface GraphqlIntrospectPayload {
   url: string
   headers?: Record<string, string>
   sslVerification?: boolean
-}
-
-interface GraphqlSubscribePayload {
-  url: string
-  wsUrl?: string
-  query: string
-  variables?: string
-  operationName?: string
-  headers?: Record<string, string>
-  sslVerification?: boolean
-  _tabId?: string
 }
 
 export function registerGraphqlHandlers(): void {
@@ -156,51 +138,6 @@ export function registerGraphqlHandlers(): void {
   ipcMain.handle('graphql:introspect', async (_event, payload: GraphqlIntrospectPayload) => {
     try {
       const result = await introspect(payload.url, payload.headers, payload.sslVerification)
-      return { success: true, data: result }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
-
-  // ─── Start subscription ─────────────────────────────────────
-  ipcMain.handle('graphql:subscribe', async (event, payload: GraphqlSubscribePayload) => {
-    try {
-      const win = BrowserWindow.fromWebContents(event.sender)
-      if (!win) {
-        return { success: false, error: 'No window found for this request' }
-      }
-
-      const options: GraphqlSubscribeOptions = {
-        url: payload.url,
-        wsUrl: payload.wsUrl,
-        query: payload.query,
-        variables: payload.variables,
-        operationName: payload.operationName,
-        headers: payload.headers,
-        sslVerification: payload.sslVerification,
-      }
-
-      logEvent({
-        protocol: 'graphql',
-        category: 'connection',
-        message: `GraphQL subscription started: ${payload.operationName || 'anonymous'}`,
-        url: payload.wsUrl ?? payload.url,
-        body: payload.query,
-        direction: 'out',
-        tabId: payload._tabId,
-      })
-
-      const subscriptionId = subscribe(options, win.id)
-      return { success: true, data: { subscriptionId } }
-    } catch (e) {
-      return { success: false, error: (e as Error).message }
-    }
-  })
-
-  // ─── Stop subscription ──────────────────────────────────────
-  ipcMain.handle('graphql:unsubscribe', async (_event, subscriptionId: string) => {
-    try {
-      const result = unsubscribe(subscriptionId)
       return { success: true, data: result }
     } catch (e) {
       return { success: false, error: (e as Error).message }

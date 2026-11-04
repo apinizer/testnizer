@@ -5,7 +5,7 @@
  *
  * Before: the setting was saved and never read; a relative path was read
  * against the app's own current directory and failed with "cannot read".
- * Rules: absolute paths behave exactly as before; a relative path with no
+ * Rules: a relative path with no
  * working directory fails with a message naming the setting.
  *
  * Real engine, real handlers, a local server that echoes what it received;
@@ -168,13 +168,16 @@ describe('Send (request:send) — relative file paths read from the Working dire
     expect(received).toBe('')
   })
 
-  it('an absolute path works exactly as before, with or without a working directory', async () => {
+  it('an absolute path is read when it is inside the working directory, refused otherwise', async () => {
+    expect((await send(formBody(ABSOLUTE))).error).toMatch(/Read files outside/)
+    expect(received).toBe('')
+    setWorkingDirectory(workDir)
     expect((await send(formBody(ABSOLUTE))).status).toBe(200)
     expect(received).toContain(CONTENT)
     setWorkingDirectory(join(workDir, 'elsewhere'))
     received = ''
-    expect((await send(formBody(ABSOLUTE))).status).toBe(200)
-    expect(received).toContain(CONTENT)
+    expect((await send(formBody(ABSOLUTE))).error).toMatch(/Read files outside/)
+    expect(received).toBe('')
   })
 })
 
@@ -201,7 +204,8 @@ describe('Run (runner:execute) — the same rule', () => {
 })
 
 describe('resolveBodyFilePaths', () => {
-  it('reads no settings when nothing is relative; ignores disabled parts and other body types', async () => {
+  it('an allowed absolute path stays as it is; disabled parts and other body types are ignored', async () => {
+    setWorkingDirectory(workDir)
     const abs = formBody(ABSOLUTE)
     expect(await resolveBodyFilePaths(abs, projectId)).toBe(abs)
     const disabled = {
@@ -225,8 +229,8 @@ describe('resolveBodyFilePaths', () => {
  * Issue #290 (security) — a RELATIVE path may not leave the working directory.
  * `../../etc/passwd` used to resolve against it and the file was uploaded: a
  * shared project (or a Postman import) could make a teammate's Send / Run
- * read any file the app can read. Absolute paths are unchanged (existing
- * requests hold them; the user picked them).
+ * read any file the app can read. Absolute paths have their own rule:
+ * `tests/main/working-directory-outside.test.ts`.
  */
 describe('a relative path that escapes the working directory is refused (issue #290)', () => {
   const OUTSIDE = 'WD-OUTSIDE-SECRET-290'
@@ -269,7 +273,7 @@ describe('a relative path that escapes the working directory is refused (issue #
     expect(received).toBe('')
   })
 
-  it('paths that stay inside still work; an absolute path outside still works', async () => {
+  it('paths that stay inside still work; an absolute path outside needs the setting', async () => {
     setWorkingDirectory(wd)
     expect((await send(formBody('data/../data/in.txt'))).status).toBe(200)
     expect(received).toContain(CONTENT)
@@ -277,6 +281,12 @@ describe('a relative path that escapes the working directory is refused (issue #
     expect((await send(formBody('..dotdot.txt'))).status).toBe(200)
     expect(received).toContain(CONTENT)
     received = ''
+    expect((await send(formBody(join(root, 'secret.txt')))).error).toMatch(/Read files outside/)
+    expect(received).toBe('')
+    storeState.values[`project.${projectId}.settings`] = {
+      workingDirectory: wd,
+      readFilesOutsideWorkingDirectory: true,
+    }
     expect((await send(formBody(join(root, 'secret.txt')))).status).toBe(200)
     expect(received).toContain(OUTSIDE)
   })

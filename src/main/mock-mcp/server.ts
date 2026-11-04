@@ -36,7 +36,7 @@ import { EventEmitter } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { localhostHostValidation } from '@modelcontextprotocol/node'
 import type { Server } from '@modelcontextprotocol/server'
-import { loadEnvVars } from '../lib/env-vars'
+import { loadMockTemplateVars } from '../lib/env-vars'
 import {
   DEFAULT_LEGACY_MODE,
   isExposedWithoutAuth,
@@ -431,7 +431,7 @@ class MockMcpServerManager extends EventEmitter {
       loadEnv: () => {
         if (!s.def.projectId) return undefined
         try {
-          return loadEnvVars({ projectId: s.def.projectId })
+          return loadMockTemplateVars({ projectId: s.def.projectId })
         } catch {
           return undefined
         }

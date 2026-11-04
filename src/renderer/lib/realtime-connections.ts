@@ -2,8 +2,9 @@ import type { StoreApi } from 'zustand'
 import { useWorkspaceStore } from '../stores/workspace.store'
 
 /**
- * Live connections of the realtime editors — WebSocket, Socket.IO and MQTT
- * (issues #282 / #283 / #284) — have ONE lifetime rule, owned here:
+ * Live connections of the realtime editors — WebSocket, Socket.IO, MQTT, SSE and
+ * GraphQL subscriptions (issues #282 / #283 / #284) — have ONE lifetime rule,
+ * owned here:
  *
  *   1. Closing a tab closes its connection (or cancels its pending handshake).
  *   2. Leaving a project — another project, Home, a workspace switch, the

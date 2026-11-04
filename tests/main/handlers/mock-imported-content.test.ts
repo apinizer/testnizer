@@ -277,7 +277,7 @@ describe('A. imported text cannot read project variables', () => {
     expect(await res.text()).toBe('/echo')
   })
 
-  it('a response typed in the mock editor keeps every template', async () => {
+  it('a response typed in the mock editor keeps its templates, without secrets', async () => {
     const server = (await harness.invoke('mock:server:create', {
       projectId,
       name: 'Typed',
@@ -294,15 +294,20 @@ describe('A. imported text cannot read project variables', () => {
       endpointId: endpoint.data?.id,
       name: 'typed',
       statusCode: 200,
-      headers: [{ name: 'X-Key', value: '{{apiKey}}' }],
+      headers: [{ name: 'X-Key', value: '{{plainHost}}' }],
       bodyType: 'text',
-      body: '{{apiKey}} {{envVars.apiKey}}',
+      body: '{{plainHost}} {{envVars.plainHost}} {{apiKey}} [{{envVars.apiKey}}]',
       order: 0,
     })
+    const { workspace_id: workspaceId } = testDb
+      .prepare('SELECT workspace_id FROM projects WHERE id = ?')
+      .get(projectId) as { workspace_id: string }
+    createGlobalVariable({ project_id: projectId, workspace_id: workspaceId, key: 'plainHost', value: 'host.test', secret: false })
     const port = await startOnlyServer()
     const res = await get(port, '/typed')
-    expect(res.headers.get('x-key')).toBe(SECRET)
-    expect(await res.text()).toBe(`${SECRET} ${SECRET}`)
+    expect(res.headers.get('x-key')).toBe('host.test')
+    // Typed text reads non-secret variables; a secret stays out of every template.
+    expect(await res.text()).toBe('host.test host.test {{apiKey}} []')
   })
 })
 

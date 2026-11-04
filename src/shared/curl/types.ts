@@ -22,6 +22,8 @@ export type CurlWarningCode =
   | 'unsupported-flag'
   /** `@file` / `<file` / `-T file` — the file is NOT read; see the message for what was kept. */
   | 'file-reference'
+  /** The request body reads a file by absolute path: Send has a rule for those. */
+  | 'absolute-file'
   /** A value-taking flag at the very end of the command. */
   | 'missing-value'
   /** A second URL — curl would request it too; only the first is used. */

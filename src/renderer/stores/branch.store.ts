@@ -43,8 +43,11 @@ export interface ConflictContext {
 // on failure, narrow further via `'conflict' in r` vs `'error' in r` instead
 // of optional-chaining gymnastics.
 export type Resolution =
-  /** `emptySecrets` (pull): secret values still empty on this machine. */
-  | { success: true; emptySecrets?: number }
+  /**
+   * `emptySecrets` (pull): secret values still empty on this machine.
+   * `skippedFiles` (pull): repository files a read left out.
+   */
+  | { success: true; emptySecrets?: number; skippedFiles?: string[] }
   | { success: false; conflict: ConflictContext }
   | { success: false; error: string }
 
@@ -344,6 +347,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
         return {
           success: true,
           emptySecrets: (result.data as { emptySecrets?: number }).emptySecrets,
+          skippedFiles: (result.data as { skippedFiles?: string[] }).skippedFiles,
         }
       }
       return { success: false, error: result?.error || 'Pull failed' }

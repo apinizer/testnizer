@@ -441,6 +441,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'codeGen.unavailableTitle': 'Code generation is not available for {protocol} requests',
     'codeGen.unavailableHint': 'Generate Code covers HTTP, GraphQL and SOAP requests.',
     'codeGen.unavailableTab': 'Code generation is not available for this tab',
+    'codeGen.unavailableSubscription': 'Code generation is not available for GraphQL subscriptions',
+    'codeGen.unavailableSubscriptionHint':
+      'A subscription runs over a WebSocket. Generate Code covers HTTP, GraphQL queries and mutations, and SOAP.',
     'curlPaste.applied': 'Request filled from a {dialect} cURL command',
     'curlPaste.dialect.bash': 'bash',
     'curlPaste.dialect.cmd': 'Windows CMD',
@@ -455,6 +458,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'curlPaste.warning.unknown-flag': 'Unknown option {arg} was ignored',
     'curlPaste.warning.unsupported-flag': '{arg} has no equivalent here and was ignored',
     'curlPaste.warning.file-reference': 'File {arg} is not read — check the body',
+    'curlPaste.warning.absolute-file':
+      'File {arg} has an absolute path: Send reads it only if it is inside Project Settings → Working directory or Read files outside the working directory is on',
     'curlPaste.warning.missing-value': '{arg} has no value',
     'curlPaste.warning.extra-url': 'Only the first URL is used; {arg} was ignored',
     'curlPaste.warning.ignored-arg': '"{arg}" was not understood and was ignored',
@@ -701,6 +706,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'A typed bearer token is not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep it in the environment instead.',
     'credentials.restartHint':
       'Typed passwords, tokens and keys are not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep them in the environment instead.',
+    'credentials.sendDroppedTabChanged':
+      'The request was not sent because you switched tabs. Send it again from that tab.',
     'credentials.reloadFailedSend':
       'The saved credentials could not be reloaded, so this request is sent with the empty fields. Reopen the request from the tree and try again.',
     'socketio.tokenPlaceholder': 'Bearer token (optional)',
@@ -1219,7 +1226,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.workingDirectory': 'Working directory',
     'general.workingDirectoryPlaceholder': '/path/to/request-files',
     'general.workingDirectoryHint':
-      'Absolute folder path on this computer. Relative form-data and binary file paths (e.g. from a Postman import) are read from here; absolute paths are used as they are.',
+      'Absolute folder path on this computer. Relative form-data and binary file paths (e.g. from a Postman import) are read from here. An absolute path must be inside this folder unless the option below is on.',
+    'general.readFilesOutsideWorkingDirectory': 'Read files outside the working directory',
+    'general.readFilesOutsideWorkingDirectoryHint':
+      'Lets collections and projects you did not write read any file on this computer and send it. Turn it on only if you trust them. Choosing a file outside the folder for a request turns it on. Applies to this computer only.',
     'general.headers': 'Headers',
     'general.requestBehavior': 'Request behavior',
     'general.editor': 'Editor',
@@ -1585,6 +1595,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.bothSave': 'Local + Git backup',
 
     // Update Modal
+    'update.unavailable': 'Updates are not available in this build.',
     'update.checking': 'Checking for updates...',
     'update.available': 'Update available',
     'update.download': 'Download',
@@ -3112,6 +3123,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'grpc.calling': 'Calling…',
     'grpc.cancel': 'Cancel',
     'grpc.cancelStream': 'Cancel Stream',
+    'grpc.protoFromSavedCopy':
+      'Could not download the proto. Using the copy saved earlier, which may be out of date.',
+    'grpc.savedMethodMissing':
+      'The proto downloaded from the URL has no {method}. Pick a method and send again.',
+    'grpc.streamWriteRefused':
+      'The message was not sent: the stream is no longer open or the body is not valid JSON.',
     'grpc.guide.title': 'How to use',
     'grpc.guide.step1': 'Enter the server address (e.g. {address})',
     'grpc.guide.step2': 'Toggle the lock if TLS is required',
@@ -3300,6 +3317,10 @@ const translations: Record<Locale, Record<string, string>> = {
       '{count} secret values are empty on this machine (secrets never travel through git) — fill them in Environments / project settings',
     'toast.pulledEmptySecretOne':
       '1 secret value is empty on this machine (secrets never travel through git) — fill it in Environments / project settings',
+    'toast.pullSkippedFileOne':
+      '{count} file in the repository was not read because it is a link, a special file or too large: {files}',
+    'toast.pullSkippedFiles':
+      '{count} files in the repository were not read because each is a link, a special file or too large: {files}',
     'toast.pullFailed': 'Pull failed',
     'toast.pullNoProjectFile':
       'Pull finished, but the repository holds no project file — nothing was imported',
@@ -4101,6 +4122,49 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.subscriptionEvents': 'Subscription Events',
     'graphql.live': 'Live',
     'graphql.waitingEvents': 'Waiting for subscription events...',
+    'graphql.sub.close.4400': 'Invalid message: the server could not read a message it received',
+    'graphql.sub.close.4401':
+      'Unauthorized: the server received the subscription before connection_ack, or refused the credentials',
+    'graphql.sub.close.4403':
+      'Forbidden: the server rejected the connection. Check the headers and the connection_init payload',
+    'graphql.sub.close.4406':
+      'Subprotocol not acceptable: the server does not accept this WebSocket subprotocol',
+    'graphql.sub.close.4408':
+      'Connection initialisation timeout: the server did not receive connection_init in time',
+    'graphql.sub.close.4409':
+      'Subscriber already exists: the server already runs an operation with this id',
+    'graphql.sub.close.4429':
+      'Too many initialisation requests: the server received more than one connection_init',
+    'graphql.sub.close.4500': 'Internal server error',
+    'graphql.sub.failure.noSubprotocol':
+      'The server did not choose a GraphQL subprotocol (it was offered graphql-transport-ws and graphql-ws)',
+    'graphql.sub.failure.noAck':
+      'The WebSocket opened but the server sent no connection_ack within {seconds} s',
+    'graphql.sub.failure.initRejected': 'The server refused connection_init',
+    'graphql.sub.failure.closed': 'The server closed the connection before connection_ack',
+    'graphql.sub.hint.noSubprotocol': 'Check that the URL is the GraphQL WebSocket endpoint',
+    'graphql.sub.hint.noAck':
+      'Check the connection_init payload and the credentials the server expects',
+    'graphql.sub.hint.initRejected':
+      'Check the connection_init payload and the credentials the server expects',
+    'graphql.sub.hint.closed': 'Check the headers, the connection_init payload and the server logs',
+    'graphql.sub.connectionInit': 'Connection init payload',
+    'graphql.sub.invalidInit': 'The connection_init payload must be a JSON object',
+    'graphql.sub.proxyNotApplied':
+      'The configured proxy is not used for GraphQL subscriptions: this connection goes out directly',
+    'graphql.sub.status.connecting': 'Connecting',
+    'graphql.sub.status.ended': 'Ended',
+    'graphql.sub.status.failed': 'Failed',
+    'graphql.sub.kind.data': 'Data',
+    'graphql.sub.kind.error': 'Error',
+    'graphql.sub.kind.notice': 'Note',
+    'graphql.sub.end.completed': 'The server completed the subscription.',
+    'graphql.sub.end.error': 'The server ended the subscription with an error.',
+    'graphql.sub.end.unsubscribed': 'Unsubscribed.',
+    'graphql.sub.end.projectLeft': 'The subscription was closed because you left its project.',
+    'graphql.sub.end.closed': 'The connection closed: {detail}',
+    'graphql.sub.droppedOne': '{count} older event dropped',
+    'graphql.sub.dropped': '{count} older events dropped',
     'grpc.response.calling': 'Calling gRPC method...',
     'grpc.response.empty': 'Execute a gRPC call to see the response',
     'grpc.response.error': 'gRPC error',
@@ -4987,6 +5051,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'codeGen.unavailableTitle': '{protocol} istekleri için kod oluşturma kullanılamaz',
     'codeGen.unavailableHint': 'Kod Oluştur; HTTP, GraphQL ve SOAP isteklerini kapsar.',
     'codeGen.unavailableTab': 'Bu sekme için kod oluşturma kullanılamaz',
+    'codeGen.unavailableSubscription': 'GraphQL abonelikleri için kod oluşturma kullanılamaz',
+    'codeGen.unavailableSubscriptionHint':
+      'Abonelik WebSocket üzerinden çalışır. Kod Oluştur; HTTP, GraphQL sorgu ve mutasyonları ile SOAP isteklerini kapsar.',
     'curlPaste.applied': 'İstek {dialect} cURL komutundan dolduruldu',
     'curlPaste.dialect.bash': 'bash',
     'curlPaste.dialect.cmd': 'Windows CMD',
@@ -5001,6 +5068,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'curlPaste.warning.unknown-flag': 'Bilinmeyen {arg} seçeneği yok sayıldı',
     'curlPaste.warning.unsupported-flag': '{arg} seçeneğinin burada karşılığı yok, yok sayıldı',
     'curlPaste.warning.file-reference': '{arg} dosyası okunmadı — gövdeyi kontrol edin',
+    'curlPaste.warning.absolute-file':
+      '{arg} dosyasının yolu mutlak: Gönder bu dosyayı yalnızca Proje Ayarları → Çalışma dizini içindeyse veya Çalışma dizini dışındaki dosyaları oku seçeneği açıksa okur',
     'curlPaste.warning.missing-value': '{arg} için değer verilmemiş',
     'curlPaste.warning.extra-url': 'Yalnızca ilk URL kullanıldı; {arg} yok sayıldı',
     'curlPaste.warning.ignored-arg': '"{arg}" anlaşılamadı ve yok sayıldı',
@@ -5246,6 +5315,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'Yazılan bearer token, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{variable}} (gizli bir değişken) kullanın.',
     'credentials.restartHint':
       'Yazılan parola, token ve anahtarlar, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{variable}} (gizli bir değişken) kullanın.',
+    'credentials.sendDroppedTabChanged':
+      'Sekme değiştiği için istek gönderilmedi. O sekmeden yeniden gönderin.',
     'credentials.reloadFailedSend':
       'Kayıtlı kimlik bilgileri yeniden yüklenemedi; bu istek boş alanlarla gönderiliyor. İsteği ağaçtan yeniden açıp tekrar deneyin.',
     'socketio.tokenPlaceholder': 'Bearer token (isteğe bağlı)',
@@ -5764,7 +5835,10 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.workingDirectory': 'Çalışma dizini',
     'general.workingDirectoryPlaceholder': '/istek-dosyalarinin/yolu',
     'general.workingDirectoryHint':
-      'Bu bilgisayardaki mutlak klasör yolu. Göreli form-data ve binary dosya yolları (ör. Postman içe aktarımından gelenler) buradan okunur; mutlak yollar olduğu gibi kullanılır.',
+      'Bu bilgisayardaki mutlak klasör yolu. Göreli form-data ve binary dosya yolları (ör. Postman içe aktarımından gelenler) buradan okunur. Aşağıdaki seçenek açık değilse mutlak bir yol bu klasörün içinde olmalıdır.',
+    'general.readFilesOutsideWorkingDirectory': 'Çalışma dizini dışındaki dosyaları oku',
+    'general.readFilesOutsideWorkingDirectoryHint':
+      'Sizin yazmadığınız koleksiyon ve projelerin bu bilgisayardaki herhangi bir dosyayı okuyup göndermesine izin verir. Yalnızca onlara güveniyorsanız açın. Bir istek için klasör dışından dosya seçmek bu seçeneği açar. Yalnızca bu bilgisayarda geçerlidir.',
     'general.headers': 'Header’lar',
     'general.requestBehavior': 'İstek davranışı',
     'general.editor': 'Editör',
@@ -6128,6 +6202,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.bothSave': 'Yerel + Git yedekli kayıt',
 
     // Update Modal
+    'update.unavailable': 'Bu sürümde güncelleme kullanılamıyor.',
     'update.checking': 'Güncellemeler kontrol ediliyor...',
     'update.available': 'Güncelleme mevcut',
     'update.download': 'İndir',
@@ -7665,6 +7740,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'grpc.calling': 'Çağrılıyor…',
     'grpc.cancel': 'İptal',
     'grpc.cancelStream': 'Akışı İptal Et',
+    'grpc.protoFromSavedCopy':
+      'Proto indirilemedi. Daha önce kaydedilen kopya kullanılıyor; güncel olmayabilir.',
+    'grpc.savedMethodMissing':
+      "URL'den indirilen proto dosyasında {method} yok. Bir metot seçip yeniden gönderin.",
+    'grpc.streamWriteRefused':
+      'Mesaj gönderilmedi: akış artık açık değil ya da gövde geçerli bir JSON değil.',
     'grpc.guide.title': 'Nasıl kullanılır?',
     'grpc.guide.step1': 'Sunucu adresini girin (ör. {address})',
     'grpc.guide.step2': 'TLS gerekiyorsa kilit simgesine tıklayın',
@@ -7853,6 +7934,10 @@ const translations: Record<Locale, Record<string, string>> = {
       'Bu makinede {count} gizli değer boş (gizli değerler git ile taşınmaz) — Ortamlar / proje ayarlarından doldurun',
     'toast.pulledEmptySecretOne':
       'Bu makinede 1 gizli değer boş (gizli değerler git ile taşınmaz) — Ortamlar / proje ayarlarından doldurun',
+    'toast.pullSkippedFileOne':
+      'Depodaki {count} dosya okunmadı; bağlantı, özel dosya ya da çok büyük: {files}',
+    'toast.pullSkippedFiles':
+      'Depodaki {count} dosya okunmadı; bağlantı, özel dosya ya da çok büyük: {files}',
     'toast.pullFailed': 'Çekim başarısız',
     'toast.pullNoProjectFile':
       'Çekim tamamlandı ancak depoda proje dosyası yok — hiçbir şey içe aktarılmadı',
@@ -8658,6 +8743,48 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.subscriptionEvents': 'Abonelik Olayları',
     'graphql.live': 'Canlı',
     'graphql.waitingEvents': 'Abonelik olayları bekleniyor...',
+    'graphql.sub.close.4400': 'Geçersiz mesaj: sunucu aldığı bir mesajı okuyamadı',
+    'graphql.sub.close.4401':
+      'Yetkisiz: sunucu aboneliği connection_ack öncesinde aldı ya da kimlik bilgilerini reddetti',
+    'graphql.sub.close.4403':
+      'Erişim engellendi: sunucu bağlantıyı reddetti. Başlıkları ve connection_init içeriğini kontrol edin',
+    'graphql.sub.close.4406':
+      'Alt protokol kabul edilmedi: sunucu bu WebSocket alt protokolünü kabul etmiyor',
+    'graphql.sub.close.4408':
+      'Bağlantı başlatma zaman aşımı: sunucu connection_init mesajını zamanında almadı',
+    'graphql.sub.close.4409': 'Abone zaten var: sunucu bu kimlikle bir işlemi zaten çalıştırıyor',
+    'graphql.sub.close.4429': 'Çok fazla başlatma isteği: sunucu birden fazla connection_init aldı',
+    'graphql.sub.close.4500': 'Sunucu iç hatası',
+    'graphql.sub.failure.noSubprotocol':
+      'Sunucu bir GraphQL alt protokolü seçmedi (graphql-transport-ws ve graphql-ws önerildi)',
+    'graphql.sub.failure.noAck':
+      'WebSocket açıldı ama sunucu {seconds} sn içinde connection_ack göndermedi',
+    'graphql.sub.failure.initRejected': 'Sunucu connection_init mesajını reddetti',
+    'graphql.sub.failure.closed': 'Sunucu bağlantıyı connection_ack öncesinde kapattı',
+    'graphql.sub.hint.noSubprotocol': "URL'nin GraphQL WebSocket uç noktası olduğunu kontrol edin",
+    'graphql.sub.hint.noAck':
+      'connection_init içeriğini ve sunucunun beklediği kimlik bilgilerini kontrol edin',
+    'graphql.sub.hint.initRejected':
+      'connection_init içeriğini ve sunucunun beklediği kimlik bilgilerini kontrol edin',
+    'graphql.sub.hint.closed':
+      'Başlıkları, connection_init içeriğini ve sunucu günlüklerini kontrol edin',
+    'graphql.sub.connectionInit': 'Bağlantı başlatma içeriği',
+    'graphql.sub.invalidInit': 'connection_init içeriği bir JSON nesnesi olmalıdır',
+    'graphql.sub.proxyNotApplied':
+      'Ayarlanan proxy GraphQL aboneliklerinde kullanılmaz: bu bağlantı doğrudan çıkar',
+    'graphql.sub.status.connecting': 'Bağlanıyor',
+    'graphql.sub.status.ended': 'Bitti',
+    'graphql.sub.status.failed': 'Başarısız',
+    'graphql.sub.kind.data': 'Veri',
+    'graphql.sub.kind.error': 'Hata',
+    'graphql.sub.kind.notice': 'Not',
+    'graphql.sub.end.completed': 'Sunucu aboneliği tamamladı.',
+    'graphql.sub.end.error': 'Sunucu aboneliği bir hatayla sonlandırdı.',
+    'graphql.sub.end.unsubscribed': 'Abonelik bitirildi.',
+    'graphql.sub.end.projectLeft': 'Projesinden ayrıldığınız için abonelik kapatıldı.',
+    'graphql.sub.end.closed': 'Bağlantı kapandı: {detail}',
+    'graphql.sub.droppedOne': '{count} eski olay atıldı',
+    'graphql.sub.dropped': '{count} eski olay atıldı',
     'grpc.response.calling': 'gRPC metodu çağrılıyor...',
     'grpc.response.empty': 'Yanıtı görmek için bir gRPC çağrısı çalıştırın',
     'grpc.response.error': 'gRPC hatası',

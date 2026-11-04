@@ -98,6 +98,7 @@ const api = {
       title?: string
       filters?: Array<{ name: string; extensions: string[] }>
       multiSelections?: boolean
+      requestBodyProjectId?: string
     }): Promise<unknown> => ipcRenderer.invoke('dialog:openFile', options ?? {}),
   },
 
@@ -691,17 +692,23 @@ const api = {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('graphql:execute', options),
     introspect: (url: string, headers?: unknown): Promise<unknown> =>
       ipcRenderer.invoke('graphql:introspect', { url, headers }),
-    subscribe: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('graphql:subscribe', options),
-    unsubscribe: (subscriptionId: string): Promise<unknown> =>
-      ipcRenderer.invoke('graphql:unsubscribe', subscriptionId),
-    onSubscriptionEvent: (callback: (event: unknown) => void): (() => void) => {
+  },
+
+  // ─── GraphQL subscriptions (WebSocket) ──────────────────────
+  graphqlWs: {
+    connect: (options: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('graphqlWs:connect', options),
+    cancelConnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('graphqlWs:cancelConnect', connectionId),
+    disconnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('graphqlWs:disconnect', connectionId),
+    onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
       }
-      ipcRenderer.on('graphql:subscriptionEvent', handler)
+      ipcRenderer.on('graphqlWs:event', handler)
       return () => {
-        ipcRenderer.removeListener('graphql:subscriptionEvent', handler)
+        ipcRenderer.removeListener('graphqlWs:event', handler)
       }
     },
   },

@@ -33,6 +33,7 @@ import {
   type ReadResourceResult,
   type ServerContext,
 } from '@modelcontextprotocol/server'
+import type { MockTemplateVars } from '../lib/env-vars'
 import { renderTemplate, type TemplateContext } from '../mock/template'
 import { mockJsonSchemaValidator, validateArgs } from './args-validator'
 import { resolveElicitation, type ElicitationCodec } from './elicitation'
@@ -46,7 +47,7 @@ export interface ServerHooks {
   /** Count one call against `key`; true when the error applies to this call. */
   rollError(key: string, everyN: number | undefined): boolean
   /** Env vars for template rendering, or undefined (no project scope). */
-  loadEnv(): Record<string, string> | undefined
+  loadEnv(): MockTemplateVars | undefined
   /** Per-server `requestState` codec for elicitation. */
   codec: ElicitationCodec
 }
@@ -107,7 +108,7 @@ interface RenderInput {
 function render(
   source: string,
   input: RenderInput,
-  envVars: Record<string, string> | undefined,
+  templateVars: MockTemplateVars | undefined,
 ): string {
   const args = input.args ?? {}
   const ctx: TemplateContext & Record<string, unknown> = {
@@ -120,7 +121,7 @@ function render(
       body: args,
       bodyText: JSON.stringify(args),
     },
-    envVars,
+    ...templateVars,
     args,
     params: input.params ?? {},
     now: new Date().toISOString(),
@@ -135,7 +136,7 @@ function toolResult(
   tool: MockMcpTool,
   args: Record<string, unknown>,
   input: RenderInput,
-  envVars: Record<string, string> | undefined,
+  templateVars: MockTemplateVars | undefined,
 ): CallToolResult {
   const { kind, body, isError } = tool.response
   const flag = isError ? { isError: true } : {}
@@ -143,7 +144,10 @@ function toolResult(
   if (input.extra?.input !== undefined && tool.elicit?.responseTemplate !== undefined) {
     return {
       content: [
-        { type: 'text', text: render(tool.elicit.responseTemplate, { ...input, args }, envVars) },
+        {
+          type: 'text',
+          text: render(tool.elicit.responseTemplate, { ...input, args }, templateVars),
+        },
       ],
       ...flag,
     }
@@ -169,7 +173,7 @@ function toolResult(
         : { result: parsed }
     return { content: [{ type: 'text', text: body }], structuredContent: structured, ...flag }
   }
-  const text = kind === 'template' ? render(body, { ...input, args }, envVars) : body
+  const text = kind === 'template' ? render(body, { ...input, args }, templateVars) : body
   return { content: [{ type: 'text', text }], ...flag }
 }
 
@@ -378,7 +382,7 @@ export function createMockMcpSdkServer(hooks: ServerHooks): Server {
         `Invalid arguments for prompt ${name}: missing required argument${missing.length > 1 ? 's' : ''} ${missing.map((a) => a.name).join(', ')}`,
       )
     }
-    const envVars = hooks.loadEnv()
+    const templateVars = hooks.loadEnv()
     const headers = headersOf(ctx)
     return {
       ...(prompt.description ? { description: prompt.description } : {}),
@@ -389,7 +393,7 @@ export function createMockMcpSdkServer(hooks: ServerHooks): Server {
           text: render(
             m.text,
             { method: 'prompts/get', path: def.path, headers, args, extra: { prompt: name } },
-            envVars,
+            templateVars,
           ),
         },
       })),

@@ -30,7 +30,7 @@ import {
 import { logEvent, logRequestResponse } from '../lib/console-logger'
 import { getConnectionErrorInfo, type ConnectionErrorInfo } from '../lib/error-classifier'
 import * as historyRepo from '../db/history.repo'
-import { loadCertificatesFor } from './request.handler'
+import { certificateTlsMaterial, loadCertificatesFor } from './request.handler'
 import { onSenderGone, type SenderLike } from '../lib/sender-lifecycle'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import {
@@ -159,16 +159,7 @@ function tlsFor(
   const { certificates, error } = loadCertificatesFor(projectId, url)
   if (error) return { error }
   if (!certificates) return {}
-  const c = certificates.clientCert
-  return {
-    tls: {
-      ...(certificates.caCerts?.length ? { ca: certificates.caCerts } : {}),
-      ...(c?.pfx ? { pfx: c.pfx } : {}),
-      ...(c?.cert ? { cert: c.cert } : {}),
-      ...(c?.key ? { key: c.key } : {}),
-      ...(c?.passphrase ? { passphrase: c.passphrase } : {}),
-    },
-  }
+  return { tls: certificateTlsMaterial(certificates) }
 }
 
 /** Console line of one timeline event (masked in `emitConsoleEntry`). */

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useRequestStore } from '../../stores/request.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import type { BodyType, KeyValuePair } from '../../types'
@@ -8,6 +9,7 @@ import CredentialRowsHint from '../shared/CredentialRowsHint'
 import { isCredentialArgName } from '../../../shared/credential-headers'
 import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { scrubJsonCredentials } from '../../lib/credential-text'
+import { NO_PROJECT_SETTINGS_SCOPE } from '../../../shared/request-settings'
 
 const BODY_TYPE_TEST_IDS: Record<string, string> = {
   none: 'none',
@@ -130,6 +132,8 @@ export default function BodyTab() {
     try {
       const res = await window.api?.dialog?.openFile?.({
         title: t('body.selectBinaryFile'),
+        requestBodyProjectId:
+          useWorkspaceStore.getState().activeProjectId ?? NO_PROJECT_SETTINGS_SCOPE,
       })
       if (res?.success && res.data && !Array.isArray(res.data)) {
         setBody({ ...body, binaryPath: res.data.filePath })

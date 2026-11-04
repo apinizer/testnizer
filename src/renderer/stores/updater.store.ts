@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { t } from '../lib/i18n'
 
 // `idle` = never checked this session (neutral — DON'T claim "up to date").
 // `up-to-date` = a check ran and returned no newer version. Keeping these
@@ -89,10 +90,7 @@ export const useUpdaterStore = create<UpdaterStore>((set, get) => ({
           set({ status: 'error', errorMessage: err.message })
         })
     } else {
-      // Simulate for development
-      setTimeout(() => {
-        set({ status: 'available', version: '1.1.0', releaseNotes: 'Bug fixes and improvements.' })
-      }, 1500)
+      set({ status: 'error', errorMessage: t('update.unavailable') })
     }
   },
 
@@ -120,17 +118,7 @@ export const useUpdaterStore = create<UpdaterStore>((set, get) => ({
           set({ status: 'error', errorMessage: err.message })
         })
     } else {
-      // Simulate download progress for development
-      let percent = 0
-      const interval = setInterval(() => {
-        percent += 15
-        if (percent >= 100) {
-          clearInterval(interval)
-          set({ status: 'ready', downloadPercent: 100 })
-        } else {
-          set({ downloadPercent: percent })
-        }
-      }, 400)
+      set({ status: 'error', errorMessage: t('update.unavailable') })
     }
   },
 

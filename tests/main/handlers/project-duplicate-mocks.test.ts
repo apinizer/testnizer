@@ -46,6 +46,18 @@ vi.mock('../../../src/main/lib/secure-storage', () => ({
   isEncryptionAvailable: () => true,
 }))
 
+const storeState = vi.hoisted(() => ({ values: {} as Record<string, unknown> }))
+vi.mock('electron-store', () => ({
+  default: class {
+    get(key: string): unknown {
+      return storeState.values[key]
+    }
+    set(key: string, value: unknown): void {
+      storeState.values[key] = value
+    }
+  },
+}))
+
 vi.mock('../../../src/main/ipc/import-export.handler', () => ({
   importPostman: vi.fn(),
   importInsomnia: vi.fn(),
@@ -182,6 +194,27 @@ function mockGraphOf(
 }
 
 describe('Duplicate Project copies HTTP mock servers (issue #190)', () => {
+  it('the copy does not inherit consent to read files outside the working directory', async () => {
+    const { loadProjectSettings } = await import('../../../src/main/lib/project-settings')
+    testDb = createTestDb()
+    const s = seed(testDb)
+    storeState.values[`project.${s.projectId}.settings`] = {
+      workingDirectory: '/w',
+      readFilesOutsideWorkingDirectory: true,
+    }
+    // Even when the source row's shared settings carry the key (a project file did it).
+    testDb
+      .prepare('UPDATE projects SET shared_settings = ? WHERE id = ?')
+      .run(JSON.stringify({ readFilesOutsideWorkingDirectory: true }), s.projectId)
+    const res = (await harness.invoke('project:duplicate', {
+      projectId: s.projectId,
+      workspaceId: s.workspaceId,
+    })) as Envelope<{ projectId: string }>
+    const copy = await loadProjectSettings(res.data!.projectId)
+    expect(copy ?? {}).not.toHaveProperty('readFilesOutsideWorkingDirectory')
+    expect(copy ?? {}).not.toHaveProperty('workingDirectory')
+  })
+
   it('carries servers, endpoints and responses with fresh ids and remapped foreign keys', async () => {
     testDb = createTestDb()
     const s = seed(testDb)

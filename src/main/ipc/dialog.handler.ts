@@ -1,5 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron'
 import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
+import { allowPickedBodyFiles } from '../lib/working-directory'
 import { statSync } from 'fs'
 import { basename } from 'path'
 
@@ -7,6 +8,12 @@ interface OpenFileOptions {
   title?: string
   filters?: Array<{ name: string; extensions: string[] }>
   multiSelections?: boolean
+  /**
+   * The picker is choosing a request body file for this project. Picking one
+   * outside its working directory is consent to read such files. Other pickers
+   * (TLS tool) leave it out, and so does a request with no project.
+   */
+  requestBodyProjectId?: string
 }
 
 interface OpenFileResult {
@@ -40,6 +47,12 @@ export function registerDialogHandlers(): void {
       }
 
       for (const fp of result.filePaths) assertNotFolder(fp)
+      if (options.requestBodyProjectId) {
+        // The pick still counts if this fails: Send then says what to turn on.
+        await allowPickedBodyFiles(options.requestBodyProjectId, result.filePaths).catch((e) =>
+          console.warn('[dialog] could not save the file read setting:', (e as Error).message),
+        )
+      }
       const files: OpenFileResult[] = result.filePaths.map((fp) => {
         let size = 0
         try {

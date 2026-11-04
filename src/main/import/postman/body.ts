@@ -1,6 +1,7 @@
 /** Postman `request.body` → the renderer's RequestBody shape. */
 import type { PostmanBody } from './types'
 import { genKvId, toText, tryParseJson } from './normalize'
+import { absoluteFileWarnings } from '../../lib/body-file-paths'
 
 export interface UiBody {
   type: string
@@ -111,6 +112,7 @@ function mapMode(body: PostmanBody, label: string, warnings: string[]): UiBody {
             type: 'text' as const,
           }
         })
+      warnings.push(...absoluteFileWarnings(label, { type: 'form-data', formData }))
       return { type: 'form-data', formData }
     }
     case 'urlencoded': {

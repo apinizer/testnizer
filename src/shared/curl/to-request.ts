@@ -265,6 +265,21 @@ export function curlToRequest(parsed: ParsedCurl, opts: CurlToRequestOptions): C
     auth = { type: 'bearer', bearer: { token: parsed.bearer } }
   }
 
+  // ── File paths ────────────────────────────────────────────────────────
+  // Send refuses these unless the project allows it (main `working-directory.ts`),
+  // so the command says so up front. `path.isAbsolute` is not available here.
+  const bodyFiles = [
+    ...(body.formData ?? []).flatMap((p) => (p.filePath ? [p.filePath] : [])),
+    ...(body.binaryPath ? [body.binaryPath] : []),
+  ]
+  for (const file of bodyFiles.filter((f) => /^(?:[\\/]|[A-Za-z]:[\\/])/.test(f))) {
+    warnings.push({
+      code: 'absolute-file',
+      arg: file,
+      message: `The file path "${file}" is absolute. It is read only if it is inside Project Settings → Working directory or Project Settings → Read files outside the working directory is on.`,
+    })
+  }
+
   // ── Method ────────────────────────────────────────────────────────────
   let method = parsed.method as CurlRequest['method']
   if (!(CURL_HTTP_METHODS as readonly string[]).includes(parsed.method)) {

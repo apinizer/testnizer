@@ -15,6 +15,7 @@ import { initDatabase, closeDatabase, getDb, type InitDatabaseResult } from './d
 import { runHistoryMaskMigration } from './db/history-mask-migration'
 import { runSecretAtRestMigration } from './db/secret-at-rest-migration'
 import { runActiveEnvironmentMigration } from './db/active-environment-migration'
+import { runFilesOutsideWorkingDirectoryMigration } from './db/files-outside-wd-migration'
 import { registerAllHandlers } from './ipc'
 import { migrateProjectSettings } from './ipc/settings.handler'
 import { initAutoUpdater } from './updater'
@@ -26,6 +27,7 @@ import { maybeInitTelemetry } from './telemetry'
 import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
 import { mcpDisconnectAll } from './protocols/mcp.engine'
 import { mqttDisconnectAll } from './protocols/mqtt.engine'
+import { gqlWsDisconnectAll } from './protocols/graphql-ws.engine'
 import { installPermissionPolicy, type AppDocument } from './lib/permission-policy'
 import pkg from '../../package.json'
 
@@ -182,7 +184,7 @@ ipcMain.handle('app:reportIssue', async () => {
 app.name = 'Testnizer'
 initLogging()
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   electronApp.setAppUserModelId('com.testnizer.app')
 
   // Headless E2E: keep the app off-screen and out of the dock so Playwright
@@ -365,6 +367,16 @@ app.whenReady().then(() => {
   // Denials are logged at debug level only (not written to main.log).
   installPermissionPolicy(session.defaultSession, appDocument(), (m) => mainLog.debug(m))
 
+  // Once: projects that already hold an absolute file path keep reading it.
+  // Awaited here because registering the handlers starts the Scheduler, whose
+  // tasks must not run under the new file rule before this is done.
+  const filesOutside = await runFilesOutsideWorkingDirectoryMigration(getDb())
+  if (filesOutside.enabled > 0) {
+    mainLog.info(
+      `[db] files outside the working directory kept for ${filesOutside.enabled} project(s)`,
+    )
+  }
+
   // Register all IPC handlers
   registerAllHandlers()
   // Project settings that travel with the project moved from electron-store
@@ -514,6 +526,11 @@ app.on('will-quit', () => {
   }
   try {
     mqttDisconnectAll()
+  } catch {
+    /* ignore */
+  }
+  try {
+    gqlWsDisconnectAll()
   } catch {
     /* ignore */
   }

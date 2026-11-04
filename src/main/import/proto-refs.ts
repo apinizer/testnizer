@@ -1,52 +1,75 @@
 /**
- * A `.proto` file's `import` lines are paths, and the loader reads them as it
- * parses. The file is untrusted input, so before it loads: every import, followed
- * through the files it reaches, must stay in the picked file's own folder, and each
- * file must be a regular one (`import "/dev/zero"` would never end).
+ * A `.proto` file's `import` lines are paths, and the loader reads them
+ * synchronously on main's thread as it parses. So before a file loads, every import,
+ * followed through the files it reaches, must be a regular `.proto` file: a FIFO or
+ * `/dev/zero` would never finish reading, and any other file could surface in a
+ * parser error. Where a project keeps its imports is its own business (`../common.proto`).
+ *
+ * `confined` is for a file whose import lines someone else wrote: a downloaded proto's
+ * server chooses them and the loaded definitions show in the app, so it reaches nothing
+ * outside its folder.
+ *
+ * The loader's own parser and path resolver decide what is imported and from where.
+ * The grammar has more spellings than a text search sees: `import"x"`, adjacent
+ * strings joined into one path, a `//` path inside a string.
  */
-import { existsSync, realpathSync } from 'fs'
-import { dirname, isAbsolute, resolve, sep } from 'path'
+import { existsSync, realpathSync, statSync } from 'fs'
+import { dirname, resolve, sep } from 'path'
+import * as protobuf from 'protobufjs'
 import { InputDocumentError } from '../../shared/bounded-document'
 import { readImportFile } from './safe-input'
 
-const IMPORT_LINE = /\bimport\s+(?:public\s+|weak\s+)?(?:"([^"]+)"|'([^']+)')/g
-/** Bundled with the loader, never read from the user's disk. */
-const WELL_KNOWN = 'google/protobuf/'
+const { path: loaderPath } = protobuf.util
 
-const withoutComments = (text: string): string =>
-  text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+const isProtoName = (path: string): boolean => /\.proto$/i.test(path)
 
-function outside(name: string): InputDocumentError {
-  return new InputDocumentError(
-    `This .proto file imports "${name}", which is outside its folder. Keep imported files next to it.`,
-  )
+function refused(name: string, reason: string): InputDocumentError {
+  return new InputDocumentError(`This .proto file imports "${name}", which ${reason}.`)
+}
+const notAProto = (name: string): InputDocumentError =>
+  refused(name, 'is not a .proto file. Only .proto files can be imported')
+const notRegular = (name: string): InputDocumentError => refused(name, 'is not a regular file')
+const outsideFolder = (name: string): InputDocumentError =>
+  refused(name, 'is outside its folder. A downloaded proto can only import files next to it')
+
+function importsOf(text: string): string[] {
+  try {
+    const parsed = protobuf.parse(text, new protobuf.Root(), { keepCase: true })
+    return [...(parsed.imports ?? []), ...(parsed.weakImports ?? [])]
+  } catch {
+    return [] // the loader reports this file's parse error, in its own words
+  }
 }
 
-export function assertProtoStaysLocal(protoPath: string): void {
-  const entry = realpathSync(protoPath)
-  const root = dirname(entry)
+export function assertProtoImportsSafe(protoPath: string, { confined = false } = {}): void {
+  const entry = resolve(protoPath)
+  const folder = dirname(entry)
+  const realFolder = confined ? realpathSync(folder) : ''
+  const resolver = new protobuf.Root()
   const pending = [entry]
   const seen = new Set<string>()
+
   while (pending.length > 0) {
     const file = pending.pop() as string
     if (seen.has(file)) continue
     seen.add(file)
-    const text = withoutComments(readImportFile(file))
-    for (const match of text.matchAll(IMPORT_LINE)) {
-      const name = match[1] ?? match[2]
-      if (name.startsWith(WELL_KNOWN)) continue
-      if (isAbsolute(name) || /^[a-z][a-z0-9+.-]*:/i.test(name) || name.includes('\\')) {
-        throw outside(name)
+    for (const name of importsOf(readImportFile(file))) {
+      // Exactly the path the loader opens, so the checks below see the same file.
+      const target = resolver.resolvePath(file, name) ?? name
+      if (
+        confined &&
+        (loaderPath.isAbsolute(loaderPath.normalize(name)) ||
+          !resolve(target).startsWith(folder + sep))
+      ) {
+        throw outsideFolder(name)
       }
-      const target = resolve(dirname(file), name)
-      // A missing file is the loader's own error to give.
-      if (!existsSync(target)) {
-        if (!target.startsWith(root + sep)) throw outside(name)
-        continue
-      }
+      if (!isProtoName(target)) throw notAProto(name)
+      if (!existsSync(target)) continue // the loader's own error; bundled types are never read
+      if (!statSync(target).isFile()) throw notRegular(name)
       const real = realpathSync(target)
-      if (!real.startsWith(root + sep)) throw outside(name)
-      pending.push(real)
+      if (confined && !real.startsWith(realFolder + sep)) throw outsideFolder(name)
+      if (!isProtoName(real)) throw notAProto(name)
+      pending.push(target)
     }
   }
 }

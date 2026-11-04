@@ -583,45 +583,6 @@ export function initConsoleListeners(): () => void {
     )
   }
 
-  // 5) GraphQL subscription events
-  if (api.graphql?.onSubscriptionEvent) {
-    cleanups.push(
-      api.graphql.onSubscriptionEvent((ev) => {
-        if (!ev || !ev.type) return
-        // Stream data never passes through main's Console logger — masked
-        // through it here (issue #196).
-        const add = addMaskedEntry
-        if (ev.type === 'data') {
-          add(
-            {
-              protocol: 'graphql',
-              level: 'info',
-              category: 'event',
-              message: 'GraphQL sub ←',
-              details: { direction: 'in', responseBody: ev.data },
-            },
-            withPreview('GraphQL sub ← '),
-          )
-        } else if (ev.type === 'error') {
-          add({
-            protocol: 'graphql',
-            level: 'error',
-            category: 'event',
-            message: ev.error || 'GraphQL subscription error',
-            details: { error: { message: ev.error || 'GraphQL subscription error' } },
-          })
-        } else if (ev.type === 'complete') {
-          add({
-            protocol: 'graphql',
-            level: 'info',
-            category: 'event',
-            message: 'GraphQL subscription complete',
-          })
-        }
-      }),
-    )
-  }
-
   // 6) Socket.IO events
   if (api.socketio?.onEvent) {
     cleanups.push(

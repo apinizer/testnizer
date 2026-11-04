@@ -6,7 +6,9 @@
  *      `{{$randomString(n)}}` etc.
  *   2. Environment variables: `{{baseUrl}}` etc. — resolved against the
  *      project's active env + globals so mock responses pick up the same
- *      values as "Send" in the request editor.
+ *      values as "Send" in the request editor. A variable marked secret is
+ *      not available: a mock answers whoever reaches its port, so its
+ *      `{{name}}` is printed as written.
  *   3. Handlebars: `{{#if}}`, `{{#each}}`, `{{request.path}}`, `{{state.x}}`
  *      and our small helper set (json, eq, neq, upper, lower, default).
  *
@@ -48,11 +50,14 @@ export interface TemplateContext {
   /** When true, response body is also surfaced (used by interceptors). */
   state?: Record<string, unknown>
   /**
-   * Project env vars + globals. Pre-applied to the template before
+   * Project env vars + globals, never the ones marked secret
+   * (`loadMockTemplateVars`). Pre-applied to the template before
    * Handlebars compiles it so plain `{{baseUrl}}` placeholders work the
    * same way they do in the request editor.
    */
   envVars?: Record<string, string>
+  /** Names of the secret variables: their `{{tag}}` is printed as written. */
+  secretVarNames?: string[]
   /** Text of the last user message that carries text (see `llmRequestShortcuts`). */
   lastUserMessage?: string
   /** Text of the latest tool result in the conversation. */
@@ -196,6 +201,14 @@ function withoutRequestNames(vars: Record<string, string>): Record<string, strin
   return Object.fromEntries(Object.entries(vars).filter(([name]) => !name.startsWith('request.')))
 }
 
+/** Handlebars would print an unknown `{{name}}` as nothing: escape the secret ones. */
+function keepSecretTagsLiteral(text: string, secrets: Set<string>): string {
+  if (secrets.size === 0) return text
+  return text.replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (tag, name: string) =>
+    secrets.has(name) ? `\\${tag}` : tag,
+  )
+}
+
 /** Render a template against a context. Errors return the literal source.
  *
  *  Pass order: dynamic values → env vars → Handlebars. Both pre-passes
@@ -208,10 +221,17 @@ export function renderTemplate(source: string, ctx: TemplateContext): string {
   // and plain `{{varName}}` against the provided env map. If no env vars
   // were supplied, fall back to the standalone dynamic-only pass so
   // existing tests / call sites keep working.
-  const env = ctx.envVars && withoutRequestNames(ctx.envVars)
+  const { secretVarNames, ...context } = ctx
+  const env = context.envVars && withoutRequestNames(context.envVars)
+  const secrets = new Set(secretVarNames?.filter((name) => !name.startsWith('request.')))
   const resolved = source
     .split(ESCAPED_TAG)
-    .map((part) => (env ? resolveVariables(part, env) : resolveDynamicPlaceholders(part)))
+    .map((part) =>
+      keepSecretTagsLiteral(
+        env ? resolveVariables(part, env) : resolveDynamicPlaceholders(part),
+        secrets,
+      ),
+    )
     .join('\\{{')
   // An unknown `{{$name}}` survives the pre-pass as written (issue #281).
   // Escape it so Handlebars prints it literally instead of looking up `$name`
@@ -219,7 +239,7 @@ export function renderTemplate(source: string, ctx: TemplateContext): string {
   const stage0 = resolved.replace(/(^|[^\\])\{\{(\s*)\$/g, '$1\\{{$2$')
   try {
     const compiled = hb.compile(stage0, { noEscape: true })
-    return compiled(withCaseInsensitiveHeaders(ctx))
+    return compiled(withCaseInsensitiveHeaders(context))
   } catch {
     // Invalid Handlebars syntax — return the partially-resolved source.
     return resolved

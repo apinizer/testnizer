@@ -6,7 +6,8 @@ import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadedOnSameTab } from '../lib/withheld-before-send'
+import { t } from '../lib/i18n'
+import { notifySendDroppedTabChanged, reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { patchTabSlice, readTabSlice, withoutTab } from '../lib/tab-slice'
 import {
@@ -378,6 +379,89 @@ function ownerPatcher(ownerTabId: string | null): (patch: Partial<TabGrpcState>)
   return (patch) => patchTabSlice<TabGrpcState, GrpcStore>(useGrpcStore, ownerTabId, patch)
 }
 
+/**
+ * A saved row with a `protoUrl` and no downloaded file gets the file here, on Send:
+ * the user's own action, where opening the tab must not fetch what a pulled project
+ * points at. The saved method stays selected. False when the Send must not go on: the
+ * download failed, the method is gone from it, or the user moved to another tab.
+ */
+/** The reply came from the copy saved by an earlier download: it may be out of date. */
+async function warnIfSavedCopy(reply: { fromCache?: boolean }): Promise<void> {
+  if (!reply.fromCache) return
+  try {
+    const { toast } = await import('../lib/toast')
+    toast.warning(t('grpc.protoFromSavedCopy'))
+  } catch {
+    // No UI to tell in (tests without a DOM).
+  }
+}
+
+async function loadSavedUrlProto(): Promise<boolean> {
+  const { protoSource, protoUrl, protoPath, selectedService, selectedMethod, _currentTabId } =
+    useGrpcStore.getState()
+  if (protoSource !== 'url' || protoPath || !protoUrl.trim()) return true
+
+  const patchOwner = ownerPatcher(_currentTabId)
+  const fail = (errorMessage: string): false => {
+    patchOwner({ errorMessage, isLoading: false })
+    return false
+  }
+  const grpcApi = window.api?.grpc
+  if (!grpcApi?.loadProtoFromUrl) return fail('gRPC bridge not available')
+
+  useGrpcStore.setState({ isLoading: true, errorMessage: null })
+  let loaded: Partial<TabGrpcState>
+  try {
+    const result = await grpcApi.loadProtoFromUrl(protoUrl.trim())
+    if (!result.success || !result.data) {
+      return fail(result.error || 'Failed to download proto from URL')
+    }
+    loaded = loadedProtoPatch(result.data)
+    await warnIfSavedCopy(result.data)
+  } catch (e) {
+    return fail((e as Error).message || 'Failed to download proto from URL')
+  }
+
+  const known = loaded.services
+    ?.find((svc) => svc.name === selectedService)
+    ?.methods.some((m) => m.name === selectedMethod)
+  if (!known) {
+    patchOwner({
+      ...loaded,
+      errorMessage: t('grpc.savedMethodMissing').replace(
+        '{method}',
+        `${selectedService}/${selectedMethod}`,
+      ),
+    })
+    return false
+  }
+  patchOwner({ ...loaded, selectedService, selectedMethod })
+
+  if (useGrpcStore.getState()._currentTabId !== _currentTabId) {
+    await notifySendDroppedTabChanged()
+    return false
+  }
+  return true
+}
+
+/** Writes a message into an open stream. The IPC resolves on failure: read its reply. */
+async function writeToStream(
+  streamId: string,
+  body: string,
+  patchOwner: (patch: Partial<TabGrpcState>) => void,
+): Promise<void> {
+  try {
+    const result = await window.api?.grpc?.sendStreamMessage(streamId, body)
+    if (result && !result.success) {
+      patchOwner({ errorMessage: result.error || t('grpc.streamWriteRefused') })
+    } else if (result?.data === false) {
+      patchOwner({ errorMessage: t('grpc.streamWriteRefused') })
+    }
+  } catch (err) {
+    patchOwner({ errorMessage: (err as Error).message })
+  }
+}
+
 export const useGrpcStore = create<GrpcStore>((set, get) => ({
   ...persisted.current,
   _tabStates: persisted._tabStates,
@@ -405,9 +489,12 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     set({ isLoading: true, errorMessage: null })
 
     const grpcApi = window.api?.grpc
+    if (!grpcApi?.loadProto) {
+      patchOwner({ isLoading: false, errorMessage: 'gRPC bridge not available' })
+      return
+    }
     try {
-      const result = grpcApi ? await grpcApi.loadProto() : null
-
+      const result = await grpcApi.loadProto()
       if (result?.success && result.data) {
         patchOwner(loadedProtoPatch(result.data))
       } else if (result && !result.success) {
@@ -415,66 +502,14 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           errorMessage: result.error || 'Failed to load proto file',
           isLoading: false,
         })
-      } else if (!grpcApi) {
-        // No bridge (storybook / unit) → fall through to demo path.
-        throw new Error('grpc bridge unavailable')
       } else {
         // result.data was null (user cancelled the file dialog).
         patchOwner({ isLoading: false })
       }
-    } catch {
-      // Demo mode: generate sample services
-      const demoServices: GrpcService[] = [
-        {
-          name: 'greeter.GreeterService',
-          methods: [
-            {
-              name: 'SayHello',
-              type: 'unary',
-              requestType: 'HelloRequest',
-              responseType: 'HelloReply',
-            },
-            {
-              name: 'SayHelloServerStream',
-              type: 'server_streaming',
-              requestType: 'HelloRequest',
-              responseType: 'HelloReply',
-            },
-            {
-              name: 'SayHelloClientStream',
-              type: 'client_streaming',
-              requestType: 'HelloRequest',
-              responseType: 'HelloReply',
-            },
-            {
-              name: 'SayHelloBidi',
-              type: 'bidi_streaming',
-              requestType: 'HelloRequest',
-              responseType: 'HelloReply',
-            },
-          ],
-        },
-        {
-          name: 'user.UserService',
-          methods: [
-            { name: 'GetUser', type: 'unary', requestType: 'GetUserRequest', responseType: 'User' },
-            {
-              name: 'ListUsers',
-              type: 'server_streaming',
-              requestType: 'ListUsersRequest',
-              responseType: 'User',
-            },
-          ],
-        },
-      ]
-
+    } catch (e) {
       patchOwner({
-        services: demoServices,
-        protoPath: '/demo/greeter.proto',
-        protoLoaded: true,
+        errorMessage: (e as Error).message || 'Failed to load proto file',
         isLoading: false,
-        selectedService: demoServices[0].name,
-        selectedMethod: demoServices[0].methods[0].name,
       })
     }
   },
@@ -493,12 +528,20 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
       return
     }
-    const result = await grpcApi.loadProtoFromUrl(protoUrl.trim())
-    if (result.success && result.data) {
-      patchOwner(loadedProtoPatch(result.data))
-    } else {
+    try {
+      const result = await grpcApi.loadProtoFromUrl(protoUrl.trim())
+      if (result.success && result.data) {
+        patchOwner(loadedProtoPatch(result.data))
+        await warnIfSavedCopy(result.data)
+      } else {
+        patchOwner({
+          errorMessage: result.error || 'Failed to download proto from URL',
+          isLoading: false,
+        })
+      }
+    } catch (e) {
       patchOwner({
-        errorMessage: result.error || 'Failed to download proto from URL',
+        errorMessage: (e as Error).message || 'Failed to download proto from URL',
         isLoading: false,
       })
     }
@@ -518,12 +561,19 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
       return
     }
-    const result = await grpcApi.reflect(address.trim(), useTls)
-    if (result.success && result.data) {
-      patchOwner(loadedProtoPatch(result.data))
-    } else {
+    try {
+      const result = await grpcApi.reflect(address.trim(), useTls)
+      if (result.success && result.data) {
+        patchOwner(loadedProtoPatch(result.data))
+      } else {
+        patchOwner({
+          errorMessage: result.error || 'Server reflection failed',
+          isLoading: false,
+        })
+      }
+    } catch (e) {
       patchOwner({
-        errorMessage: result.error || 'Server reflection failed',
+        errorMessage: (e as Error).message || 'Server reflection failed',
         isLoading: false,
       })
     }
@@ -568,9 +618,11 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   execute: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
     if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
+    if (!get().address.trim() || !get().selectedService || !get().selectedMethod) return
+    if (!(await loadSavedUrlProto())) return
     const { address, useTls, selectedService, selectedMethod, requestBody, metadata, protoPath } =
       get()
-    if (!address.trim() || !selectedService || !selectedMethod) return
+    if (!selectedService || !selectedMethod) return
 
     const method = get().getSelectedMethod()
     const isStream = method?.type !== 'unary'
@@ -807,7 +859,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         if (result.success && result.data) {
           if (!adoptStream(result.data.streamId)) return
           if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
-            await grpcApi.sendStreamMessage(result.data.streamId, resolvedBody).catch(() => {})
+            await writeToStream(result.data.streamId, resolvedBody, applyToOwner)
           }
         } else {
           applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
@@ -821,7 +873,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
           if (!adoptStream(result.data.streamId)) return
           // Push the initial message immediately if the user typed one.
           if (resolvedBody.trim() && resolvedBody.trim() !== '{}') {
-            await grpcApi.sendStreamMessage(result.data.streamId, resolvedBody).catch(() => {})
+            await writeToStream(result.data.streamId, resolvedBody, applyToOwner)
           }
         } else {
           applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
@@ -863,11 +915,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const patchOwner = ownerPatcher(get()._currentTabId)
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
     const resolvedBody = resolveVariables(requestBody, activeVars)
-    try {
-      await grpcApi.sendStreamMessage(activeStreamId, resolvedBody)
-    } catch (err) {
-      patchOwner({ errorMessage: (err as Error).message })
-    }
+    await writeToStream(activeStreamId, resolvedBody, patchOwner)
   },
 
   /**
@@ -885,7 +933,11 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     if (!grpcApi) return
     const patchOwner = ownerPatcher(get()._currentTabId)
     try {
-      await grpcApi.endStream(activeStreamId)
+      const result = await grpcApi.endStream(activeStreamId)
+      if (result && !result.success) {
+        patchOwner({ errorMessage: result.error || 'gRPC stream error' })
+        return
+      }
       // Stay subscribed to the receive side: bidi server can still push,
       // and client_streaming's unary response is still pending. We just
       // block further writes until the stream actually closes.

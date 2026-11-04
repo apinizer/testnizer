@@ -711,6 +711,16 @@ describe('issue #277 — rows saved by the editor and by older builds', () => {
         }),
       },
     })
+    ep('GQL sub', 'graphql', {
+      url: 'ws://gql.test/graphql',
+      metadata: {
+        graphql: {
+          url: 'ws://gql.test/graphql',
+          query: 'subscription { tick }',
+          connectionInit: '{"token":"{{t}}"}',
+        },
+      },
+    })
     const res = await call('export:postmanV3Json', pid)
     expect(res.success, res.error).toBe(true)
     const doc = JSON.parse(res.data as string)
@@ -719,6 +729,15 @@ describe('issue #277 — rows saved by the editor and by older builds', () => {
     notes = res.notes ?? []
   })
   const item = (name: string): V3Item => items.find((i) => i.name === name)!
+
+  it('a subscription connection_init payload has no v3 field: it is reported, not carried', () => {
+    expect(item('GQL sub')).toMatchObject({
+      $kind: 'graphql-request',
+      query: 'subscription { tick }',
+    })
+    expect(JSON.stringify(item('GQL sub'))).not.toContain('{{t}}')
+    expect(notes.join('\n')).toMatch(/GQL sub.*connection_init payload/)
+  })
 
   it('legacy WebSocket: url and headers come out', () => {
     expect(item('WS legacy')).toMatchObject({

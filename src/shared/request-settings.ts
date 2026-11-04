@@ -266,3 +266,9 @@ export const MCP_DEFAULT_TIMEOUT_MS = 120_000
 export function resolveMcpTimeout(perRequest: unknown): number {
   return nonNegative(perRequest) ?? MCP_DEFAULT_TIMEOUT_MS
 }
+
+/**
+ * Where a request with no project (Quick Test) keeps its machine-local file read
+ * setting: the app's file picker turns it on, as it does for a project.
+ */
+export const NO_PROJECT_SETTINGS_SCOPE = '__no-project__'

@@ -3,13 +3,19 @@ import GraphQLQueryPane from './GraphQLQueryPane'
 import GraphQLResponsePane from './GraphQLResponsePane'
 import GraphQLSubscriptionLog from './GraphQLSubscriptionLog'
 import { useGraphQLStore } from '../../stores/graphql.store'
+import { isSubscriptionQuery } from '../../../shared/graphql-row'
 
 export default function GraphQLEditor() {
-  const query = useGraphQLStore((s) => s.query)
-  const subscriptionState = useGraphQLStore((s) => s.subscriptionState)
-
-  const isSubscription = query.replace(/#.*$/gm, '').trim().startsWith('subscription')
-  const showSubscriptionLog = isSubscription && subscriptionState === 'connected'
+  const showSubscriptionLog = useGraphQLStore(
+    (s) =>
+      // A running subscription keeps its log even while the query is being edited.
+      s.subscriptionState === 'connecting' ||
+      s.subscriptionState === 'connected' ||
+      (isSubscriptionQuery(s.query) &&
+        (s.subscriptionState === 'error' ||
+          s.subscriptionEnd !== null ||
+          s.subscriptionEvents.length > 0)),
+  )
 
   return (
     <PanelGroup direction="vertical" className="flex-1">

@@ -96,13 +96,13 @@ describe('updater store — event → status mapping', () => {
     expect(s.errorMessage).toBe('boom')
   })
 
-  it('check() with no IPC bridge falls back to the dev simulation (no throw)', () => {
+  it('check() with no IPC bridge reports an error, with no version (no throw)', () => {
     vi.useFakeTimers()
     ;(window as unknown as { api?: unknown }).api = undefined
     useUpdaterStore.getState().check()
-    expect(useUpdaterStore.getState().status).toBe('checking')
     vi.advanceTimersByTime(1600)
-    expect(useUpdaterStore.getState().status).toBe('available')
+    expect(useUpdaterStore.getState().status).toBe('error')
+    expect(useUpdaterStore.getState().version).toBeNull()
     vi.useRealTimers()
   })
 })

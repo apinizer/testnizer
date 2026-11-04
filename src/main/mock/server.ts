@@ -16,7 +16,7 @@ import { importedMockText } from '../../shared/mock-imported-text'
 import { matchEndpoint, type MatchableEndpoint } from './matcher'
 import { evaluateCondition } from './condition'
 import { llmRequestShortcuts, renderTemplate, type TemplateContext } from './template'
-import { loadEnvVars } from '../lib/env-vars'
+import { loadMockTemplateVars, type MockTemplateVars } from '../lib/env-vars'
 import { cachedSecretInventory } from '../lib/secret-inventory-cache'
 import { getDb } from '../db/database'
 import { getState, clearState } from './state'
@@ -659,10 +659,10 @@ class MockServerManager extends EventEmitter {
     // Render templates against the request context. Env vars resolved
     // per-request so projects that change their active environment mid-run
     // pick up the new values without restarting the mock server.
-    let envVars: Record<string, string> | undefined
+    let templateVars: MockTemplateVars = {}
     if (s.def.projectId) {
       try {
-        envVars = loadEnvVars({ projectId: s.def.projectId })
+        templateVars = loadMockTemplateVars({ projectId: s.def.projectId })
       } catch {
         /* fall through with no env — mock still responds */
       }
@@ -678,7 +678,7 @@ class MockServerManager extends EventEmitter {
         bodyText,
       },
       state: getState(s.def.id),
-      envVars,
+      ...templateVars,
       // `{{lastUserMessage}}` / `{{lastToolResult}}` / `{{model}}` (issue #221)
       // — every body type; empty for a body without that shape.
       ...llmRequestShortcuts(body),

@@ -87,6 +87,7 @@ const DEFAULT_SETTINGS: ProjectSettings = {
   sendPostmanToken: true,
   retainHeaders: false,
   workingDirectory: '',
+  readFilesOutsideWorkingDirectory: false,
   // Update
   autoCheckUpdates: true,
   autoDownloadUpdates: true,

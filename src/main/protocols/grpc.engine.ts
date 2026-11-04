@@ -3,9 +3,11 @@ import * as protoLoader from '@grpc/proto-loader'
 import { randomUUID, createHash } from 'crypto'
 import { performance } from 'perf_hooks'
 import { app, BrowserWindow } from 'electron'
-import { join as joinPath } from 'path'
+import { join as joinPath, resolve as resolvePath, sep as pathSep } from 'path'
 import { lstat, mkdir, rename, rm, stat, writeFile } from 'fs/promises'
 import axios from 'axios'
+import { InputDocumentError } from '../../shared/bounded-document'
+import { assertProtoImportsSafe } from '../import/proto-refs'
 import { describeGrpcStatus } from '../lib/error-classifier'
 import { fetchReflection } from './grpc-reflection'
 
@@ -15,6 +17,8 @@ export interface GrpcServiceDescription {
   protoPath: string
   packageName: string
   services: GrpcServiceInfo[]
+  /** The download failed and this is the copy saved by an earlier one. */
+  fromCache?: boolean
 }
 
 export interface GrpcServiceInfo {
@@ -143,6 +147,20 @@ function safeProtoError(err: unknown, protoPath: string): Error {
   return new Error(`Not a valid .proto file: ${protoPath}`)
 }
 
+/** The loader reads imports on main's thread: a FIFO or device there would freeze the app. */
+const protoCacheDir = (): string => joinPath(app.getPath('userData'), 'grpc-protos')
+
+function assertImportsSafe(protoPath: string): void {
+  // Outside the try: the mask below would report a failure here as a bad .proto.
+  const confined = resolvePath(protoPath).startsWith(protoCacheDir() + pathSep)
+  try {
+    assertProtoImportsSafe(protoPath, { confined })
+  } catch (err) {
+    if (err instanceof InputDocumentError) throw err
+    throw safeProtoError(err, protoPath)
+  }
+}
+
 async function loadOrGetProto(protoPath: string): Promise<LoadedProto> {
   const cached = protoCache.get(protoPath)
   if (cached) return cached
@@ -152,6 +170,7 @@ async function loadOrGetProto(protoPath: string): Promise<LoadedProto> {
   })
   if (!file.isFile()) throw new Error(`"${protoPath}" is not a regular file`)
   if (file.size > MAX_PROTO_BYTES) throw new Error(PROTO_TOO_LARGE)
+  assertImportsSafe(protoPath)
 
   let packageDefinition: protoLoader.PackageDefinition
   try {
@@ -543,15 +562,44 @@ export async function loadProto(protoPath: string): Promise<GrpcServiceDescripti
  * Download a .proto file from a URL into a private, stable cache directory and load
  * it. The URL is hashed so identical URLs reuse the same on-disk file (and therefore
  * the same protoCache entry), and userData is not cleared by the OS the way the temp
- * directory is. A reopened saved request gets its proto back from `protoUrl` (Load).
+ * directory is. A reopened saved request gets its proto back from `protoUrl`, on Load or Send.
  */
+/** Fails with a message that holds only when no saved copy exists: see the one caller. */
+async function downloadProto(url: string): Promise<string> {
+  let body: string
+  try {
+    const response = await axios.get<string>(url, {
+      timeout: 15000,
+      responseType: 'text',
+      maxContentLength: MAX_PROTO_BYTES,
+      transformResponse: [(data) => data], // disable JSON parsing
+      validateStatus: (status) => status >= 200 && status < 400,
+    })
+    body = response.data
+  } catch (err) {
+    if (/maxContentLength/.test((err as Error).message)) throw new Error(PROTO_TOO_LARGE)
+    throw new Error(
+      `Could not download the proto file from ${new URL(url).host} (${(err as Error).message}), ` +
+        'and this computer has no saved copy of it.',
+    )
+  }
+
+  if (typeof body !== 'string' || body.length === 0) {
+    throw new Error('Downloaded proto file is empty')
+  }
+  if (!/(^|\n)\s*(syntax|service|message|package|import)\s/.test(body)) {
+    throw new Error('URL did not return a valid .proto file (no syntax/service/message keywords)')
+  }
+  return body
+}
+
 export async function loadProtoFromUrl(url: string): Promise<GrpcServiceDescription> {
   const trimmed = url.trim()
   if (!/^https?:\/\//i.test(trimmed)) {
     throw new Error('URL must start with http:// or https://')
   }
 
-  const cacheDir = joinPath(app.getPath('userData'), 'grpc-protos')
+  const cacheDir = protoCacheDir()
   await mkdir(cacheDir, { recursive: true, mode: 0o700 })
   const dir = await lstat(cacheDir)
   if (dir.isSymbolicLink() || !dir.isDirectory()) {
@@ -563,24 +611,11 @@ export async function loadProtoFromUrl(url: string): Promise<GrpcServiceDescript
 
   let body: string
   try {
-    const response = await axios.get<string>(trimmed, {
-      timeout: 15000,
-      responseType: 'text',
-      maxContentLength: MAX_PROTO_BYTES,
-      transformResponse: [(data) => data], // disable JSON parsing
-      validateStatus: (status) => status >= 200 && status < 400,
-    })
-    body = response.data
+    body = await downloadProto(trimmed)
   } catch (err) {
-    if (/maxContentLength/.test((err as Error).message)) throw new Error(PROTO_TOO_LARGE)
+    const saved = await lstat(filePath).catch(() => null)
+    if (saved?.isFile()) return { ...(await loadProto(filePath)), fromCache: true }
     throw err
-  }
-
-  if (typeof body !== 'string' || body.length === 0) {
-    throw new Error('Downloaded proto file is empty')
-  }
-  if (!/(^|\n)\s*(syntax|service|message|package|import)\s/.test(body)) {
-    throw new Error('URL did not return a valid .proto file (no syntax/service/message keywords)')
   }
 
   // A fresh name that must not exist, then rename: a symlink at either name is

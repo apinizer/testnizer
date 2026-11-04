@@ -1095,33 +1095,55 @@ interface GraphqlIntrospectionResult {
   subscriptionType: string | null
 }
 
-interface GraphqlSubscribePayload {
-  url: string
-  wsUrl?: string
-  query: string
-  variables?: string
-  operationName?: string
-  headers?: Record<string, string>
-  sslVerification?: boolean
-}
-
-interface GraphqlSubscriptionEvent {
-  subscriptionId: string
-  type: 'data' | 'error' | 'complete'
-  data?: string
-  error?: string
-  timestamp: number
-}
-
 interface GraphqlApi {
   execute(options: GraphqlExecutePayload): Promise<IpcResult<GraphqlApiResponse>>
   introspect(
     url: string,
     headers?: Record<string, string>,
   ): Promise<IpcResult<GraphqlIntrospectionResult>>
-  subscribe(options: GraphqlSubscribePayload): Promise<IpcResult<{ subscriptionId: string }>>
-  unsubscribe(subscriptionId: string): Promise<IpcResult<boolean>>
-  onSubscriptionEvent(callback: (event: GraphqlSubscriptionEvent) => void): () => void
+}
+
+// ─── GraphQL subscriptions (WebSocket) ───────────────────────────
+
+interface GraphqlWsConnectPayload {
+  /** Chosen by the renderer: events carry it from the first frame. */
+  connectionId: string
+  url: string
+  headers?: Record<string, string>
+  query: string
+  /** The Variables field as typed, `{{var}}` resolved. */
+  variables?: string
+  /** The connection_init field as typed, `{{var}}` resolved. */
+  connectionInit?: string
+  sslVerification?: boolean
+  tls?: {
+    minVersion?: string
+    maxVersion?: string
+    cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
+    ciphersCustom?: string
+  }
+  _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _configured?: { url: string; meta?: Record<string, unknown> }
+}
+
+type GraphqlWsConnectResult = IpcResult<{
+  connectionId: string
+  url: string
+  protocol: import('../shared/graphql-ws').GraphqlWsProtocol
+  connectedAt: number
+}> & {
+  errorInfo?: import('../shared/connection-error').ConnectionErrorInfo
+  failure?: import('../shared/graphql-ws').GqlWsFailure
+}
+
+interface GraphqlWsApi {
+  connect(options: GraphqlWsConnectPayload): Promise<GraphqlWsConnectResult>
+  cancelConnect(connectionId: string): Promise<IpcResult<{ canceled: boolean }>>
+  disconnect(connectionId: string): Promise<IpcResult<boolean>>
+  onEvent(callback: (event: import('../shared/graphql-ws').GqlWsEvent) => void): () => void
 }
 
 // ─── gRPC ────────────────────────────────────────────────────────
@@ -1129,6 +1151,7 @@ interface GraphqlApi {
 interface GrpcServiceDescription {
   protoPath: string
   packageName: string
+  fromCache?: boolean
   services: Array<{
     name: string
     fullName: string
@@ -2864,6 +2887,7 @@ interface DialogApi {
     title?: string
     filters?: Array<{ name: string; extensions: string[] }>
     multiSelections?: boolean
+    requestBodyProjectId?: string
   }): Promise<IpcResult<DialogFileResult | DialogFileResult[]>>
 }
 
@@ -3560,6 +3584,7 @@ interface ApiBridge {
   runner: RunnerApi
   scheduler: SchedulerApi
   graphql: GraphqlApi
+  graphqlWs: GraphqlWsApi
   grpc: GrpcApi
   sse: SseApi
   aiChat: AiChatApi

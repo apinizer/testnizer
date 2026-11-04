@@ -4,10 +4,12 @@ import { Check, X, Upload } from 'lucide-react'
 import type { KeyValuePair } from '../../types'
 import VariableAutocompleteInput from './VariableAutocompleteInput'
 import { useUIStore } from '../../stores/ui.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useTranslation } from '../../lib/i18n'
 import { filterHeaderSuggestions, filterHeaderValueSuggestions } from '../../lib/http-headers'
 import { rowsToBulkText, bulkTextToRows } from '../../lib/key-value-bulk'
 import { lockDragStyles } from '../../lib/drag-lock'
+import { NO_PROJECT_SETTINGS_SCOPE } from '../../../shared/request-settings'
 
 interface KeyValueTableProps {
   rows: KeyValuePair[]
@@ -293,7 +295,11 @@ export default function KeyValueTable({
    */
   async function handlePickFile(rowId: string): Promise<void> {
     try {
-      const result = await window.api?.dialog?.openFile({ title: t('formdata.chooseFile') })
+      const result = await window.api?.dialog?.openFile({
+        title: t('formdata.chooseFile'),
+        requestBodyProjectId:
+          useWorkspaceStore.getState().activeProjectId ?? NO_PROJECT_SETTINGS_SCOPE,
+      })
       if (result && result.success && result.data) {
         // `openFile` may return one or many results; normalize to the first.
         const picked = Array.isArray(result.data) ? result.data[0] : result.data

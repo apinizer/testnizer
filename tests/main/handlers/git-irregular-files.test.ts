@@ -144,6 +144,29 @@ describe('a project file that is a link', () => {
   })
 })
 
+describe('a file a read skipped is reported', () => {
+  // /dev/zero: the listing only looks at the link, nothing opens it.
+  it('git:pull names it', async () => {
+    commitLink('extra.json', '/dev/zero')
+    const res = await fx.call('git:pull', fx.on(B).projectId)
+    expect(res.success).toBe(true)
+    expect((res.data as { skippedFiles?: string[] }).skippedFiles).toEqual(['extra.json'])
+    expect(fx.names(fx.on(B))).toContain('From A')
+  })
+
+  it('save:gitPull names it', async () => {
+    commitLink('extra.json', '/dev/zero')
+    const res = await fx.call('save:gitPull', { projectId: fx.on(B).projectId })
+    expect(res.success).toBe(true)
+    expect((res.data as { skippedFiles?: string[] }).skippedFiles).toEqual(['extra.json'])
+  })
+
+  it('a clean repository reports nothing', async () => {
+    const res = await fx.call('git:pull', fx.on(B).projectId)
+    expect((res.data as { skippedFiles?: string[] }).skippedFiles).toEqual([])
+  })
+})
+
 describe('save:gitDiff', () => {
   it('compares with this project’s file, not the first one listed', async () => {
     const m = fx.on(A)

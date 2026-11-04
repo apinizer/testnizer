@@ -5,16 +5,10 @@
  *   - Query: hello(name), echo(input)
  *   - No mutation defined — MST-128 adds a mutation field inline via a spec-level
  *     mini server (http POST that returns partial data + errors[]).
- *   - No graphql-ws server — MST-131 subscription uses the built-in demo/stub path
- *     in useGraphQLStore (subscriptionState goes "connected" on valid `subscription`
- *     query even without a real graphql-ws server). The test verifies the UI flow:
- *     Subscribe button visible, state shows Subscribed badge.
+ *   - MST-131 verifies the Run -> Subscribe switch only. The subscribe, stream and
+ *     unsubscribe round-trip is `tests/e2e/ui/62-graphql-subscription.spec.ts`.
  *   - Auth header (MST-130): graphql-server is open; test verifies the header row
  *     is carried through by doing a successful query while the header is present.
- *
- * Known gap: no graphql-ws test server exists, so MST-131 only asserts the
- * Run -> Subscribe action switch (deterministic, server-independent); a real
- * subscribe/stream/unsubscribe round-trip needs a graphql-ws fixture server.
  */
 import http from 'node:http'
 import net from 'node:net'
@@ -213,11 +207,8 @@ uiTest.describe('Tur1 — GraphQL advanced [MST-128..131]', () => {
   })
 
   // ── MST-131: Subscription query toggles the action button ─────────────────
-  // The local graphql test server is HTTP-only (no graphql-ws transport), so a
-  // real subscribe → stream → unsubscribe round-trip isn't possible. The
-  // deterministic, server-independent behaviour MST-131 names is the action
-  // button switching between "Run" (query/mutation) and "Subscribe"
-  // (subscription) based on the query text.
+  // The behaviour MST-131 names is the action button switching between "Run"
+  // (query/mutation) and "Subscribe" (subscription) based on the query text.
   uiTest('MST-131 subscription query changes Run button to Subscribe', async ({ window }) => {
     const { graphql } = getTestServerUrls()
     await openNewDropdownItem(window, /GraphQL/i)

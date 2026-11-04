@@ -7,7 +7,7 @@ import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { patchTabSlice, readTabSlice, updateTabSlice, withoutTab } from '../lib/tab-slice'
-import { releaseConnection } from '../lib/realtime-connections'
+import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -65,6 +65,8 @@ interface TabSseState extends WithheldState {
    * `open` event fires. Cleared on success / failure.
    */
   _pendingConnectId?: string
+  /** The project the connection was opened in (`lib/realtime-connections.ts`). */
+  _projectId?: string | null
 }
 
 interface SseStore extends TabSseState {
@@ -129,6 +131,7 @@ function emptyTabState(): TabSseState {
     connectedAt: null,
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
+    _projectId: null,
   }
 }
 
@@ -151,6 +154,7 @@ function extractState(s: SseStore): TabSseState {
     connectedAt: s.connectedAt,
     _unsubscribe: s._unsubscribe,
     _pendingConnectId: s._pendingConnectId,
+    _projectId: s._projectId,
   }
 }
 
@@ -191,6 +195,7 @@ function idleSse(st: TabSseState): TabSseState {
     connectedAt: idle.connectedAt,
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
+    _projectId: idle._projectId,
   }
 }
 
@@ -244,6 +249,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       reconnecting: false,
       events: [],
       _pendingConnectId: pendingConnectId,
+      _projectId: useWorkspaceStore.getState().activeProjectId,
     })
 
     const activeVars = useEnvironmentStore.getState().getActiveVariables()
@@ -600,3 +606,16 @@ attachTabbedPersist(
 )
 // Issue #244: a user edit to a withheld value drops its marker.
 trackCredentialEdits(useSseStore, SSE_CREDENTIALS)
+// Leaving a project closes the connections opened in it (one rule for the
+// realtime editors, `lib/realtime-connections.ts`).
+bindConnectionsToProject({
+  store: useSseStore,
+  extract: extractState,
+  api: getSseApi,
+  closed: (sl) => ({
+    ...sl,
+    connectionState: 'disconnected' as const,
+    errorMessage: null,
+    reconnecting: false,
+  }),
+})

@@ -75,6 +75,12 @@ export interface StoredProjectSettings {
    * one computer means nothing on another.
    */
   workingDirectory?: string
+  /**
+   * Machine-local consent to read absolute file paths outside `workingDirectory`
+   * (`lib/working-directory.ts`). Never shared: a project file must not be able
+   * to grant itself access to this computer's files.
+   */
+  readFilesOutsideWorkingDirectory?: boolean
 }
 
 interface MinimalStore {
@@ -117,10 +123,18 @@ export function splitProjectSettings(value: unknown): { shared: Obj | null; loca
 /**
  * What a reader sees: the local part with the shared part over it. `shared`
  * null (never written to the DB) → the stored object as it is.
+ *
+ * Only shared keys are taken from `shared`: that JSON arrives in project files
+ * as written, and a machine-local key in it (`workingDirectory`, `proxy`,
+ * `readFilesOutsideWorkingDirectory`) must not reach the settings a request
+ * runs with.
  */
 export function mergeProjectSettings(local: unknown, shared: Obj | null): unknown {
   if (!shared) return local
-  return { ...(isObj(local) ? (splitProjectSettings(local).local as Obj) : {}), ...shared }
+  return {
+    ...(isObj(local) ? (splitProjectSettings(local).local as Obj) : {}),
+    ...(splitProjectSettings(shared).shared ?? {}),
+  }
 }
 
 /** The project's shared settings from the DB, or null. */
@@ -218,6 +232,19 @@ export async function loadProjectSettings(
   } catch {
     return undefined
   }
+}
+
+/**
+ * Turn on `readFilesOutsideWorkingDirectory` for a project: written to the
+ * local part as it is stored (its proxy password stays encrypted). Throws when
+ * the store cannot be written; the callers decide what that means.
+ */
+export async function allowFilesOutsideWorkingDirectory(projectId: string): Promise<void> {
+  const store = await getStore()
+  const key = `project.${projectId}.settings`
+  const local = store.get(key)
+  if (isObj(local) && local.readFilesOutsideWorkingDirectory === true) return
+  store.set(key, { ...(isObj(local) ? local : {}), readFilesOutsideWorkingDirectory: true })
 }
 
 /**

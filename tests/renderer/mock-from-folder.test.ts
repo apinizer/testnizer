@@ -15,6 +15,7 @@ import {
 } from '../../src/renderer/components/mock/mock-from-folder'
 import { mockEndpointUrl } from '../../src/renderer/components/mock/mock-open-in-tab'
 import { setLocale } from '../../src/renderer/lib/i18n'
+import { bracesToPathVariables } from '../../src/shared/path-variables'
 import type { SavedResponse } from '../../src/renderer/types'
 
 type Row = { name?: string; path?: string; url?: string; method?: string }
@@ -111,6 +112,18 @@ describe('create mock server from a folder', () => {
     expect(mockEndpointUrl({ host: '127.0.0.1', port: 8080, basePath: '' }, created[0].path)).toBe(
       'http://127.0.0.1:8080/v2/pet/:petId/uploadImage',
     )
+  })
+
+  it('the same endpoint as the current importer writes it, with `:petId`', async () => {
+    const importerPath = `https://petstore.swagger.io/v2${bracesToPathVariables('/pet/{petId}/uploadImage', [])}`
+    expect(importerPath).toBe('https://petstore.swagger.io/v2/pet/:petId/uploadImage')
+    const { api, created } = bridge({ e1: { method: 'POST', path: importerPath } })
+
+    await createMockFromRequests(api as never, { projectId: 'p', name: 'pet', ids: ['e1'] })
+
+    expect(created).toEqual([
+      { serverId: 'srv-1', method: 'POST', path: '/v2/pet/:petId/uploadImage', pathMode: 'param' },
+    ])
   })
 
   it('a saved request with a {{baseUrl}} URL binds the same way', async () => {

@@ -10,7 +10,12 @@ import { mergeProjectFiles } from '../lib/project-merge'
 import { applySelectedChanges, diffProjectDocs } from '../lib/project-changes'
 import { stripLocalSecrets } from '../lib/local-secrets'
 import { sameExport } from '../lib/same-export'
-import { clearIrregularFile, pickCheckoutProjectFile, readCheckoutFile } from '../import/safe-input'
+import {
+  clearIrregularFile,
+  listCheckoutJsonFiles,
+  pickCheckoutProjectFile,
+  readCheckoutFile,
+} from '../import/safe-input'
 import { openSecret } from '../lib/secret-at-rest'
 import { readSharedProjectSettings } from '../lib/project-settings'
 import {
@@ -1468,6 +1473,9 @@ export function registerGitHandlers(): void {
           branch: currentBranch,
           fastForwarded,
           emptySecrets: countEmptyLocalSecrets(projectId),
+          skippedFiles: listCheckoutJsonFiles(config.localPath, ['package.json']).skipped.map(
+            (s) => s.file,
+          ),
         },
       }
     } catch (e) {

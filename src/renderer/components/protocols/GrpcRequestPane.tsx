@@ -68,6 +68,10 @@ export default function GrpcRequestPane() {
   const methodType = currentMethod?.type
   const methodTypeInfo = methodType ? METHOD_TYPE_COLORS[methodType] : null
   const enabledMetaCount = metadata.filter((m) => m.enabled && m.key.trim()).length
+  // A saved URL row knows its method; Send downloads the definition first.
+  const sendable =
+    protoLoaded ||
+    (protoSource === 'url' && !!protoUrl.trim() && !!selectedService && !!selectedMethod)
 
   function triggerLoadFromCurrentSource(): void {
     if (protoSource === 'reflection') loadFromReflection()
@@ -222,7 +226,7 @@ export default function GrpcRequestPane() {
         )}
 
         {/* How-to guide when nothing is loaded yet */}
-        {!protoLoaded && !errorMessage && (
+        {!sendable && !errorMessage && (
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
             <p className="mb-1 font-semibold text-[var(--text)]">{t('grpc.guide.title')}</p>
             <ol className="list-inside list-decimal space-y-1">
@@ -341,7 +345,7 @@ export default function GrpcRequestPane() {
         )}
 
         {/* Execute / Cancel button */}
-        {protoLoaded && (
+        {sendable && (
           <div>
             {isStreaming ? (
               // Bidi / client-stream: keep Send live so the user can push more
