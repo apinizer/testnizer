@@ -314,6 +314,35 @@ jobs:
           fi
         shell: bash
 
+  # A red nightly used to wait for someone to look at the Actions tab: the full
+  # suite (flows/, tur1/) runs only here, so that was the one place a regression
+  # showed, and MST-161 sat red unnoticed. One open issue carries every failure,
+  # new runs comment on it, so a bad week is not seven issues.
+  nightly-alert:
+    name: Report a failed nightly
+    needs: [quality, renderer-e2e]
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update the nightly failure issue
+        run: |
+          title='Nightly E2E is failing'
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --title "$title" \
+              --body "The nightly full suite failed: $RUN_URL. Close this once a nightly is green."
+          fi
+        shell: bash
+
   # ---------------------------------------------------------------------------
   # macOS — ONE job builds BOTH arches (arm64 native + x64 cross-build) on a
   # single Apple-Silicon runner, in a single `electron-builder --mac --arm64
