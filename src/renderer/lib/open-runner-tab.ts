@@ -5,8 +5,10 @@
 
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
+import { t } from './i18n'
 import { isRunnerBusy } from './runner-activity'
 import { runnerKey } from './runner-storage'
+import { toast } from './toast'
 
 const RUNNER_TAB_ID = 'runner-main'
 
@@ -41,6 +43,7 @@ export function openOrReuseRunnerTab(
       Array.isArray(sessionData.results))
   if (existing && isRunnerBusy(existing.id) && !lookOnly) {
     tabsApi.setActiveTab(existing.id)
+    toast.info(t('runResults.alreadyRunning'))
     return
   }
 
@@ -117,6 +120,7 @@ export function openFolderRunner(folderId: string, folderName?: string): void {
     tabsApi.openTab({ id: tabId, name: folderName || 'Runner', protocol: 'runner', folderId })
     tabsApi.setActiveTab(tabId)
     useUIStore.getState().setActiveSidebarPage('tests')
+    toast.info(t('runResults.alreadyRunning'))
     return
   }
   // A fresh session token on every Run. When the tab is already open (and even

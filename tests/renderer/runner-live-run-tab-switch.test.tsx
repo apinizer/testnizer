@@ -32,6 +32,11 @@ vi.hoisted(() => {
   g.window.api = api
 })
 
+const toastInfo = vi.hoisted(() => vi.fn())
+vi.mock('../../src/renderer/lib/toast', () => ({
+  toast: { info: toastInfo, error: vi.fn(), success: vi.fn(), warning: vi.fn() },
+}))
+
 vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
   default: ({ value }: { value?: string }) => <div data-testid="monaco">{value}</div>,
 }))
@@ -146,6 +151,7 @@ async function leaveAndReturn(whileAway?: () => Promise<void>): Promise<void> {
 beforeEach(() => {
   sessionStorage.clear()
   useRunnerLiveStore.setState({ runs: {} })
+  toastInfo.mockClear()
   useUIStore.getState().setLocale('en')
   useWorkspaceStore.setState({
     activeWorkspaceId: 'ws-1',
@@ -244,6 +250,8 @@ describe('a run in flight survives leaving its tab', () => {
     expect(tabs.tabs.find((t) => t.id === TAB)?.sessionKey).toBe(sessionBefore)
     expect(screen.getByTestId('runner-stop')).toBeTruthy()
     expect(bridge.execute).toHaveBeenCalledTimes(1)
+    // Says why the click started nothing.
+    expect(toastInfo).toHaveBeenCalledWith('A run is already in progress in this tab. Showing it.')
   })
 
   it('a Quick Run (autoRun) survives the trip too', async () => {
