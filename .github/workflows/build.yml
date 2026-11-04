@@ -106,23 +106,29 @@ jobs:
                   || echo "  (already gone)"
               done
 
-      - name: Delete old workflow runs (keep latest 30)
+      # Scheduled runs are kept apart: pushes would push every night out of the
+      # latest 30 within days, and nobody could tell how long the nightly was red.
+      - name: Delete old workflow runs (keep latest 30, and 60 scheduled)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -u
-          gh api -X GET /repos/${{ github.repository }}/actions/runs \
-            --paginate --jq '.workflow_runs[] | "\(.id) \(.created_at)"' \
-            | sort -k2 \
-            | head -n -30 \
-            | awk '{print $1}' \
-            | while read -r id; do
-                [ -z "$id" ] && continue
-                echo "Deleting run $id (logs included)"
-                gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/$id" \
-                  || echo "  (already gone or in-progress)"
-              done
+          delete_old_runs() {
+            gh api -X GET /repos/${{ github.repository }}/actions/runs \
+              --paginate --jq ".workflow_runs[] | select($1) | \"\(.id) \(.created_at)\"" \
+              | sort -r -k2 \
+              | tail -n +$(($2 + 1)) \
+              | awk '{print $1}' \
+              | while read -r id; do
+                  [ -z "$id" ] && continue
+                  echo "Deleting run $id (logs included)"
+                  gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/$id" \
+                    || echo "  (already gone or in-progress)"
+                done
+          }
+          delete_old_runs '.event == "schedule"' 60
+          delete_old_runs '.event != "schedule"' 30
 
   # ---------------------------------------------------------------------------
   # Quality gate — runs once before any platform build. Blocks the matrix on

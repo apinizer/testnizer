@@ -93,3 +93,54 @@ describe('nightly failure alert', () => {
     expect(ranOnSchedule.sort()).toEqual([...(alert.needs as string[])].sort())
   })
 })
+
+describe('cleanup keeps the nightly history', () => {
+  const cleanupSteps = workflow.jobs['cleanup'].steps ?? []
+  const step = cleanupSteps.find((s) => s.run?.includes('delete_old_runs'))
+  const stepScript = (step?.run ?? '').replaceAll('${{ github.repository }}', 'o/r')
+
+  function deletedRuns(listing: { scheduled: number; other: number }): string[] {
+    const cleanupDir = mkdtempSync(join(tmpdir(), 'cleanup-runs-'))
+    const log = join(cleanupDir, 'log')
+    writeFileSync(log, '')
+    const row = (prefix: string, i: number): string =>
+      `${prefix}${i} 2026-01-01T00:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`
+    const lines = (prefix: string, count: number): string =>
+      Array.from({ length: count }, (_, i) => row(prefix, i)).join('\n')
+    writeFileSync(join(cleanupDir, 'scheduled'), lines('s', listing.scheduled))
+    writeFileSync(join(cleanupDir, 'other'), lines('o', listing.other))
+    // Answers the listing with the rows its jq filter selects; logs each delete.
+    writeFileSync(
+      join(cleanupDir, 'gh'),
+      `#!/bin/bash
+case "$*" in
+  *DELETE*) echo "\${@: -1}" >> "${log}" ;;
+  *'.event == "schedule"'*) cat "${cleanupDir}/scheduled"; echo ;;
+  *) cat "${cleanupDir}/other"; echo ;;
+esac
+`,
+    )
+    chmodSync(join(cleanupDir, 'gh'), 0o755)
+    execFileSync('bash', ['-e', '-c', stepScript], {
+      env: { ...process.env, PATH: `${cleanupDir}${delimiter}${process.env.PATH}` },
+      stdio: 'pipe',
+    })
+    const deleted = readFileSync(log, 'utf-8')
+      .split('\n')
+      .filter(Boolean)
+      .map((path) => path.split('/').pop() ?? '')
+    rmSync(cleanupDir, { recursive: true, force: true })
+    return deleted
+  }
+
+  it('removes the oldest runs past each limit, and only those', () => {
+    const deleted = deletedRuns({ scheduled: 62, other: 33 })
+    expect(deleted.sort()).toEqual(['o0', 'o1', 'o2', 's0', 's1'].sort())
+  })
+
+  it('never lets pushes push the scheduled runs out', () => {
+    const deleted = deletedRuns({ scheduled: 5, other: 500 })
+    expect(deleted.filter((id) => id.startsWith('s'))).toEqual([])
+    expect(deleted).toHaveLength(470)
+  })
+})
