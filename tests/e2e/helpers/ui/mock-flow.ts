@@ -44,7 +44,12 @@ export async function addMockEndpoint(
   opts: { path: string; method?: string },
 ): Promise<void> {
   await page.getByTestId('mock-add-endpoint').click()
-  await expect(page.getByTestId('mock-endpoint-path')).toBeVisible({ timeout: 10_000 })
+  // The editor switches to the new endpoint only after the create IPC returns.
+  // A path input already on screen belongs to the PREVIOUS endpoint: filling it
+  // before the switch rewrote that one (MST-161: GET /items answering 201).
+  await expect(page.getByTestId('mock-endpoint-path')).toHaveValue('/new-endpoint', {
+    timeout: 10_000,
+  })
   if (opts.method) await page.getByTestId('mock-endpoint-method').selectOption(opts.method)
   await page.getByTestId('mock-endpoint-path').fill(opts.path)
 }
