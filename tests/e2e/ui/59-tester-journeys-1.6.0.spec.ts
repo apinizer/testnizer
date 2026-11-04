@@ -89,7 +89,8 @@ uiTest.describe('Tester journeys on 1.6.0', () => {
       try {
         for (const name of names) {
           await openHttpRequestTab(window)
-          await fillUrl(window, `${localHttpBin()}/delay/2?trip=${stamp}`)
+          // Long enough to leave and come back on a slow CI runner (about 8x a laptop).
+          await fillUrl(window, `${localHttpBin()}/delay/8?trip=${stamp}`)
           await saveRequestToFolder(window, name, folderName)
         }
 
@@ -106,19 +107,23 @@ uiTest.describe('Tester journeys on 1.6.0', () => {
         // Away and back, run still going: progress and Stop are there, not a blank page.
         await openHttpRequestTab(window)
         await expect(window.getByTestId('runner-stop')).toHaveCount(0)
+        // Tells a window too short for this machine apart from a screen that lost the run.
+        expect(await runHistoryTotal(window, projectId), 'run ended before the return').toBe(
+          runsBefore,
+        )
         await runnerTab.click()
         await expect(window.getByTestId('runner-stop')).toBeVisible({ timeout: 5_000 })
         await expect(window.getByTestId('runner-results-nothing')).toHaveCount(0)
 
         // The rows that arrive after coming back still land on this screen.
         await expect(window.getByTestId('runner-results-list').getByText(names[0])).toBeVisible({
-          timeout: 15_000,
+          timeout: 30_000,
         })
 
         // Away again, this time until the run has ended (a new history row).
         await openHttpRequestTab(window)
         await expect
-          .poll(() => runHistoryTotal(window, projectId), { timeout: 30_000, intervals: [500] })
+          .poll(() => runHistoryTotal(window, projectId), { timeout: 60_000, intervals: [500] })
           .toBeGreaterThan(runsBefore)
         await runnerTab.click()
 
