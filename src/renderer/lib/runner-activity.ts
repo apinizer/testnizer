@@ -1,30 +1,17 @@
 /**
- * Which runner tabs currently have a run in flight.
+ * Whether a runner tab of the active project has a run in flight.
  *
  * `openFolderRunner` bumps a tab's `sessionKey` on every Run so the workbench
  * remounts the runner and the user always lands on the Start-run screen for the
- * folder they picked (issue #66). Remounting a tab whose run is still executing
- * would throw away that instance's `isRunning` state and its progress
- * subscription — the run keeps going in main while the UI shows a fresh config
- * screen with no way to cancel it. So a Run aimed at a BUSY tab focuses it
- * instead of re-arming it.
+ * folder they picked (issue #66). A Run aimed at a BUSY tab focuses it instead:
+ * re-arming would take the live view away while main keeps running.
  *
- * Deliberately module state rather than a store: it is transient UI bookkeeping
- * that nothing renders from, and a store field would invite components to
- * subscribe and re-render on every run start/stop.
+ * Read from the live-run store, which outlives the tab's component. This used to
+ * be a flag RunnerTab set from an effect, whose cleanup cleared it the moment the
+ * user left the tab — so "busy" was only ever true for the tab on screen.
  */
-const busyTabs = new Set<string>()
-
-export function setRunnerBusy(tabId: string, busy: boolean): void {
-  if (busy) busyTabs.add(tabId)
-  else busyTabs.delete(tabId)
-}
+import { liveRunKey, useRunnerLiveStore } from '../stores/runner-live.store'
 
 export function isRunnerBusy(tabId: string): boolean {
-  return busyTabs.has(tabId)
-}
-
-/** Test seam — no production caller. */
-export function resetRunnerActivity(): void {
-  busyTabs.clear()
+  return !!useRunnerLiveStore.getState().runs[liveRunKey(tabId)]?.running
 }

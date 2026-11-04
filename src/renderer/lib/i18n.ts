@@ -1817,6 +1817,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'runResults.allMethods': 'All methods',
     'runResults.clearFilters': 'Clear filters',
     'runResults.noMatches': 'No request matches the current filters.',
+    'runResults.nothingTitle': 'No results to show',
+    'runResults.nothingBody':
+      'This run left no results here. A window reload can lose a run that was in progress; All Runs keeps finished ones.',
+    'runResults.liveBanner': 'A run is in progress: {current} of {total}',
+    'runResults.liveBannerShow': 'Show run',
     'runResults.revealInApis': 'Reveal in APIs',
     'runResults.revealNotFound': 'This request is no longer in the APIs tree.',
     'runResults.revealInTests': 'Reveal in Tests',
@@ -6322,6 +6327,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'runResults.allMethods': 'Tüm metotlar',
     'runResults.clearFilters': 'Filtreleri temizle',
     'runResults.noMatches': 'Geçerli filtrelerle eşleşen istek yok.',
+    'runResults.nothingTitle': 'Gösterilecek sonuç yok',
+    'runResults.nothingBody':
+      "Bu çalıştırma burada sonuç bırakmadı. Pencereyi yeniden yüklemek devam eden çalıştırmayı kaybettirebilir; bitenler Tüm Çalıştırmalar'da durur.",
+    'runResults.liveBanner': 'Çalıştırma devam ediyor: {current} / {total}',
+    'runResults.liveBannerShow': 'Çalıştırmayı göster',
     'runResults.revealInApis': "API'lerde göster",
     'runResults.revealNotFound': 'Bu istek artık API ağacında yok.',
     'runResults.revealInTests': 'Testlerde göster',

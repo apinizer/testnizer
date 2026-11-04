@@ -28,6 +28,22 @@ export function openOrReuseRunnerTab(
   const tabsApi = useTabsStore.getState()
   const existing = tabsApi.tabs.find((tab) => tab.protocol === 'runner')
   const tabId = existing ? existing.id : RUNNER_TAB_ID
+
+  // A run or a new run config aimed at a tab with a run in flight focuses that
+  // run: replaying a payload would take the live view away (same rule as
+  // openFolderRunner). Overview / All Runs / a past report are only looks, and
+  // RunnerTab keeps a way back to the live run.
+  const lookOnly =
+    sessionData &&
+    (sessionData.viewHome ||
+      sessionData.viewAllRuns ||
+      sessionData.viewScheduledTasks ||
+      Array.isArray(sessionData.results))
+  if (existing && isRunnerBusy(existing.id) && !lookOnly) {
+    tabsApi.setActiveTab(existing.id)
+    return
+  }
+
   const sessionKey = nextSessionKey()
 
   if (sessionData) {

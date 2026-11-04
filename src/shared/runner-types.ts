@@ -202,6 +202,16 @@ export interface RunnerProgress {
   total: number
   endpointId: string
   result: EndpointRunResult
+  /** Whose run: main broadcasts, a tab keeps its own. A scheduled run has no tab. */
+  runTabId?: string
+  projectId?: string
+}
+
+/** A phase has begun (`runner:phase`), addressed like `RunnerProgress`. */
+export interface RunnerPhaseEvent {
+  phase: RunPhase
+  runTabId?: string
+  projectId?: string
 }
 
 /**

@@ -83,6 +83,7 @@ import type {
   ResponseTiming,
   RunnerExecuteOptions,
   RunnerExportOptions,
+  RunnerPhaseEvent,
   RunnerProgress,
   RunnerReport,
   RunStopMode,
@@ -706,10 +707,15 @@ function sendProgress(progress: RunnerProgress): void {
  * what removes the safe Stop from the screen (issue #92), which is the other
  * reason it cannot wait for a result.
  */
-function sendPhaseStarted(phase: RunPhase): void {
+function sendPhaseStarted(phase: RunPhase, options: RunnerExecuteOptions): void {
+  const event: RunnerPhaseEvent = {
+    phase,
+    runTabId: options.runTabId,
+    projectId: options.projectId,
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
-      win.webContents.send('runner:phase', phase)
+      win.webContents.send('runner:phase', event)
     }
   }
 }
@@ -1526,6 +1532,8 @@ function recordStep(
     total: Math.max(ctx.total, ctx.emitted),
     endpointId: result.endpointId,
     result,
+    runTabId: ctx.options.runTabId,
+    projectId: ctx.options.projectId,
   })
   return { didPass, skipped, ...(criticalStop ? { criticalStop: true } : {}) }
 }
@@ -2777,7 +2785,7 @@ async function runTeardownPhase(
 ): Promise<void> {
   const runState = ctx.runState
   runState.teardownStarted = true
-  sendPhaseStarted('teardown')
+  sendPhaseStarted('teardown', ctx.options)
   for (const [i, id] of ids.entries()) {
     if (runState.abortTeardown) {
       // An explicit hard stop cut cleanup short. Say which steps were left

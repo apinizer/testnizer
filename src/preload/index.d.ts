@@ -810,6 +810,7 @@ interface WsApi {
 import type {
   RunnerExecuteOptions,
   RunnerExportOptions,
+  RunnerPhaseEvent,
   RunnerProgress,
   RunnerReport,
   RunStopMode,
@@ -886,7 +887,7 @@ interface RunnerApi {
    * most for a cleanup endpoint that never answers, which produces no result
    * at all.
    */
-  onPhase(callback: (phase: RunPhase) => void): () => void
+  onPhase(callback: (event: RunnerPhaseEvent) => void): () => void
   /**
    * String argument → returns a flat `RunnerHistoryEntry[]` (legacy shape).
    * Object argument → returns `{ rows, total }` for paginated views.
