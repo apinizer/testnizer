@@ -15,6 +15,7 @@
 
 import OpenAPIParser from '@readme/openapi-parser'
 import yaml from 'js-yaml'
+import { requestUrlToMockPath, templatedPathToMockPath } from '../../shared/mock-path'
 import {
   createMockEndpoint as repoCreateEndpoint,
   createMockResponse as repoCreateResponse,
@@ -98,7 +99,7 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
       if (!HTTP_METHODS.has(methodLower)) continue
       const method = methodLower.toUpperCase()
       const opt = op as OpenApiOperation
-      const { path, mode } = openApiPathToMockPath(rawPath)
+      const { path, mode } = templatedPathToMockPath(rawPath)
       const ep = repoCreateEndpoint({
         serverId,
         method,
@@ -181,11 +182,6 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
 }
 
 /** Convert `/pets/{id}` to mock-style `/pets/:id`. */
-function openApiPathToMockPath(p: string): { path: string; mode: 'exact' | 'param' } {
-  if (!p.includes('{')) return { path: p, mode: 'exact' }
-  return { path: p.replace(/\{([^}]+)\}/g, ':$1'), mode: 'param' }
-}
-
 function parseStatusKey(key: string): number {
   if (key === 'default') return 200
   const n = Number(key)
@@ -309,7 +305,7 @@ export function importPostman(serverId: string, sourceText: string): ImportResul
             ? req.description
             : (req.description?.content ?? '')
 
-      const { path: pathOut, mode } = postmanPathToMockPath(path)
+      const { path: pathOut, mode } = templatedPathToMockPath(path)
       const ep = repoCreateEndpoint({
         serverId,
         method: method.toUpperCase(),
@@ -386,7 +382,7 @@ function postmanUrlToPath(
 ): string | null {
   if (!url) return null
   if (typeof url === 'string') {
-    return extractPathFromRawUrl(url)
+    return requestUrlToMockPath(url)?.path ?? null
   }
   if (Array.isArray(url.path)) {
     return '/' + url.path.join('/')
@@ -395,41 +391,7 @@ function postmanUrlToPath(
     return url.path.startsWith('/') ? url.path : `/${url.path}`
   }
   if (typeof url.raw === 'string') {
-    return extractPathFromRawUrl(url.raw)
+    return requestUrlToMockPath(url.raw)?.path ?? null
   }
   return null
-}
-
-function extractPathFromRawUrl(raw: string): string | null {
-  // Replace Postman {{var}} placeholders with a unique sentinel that survives
-  // URL parsing, then map sentinels back to :var path params afterwards. This
-  // way "https://x/users/{{userId}}" round-trips to "/users/:userId".
-  const placeholders: string[] = []
-  const sentinel = (i: number): string => `__PM_VAR_${i}__`
-  const stripped = raw.replace(/\{\{([^}]+)\}\}/g, (_, name: string) => {
-    placeholders.push(String(name).trim())
-    return sentinel(placeholders.length - 1)
-  })
-  let path: string | null = null
-  try {
-    const u = new URL(stripped)
-    path = u.pathname || '/'
-  } catch {
-    if (stripped.startsWith('/')) path = stripped.split('?')[0]
-  }
-  if (!path) return null
-  return path.replace(/__PM_VAR_(\d+)__/g, (_, idx) => `:${placeholders[Number(idx)]}`)
-}
-
-function postmanPathToMockPath(p: string): { path: string; mode: 'exact' | 'param' } {
-  // Postman path segments may use ":id" already (REST style) — keep as-is.
-  if (p.includes(':')) return { path: p, mode: 'param' }
-  // Or {{varName}} — convert to :varName for mock-server.
-  if (p.includes('{{')) {
-    return {
-      path: p.replace(/\{\{([^}]+)\}\}/g, (_, name) => `:${String(name).trim()}`),
-      mode: 'param',
-    }
-  }
-  return { path: p, mode: 'exact' }
 }

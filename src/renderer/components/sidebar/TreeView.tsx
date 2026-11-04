@@ -20,6 +20,7 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import FolderSettingsModal from '../modals/FolderSettingsModal'
 import CreateSuiteFromFolderModal from '../modals/CreateSuiteFromFolderModal'
 import { collectRequestIds } from '../../lib/folder-request-selection'
+import { createMockFromRequests, type MockFromFolderApi } from '../mock/mock-from-folder'
 import { isHttpMockableProtocol } from '../../../shared/request-protocols'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
@@ -1177,60 +1178,12 @@ export default function TreeView() {
       const ids = collectRequestIds(folderNode, (n) => isHttpMockableProtocol(n.protocol))
       if (ids.length === 0) return
       try {
-        // Pick the next free port above 8080 (project-scoped). Mock-server
-        // ports are bound to 127.0.0.1 so we don't need a global registry.
-        const listRes = await window.api?.mock?.server?.list(activeProjectId)
-        const usedPorts = new Set((listRes?.data ?? []).map((s) => s.port))
-        let port = 8080
-        while (usedPorts.has(port) && port < 65535) port++
-
-        const serverRes = await window.api?.mock?.server?.create({
+        const created = await createMockFromRequests(window.api as unknown as MockFromFolderApi, {
           projectId: activeProjectId,
           name: folderNode.label,
-          host: '127.0.0.1',
-          port,
+          ids,
         })
-        if (!serverRes?.success || !serverRes.data) return
-
-        // Pull each endpoint's method+path, then mirror as mock endpoints.
-        // We deliberately don't copy bodies — mock responses are configured
-        // separately and this flow just scaffolds the URL surface.
-        for (const id of ids) {
-          // saved requests and imported endpoints both live in the tree,
-          // walk both APIs to find them. Endpoint lookup is preferred since
-          // imported endpoints carry richer metadata.
-          let path = ''
-          let method = 'GET'
-          const ep = (await window.api?.endpoint?.get?.(id)) as {
-            success: boolean
-            data?: { path?: string; method?: string }
-          }
-          if (ep?.success && ep.data) {
-            path = ep.data.path || ''
-            method = ep.data.method || 'GET'
-          } else {
-            const sr = (await window.api?.savedRequest?.get?.(id)) as {
-              success: boolean
-              data?: { url?: string; method?: string }
-            }
-            if (sr?.success && sr.data) {
-              // Strip protocol/host so the mock binds the path portion only.
-              try {
-                const u = new URL(sr.data.url || '', 'http://placeholder')
-                path = u.pathname || sr.data.url || ''
-              } catch {
-                path = sr.data.url || ''
-              }
-              method = sr.data.method || 'GET'
-            }
-          }
-          if (!path) continue
-          await window.api?.mock?.endpoint?.create({
-            serverId: serverRes.data.id,
-            method,
-            path,
-          })
-        }
+        if (!created) return
 
         setActiveSidebarPage('mocks')
       } catch (err) {
