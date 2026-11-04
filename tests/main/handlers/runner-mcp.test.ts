@@ -517,6 +517,17 @@ describe('Runner — MCP tool call (issue #161)', () => {
     expect(row.assertions).toEqual([{ name: 'sum', passed: true }])
   })
 
+  it('a data column resolves in an MCP row without a script', async () => {
+    const id = seedMcpEndpoint({
+      url: fixture.url,
+      call: { capabilityTab: 'tools', selectedTool: 'add', toolArgs: '{"a": {{n}}, "b": 1}' },
+      postScript: "pm.test('sum', () => pm.expect(pm.response.text()).to.eql('8'))",
+    })
+    const row = (await run({ endpointIds: [id], iterationData: [{ n: 7 }] })).data!.results[0]
+    expect(row.error).toBeUndefined()
+    expect(row.assertions).toEqual([{ name: 'sum', passed: true }])
+  })
+
   // ─── (c) isError ───────────────────────────────────────────────
 
   it('a tool isError result FAILS without assertions (status 500)', async () => {

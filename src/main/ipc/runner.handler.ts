@@ -1218,6 +1218,29 @@ function mergedRunVars(scopes: RunVarScopes): Record<string, string> {
   return { ...scopes.globals, ...scopes.environment, ...scopes.locals }
 }
 
+/**
+ * What `{{x}}` means in one step: the run's variables with the iteration's data
+ * row between environment and local, the order `pm.variables.get` follows.
+ * Called at each use because a script may have changed the run's view since.
+ */
+function stepVars(
+  run: RunContext,
+  row: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const data: Record<string, string> = {}
+  for (const [key, value] of Object.entries(row ?? {})) {
+    if (value == null) data[key] = ''
+    else
+      data[key] =
+        typeof value === 'string'
+          ? value
+          : typeof value === 'object'
+            ? JSON.stringify(value)
+            : String(value)
+  }
+  return { ...run.envVars, ...data, ...run.scopes.locals }
+}
+
 // Renamed for clarity — `resolveVariables` from the shared resolver handles
 // `{{$dynamicValue}}` + chained refs that the old runner-local function
 // silently skipped.
@@ -1660,7 +1683,6 @@ async function runEndpointStep(
   iter: number,
 ): Promise<StepOutcome> {
   const options = ctx.options
-  const envVars = ctx.envVars
   const iterationData = ctx.iterationData
   const iterations = ctx.iterations
   const persistResponses = ctx.persistResponses
@@ -1917,7 +1939,9 @@ async function runEndpointStep(
     // Resolve environment variables in request. A copy: with no variables the
     // resolver hands back `requestOptions` itself, and the History row's
     // `configured` snapshot must keep the unsecured template.
-    const resolvedOptions = { ...resolveRequestOptions(requestOptions, envVars) }
+    const resolvedOptions = {
+      ...resolveRequestOptions(requestOptions, stepVars(ctx, iterationData[iter])),
+    }
     // SOAP WS-Security from the saved row (`metadata.soap.wsSecurity`) — the
     // same applier and the same `{{var}}` rule Send uses, applied last so a
     // signature covers the final bytes (tester report 2026-10-30).
@@ -1929,7 +1953,7 @@ async function runEndpointStep(
       ).metadata?.soap?.wsSecurity
       if (isWsSecurityEnabled(saved)) {
         const wsSecurity = resolveWsSecurityVariables(saved, (v) =>
-          resolveRunnerVariables(v, envVars),
+          resolveRunnerVariables(v, stepVars(ctx, iterationData[iter])),
         )
         wsseSecrets = wsSecuritySecretValues(wsSecurity)
         resolvedOptions.body = (await applySoapWsSecurityToBody(
@@ -2164,9 +2188,9 @@ async function runEndpointStep(
         bodySize: response.bodySize,
         timing: response.timing,
       },
-      // envVars at this point reflects any pre-script `pm.environment.set`
-      // calls — assertions see the same variable space the request did.
-      envVars,
+      // Read now, so it reflects any pre-script `pm.environment.set` calls:
+      // assertions see the same variable space the request did.
+      stepVars(ctx, iterationData[iter]),
     )
     const assertionResults = [...declarativeAssertions, ...scriptTestResults]
 
@@ -2413,7 +2437,6 @@ async function runMcpStep(
   iter: number,
 ): Promise<StepOutcome> {
   const endpoint = entity.row
-  const envVars = ctx.envVars
   const iteration = phase === 'main' ? iter + 1 : undefined
   const saved = readSavedMcpRequest(endpoint)
   const rowBase = {
@@ -2531,7 +2554,10 @@ async function runMcpStep(
     }
 
     // ── Resolve against the run's live variables (pre-script writes included) ──
-    const { connect, call: resolvedCall } = mcpRunRequest({ ...saved, customHeaders }, envVars)
+    const { connect, call: resolvedCall } = mcpRunRequest(
+      { ...saved, customHeaders },
+      stepVars(ctx, ctx.iterationData[iter]),
+    )
     const target = mcpDisplayTarget(saved.transport, connect.url)
     if (asRecord(saved.auth)?.type === 'oauth2') return failRow(target, MCP_RUN_OAUTH)
     if (resolvedCall.problem !== undefined) {
@@ -2662,7 +2688,7 @@ async function runMcpStep(
         bodySize: response.responseSize,
         timing: { total: response.responseTime },
       },
-      envVars,
+      stepVars(ctx, ctx.iterationData[iter]),
     )
     const assertionResults: AssertionResult[] = [
       ...declarative,
