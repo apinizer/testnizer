@@ -2139,6 +2139,7 @@ interface AppApi {
    */
   version(): Promise<IpcResult<{ version: string; name: string; buildId?: string }>>
   openExternal(url: string): Promise<IpcResult<null>>
+  reportIssue(): Promise<IpcResult<null>>
   onOpenAbout(callback: () => void): () => void
   onMenuCommand(callback: (command: string) => void): () => void
 }

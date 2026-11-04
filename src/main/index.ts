@@ -20,6 +20,7 @@ import { migrateProjectSettings } from './ipc/settings.handler'
 import { initAutoUpdater } from './updater'
 import { initLogging, mainLog } from './diagnostics'
 import { currentBuildIdentity } from './lib/build-identity'
+import { openReportIssue } from './lib/report-issue'
 import { BACKUP_DIR_NAME, backupFailureNotice } from './db/pre-migration-backup'
 import { maybeInitTelemetry } from './telemetry'
 import { disconnectAll as wsDisconnectAll } from './protocols/websocket.engine'
@@ -168,6 +169,15 @@ ipcMain.handle('app:openExternal', async (_event, url: unknown) => {
   }
 })
 
+ipcMain.handle('app:reportIssue', async () => {
+  try {
+    await openReportIssue()
+    return { success: true, data: null }
+  } catch (e) {
+    return { success: false, error: (e as Error).message }
+  }
+})
+
 // Set app name early so macOS dock/menu shows correct name + userData path resolves.
 app.name = 'Testnizer'
 initLogging()
@@ -286,9 +296,16 @@ app.whenReady().then(() => {
     {
       role: 'help',
       submenu: [
+        {
+          label: 'Report an Issue or Request a Feature',
+          click: () => {
+            openReportIssue().catch((e) => console.error('Could not open the issue form:', e))
+          },
+        },
         ...(isMac
           ? []
           : ([
+              { type: 'separator' },
               { label: 'About Testnizer', click: broadcastOpenAbout },
             ] satisfies MenuItemConstructorOptions[])),
       ],

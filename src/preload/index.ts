@@ -43,6 +43,7 @@ const api = {
   app: {
     version: (): Promise<unknown> => ipcRenderer.invoke('app:version'),
     openExternal: (url: string): Promise<unknown> => ipcRenderer.invoke('app:openExternal', url),
+    reportIssue: (): Promise<unknown> => ipcRenderer.invoke('app:reportIssue'),
     // Fires when the native application menu's "About Testnizer" item is
     // selected. Renderer hooks this into the in-app AboutModal so the
     // user sees our branded About instead of Electron's default panel.

@@ -1,8 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { User, Lock, KeyRound, Info } from 'lucide-react'
+import { User, Lock, KeyRound, Info, MessageSquarePlus } from 'lucide-react'
 import { useAuthStore } from '../../stores/auth.store'
 import { useUIStore } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
+import { toast } from '../../lib/toast'
 import { T } from '../../styles/tokens'
 
 /**
@@ -31,6 +32,13 @@ export default function UserMenu() {
   }, [])
 
   const protectedMode = hasPasswordSet === true && !isGuest
+
+  async function reportIssue(): Promise<void> {
+    const result = await window.api.app.reportIssue()
+    if (!result.success) {
+      toast.error(t('userMenu.reportIssueFailed').replace('{error}', result.error ?? ''))
+    }
+  }
 
   const itemStyle: React.CSSProperties = {
     display: 'flex',
@@ -152,6 +160,20 @@ export default function UserMenu() {
             </button>
           )}
 
+          <button
+            type="button"
+            data-testid="user-menu-report-issue"
+            style={itemStyle}
+            onMouseEnter={(e) => (e.currentTarget.style.background = T.surface)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+            onClick={() => {
+              setOpen(false)
+              void reportIssue()
+            }}
+          >
+            <MessageSquarePlus size={13} aria-hidden="true" />
+            {t('userMenu.reportIssue')}
+          </button>
           <button
             type="button"
             style={itemStyle}

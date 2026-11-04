@@ -27,6 +27,7 @@ exports[`preload under the renderer sandbox (issue #294) > window.api surface is
   "app.onMenuCommand (function)",
   "app.onOpenAbout (function)",
   "app.openExternal (function)",
+  "app.reportIssue (function)",
   "app.version (function)",
   "auth.changePassword (function)",
   "auth.disablePassword (function)",
