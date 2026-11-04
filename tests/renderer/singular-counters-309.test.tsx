@@ -439,14 +439,10 @@ const SITES: Array<[string, Array<[string, string]>]> = [
   ['components/mock/mock-kind-ui.ts', [pair('mock.serverTypeConfirmBody')]],
   ['components/modals/PushCommitModal.tsx', [pair('push.includePending')]],
   ['lib/pull-messages.ts', [['toast.pulledEmptySecretOne', 'toast.pulledEmptySecrets']]],
+  ['components/mock/MockServerEditor.tsx', [pair('mock.entryCount')]],
   [
-    'components/mock/MockServerEditor.tsx',
-    [
-      pair('mock.warningCount'),
-      pair('mock.importEndpointCount'),
-      pair('mock.importResponseCount'),
-      pair('mock.entryCount'),
-    ],
+    'components/mock/mock-import-file.ts',
+    [pair('mock.warningCount'), pair('mock.importEndpointCount'), pair('mock.importResponseCount')],
   ],
 ]
 

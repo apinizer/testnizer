@@ -5,6 +5,9 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import Database from 'better-sqlite3'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 let memDb: Database.Database
 
@@ -227,6 +230,134 @@ const minimalPostman = {
   ],
 }
 
+describe('importOpenApi: Swagger 2.0, hostile and odd specs (issue #319)', () => {
+  const bodies = (): string[] =>
+    (memDb.prepare('SELECT body FROM mock_responses').all() as { body: string }[]).map(
+      (r) => r.body,
+    )
+
+  it('keeps the bodies of Swagger 2.0 responses, which have no content key', async () => {
+    const res = await importOpenApi(
+      'server-1',
+      JSON.stringify({
+        swagger: '2.0',
+        info: { title: 't', version: '1' },
+        produces: ['application/json'],
+        paths: {
+          '/example': {
+            get: {
+              responses: {
+                200: { description: 'ok', examples: { 'application/json': { id: 7 } } },
+              },
+            },
+          },
+          '/schema': {
+            get: {
+              responses: {
+                200: {
+                  description: 'ok',
+                  schema: { type: 'object', properties: { name: { type: 'string' } } },
+                },
+              },
+            },
+          },
+        },
+      }),
+    )
+    expect(res.ok).toBe(true)
+    expect(bodies().map((b) => JSON.parse(b))).toEqual([{ id: 7 }, { name: 'string' }])
+  })
+
+  it('does not read a local file named by a $ref, and says so', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'mock-ref-'))
+    const secret = join(dir, 'secret.json')
+    writeFileSync(secret, JSON.stringify({ example: 'CANARY-LOCAL-FILE' }))
+    try {
+      const res = await importOpenApi(
+        'server-1',
+        JSON.stringify({
+          openapi: '3.0.0',
+          info: { title: 't', version: '1' },
+          paths: {
+            '/a': {
+              get: {
+                responses: {
+                  200: {
+                    description: 'ok',
+                    content: { 'application/json': { schema: { $ref: secret } } },
+                  },
+                },
+              },
+            },
+          },
+        }),
+      )
+      expect(res.ok).toBe(true)
+      expect(bodies().join()).not.toContain('CANARY-LOCAL-FILE')
+      expect(res.warnings.join()).toContain('1 reference(s)')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('a schema that refers to itself imports with a finite body', async () => {
+    const res = await importOpenApi(
+      'server-1',
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 't', version: '1' },
+        paths: {
+          '/tree': {
+            get: {
+              responses: {
+                200: {
+                  description: 'ok',
+                  content: {
+                    'application/json': { schema: { $ref: '#/components/schemas/Node' } },
+                  },
+                },
+              },
+            },
+          },
+        },
+        components: {
+          schemas: {
+            Node: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                next: { $ref: '#/components/schemas/Node' },
+              },
+            },
+          },
+        },
+      }),
+    )
+    expect(res.ok).toBe(true)
+    expect(res.endpointsCreated).toBe(1)
+    expect(JSON.parse(bodies()[0]).id).toBe('string')
+  })
+
+  it('an empty document is a clean error, not a crash', async () => {
+    const res = await importOpenApi('server-1', '')
+    expect(res.ok).toBe(false)
+    expect(res.endpointsCreated).toBe(0)
+  })
+
+  it('a null response definition imports as an empty response', async () => {
+    const res = await importOpenApi(
+      'server-1',
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 't', version: '1' },
+        paths: { '/a': { get: { responses: { 204: null } } } },
+      }),
+    )
+    expect(res.ok).toBe(true)
+    expect(res.responsesCreated).toBe(1)
+  })
+})
+
 describe('importPostman', () => {
   it('walks nested folders and turns each item into an endpoint', () => {
     const r = importPostman('server-1', JSON.stringify(minimalPostman))
@@ -255,9 +386,7 @@ describe('importPostman', () => {
       .get() as { status_code: number; body: string; headers: string }
     expect(row.status_code).toBe(200)
     expect(row.body).toBe('[{"id":1}]')
-    expect(JSON.parse(row.headers)).toEqual([
-      { name: 'Content-Type', value: 'application/json' },
-    ])
+    expect(JSON.parse(row.headers)).toEqual([{ name: 'Content-Type', value: 'application/json' }])
   })
 
   it('falls back to a default 200 response when none provided', () => {

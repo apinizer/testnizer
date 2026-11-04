@@ -3901,6 +3901,17 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.title': 'New mock server',
     'mockNew.subtitle':
       'Pick a type and a starting point. Everything can be changed later in the editor.',
+    'mockNew.importLabel': 'Import a file',
+    'mockNew.importHint': 'Create the endpoints from an OpenAPI spec or a Postman collection',
+    'mockNew.importChoose': 'Choose file…',
+    'mockNew.importChange': 'Choose another file…',
+    'mockNew.importRequired': 'Choose an OpenAPI or Postman file first.',
+    'mockNew.importUnreadable': 'This file could not be read.',
+    'mockNew.importTooLarge': 'This file is larger than 50 MB.',
+    'mockNew.importNotRecognised': 'This is not an OpenAPI spec or a Postman collection.',
+    'mockNew.importUnsupportedPostman':
+      'Only Postman v2.0 and v2.1 collections in JSON format can be imported into a mock.',
+    'mockNew.importEmpty': 'This file has no requests to mock.',
     'mockNew.close': 'Close',
     'mockNew.type': 'Server type',
     'mockNew.typeHttpHint': 'REST-style HTTP endpoints with rule-based responses',
@@ -8420,6 +8431,18 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.title': 'Yeni mock sunucu',
     'mockNew.subtitle':
       'Bir tür ve başlangıç noktası seçin. Her şey daha sonra düzenleyicide değiştirilebilir.',
+    'mockNew.importLabel': 'Dosyadan içe aktar',
+    'mockNew.importHint':
+      'Uç noktaları bir OpenAPI belgesinden ya da Postman koleksiyonundan oluşturun',
+    'mockNew.importChoose': 'Dosya seç…',
+    'mockNew.importChange': 'Başka dosya seç…',
+    'mockNew.importRequired': 'Önce bir OpenAPI ya da Postman dosyası seçin.',
+    'mockNew.importUnreadable': 'Bu dosya okunamadı.',
+    'mockNew.importTooLarge': "Bu dosya 50 MB'tan büyük.",
+    'mockNew.importNotRecognised': 'Bu dosya bir OpenAPI belgesi ya da Postman koleksiyonu değil.',
+    'mockNew.importUnsupportedPostman':
+      "Mock'a yalnız JSON biçimindeki Postman v2.0 ve v2.1 koleksiyonları içe aktarılabilir.",
+    'mockNew.importEmpty': "Bu dosyada mock'lanacak istek yok.",
     'mockNew.close': 'Kapat',
     'mockNew.type': 'Sunucu türü',
     'mockNew.typeHttpHint': 'Kural tabanlı yanıtlar veren REST tarzı HTTP uç noktaları',

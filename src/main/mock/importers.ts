@@ -32,11 +32,16 @@ export interface ImportResult {
 interface OpenApiOperation {
   summary?: string
   description?: string
+  /** Swagger 2.0: what the operation returns; overrides the document's list. */
+  produces?: string[]
   responses?: Record<string, OpenApiResponse>
 }
 interface OpenApiResponse {
   description?: string
   content?: Record<string, OpenApiMediaType>
+  /** Swagger 2.0 keeps these on the response itself, not under `content`. */
+  schema?: unknown
+  examples?: Record<string, unknown>
 }
 interface OpenApiMediaType {
   example?: unknown
@@ -44,6 +49,7 @@ interface OpenApiMediaType {
   schema?: unknown
 }
 type OpenApiDoc = {
+  produces?: string[]
   paths?: Record<string, Record<string, OpenApiOperation>>
 }
 
@@ -72,7 +78,15 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
   let doc: OpenApiDoc
   try {
     // Dereference $refs so nested schemas/examples are inlined.
-    doc = (await OpenAPIParser.dereference(parsed as never)) as unknown as OpenApiDoc
+    // Internal refs only. A spec is untrusted input and main has the disk and the
+    // network: left to its defaults the parser reads `$ref: /any/file` and fetches
+    // `$ref: http://…` the moment the file is imported.
+    doc = (await OpenAPIParser.dereference(
+      parsed as never,
+      {
+        resolve: { external: false },
+      } as never,
+    )) as unknown as OpenApiDoc
   } catch (e) {
     warnings.push(
       'Could not fully dereference spec; using raw document. ' +
@@ -81,9 +95,14 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
     doc = parsed as OpenApiDoc
   }
 
+  const external = externalRefCount(parsed)
+  if (external > 0) {
+    warnings.push(`${external} reference(s) to other files or URLs were not followed.`)
+  }
+
   let endpointsCreated = 0
   let responsesCreated = 0
-  if (!doc.paths) {
+  if (!doc?.paths) {
     return {
       ok: false,
       endpointsCreated,
@@ -134,12 +153,13 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
       let order = 0
       for (const [statusKey, responseDef] of responseEntries) {
         const status = parseStatusKey(statusKey)
-        const content = responseDef?.content ?? {}
-        const contentEntries = Object.entries(content)
+        const contentEntries = Object.entries(
+          responseMedia(responseDef, opt.produces ?? doc.produces),
+        )
         if (contentEntries.length === 0) {
           repoCreateResponse({
             endpointId: ep.id,
-            name: responseDef.description ?? statusKey,
+            name: responseDef?.description ?? statusKey,
             statusCode: status,
             headers: [],
             bodyType: 'json',
@@ -182,6 +202,33 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
 }
 
 /** Convert `/pets/{id}` to mock-style `/pets/:id`. */
+/** `$ref`s leaving the document. A YAML alias can make the tree cyclic, hence `seen`. */
+function externalRefCount(node: unknown, seen = new WeakSet<object>()): number {
+  if (!node || typeof node !== 'object' || seen.has(node)) return 0
+  seen.add(node)
+  let count = 0
+  for (const [key, value] of Object.entries(node)) {
+    if (key === '$ref' && typeof value === 'string' && !value.startsWith('#')) count += 1
+    else count += externalRefCount(value, seen)
+  }
+  return count
+}
+
+/** The response's bodies by media type, for OpenAPI 3 (`content`) and Swagger 2.0 alike. */
+function responseMedia(
+  response: OpenApiResponse | null | undefined,
+  produces: string[] | undefined,
+): Record<string, OpenApiMediaType> {
+  if (!response) return {}
+  if (response.content) return response.content
+  const media: Record<string, OpenApiMediaType> = {}
+  for (const [type, example] of Object.entries(response.examples ?? {})) {
+    media[type] = { example }
+  }
+  if (Object.keys(media).length > 0 || !response.schema) return media
+  return { [produces?.[0] ?? 'application/json']: { schema: response.schema } }
+}
+
 function parseStatusKey(key: string): number {
   if (key === 'default') return 200
   const n = Number(key)
@@ -206,9 +253,21 @@ function sampleFromMedia(media: OpenApiMediaType): string {
   return ''
 }
 
-/** Generate a tiny sample value from a JSON Schema. Best-effort, draft-07-ish. */
-function sampleFromSchema(schema: unknown): unknown {
+/** Enough for any sample a person reads; stops linked schemas from multiplying. */
+const SAMPLE_NODE_LIMIT = 2000
+
+/**
+ * Generate a tiny sample value from a JSON Schema. Best-effort, draft-07-ish.
+ * Dereferencing turns a self-referencing schema into a cycle: a schema already on
+ * the way down samples as null, or a tree type would overflow the stack mid-import.
+ */
+function sampleFromSchema(
+  schema: unknown,
+  walk = { path: new Set<object>(), left: SAMPLE_NODE_LIMIT },
+): unknown {
   if (!schema || typeof schema !== 'object') return null
+  if (walk.path.has(schema) || walk.left <= 0) return null
+  walk.left -= 1
   const s = schema as Record<string, unknown>
   if (s.example !== undefined) return s.example
   if (Array.isArray(s.enum) && s.enum.length > 0) return s.enum[0]
@@ -217,14 +276,19 @@ function sampleFromSchema(schema: unknown): unknown {
   if (type === 'string') return typeof s.default === 'string' ? s.default : 'string'
   if (type === 'integer' || type === 'number') return typeof s.default === 'number' ? s.default : 0
   if (type === 'boolean') return typeof s.default === 'boolean' ? s.default : true
-  if (type === 'array') return [sampleFromSchema(s.items)]
-  if (type === 'object' || s.properties) {
-    const out: Record<string, unknown> = {}
-    const props = (s.properties ?? {}) as Record<string, unknown>
-    for (const [k, sub] of Object.entries(props)) out[k] = sampleFromSchema(sub)
-    return out
+  walk.path.add(schema)
+  try {
+    if (type === 'array') return [sampleFromSchema(s.items, walk)]
+    if (type === 'object' || s.properties) {
+      const out: Record<string, unknown> = {}
+      const props = (s.properties ?? {}) as Record<string, unknown>
+      for (const [k, sub] of Object.entries(props)) out[k] = sampleFromSchema(sub, walk)
+      return out
+    }
+    return null
+  } finally {
+    walk.path.delete(schema)
   }
-  return null
 }
 
 // ─── Postman v2.x ────────────────────────────────────────────────
