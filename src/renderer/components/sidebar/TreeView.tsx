@@ -21,6 +21,7 @@ import FolderSettingsModal from '../modals/FolderSettingsModal'
 import CreateSuiteFromFolderModal from '../modals/CreateSuiteFromFolderModal'
 import { collectRequestIds } from '../../lib/folder-request-selection'
 import { createMockFromRequests, type MockFromFolderApi } from '../mock/mock-from-folder'
+import { toastMockImportResult } from '../mock/mock-import-file'
 import { isHttpMockableProtocol } from '../../../shared/request-protocols'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
@@ -1178,16 +1179,20 @@ export default function TreeView() {
       const ids = collectRequestIds(folderNode, (n) => isHttpMockableProtocol(n.protocol))
       if (ids.length === 0) return
       try {
-        const created = await createMockFromRequests(window.api as unknown as MockFromFolderApi, {
+        const result = await createMockFromRequests(window.api as unknown as MockFromFolderApi, {
           projectId: activeProjectId,
           name: folderNode.label,
           ids,
         })
-        if (!created) return
-
+        if (!result.ok) {
+          toast.error(t('mock.fromFolderFailed').replace('{error}', result.error ?? ''))
+          return
+        }
+        toastMockImportResult(result)
         setActiveSidebarPage('mocks')
       } catch (err) {
-        console.error('createMockServer from folder failed:', err)
+        const error = err instanceof Error ? err.message : String(err)
+        toast.error(t('mock.fromFolderFailed').replace('{error}', error))
       }
     },
     [activeProjectId],

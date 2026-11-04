@@ -1,15 +1,27 @@
 /**
  * "Create mock server from this folder / request" (the APIs tree menu): one
- * server, one endpoint per request, method + path only. Responses are configured
- * on the mock.
+ * server, one endpoint per request. A request's saved examples become its
+ * responses; one without examples answers an empty 200, because an endpoint with
+ * no response answers 501 until someone configures it.
  *
  * The stored URL of a request is rarely a path (`requestUrlToMockPath`): this is
  * the seam between the importers and the mock, so its test feeds it what the
  * OpenAPI importer really writes.
  */
 import { requestUrlToMockPath } from '../../../shared/mock-path'
+import { t } from '../../lib/i18n'
+import type { SavedResponse, SavedResponseOwnerType } from '../../types'
+import type { MockImportResult } from './mock-import-file'
 
-type IpcRow<T> = { success: boolean; data?: T }
+type IpcRow<T> = { success: boolean; data?: T; error?: string }
+
+export interface MockResponseFromExample {
+  name: string
+  statusCode: number
+  headers: Array<{ name: string; value: string }>
+  bodyType: 'json' | 'xml' | 'html' | 'text'
+  body: string
+}
 
 /** The slice of `window.api` this flow uses. */
 export interface MockFromFolderApi {
@@ -22,6 +34,7 @@ export interface MockFromFolderApi {
         host: string
         port: number
       }): Promise<IpcRow<{ id: string }>>
+      delete(id: string): Promise<unknown>
     }
     endpoint: {
       create(input: {
@@ -29,32 +42,134 @@ export interface MockFromFolderApi {
         method: string
         path: string
         pathMode: string
-      }): Promise<unknown>
+      }): Promise<IpcRow<{ id: string }>>
+    }
+    response: {
+      create(
+        input: MockResponseFromExample & { endpointId: string; order: number },
+      ): Promise<IpcRow<unknown>>
     }
   }
-  endpoint: { get(id: string): Promise<IpcRow<{ path?: string; method?: string }>> }
-  savedRequest: { get(id: string): Promise<IpcRow<{ url?: string; method?: string }>> }
+  endpoint: { get(id: string): Promise<IpcRow<{ name?: string; path?: string; method?: string }>> }
+  savedRequest: {
+    get(id: string): Promise<IpcRow<{ name?: string; url?: string; method?: string }>>
+  }
+  savedResponse: {
+    list(ownerType: SavedResponseOwnerType, ownerId: string): Promise<IpcRow<SavedResponse[]>>
+  }
+}
+
+interface RequestTarget {
+  name: string
+  url: string
+  method: string
+  ownerType: SavedResponseOwnerType
 }
 
 /** Endpoint rows hold the URL in `path`, saved requests in `url`. */
 async function readRequestTarget(
   api: MockFromFolderApi,
   id: string,
-): Promise<{ url: string; method: string } | null> {
+): Promise<RequestTarget | null> {
   const ep = await api.endpoint.get(id)
-  if (ep?.success && ep.data) return { url: ep.data.path ?? '', method: ep.data.method || 'GET' }
+  if (ep?.success && ep.data) {
+    return {
+      name: ep.data.name || ep.data.path || id,
+      url: ep.data.path ?? '',
+      method: ep.data.method || 'GET',
+      ownerType: 'endpoint',
+    }
+  }
   const saved = await api.savedRequest.get(id)
   if (saved?.success && saved.data) {
-    return { url: saved.data.url ?? '', method: saved.data.method || 'GET' }
+    return {
+      name: saved.data.name || saved.data.url || id,
+      url: saved.data.url ?? '',
+      method: saved.data.method || 'GET',
+      ownerType: 'saved_request',
+    }
   }
   return null
 }
 
-/** Creates the server and its endpoints; false when the server could not be created. */
+/** They describe the original bytes on the wire, not the text the mock will send. */
+const NOT_REPLAYED_HEADERS = new Set([
+  'connection',
+  'content-encoding',
+  'content-length',
+  'keep-alive',
+  'transfer-encoding',
+])
+
+function bodyTypeOf(contentType: string): MockResponseFromExample['bodyType'] {
+  if (/json/i.test(contentType)) return 'json'
+  if (/xml/i.test(contentType)) return 'xml'
+  if (/html/i.test(contentType)) return 'html'
+  return contentType ? 'text' : 'json'
+}
+
+/** Null when the example cannot be replayed: a mock body is text, this one is binary. */
+export function exampleToMockResponse(row: SavedResponse): MockResponseFromExample | null {
+  let saved: {
+    status?: number
+    headers?: Record<string, string>
+    body?: string
+    bodyEncoding?: string
+  }
+  try {
+    saved = JSON.parse(row.response_json) ?? {}
+  } catch {
+    saved = {}
+  }
+  if (saved.bodyEncoding === 'base64') return null
+  const headers = Object.entries(saved.headers ?? {})
+    .filter(([name]) => !NOT_REPLAYED_HEADERS.has(name.toLowerCase()))
+    .map(([name, value]) => ({ name, value: String(value) }))
+  const contentType =
+    headers.find((header) => header.name.toLowerCase() === 'content-type')?.value ?? ''
+  return {
+    name: row.name,
+    statusCode: row.status_code ?? saved.status ?? 200,
+    headers,
+    bodyType: bodyTypeOf(contentType),
+    body: saved.body ?? '',
+  }
+}
+
+async function responsesFor(
+  api: MockFromFolderApi,
+  id: string,
+  target: RequestTarget,
+  warnings: string[],
+): Promise<MockResponseFromExample[]> {
+  const listed = await api.savedResponse.list(target.ownerType, id)
+  const out: MockResponseFromExample[] = []
+  for (const row of listed?.data ?? []) {
+    const response = exampleToMockResponse(row)
+    if (response) out.push(response)
+    else {
+      warnings.push(
+        t('mock.fromFolderBinaryExample')
+          .replace('{example}', row.name)
+          .replace('{name}', target.name),
+      )
+    }
+  }
+  if (out.length > 0) return out
+  return [{ name: 'default', statusCode: 200, headers: [], bodyType: 'json', body: '' }]
+}
+
+/** Creates the server, its endpoints and their responses. Nothing created, no server left. */
 export async function createMockFromRequests(
   api: MockFromFolderApi,
   o: { projectId: string; name: string; ids: readonly string[] },
-): Promise<boolean> {
+): Promise<MockImportResult> {
+  const result: MockImportResult = {
+    ok: true,
+    endpointsCreated: 0,
+    responsesCreated: 0,
+    warnings: [],
+  }
   // The next free port above 8080 (project-scoped): mock ports bind 127.0.0.1.
   const listed = await api.mock.server.list(o.projectId)
   const usedPorts = new Set((listed?.data ?? []).map((s) => s.port))
@@ -67,18 +182,67 @@ export async function createMockFromRequests(
     host: '127.0.0.1',
     port,
   })
-  if (!server?.success || !server.data) return false
+  if (!server?.success || !server.data) return { ...result, ok: false, error: server?.error }
+  const serverId = server.data.id
 
-  for (const id of o.ids) {
-    const target = await readRequestTarget(api, id)
-    const bound = target && requestUrlToMockPath(target.url)
-    if (!target || !bound) continue
-    await api.mock.endpoint.create({
-      serverId: server.data.id,
-      method: target.method,
-      path: bound.path,
-      pathMode: bound.mode,
-    })
+  try {
+    for (const id of o.ids) await addRequest(api, serverId, id, result)
+  } catch (e) {
+    await api.mock.server.delete(serverId).catch(() => undefined)
+    return { ...result, ok: false, error: e instanceof Error ? e.message : String(e) }
   }
-  return true
+  if (result.endpointsCreated > 0) return result
+
+  await api.mock.server.delete(serverId).catch(() => undefined)
+  return { ...result, ok: false, error: result.warnings[0] ?? t('mock.fromFolderNoRequests') }
+}
+
+async function addRequest(
+  api: MockFromFolderApi,
+  serverId: string,
+  id: string,
+  result: MockImportResult,
+): Promise<void> {
+  const target = await readRequestTarget(api, id)
+  if (!target) {
+    result.warnings.push(t('mock.fromFolderUnreadable'))
+    return
+  }
+  const bound = requestUrlToMockPath(target.url)
+  if (!bound) {
+    result.warnings.push(t('mock.fromFolderSkipped').replace('{name}', target.name))
+    return
+  }
+  const endpoint = await api.mock.endpoint.create({
+    serverId,
+    method: target.method,
+    path: bound.path,
+    pathMode: bound.mode,
+  })
+  if (!endpoint?.success || !endpoint.data) {
+    result.warnings.push(
+      t('mock.fromFolderEndpointFailed')
+        .replace('{name}', target.name)
+        .replace('{error}', endpoint?.error ?? ''),
+    )
+    return
+  }
+  result.endpointsCreated += 1
+
+  const responses = await responsesFor(api, id, target, result.warnings)
+  for (const [order, response] of responses.entries()) {
+    const created = await api.mock.response.create({
+      ...response,
+      endpointId: endpoint.data.id,
+      order,
+    })
+    if (created?.success) result.responsesCreated += 1
+    else {
+      result.warnings.push(
+        t('mock.fromFolderResponseFailed')
+          .replace('{name}', target.name)
+          .replace('{error}', created?.error ?? ''),
+      )
+    }
+  }
 }

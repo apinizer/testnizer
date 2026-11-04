@@ -173,7 +173,8 @@ uiTest.describe('Tester journeys on 1.6.0', () => {
             const servers = await w.api.mock.server.list(pid)
             const server = servers.data?.find((s) => s.name === name)
             const eps = server ? await w.api.mock.endpoint.list(server.id) : null
-            if (server && eps?.data?.length) {
+            // Endpoints arrive one by one, each with its responses: wait for the last.
+            if (server && eps?.data?.some((e) => e.path === '/v1/pets/:petId')) {
               // 8080 may be taken on the machine running this.
               await w.api.mock.server.update(server.id, { port: p })
               return { id: server.id, endpoints: eps.data }
@@ -218,7 +219,8 @@ uiTest.describe('Tester journeys on 1.6.0', () => {
         `http://127.0.0.1:${port}/v1/pets`,
         { timeout: 15_000 },
       )
-      await expect(window.getByTestId('response-status')).toBeVisible({ timeout: 20_000 })
+      // 200, not the 501 of an endpoint with no response.
+      await expect(window.getByTestId('response-status')).toContainText('200', { timeout: 20_000 })
       await expect(window.getByTestId('response-error')).toHaveCount(0)
     } finally {
       await treeClearSearch(window).catch(() => {})

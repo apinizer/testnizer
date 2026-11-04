@@ -23,7 +23,7 @@ function freshDb(): Database.Database {
   const d = new Database(':memory:')
   d.pragma('foreign_keys = ON')
   d.exec(`
-    CREATE TABLE mock_servers (id TEXT PRIMARY KEY);
+    CREATE TABLE mock_servers (id TEXT PRIMARY KEY, base_path TEXT NOT NULL DEFAULT '');
     CREATE TABLE mock_endpoints (
       id TEXT PRIMARY KEY,
       server_id TEXT NOT NULL,
@@ -404,5 +404,296 @@ describe('importPostman', () => {
     const r = importPostman('server-1', JSON.stringify({ foo: 'bar' }))
     expect(r.ok).toBe(false)
     expect(r.error).toMatch(/item/i)
+  })
+})
+
+// ─── Server base path ──────────────────────────────────────────
+
+const paths = (): string[] =>
+  (memDb.prepare('SELECT path FROM mock_endpoints ORDER BY path').all() as { path: string }[]).map(
+    (r) => r.path,
+  )
+const pathsOf = async (doc: object): Promise<string[]> => {
+  const r = await importOpenApi('server-1', JSON.stringify(doc))
+  expect(r.ok).toBe(true)
+  return paths()
+}
+const op = { responses: { '200': { description: 'ok' } } }
+const v3 = (extra: object, p: object = { '/pets': { get: op } }): object => ({
+  openapi: '3.0.3',
+  info: { title: 'T', version: '1' },
+  paths: p,
+  ...extra,
+})
+
+describe('importOpenApi: the path the server puts before every endpoint', () => {
+  it('binds the server path too: the real API answers at /v1/pets', async () => {
+    expect(await pathsOf(v3({ servers: [{ url: 'https://api.example.com/v1' }] }))).toEqual([
+      '/v1/pets',
+    ])
+  })
+
+  it('a param path keeps its mode behind the prefix', async () => {
+    const doc = v3({ servers: [{ url: '/api/v2/' }] }, { '/pets/{id}': { get: op } })
+    await importOpenApi('server-1', JSON.stringify(doc))
+    expect(memDb.prepare('SELECT path, path_mode FROM mock_endpoints').all()).toEqual([
+      { path: '/api/v2/pets/:id', path_mode: 'param' },
+    ])
+  })
+
+  it('a server at the root adds nothing', async () => {
+    expect(await pathsOf(v3({ servers: [{ url: 'https://api.example.com/' }] }))).toEqual(['/pets'])
+  })
+
+  it('fills server variables from their defaults', async () => {
+    const servers = [
+      {
+        url: 'https://{host}/{version}',
+        variables: { host: { default: 'x.io' }, version: { default: 'v3' } },
+      },
+    ]
+    expect(await pathsOf(v3({ servers }))).toEqual(['/v3/pets'])
+  })
+
+  it('reads Swagger 2.0 basePath', async () => {
+    const doc = {
+      swagger: '2.0',
+      info: { title: 'T', version: '1' },
+      host: 'x.io',
+      basePath: '/v2',
+      paths: { '/pets': { get: op } },
+    }
+    expect(await pathsOf(doc)).toEqual(['/v2/pets'])
+  })
+
+  it('the nearest servers win: operation, then path item, then document', async () => {
+    const doc = v3(
+      { servers: [{ url: '/doc' }] },
+      {
+        '/a': { get: op },
+        '/b': { servers: [{ url: '/item' }], get: op },
+        '/c': { servers: [{ url: '/item' }], get: { ...op, servers: [{ url: '/operation' }] } },
+      },
+    )
+    expect(await pathsOf(doc)).toEqual(['/doc/a', '/item/b', '/operation/c'])
+  })
+
+  it('the prefix alone answers the spec path /', async () => {
+    expect(await pathsOf(v3({ servers: [{ url: '/v1' }] }, { '/': { get: op } }))).toEqual(['/v1'])
+  })
+
+  it('does not double a prefix the mock server already strips', async () => {
+    memDb.prepare('UPDATE mock_servers SET base_path = ?').run('/v1')
+    expect(await pathsOf(v3({ servers: [{ url: 'https://x.io/v1' }] }))).toEqual(['/pets'])
+  })
+
+  it('says so when the servers disagree', async () => {
+    const r = await importOpenApi(
+      'server-1',
+      JSON.stringify(v3({ servers: [{ url: '/v1' }, { url: '/v2' }] })),
+    )
+    expect(paths()).toEqual(['/v1/pets'])
+    expect(r.warnings.join()).toContain('/v1')
+  })
+
+  it('servers that only differ by host are no news', async () => {
+    const servers = [{ url: 'https://a.io/v1' }, { url: 'https://b.io/v1/' }]
+    const r = await importOpenApi('server-1', JSON.stringify(v3({ servers })))
+    expect(r.warnings).toEqual([])
+  })
+})
+
+// ─── Composed schemas ──────────────────────────────────────────
+
+const sampleOf = async (schema: object): Promise<unknown> => {
+  const responses = {
+    '200': { description: 'ok', content: { 'application/json': { schema } } },
+  }
+  await importOpenApi('server-1', JSON.stringify(v3({}, { '/s': { get: { responses } } })))
+  const row = memDb.prepare('SELECT body FROM mock_responses').get() as { body: string }
+  return JSON.parse(row.body)
+}
+
+describe('importOpenApi: sample bodies from composed schemas', () => {
+  const pet = { type: 'object', properties: { name: { type: 'string' } } }
+  const cat = { type: 'object', properties: { lives: { type: 'integer' } } }
+
+  it('allOf merges every part', async () => {
+    expect(await sampleOf({ allOf: [pet, cat] })).toEqual({ name: 'string', lives: 0 })
+  })
+
+  it('allOf merges with the properties beside it', async () => {
+    const schema = { type: 'object', allOf: [pet], properties: { id: { type: 'integer' } } }
+    expect(await sampleOf(schema)).toEqual({ name: 'string', id: 0 })
+  })
+
+  it('a part with no shape does not blank the rest', async () => {
+    expect(await sampleOf({ allOf: [pet, { description: 'a pet' }] })).toEqual({ name: 'string' })
+  })
+
+  it.each(['oneOf', 'anyOf'])('%s takes the first branch', async (key) => {
+    expect(await sampleOf({ [key]: [pet, cat] })).toEqual({ name: 'string' })
+  })
+
+  it.each(['oneOf', 'anyOf'])('%s skips a null branch', async (key) => {
+    expect(await sampleOf({ [key]: [{ type: 'null' }, pet] })).toEqual({ name: 'string' })
+  })
+
+  it('a primitive inside allOf stays that primitive', async () => {
+    expect(await sampleOf({ allOf: [{ type: 'integer' }] })).toBe(0)
+  })
+
+  it('reads the OpenAPI 3.1 nullable type and const', async () => {
+    const schema = {
+      type: 'object',
+      properties: { a: { type: ['string', 'null'] }, b: { const: 'fixed' } },
+    }
+    expect(await sampleOf(schema)).toEqual({ a: 'string', b: 'fixed' })
+  })
+
+  it('a schema composed of itself ends instead of overflowing', async () => {
+    const schema = {
+      openapi: '3.0.3',
+      info: { title: 'T', version: '1' },
+      components: {
+        schemas: {
+          Node: {
+            type: 'object',
+            properties: { id: { type: 'integer' } },
+            oneOf: [{ $ref: '#/components/schemas/Node' }, { type: 'object' }],
+          },
+        },
+      },
+      paths: {
+        '/s': {
+          get: {
+            responses: {
+              '200': {
+                description: 'ok',
+                content: {
+                  'application/json': { schema: { $ref: '#/components/schemas/Node' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    }
+    const r = await importOpenApi('server-1', JSON.stringify(schema))
+    expect(r.ok).toBe(true)
+    const row = memDb.prepare('SELECT body FROM mock_responses').get() as { body: string }
+    expect(JSON.parse(row.body)).toMatchObject({ id: 0 })
+  })
+})
+
+// ─── Other Postman versions ────────────────────────────────────
+
+const endpointRows = (): unknown[] =>
+  memDb.prepare('SELECT method, path FROM mock_endpoints ORDER BY path').all()
+
+describe('importPostman: every collection version', () => {
+  it('reads a v1 collection, with its saved responses', () => {
+    const r = importPostman(
+      'server-1',
+      JSON.stringify({
+        id: 'c',
+        name: 'Old',
+        order: ['r1'],
+        folders: [],
+        requests: [
+          {
+            id: 'r1',
+            name: 'Pets',
+            method: 'GET',
+            url: 'https://x.io/v1/pets/:id',
+            responses: [
+              { name: 'found', responseCode: { code: 201, name: 'Created' }, text: '{"id":1}' },
+            ],
+          },
+        ],
+      }),
+    )
+    expect(r).toMatchObject({ ok: true, endpointsCreated: 1, responsesCreated: 1 })
+    expect(endpointRows()).toEqual([{ method: 'GET', path: '/v1/pets/:id' }])
+    expect(memDb.prepare('SELECT status_code, body FROM mock_responses').all()).toEqual([
+      { status_code: 201, body: '{"id":1}' },
+    ])
+  })
+
+  const v3Doc = {
+    $kind: 'collection',
+    name: 'New',
+    items: [
+      {
+        $kind: 'collection',
+        name: 'Folder',
+        items: [
+          {
+            $kind: 'http-request',
+            name: 'Pets',
+            method: 'POST',
+            url: 'https://x.io/v1/pets',
+            examples: [
+              {
+                name: 'made',
+                response: {
+                  statusCode: 201,
+                  headers: [{ key: 'X-A', value: '1' }],
+                  body: { type: 'json', content: '{"id":1}' },
+                },
+              },
+            ],
+          },
+        ],
+      },
+      { $kind: 'websocket-request', name: 'Socket', url: 'wss://x.io' },
+      { $kind: 'kafka-request', name: 'Topic' },
+    ],
+  }
+
+  it('reads a v3 JSON collection; what a mock cannot answer is named', () => {
+    const r = importPostman('server-1', JSON.stringify(v3Doc))
+    expect(r).toMatchObject({ ok: true, endpointsCreated: 1, responsesCreated: 1 })
+    expect(endpointRows()).toEqual([{ method: 'POST', path: '/v1/pets' }])
+    expect(memDb.prepare('SELECT status_code, body FROM mock_responses').all()).toEqual([
+      { status_code: 201, body: '{"id":1}' },
+    ])
+    expect(r.warnings.join('\n')).toContain('"Socket"')
+    expect(r.warnings.join('\n')).toContain('1 request(s)')
+  })
+
+  it('reads a collection in YAML', () => {
+    const r = importPostman(
+      'server-1',
+      [
+        'info:',
+        '  name: Y',
+        '  schema: https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
+        'item:',
+        '  - name: Pets',
+        '    request:',
+        '      method: GET',
+        '      url: https://x.io/pets',
+      ].join('\n'),
+    )
+    expect(r).toMatchObject({ ok: true, endpointsCreated: 1 })
+    expect(endpointRows()).toEqual([{ method: 'GET', path: '/pets' }])
+  })
+
+  it('refuses an oversized v3 collection instead of walking it', () => {
+    let deep: object = { $kind: 'http-request', url: 'https://x.io/a' }
+    for (let i = 0; i < 200; i++) deep = { $kind: 'collection', items: [deep] }
+    const r = importPostman('server-1', JSON.stringify({ $kind: 'collection', items: [deep] }))
+    expect(r.ok).toBe(false)
+    expect(endpointRows()).toEqual([])
+  })
+
+  it.each([
+    ['an environment', { _postman_variable_scope: 'environment', values: [] }],
+    ['one file of a v3 folder', { $kind: 'http-request', url: 'https://x.io' }],
+  ])('refuses %s', (_label, doc) => {
+    const r = importPostman('server-1', JSON.stringify(doc))
+    expect(r.ok).toBe(false)
+    expect(r.error).toBeTruthy()
   })
 })

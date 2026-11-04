@@ -120,15 +120,6 @@ const COUNTERS: Array<[string, string, string, string, string, string, string]> 
     '2 model çağrısı',
   ],
   [
-    'Mock import warnings',
-    'mock.warningCountOne',
-    'mock.warningCount',
-    '1 warning',
-    '2 warnings',
-    '1 uyarı',
-    '2 uyarı',
-  ],
-  [
     'Mock import endpoints',
     'mock.importEndpointCountOne',
     'mock.importEndpointCount',
@@ -356,7 +347,6 @@ describe('every counter has a singular form (issue #309)', () => {
     for (const v of valuesInAllLocales('mock.importDone')) {
       expect(v).toContain('{endpoints}')
       expect(v).toContain('{responses}')
-      expect(v).toContain('{warnings}')
       // The nouns come from the counters, not from a fixed plural after the placeholder.
       expect(v).not.toMatch(/\{endpoints\} (endpoints|uç nokta)|\{responses\} (responses|yanıt)/)
     }
@@ -442,7 +432,7 @@ const SITES: Array<[string, Array<[string, string]>]> = [
   ['components/mock/MockServerEditor.tsx', [pair('mock.entryCount')]],
   [
     'components/mock/mock-import-file.ts',
-    [pair('mock.warningCount'), pair('mock.importEndpointCount'), pair('mock.importResponseCount')],
+    [pair('mock.importEndpointCount'), pair('mock.importResponseCount')],
   ],
 ]
 

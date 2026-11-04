@@ -3,11 +3,13 @@
  * it to mock? Answered before a server exists, so a wrong file costs nothing.
  * The real import stays in main (`src/main/mock/importers.ts`); this only looks.
  */
+import { createElement } from 'react'
 import yaml from 'js-yaml'
 import { classifyPostmanDocument } from '../../../shared/postman-detect'
 import { t } from '../../lib/i18n'
 import { formatCount } from '../../lib/plural'
 import { toast } from '../../lib/toast'
+import MockImportToast from './MockImportToast'
 
 export type MockImportFormat = 'openapi' | 'postman'
 
@@ -34,13 +36,13 @@ export type MockImportInspection = { ok: true; file: MockImportFile } | { ok: fa
 export const MOCK_IMPORT_ACCEPT = '.json,.yaml,.yml'
 export const MOCK_IMPORT_MAX_BYTES = 50 * 1024 * 1024
 const TITLE_MAX = 80
+const REPORT_TOAST_ID = 'mock-import-report'
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
 
 type Rec = Record<string, unknown>
 const isRec = (v: unknown): v is Rec => !!v && typeof v === 'object' && !Array.isArray(v)
 
-function titleOf(root: Rec, key: 'title' | 'name', fileName: string): string {
-  const named = isRec(root.info) ? root.info[key] : undefined
+function titleOf(named: unknown, fileName: string): string {
   const title = typeof named === 'string' ? named.trim() : ''
   return (title || fileName.replace(/\.[^.]+$/, '')).slice(0, TITLE_MAX)
 }
@@ -68,12 +70,38 @@ function countPostmanRequests(items: unknown): number {
   return count
 }
 
-function parse(text: string): { root: unknown; json: boolean } | null {
+/** Only HTTP requests become endpoints; the kinds a mock cannot answer are not promised. */
+function countV3Requests(items: unknown): number {
+  if (!Array.isArray(items)) return 0
+  let count = 0
+  for (const it of items) {
+    if (!isRec(it)) continue
+    if (it.$kind === 'http-request') count += 1
+    else if (Array.isArray(it.items)) count += countV3Requests(it.items)
+  }
+  return count
+}
+
+/** A collection's title and size by version; null for a Postman file that is no collection. */
+function postmanCollection(kind: string, root: Rec): { name: unknown; count: number } | null {
+  if (kind === 'v2-collection') {
+    const name = isRec(root.info) ? root.info.name : undefined
+    return { name, count: countPostmanRequests(root.item) }
+  }
+  if (kind === 'v1-collection') {
+    const count = Array.isArray(root.requests) ? root.requests.length : 0
+    return { name: root.name, count }
+  }
+  if (kind === 'v3-collection') return { name: root.name, count: countV3Requests(root.items) }
+  return null
+}
+
+function parse(text: string): { root: unknown } | null {
   try {
-    return { root: JSON.parse(text), json: true }
+    return { root: JSON.parse(text) }
   } catch {
     try {
-      return { root: yaml.load(text), json: false }
+      return { root: yaml.load(text) }
     } catch {
       return null
     }
@@ -83,18 +111,18 @@ function parse(text: string): { root: unknown; json: boolean } | null {
 export function inspectMockImportText(text: string, fileName: string): MockImportInspection {
   const parsed = parse(text)
   if (!parsed || !isRec(parsed.root)) return { ok: false, error: t('mockNew.importNotRecognised') }
-  const { root, json } = parsed
+  const { root } = parsed
 
   const postman = classifyPostmanDocument(root)
   if (postman) {
-    // The mock importer reads v2.x JSON; the other Postman files need their own path.
-    if (postman.kind !== 'v2-collection' || !json) {
-      return { ok: false, error: t('mockNew.importUnsupportedPostman') }
+    const collection = postmanCollection(postman.kind, root)
+    if (!collection) return { ok: false, error: t('mockNew.importUnsupportedPostman') }
+    if (collection.count === 0) return { ok: false, error: t('mockNew.importEmpty') }
+    const title = titleOf(collection.name, fileName)
+    return {
+      ok: true,
+      file: { format: 'postman', text, fileName, title, endpointCount: collection.count },
     }
-    const endpointCount = countPostmanRequests(root.item)
-    if (endpointCount === 0) return { ok: false, error: t('mockNew.importEmpty') }
-    const title = titleOf(root, 'name', fileName)
-    return { ok: true, file: { format: 'postman', text, fileName, title, endpointCount } }
   }
 
   if (root.openapi === undefined && root.swagger === undefined && root.paths === undefined) {
@@ -102,7 +130,7 @@ export function inspectMockImportText(text: string, fileName: string): MockImpor
   }
   const endpointCount = countOpenApiOperations(root.paths)
   if (endpointCount === 0) return { ok: false, error: t('mockNew.importEmpty') }
-  const title = titleOf(root, 'title', fileName)
+  const title = titleOf(isRec(root.info) ? root.info.title : undefined, fileName)
   return { ok: true, file: { format: 'openapi', text, fileName, title, endpointCount } }
 }
 
@@ -130,9 +158,6 @@ export function toastMockImportResult(result: MockImportResult): void {
     toast.error(problem ? `${t('mock.importFailed')}: ${problem}` : t('mock.importFailed'))
     return
   }
-  const n = result.warnings.length
-  const warn =
-    n > 0 ? ` (${formatCount(n, t('mock.warningCountOne'), t('mock.warningCount'))})` : ''
   const endpoints = formatCount(
     result.endpointsCreated,
     t('mock.importEndpointCountOne'),
@@ -143,10 +168,20 @@ export function toastMockImportResult(result: MockImportResult): void {
     t('mock.importResponseCountOne'),
     t('mock.importResponseCount'),
   )
-  toast.success(
-    t('mock.importDone')
-      .replace('{endpoints}', endpoints)
-      .replace('{responses}', responses)
-      .replace('{warnings}', warn),
+  const summary = t('mock.importDone')
+    .replace('{endpoints}', endpoints)
+    .replace('{responses}', responses)
+  if (result.warnings.length === 0) {
+    toast.success(summary)
+    return
+  }
+  toast.custom(
+    () =>
+      createElement(MockImportToast, {
+        summary,
+        warnings: result.warnings,
+        onClose: () => toast.dismiss(REPORT_TOAST_ID),
+      }),
+    { id: REPORT_TOAST_ID, duration: Infinity },
   )
 }

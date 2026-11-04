@@ -4773,3 +4773,78 @@ index aa62322..208b37e 100644
          </p>
        </div>
      </div>
+diff --git a/website/src/content/docs/mock-server.md b/website/src/content/docs/mock-server.md
+index bb11d0b..4c804ee 100644
+--- a/website/src/content/docs/mock-server.md
++++ b/website/src/content/docs/mock-server.md
+@@ -382,14 +382,27 @@ it, then switch the proxy off and replay forever — no internet needed.
+ The Endpoints tab has two import buttons:
+ 
+ - **Import OpenAPI** — pick a JSON or YAML file. Testnizer dereferences
+-  `$ref`s and creates one endpoint per `paths.<path>.<method>`. Response
+-  bodies come from `examples` first, then `example`, then a sample
+-  generated from the schema.
+-- **Import Postman** — pick a Postman v2.x collection. Folders are walked
+-  recursively. Each saved example response becomes a mock response.
++  internal `$ref`s and creates one endpoint per `paths.<path>.<method>`.
++  Response bodies come from `examples` first, then `example`, then a sample
++  generated from the schema, including `allOf`, `oneOf` and `anyOf`.
++- **Import Postman** — pick a Postman v1, v2.x or v3 collection, in JSON or
++  YAML. Folders are walked recursively. Each saved example response becomes a
++  mock response.
++
++An endpoint binds the spec's server path too: with the server
++`https://api.example.com/v1`, `/pets` answers at `http://127.0.0.1:<port>/v1/pets`,
++so a client only changes its host. If the mock has its own base path, that part is
++not repeated.
+ 
+ `{{var}}` placeholders from Postman URLs are converted to `:var` path
+-params automatically.
++params automatically. A `{{baseUrl}}` at the start of a URL is left out with
++whatever path it holds, since its value belongs to an environment.
++
++Anything an import had to leave out is listed in the message it ends with.
++
++**Create mock server** on a folder in the APIs panel does the same from saved
++requests: each saved example becomes a response, and a request with none answers an
++empty `200`.
+ 
+ ## Live request log
+ 
+diff --git a/website/src/content/docs/tr/mock-server.md b/website/src/content/docs/tr/mock-server.md
+index 98f1571..b315a40 100644
+--- a/website/src/content/docs/tr/mock-server.md
++++ b/website/src/content/docs/tr/mock-server.md
+@@ -382,15 +382,27 @@ sonra proxy'yi kapatıp sonsuz tekrar oynatın — internete ihtiyaç yok.
+ 
+ Endpoints sekmesinde iki içe aktarma butonu vardır:
+ 
+-- **Import OpenAPI** — JSON veya YAML dosya seçin. Testnizer `$ref`'leri
++- **Import OpenAPI** — JSON veya YAML dosya seçin. Testnizer iç `$ref`'leri
+   dereference eder ve `paths.<path>.<method>` başına bir endpoint oluşturur.
+   Yanıt gövdeleri önce `examples`'tan, sonra `example`'dan, son olarak
+-  schema'dan üretilen örnekten gelir.
+-- **Import Postman** — Postman v2.x koleksiyon dosyası seçin. Folder'lar
+-  recursive yürünür. Her saved example response bir mock response olur.
++  schema'dan üretilen örnekten gelir; `allOf`, `oneOf` ve `anyOf` da okunur.
++- **Import Postman** — JSON veya YAML biçiminde Postman v1, v2.x ya da v3
++  koleksiyon dosyası seçin. Folder'lar recursive yürünür. Her saved example
++  response bir mock response olur.
++
++Endpoint, belgedeki sunucunun yolunu da bağlar: sunucu
++`https://api.example.com/v1` ise `/pets` şu adreste yanıt verir:
++`http://127.0.0.1:<port>/v1/pets`. Böylece istemcide yalnız host değişir. Mock'un
++kendi base path'i varsa o kısım tekrarlanmaz.
+ 
+ Postman URL'lerindeki `{{var}}` placeholder'ları otomatik olarak `:var`
+-path param'lerine dönüştürülür.
++path param'lerine dönüştürülür. URL'nin başındaki `{{baseUrl}}`, içerdiği yolla
++birlikte dışarıda kalır; çünkü değeri bir ortama aittir.
++
++İçe aktarmanın dışarıda bıraktığı her şey, bitiş mesajında listelenir.
++
++APIs panelindeki bir klasörde **Create mock server** aynısını kayıtlı isteklerden
++yapar: her kayıtlı örnek bir yanıt olur, örneği olmayan istek boş `200` döner.
+ 
+ ## Canlı istek log'u
+ 

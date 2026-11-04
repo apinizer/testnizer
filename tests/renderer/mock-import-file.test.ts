@@ -1,12 +1,15 @@
 /** What the mock import looks at before a server exists (issue #319). */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
   inspectMockImportText,
   mockImportProblem,
   readMockImportFile,
+  toastMockImportResult,
   MOCK_IMPORT_MAX_BYTES,
 } from '../../src/renderer/components/mock/mock-import-file'
 import { setLocale, t } from '../../src/renderer/lib/i18n'
+import { toast } from '../../src/renderer/lib/toast'
 
 beforeEach(() => setLocale('en'))
 
@@ -87,8 +90,7 @@ describe('inspectMockImportText', () => {
 
   it.each([
     ['a Postman environment', '{"_postman_variable_scope":"environment","values":[]}'],
-    ['a Postman v1 collection', '{"name":"c","requests":[]}'],
-    ['a Postman v3 file', '{"$kind":"collection"}'],
+    ['one file of a Postman v3 folder', '{"$kind":"http-request","url":"https://x.io"}'],
   ])('refuses %s as unsupported, not as unknown', (_label, text) => {
     expect(inspectMockImportText(text, 'x.json')).toEqual({
       ok: false,
@@ -96,11 +98,46 @@ describe('inspectMockImportText', () => {
     })
   })
 
-  it('refuses a v2 collection in YAML: the importer reads JSON', () => {
-    const yaml = `info:\n  name: y\n  schema: https://schema.getpostman.com/json/collection/v2.1.0/collection.json\nitem: []\n`
-    expect(inspectMockImportText(yaml, 'y.yaml')).toEqual({
+  it('takes a Postman v1 collection: its name and its requests', () => {
+    const text = JSON.stringify({ name: 'Old', requests: [{ id: 'a' }, { id: 'b' }] })
+    expect(inspectMockImportText(text, 'x.json')).toMatchObject({
+      ok: true,
+      file: { format: 'postman', title: 'Old', endpointCount: 2 },
+    })
+  })
+
+  it('takes a Postman v3 collection and promises only its HTTP requests', () => {
+    const text = JSON.stringify({
+      $kind: 'collection',
+      name: 'New',
+      items: [
+        { $kind: 'collection', items: [{ $kind: 'http-request' }] },
+        { $kind: 'http-request' },
+        { $kind: 'websocket-request' },
+      ],
+    })
+    expect(inspectMockImportText(text, 'x.json')).toMatchObject({
+      ok: true,
+      file: { format: 'postman', title: 'New', endpointCount: 2 },
+    })
+  })
+
+  it('a v3 collection with nothing an HTTP mock can answer is empty', () => {
+    const text = JSON.stringify({
+      $kind: 'collection',
+      items: [{ $kind: 'websocket-request' }],
+    })
+    expect(inspectMockImportText(text, 'x.json')).toEqual({
       ok: false,
-      error: t('mockNew.importUnsupportedPostman'),
+      error: t('mockNew.importEmpty'),
+    })
+  })
+
+  it('takes a v2 collection in YAML', () => {
+    const yaml = `info:\n  name: y\n  schema: https://schema.getpostman.com/json/collection/v2.1.0/collection.json\nitem:\n  - name: a\n    request: {method: GET, url: https://x.io/a}\n`
+    expect(inspectMockImportText(yaml, 'y.yaml')).toMatchObject({
+      ok: true,
+      file: { format: 'postman', title: 'y', endpointCount: 1 },
     })
   })
 
@@ -156,5 +193,45 @@ describe('mockImportProblem', () => {
     expect(mockImportProblem({ ...result, ok: false, error: 'boom' })).toBe('boom')
     expect(mockImportProblem({ ...result, ok: false })).toBe('')
     expect(mockImportProblem({ ...result, endpointsCreated: 0 })).toBe(t('mockNew.importEmpty'))
+  })
+})
+
+describe('toastMockImportResult: the report of a finished import', () => {
+  const result = { ok: true, endpointsCreated: 2, responsesCreated: 3, warnings: [] as string[] }
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it('a clean import is a plain success', () => {
+    const success = vi.spyOn(toast, 'success').mockImplementation(() => undefined)
+    const custom = vi.spyOn(toast, 'custom')
+    toastMockImportResult(result)
+    expect(success).toHaveBeenCalledWith('2 endpoints, 3 responses imported')
+    expect(custom).not.toHaveBeenCalled()
+  })
+
+  it('shows every warning, not how many there were', () => {
+    const success = vi.spyOn(toast, 'success').mockImplementation(() => undefined)
+    const dismiss = vi.spyOn(toast, 'dismiss').mockImplementation(() => undefined)
+    const custom = vi.spyOn(toast, 'custom').mockImplementation(() => 'id')
+    const warnings = Array.from({ length: 12 }, (_, i) => `note ${i}`)
+    toastMockImportResult({ ...result, warnings })
+
+    expect(success).not.toHaveBeenCalled()
+    expect(custom.mock.calls[0][1]).toMatchObject({ duration: Infinity })
+    render(custom.mock.calls[0][0]('id'))
+    expect(screen.getByTestId('mock-import-toast').textContent).toContain(
+      '2 endpoints, 3 responses imported',
+    )
+    expect(screen.getAllByTestId('mock-import-warning').map((n) => n.textContent)).toEqual(warnings)
+    fireEvent.click(screen.getByTestId('mock-import-toast-close'))
+    expect(dismiss).toHaveBeenCalled()
+  })
+
+  it('a failure stays an error', () => {
+    const error = vi.spyOn(toast, 'error').mockImplementation(() => undefined)
+    toastMockImportResult({ ...result, ok: false, error: 'boom', warnings: ['x'] })
+    expect(error).toHaveBeenCalledWith(`${t('mock.importFailed')}: boom`)
   })
 })

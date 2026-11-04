@@ -6,11 +6,14 @@
  * return per-item warnings rather than aborting on the first error.
  *
  * OpenAPI: walks `paths.<path>.<method>.responses[*]` and uses `examples` /
- * `example` / schema-derived sample values as response bodies.
+ * `example` / schema-derived sample values as response bodies. An endpoint binds
+ * the server's path plus its own: the spec appends one to the other, so the real
+ * API answers at `/v1/pets` and the stand-in does too.
  *
- * Postman v2.x: walks `item[]` recursively, takes each request's method+url,
- * and uses saved `response[]` arrays as mock responses (falling back to a
- * default 200 with empty body when none are provided).
+ * Postman v1, v2.x and v3 collections (JSON or YAML) reach one walker as v2: it
+ * goes through `item[]` recursively, takes each request's method+url, and uses
+ * saved `response[]` arrays as mock responses (falling back to a default 200 with
+ * empty body when none are provided).
  */
 
 import OpenAPIParser from '@readme/openapi-parser'
@@ -19,7 +22,12 @@ import { requestUrlToMockPath, templatedPathToMockPath } from '../../shared/mock
 import {
   createMockEndpoint as repoCreateEndpoint,
   createMockResponse as repoCreateResponse,
+  getMockServer,
 } from '../db/mock.repo'
+import { detectPostman } from '../import/postman/detect'
+import { convertV1Collection } from '../import/postman/v1'
+import { assertBounded } from '../import/postman/v3/safe-parse'
+import { convertV3Collection } from '../import/postman/v3/to-v2'
 
 export interface ImportResult {
   ok: boolean
@@ -29,12 +37,17 @@ export interface ImportResult {
   error?: string
 }
 
+interface OpenApiServer {
+  url?: string
+  variables?: Record<string, { default?: unknown }>
+}
 interface OpenApiOperation {
   summary?: string
   description?: string
   /** Swagger 2.0: what the operation returns; overrides the document's list. */
   produces?: string[]
   responses?: Record<string, OpenApiResponse>
+  servers?: OpenApiServer[]
 }
 interface OpenApiResponse {
   description?: string
@@ -48,9 +61,13 @@ interface OpenApiMediaType {
   examples?: Record<string, { value?: unknown; summary?: string }>
   schema?: unknown
 }
+type OpenApiPathItem = Record<string, OpenApiOperation> & { servers?: OpenApiServer[] }
 type OpenApiDoc = {
   produces?: string[]
-  paths?: Record<string, Record<string, OpenApiOperation>>
+  /** Swagger 2.0's prefix; OpenAPI 3 keeps it in the server URL. */
+  basePath?: string
+  servers?: OpenApiServer[]
+  paths?: Record<string, OpenApiPathItem>
 }
 
 const HTTP_METHODS = new Set(['get', 'post', 'put', 'patch', 'delete', 'head', 'options'])
@@ -112,13 +129,21 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
     }
   }
 
+  const prefixes = new Set((doc.servers ?? []).map(serverPrefix))
+  if (prefixes.size > 1) {
+    const used = serverPrefix(doc.servers?.[0]) || '/'
+    warnings.push(`The spec's servers have different paths; the first one (${used}) was used.`)
+  }
+  const ownBasePath = getMockServer(serverId)?.base_path ?? ''
+
   for (const [rawPath, pathItem] of Object.entries(doc.paths)) {
     if (!pathItem || typeof pathItem !== 'object') continue
     for (const [methodLower, op] of Object.entries(pathItem)) {
       if (!HTTP_METHODS.has(methodLower)) continue
       const method = methodLower.toUpperCase()
       const opt = op as OpenApiOperation
-      const { path, mode } = templatedPathToMockPath(rawPath)
+      const prefix = withoutBasePath(operationPrefix(doc, pathItem, opt), ownBasePath)
+      const { path, mode } = templatedPathToMockPath(joinPrefix(prefix, rawPath))
       const ep = repoCreateEndpoint({
         serverId,
         method,
@@ -201,7 +226,36 @@ export async function importOpenApi(serverId: string, sourceText: string): Promi
   }
 }
 
-/** Convert `/pets/{id}` to mock-style `/pets/:id`. */
+/** The path a server URL puts before every endpoint, without its trailing slash. */
+function serverPrefix(server: OpenApiServer | undefined): string {
+  if (typeof server?.url !== 'string') return ''
+  const url = server.url.replace(/\{([^}]+)\}/g, (whole, name: string) => {
+    const value = server.variables?.[name]?.default
+    return value === undefined ? whole : String(value)
+  })
+  return (requestUrlToMockPath(url)?.path ?? '').replace(/\/+$/, '')
+}
+
+/** The nearest `servers` wins: operation, then path item, then document (spec order). */
+function operationPrefix(doc: OpenApiDoc, pathItem: OpenApiPathItem, op: OpenApiOperation): string {
+  const servers = [op.servers, pathItem.servers, doc.servers].find((list) => list?.length)
+  if (servers) return serverPrefix(servers[0])
+  return (doc.basePath ?? '').replace(/\/+$/, '')
+}
+
+/** A mock with its own base path already strips it from every request. */
+function withoutBasePath(prefix: string, basePath: string): string {
+  const base = `/${basePath.replace(/^\/+|\/+$/g, '')}`
+  if (base === '/') return prefix
+  if (prefix === base) return ''
+  return prefix.startsWith(`${base}/`) ? prefix.slice(base.length) : prefix
+}
+
+function joinPrefix(prefix: string, path: string): string {
+  if (!prefix) return path
+  return path === '/' ? prefix : `${prefix}${path}`
+}
+
 /** `$ref`s leaving the document. A YAML alias can make the tree cyclic, hence `seen`. */
 function externalRefCount(node: unknown, seen = new WeakSet<object>()): number {
   if (!node || typeof node !== 'object' || seen.has(node)) return 0
@@ -256,6 +310,9 @@ function sampleFromMedia(media: OpenApiMediaType): string {
 /** Enough for any sample a person reads; stops linked schemas from multiplying. */
 const SAMPLE_NODE_LIMIT = 2000
 
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
+
 /**
  * Generate a tiny sample value from a JSON Schema. Best-effort, draft-07-ish.
  * Dereferencing turns a self-referencing schema into a cycle: a schema already on
@@ -270,28 +327,63 @@ function sampleFromSchema(
   walk.left -= 1
   const s = schema as Record<string, unknown>
   if (s.example !== undefined) return s.example
+  if (s.const !== undefined) return s.const
   if (Array.isArray(s.enum) && s.enum.length > 0) return s.enum[0]
 
-  const type = s.type
+  // OpenAPI 3.1 writes a nullable type as `['string', 'null']`.
+  const type = Array.isArray(s.type) ? s.type.find((t) => t !== 'null') : s.type
   if (type === 'string') return typeof s.default === 'string' ? s.default : 'string'
   if (type === 'integer' || type === 'number') return typeof s.default === 'number' ? s.default : 0
   if (type === 'boolean') return typeof s.default === 'boolean' ? s.default : true
   walk.path.add(schema)
   try {
     if (type === 'array') return [sampleFromSchema(s.items, walk)]
-    if (type === 'object' || s.properties) {
-      const out: Record<string, unknown> = {}
-      const props = (s.properties ?? {}) as Record<string, unknown>
-      for (const [k, sub] of Object.entries(props)) out[k] = sampleFromSchema(sub, walk)
-      return out
-    }
-    return null
+    const own: unknown =
+      type === 'object' || s.properties ? sampleProperties(s.properties, walk) : null
+    return mergeSamples([...composedSamples(s, walk), own])
   } finally {
     walk.path.delete(schema)
   }
 }
 
-// ─── Postman v2.x ────────────────────────────────────────────────
+function sampleProperties(
+  properties: unknown,
+  walk: { path: Set<object>; left: number },
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, sub] of Object.entries((properties ?? {}) as Record<string, unknown>)) {
+    out[k] = sampleFromSchema(sub, walk)
+  }
+  return out
+}
+
+/** `allOf` holds at once; of `oneOf` / `anyOf` the first branch with a value stands in. */
+function composedSamples(
+  s: Record<string, unknown>,
+  walk: { path: Set<object>; left: number },
+): unknown[] {
+  const list = (v: unknown): unknown[] => (Array.isArray(v) ? v : [])
+  const samples = list(s.allOf).map((part) => sampleFromSchema(part, walk))
+  for (const key of ['oneOf', 'anyOf']) {
+    for (const branch of list(s[key])) {
+      const sample = sampleFromSchema(branch, walk)
+      if (sample === null) continue
+      samples.push(sample)
+      break
+    }
+  }
+  return samples
+}
+
+/** Objects merge, later keys winning; otherwise the first value there is. */
+function mergeSamples(samples: unknown[]): unknown {
+  const values = samples.filter((v) => v !== null)
+  if (values.length === 0) return null
+  if (!values.every(isPlainObject)) return values[0]
+  return Object.assign({}, ...values)
+}
+
+// ─── Postman ────────────────────────────────────────────────
 
 interface PostmanItem {
   name?: string
@@ -320,30 +412,53 @@ interface PostmanCollection {
   item?: PostmanItem[]
 }
 
+/**
+ * Any Postman collection file as the v2 shape the walker reads. The converters'
+ * own notes (auth, scripts) are dropped: a mock uses neither, so they would only
+ * bury what the mock did lose.
+ */
+function readPostmanCollection(
+  sourceText: string,
+  warnings: string[],
+): { collection: PostmanCollection } | { error: string } {
+  const { doc, detection } = detectPostman(sourceText)
+  const notes: string[] = []
+  switch (detection?.kind) {
+    case 'v1-collection':
+      return { collection: convertV1Collection(doc, notes) as unknown as PostmanCollection }
+    case 'v3-collection': {
+      assertBounded(doc, 'Postman v3 collection')
+      const { collection, skipped } = convertV3Collection(doc as Record<string, unknown>, notes)
+      if (skipped > 0) warnings.push(`${skipped} request(s) of an unsupported kind were skipped.`)
+      return { collection: collection as unknown as PostmanCollection }
+    }
+    case 'v2-collection':
+    case undefined:
+      return (doc as PostmanCollection | null)?.item
+        ? { collection: doc as PostmanCollection }
+        : { error: 'Collection has no `item` array (is this a Postman collection?).' }
+    default:
+      return { error: 'This Postman file is not a collection.' }
+  }
+}
+
 export function importPostman(serverId: string, sourceText: string): ImportResult {
   const warnings: string[] = []
-  let parsed: PostmanCollection
+  const failed = (error: string): ImportResult => ({
+    ok: false,
+    endpointsCreated: 0,
+    responsesCreated: 0,
+    warnings,
+    error,
+  })
+  let read: ReturnType<typeof readPostmanCollection>
   try {
-    parsed = JSON.parse(sourceText) as PostmanCollection
+    read = readPostmanCollection(sourceText, warnings)
   } catch (e) {
-    return {
-      ok: false,
-      endpointsCreated: 0,
-      responsesCreated: 0,
-      warnings,
-      error: 'Invalid JSON: ' + (e instanceof Error ? e.message : String(e)),
-    }
+    return failed('Could not read the collection: ' + (e instanceof Error ? e.message : String(e)))
   }
-
-  if (!parsed.item) {
-    return {
-      ok: false,
-      endpointsCreated: 0,
-      responsesCreated: 0,
-      warnings,
-      error: 'Collection has no `item` array (is this a Postman v2.x collection?).',
-    }
-  }
+  if ('error' in read) return failed(read.error)
+  const parsed = read.collection
 
   let endpointsCreated = 0
   let responsesCreated = 0
@@ -355,7 +470,10 @@ export function importPostman(serverId: string, sourceText: string): ImportResul
         continue
       }
       const req = it.request
-      if (!req) continue
+      if (!req) {
+        warnings.push(`Skipped "${it.name ?? '?'}" — not an HTTP request.`)
+        continue
+      }
       const method = (typeof req === 'string' ? 'GET' : req.method) ?? 'GET'
       const path = postmanUrlToPath(typeof req === 'string' ? req : req.url)
       if (!path) {
@@ -427,7 +545,7 @@ export function importPostman(serverId: string, sourceText: string): ImportResul
     }
   }
 
-  walk(parsed.item)
+  walk(parsed.item ?? [])
 
   return {
     ok: true,

@@ -88,18 +88,49 @@ uiTest.describe('New mock server from a file (issue #319)', () => {
 
       // Its tab is open on the imported endpoints, with the bound path, not a URL.
       await expect(window.getByTestId('mock-add-endpoint')).toBeVisible({ timeout: 10_000 })
-      await expect(window.getByTestId('mock-endpoint-path')).toHaveValue(/^\/pets/)
+      await expect(window.getByTestId('mock-endpoint-path')).toHaveValue(/^\/v1\/pets/)
 
       const server = (await listServers(window, projectId)).find((s) => s.port === port)
       expect(server?.name).toMatch(/^Petstore Lite/)
       await window.evaluate(async (id) => {
         await (window as unknown as MockApi).api.mock.server.start(id)
       }, server?.id ?? '')
+      // The spec's server is https://petstore.example.com/v1: only the host changes.
       await expect
-        .poll(async () => (await fetch(`http://127.0.0.1:${port}/pets`)).status, {
+        .poll(async () => (await fetch(`http://127.0.0.1:${port}/v1/pets`)).status, {
           timeout: 10_000,
         })
         .toBe(200)
+      expect((await fetch(`http://127.0.0.1:${port}/pets`)).status).toBe(404)
+    } finally {
+      await removeServers(window, projectId, port)
+      await closeAllTabs(window)
+    }
+  })
+
+  uiTest('a Postman v3 file imports, and what it lost is listed', async ({ window }) => {
+    const port = randomMockPort()
+    const projectId = await getActiveProjectId(window)
+    const collection = {
+      $kind: 'collection',
+      name: 'Shop v3',
+      items: [
+        { $kind: 'http-request', name: 'Orders', method: 'GET', url: 'https://x.test/orders' },
+        { $kind: 'websocket-request', name: 'Live feed', url: 'wss://x.test/feed' },
+      ],
+    }
+    try {
+      await openImportOption(window, port)
+      await pickFile(window, 'shop.json', JSON.stringify(collection))
+      await expect(window.getByTestId('mock-new-import-summary')).toContainText('Postman')
+      await expect(window.getByTestId('mock-new-name')).toHaveValue('Shop v3')
+      await window.getByTestId('mock-new-create').click()
+      await expect(window.getByTestId('mock-new-dialog')).toBeHidden({ timeout: 15_000 })
+
+      await expect(window.getByTestId('mock-endpoint-path')).toHaveValue('/orders')
+      await expect(window.getByTestId('mock-import-warning')).toContainText('Live feed')
+      await window.getByTestId('mock-import-toast-close').click()
+      await expect(window.getByTestId('mock-import-toast')).toBeHidden()
     } finally {
       await removeServers(window, projectId, port)
       await closeAllTabs(window)
