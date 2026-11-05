@@ -106,7 +106,7 @@ uiTest.describe('GraphQL subscription over WebSocket', () => {
     // The selected query goes over HTTP, and only it runs.
     await select.selectOption('B')
     await window.getByTestId('graphql-run').click()
-    await expect(window.getByText(/Hello second op/).first()).toBeVisible({ timeout: 15_000 })
+    await expect(window.getByText(/Hello\ssecond\sop/).first()).toBeVisible({ timeout: 15_000 })
 
     // The selected subscription subscribes.
     await select.selectOption('T')
@@ -170,8 +170,9 @@ uiTest.describe('GraphQL subscription over WebSocket', () => {
       await expect(status).toHaveAttribute('data-state', 'disconnected')
       await expect.poll(() => proxy.openSockets(), { timeout: 8_000 }).toBe(0)
     } finally {
-      // `undefined` was the state before: the key did not exist.
-      await writeSetting(window, projectKey, saved ?? undefined)
+      // `null` deletes the key. Writing the old value back without it would leave this
+      // dead proxy on the project for every later spec in the shared Electron.
+      await writeSetting(window, projectKey, { ...(saved ?? {}), proxy: saved?.proxy ?? null })
       await proxy.close()
     }
   })

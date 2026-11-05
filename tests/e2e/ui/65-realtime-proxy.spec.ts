@@ -56,7 +56,7 @@ uiTest.describe('The proxy setting on realtime connections', () => {
 
   uiTest.afterEach(async ({ window }) => {
     await closeAllTabs(window)
-    await setAppProxy(window, saved)
+    await setAppProxy(window, saved ?? { mode: 'system' })
     await proxy.close()
   })
 

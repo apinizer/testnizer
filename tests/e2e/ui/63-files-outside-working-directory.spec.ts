@@ -215,7 +215,16 @@ uiTest.describe('Files outside the working directory', () => {
 
       // ── Send: the file goes out ──
       await window.getByTestId('send-btn').click()
-      await expect(window.getByTestId('response-status')).toContainText('200', { timeout: 15_000 })
+      // Same panel refused the Send above: its text says why, a status locator alone would not.
+      await expect
+        .poll(
+          async () =>
+            (await window.getByTestId('response-status').isVisible())
+              ? await window.getByTestId('response-status').innerText()
+              : ((await errorPanel.isVisible()) ? await errorPanel.innerText() : ''),
+          { timeout: 15_000 },
+        )
+        .toContain('200')
       expect(received).toContain(CANARY)
       await treeClearSearch(window)
     },

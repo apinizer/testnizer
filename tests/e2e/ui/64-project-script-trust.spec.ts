@@ -84,8 +84,14 @@ async function importCollection(
     await expect(modal.getByText(/Ready to import/i)).toBeVisible({ timeout: 15_000 })
     await modal.getByPlaceholder('Folder name').fill(FOLDER_NAME)
     await modal.getByRole('button', { name: /^Import$/i }).click()
-    await expect(window.getByTestId('import-result')).toBeVisible({ timeout: 30_000 })
-    await window.getByTestId('import-result-done').click()
+    // The report appears only when there is something to report; otherwise the modal closes.
+    const report = window.getByTestId('import-result')
+    await expect
+      .poll(async () => (await report.isVisible()) || !(await modal.isVisible()), {
+        timeout: 30_000,
+      })
+      .toBe(true)
+    if (await report.isVisible()) await window.getByTestId('import-result-done').click()
     await expect(modal).toBeHidden({ timeout: 10_000 })
   } finally {
     await restore()
