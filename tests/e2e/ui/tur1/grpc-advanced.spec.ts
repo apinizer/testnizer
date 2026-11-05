@@ -269,6 +269,12 @@ uiTest.describe('Tur1 — gRPC advanced [MST-133..140]', () => {
 
       // The server answers once, after the half-close, with both messages.
       await expect(window.getByText(/client-stream: c1,c2/).first()).toBeVisible({ timeout: 20_000 })
+
+      // The call is over, so the tab leaves the streaming state: the stream controls
+      // give way to Execute again. Without the 'end' event the aggregate still shows
+      // but the tab sits half-closed with only Cancel Stream, for good.
+      await expect(window.getByTestId('grpc-execute')).toBeVisible({ timeout: 10_000 })
+      await expect(endBtn).toHaveCount(0)
     } finally {
       await restore?.()
       await srv.close()

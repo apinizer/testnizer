@@ -13,7 +13,13 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
+import {
+  createServer,
+  type IncomingHttpHeaders,
+  type Server,
+  type IncomingMessage,
+  type ServerResponse,
+} from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { buildSchema, parse, execute as gqlExecute } from 'graphql'
 
@@ -36,6 +42,8 @@ const rootValue = {
 // ─── HTTP server (executeQuery + introspect) ──────────────────
 let httpServer: Server
 let httpPort: number
+/** Request headers of every POST the server saw, in order. */
+const seenHeaders: IncomingHttpHeaders[] = []
 
 async function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
@@ -52,6 +60,7 @@ beforeAll(async () => {
       res.end()
       return
     }
+    seenHeaders.push(req.headers)
     try {
       const body = JSON.parse(await readBody(req)) as {
         query: string
@@ -118,6 +127,25 @@ describe('graphql.engine — executeQuery', () => {
   it('returns error on network failure (bad URL)', async () => {
     const result = await executeQuery({ url: 'http://127.0.0.1:1', query: '{ hello }' })
     expect(result.error).toBeTruthy()
+  })
+
+  it('sends a ticked header row and leaves out an unticked one', async () => {
+    // `graphql:execute` is the IPC that reaches this; GraphQL Send in the app goes
+    // through `request:send`, so only a direct engine test sees this filter.
+    const row = (key: string, value: string, enabled: boolean) => ({
+      id: key,
+      key,
+      value,
+      enabled,
+    })
+    await executeQuery({
+      url: httpUrl(),
+      query: '{ hello }',
+      headers: [row('X-Ticked', 'yes', true), row('X-Unticked', 'no', false)],
+    })
+    const sent = seenHeaders.at(-1)!
+    expect(sent['x-ticked']).toBe('yes')
+    expect(sent['x-unticked']).toBeUndefined()
   })
 })
 

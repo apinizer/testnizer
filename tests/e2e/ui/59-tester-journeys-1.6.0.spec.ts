@@ -56,7 +56,10 @@ type MockApi = {
         list: (s: string) => Promise<IpcResult<Array<{ path: string; pathMode: string }>>>
       }
     }
-    folder: { delete: (id: string) => Promise<unknown> }
+    folder: {
+      delete: (id: string) => Promise<unknown>
+      list: (p: string) => Promise<IpcResult<Array<{ id: string; name: string }>>>
+    }
     savedRequest: { delete: (id: string) => Promise<unknown> }
   }
 }
@@ -235,6 +238,13 @@ uiTest.describe('Tester journeys on 1.6.0', () => {
               if (s.name !== name) continue
               await w.api.mock.server.stop(s.id).catch(() => {})
               await w.api.mock.server.delete(s.id)
+            }
+            // The imported folder and its requests too: they point at petstore.example.com,
+            // so the next spec that runs the whole project (Collection Runner, stop on
+            // error) stopped at "List pets" after its own first request.
+            const folders = await w.api.folder.list(pid)
+            for (const f of folders.data ?? []) {
+              if (f.name === name) await w.api.folder.delete(f.id)
             }
           },
           { pid: projectId, name: folderName },

@@ -6,11 +6,23 @@
 //
 // Usage:
 //   node scripts/e2e-fault-drill.mjs --check                 read-only staleness check
-//   node scripts/e2e-fault-drill.mjs [--only F01,F02] [--report <path>]
-//                                    [--timeout-min 25] [--baseline-timeout-min 120]
+//   node scripts/e2e-fault-drill.mjs [--only F01,F02] [--report <path>] [--no-unit]
+//                                    [--timeout-min 25] [--baseline-timeout-min 25]
 //
-// Needs the checkout to itself: it edits src/, rebuilds out/ and runs the ui
-// project. Do not run unit tests, builds or other Playwright runs meanwhile.
+// Two separate measurements per fault, never to be added together:
+//   * E2E (the score): the fault's specs, run against a clean build of THAT fault's
+//     own baseline (same specs, same order, clean build, just before planting), so a
+//     failure that only comes from running a subset in that order cannot pass as a
+//     catch. Only tests that passed in that baseline can count.
+//   * Unit (a second column): for a fault e2e MISSED, `vitest related <file>` with the
+//     fault still planted -> `unitRed` and the first failing files. It never changes
+//     the e2e status. `--no-unit` skips it. `vitest related` follows static imports
+//     only, so a test that reaches the code through an IPC mock is not seen; run the
+//     full unit suite by hand for a fault that matters.
+//
+// Needs the checkout to itself: it edits src/, rebuilds out/ (twice per fault: clean
+// baseline build, then the fault build), flips the native ABI between electron and node
+// and runs the ui project. Do not run unit tests, builds or other Playwright runs meanwhile.
 // Faults live in tests/e2e/drill/faults.json. Default report:
 // node_modules/.cache/testnizer-fault-drill/ (gitignored, and not test-results/,
 // which Playwright wipes at the start of every run).
@@ -19,7 +31,7 @@
 // stale fault or a refusal to start; 2 usage; 3 tool problem; 4 restore failed
 // or src/ is not clean at the end.
 //
-// Classes: caught | missed | crash | build-failed | timeout, plus two that are
+// Classes (e2e): caught | missed | crash | build-failed | timeout, plus two that are
 // neither a catch nor a miss: no-baseline (none of the fault's specs passed
 // clean, so nothing could be caught) and no-result (the specs reported nothing).
 // Launch-type errors are matched by text; Playwright also prints "Target ...
@@ -149,8 +161,45 @@ export function countStatuses(records) {
   return counts
 }
 
+/**
+ * `vitest --reporter=json` -> `{total, red, files, tests}`. `red` counts failed tests
+ * plus test files that failed without a failed test (a suite that no longer loads is
+ * also something the unit suite noticed). `files` are relative to tests/.
+ */
+export function parseVitestReport(report) {
+  const results = report?.testResults ?? []
+  const badTests = []
+  const badFiles = []
+  let loadErrors = 0
+  for (const file of results) {
+    const name = String(file.name ?? '').split('/tests/').pop()
+    const failed = (file.assertionResults ?? []).filter((a) => a.status === 'failed')
+    for (const a of failed) badTests.push(a.fullName ?? a.title ?? '')
+    if (failed.length > 0) badFiles.push(name)
+    else if (file.status === 'failed') { loadErrors++; badFiles.push(name) }
+  }
+  return { total: report?.numTotalTests ?? 0, red: badTests.length + loadErrors, files: badFiles.slice(0, 6), tests: badTests.slice(0, 4) }
+}
+
+/**
+ * The three numbers the RC reader needs. `e2eCaught` is the only e2e score;
+ * `unitOnly` and `nowhere` split the e2e misses by what the unit suite did and are
+ * `null` when the unit column was not run. `notMeasured` is every other e2e status.
+ */
+export function summarizeDrill(records, { unitRun }) {
+  const total = records.length
+  const e2eCaught = records.filter((r) => r.status === 'caught').length
+  const missed = records.filter((r) => r.status === 'missed')
+  const notMeasured = total - e2eCaught - missed.length
+  if (!unitRun) return { total, e2eCaught, e2eMissed: missed.length, unitOnly: null, nowhere: null, unitUnknown: null, notMeasured, unitRun: false }
+  const unitOnly = missed.filter((r) => (r.unitRed ?? 0) > 0).length
+  const nowhere = missed.filter((r) => r.unitRed === 0).length
+  const unitUnknown = missed.length - unitOnly - nowhere
+  return { total, e2eCaught, e2eMissed: missed.length, unitOnly, nowhere, unitUnknown, notMeasured, unitRun: true }
+}
+
 export function parseArgs(argv) {
-  const opts = { check: false, only: null, report: null, timeoutMin: 25, baselineTimeoutMin: 120 }
+  const opts = { check: false, only: null, report: null, noUnit: false, timeoutMin: 25, baselineTimeoutMin: 25 }
   const need = (i) => {
     if (argv[i + 1] === undefined) throw new Error(`${argv[i]} needs a value`)
     return argv[i + 1]
@@ -160,6 +209,7 @@ export function parseArgs(argv) {
     if (a === '--check') opts.check = true
     else if (a === '--only') opts.only = need(i++).split(',').map((s) => s.trim()).filter(Boolean)
     else if (a === '--report') opts.report = need(i++)
+    else if (a === '--no-unit') opts.noUnit = true
     else if (a === '--timeout-min') opts.timeoutMin = Number(need(i++))
     else if (a === '--baseline-timeout-min') opts.baselineTimeoutMin = Number(need(i++))
     else throw new Error(`unknown argument ${a}`)
@@ -256,6 +306,27 @@ async function playwright(label, specs, timeoutMs) {
   return { ...r, parsed }
 }
 
+function setAbi(target) {
+  const r = spawnSync(process.execPath, [path.join(ROOT, 'scripts/ensure-native-abi.js'), target], { cwd: ROOT, stdio: 'inherit' })
+  return r.status === 0
+}
+
+/** `vitest related <fault file>` with the fault still planted. Flips the ABI to node for it and back. */
+async function unitColumn(f) {
+  const jsonPath = path.join(WORK_DIR, `${f.id}-unit.json`)
+  fs.rmSync(jsonPath, { force: true })
+  if (!setAbi('node')) return { unitRed: null, unitDetail: 'ensure-native-abi node failed' }
+  try {
+    const r = await runStep(`${f.id}-unit`, 'npx', ['vitest', 'related', f.file, '--run', '--reporter=json', `--outputFile=${jsonPath}`], { timeoutMs: 15 * 60_000 })
+    let parsed
+    try { parsed = parseVitestReport(JSON.parse(fs.readFileSync(jsonPath, 'utf8'))) } catch { /* no usable report */ }
+    if (!parsed || r.timedOut) return { unitRed: null, unitDetail: r.timedOut ? 'vitest related timed out' : 'no JSON report from vitest related', unitLog: r.logPath }
+    return { unitRed: parsed.red, unitTotal: parsed.total, unitFiles: parsed.files, unitTests: parsed.tests, unitLog: r.logPath }
+  } finally {
+    if (!setAbi('electron')) console.error('[drill] could not flip the native ABI back to electron: run `node scripts/ensure-native-abi.js electron`')
+  }
+}
+
 function plant(fault) {
   const abs = path.join(ROOT, fault.file)
   const original = fs.readFileSync(abs)
@@ -282,23 +353,37 @@ function onSignal(sig) {
   try { restore() } catch (e) { console.error(`[drill] ${e.message}`); process.exit(4) }
   if (state.report) { state.report.interrupted = true; writeReport() }
   if (state.outDirty) console.error('[drill] out/ may still hold a fault build: run `npm run build` before using it.')
+  console.error('[drill] the native ABI may be left on node: run `node scripts/ensure-native-abi.js electron` before a build or Playwright.')
   process.exit(130)
 }
 process.on('SIGINT', () => onSignal('SIGINT'))
 process.on('SIGTERM', () => onSignal('SIGTERM'))
 process.on('exit', () => { try { restore() } catch (e) { console.error(`[drill] ${e.message}`) } })
 
+/** Per-fault baseline summary kept in the report (counts + what was already red). */
 function tally(baseline) {
   const by = (s) => baseline.tests.filter((t) => t.status === s).map((t) => t.key)
-  return { passed: by('passed'), failed: by('failed'), skipped: by('skipped'), errors: baseline.errors }
+  return { passed: by('passed').length, failed: by('failed'), skipped: by('skipped').length, errors: baseline.errors }
 }
 
-function printTable(counts, records) {
+function printTable(counts, records, summary) {
   console.log('\n=== fault drill ===')
-  for (const s of STATUSES) if (counts[s]) console.log(`${s.padEnd(13)} ${counts[s]}`)
-  console.log(`${'total'.padEnd(13)} ${records.length}`)
+  console.log(`E2E SCORE: ${summary.e2eCaught} of ${summary.total} faults made an e2e test fail`)
+  if (summary.unitRun) {
+    console.log('Of the e2e misses (a separate column, NOT part of the e2e score):')
+    console.log(`  caught by unit only (vitest related went red, no e2e spec did): ${summary.unitOnly}`)
+    console.log(`  caught nowhere (neither e2e nor vitest related): ${summary.nowhere}`)
+    if (summary.unitUnknown) console.log(`  unit result unavailable: ${summary.unitUnknown}`)
+  } else {
+    console.log(`e2e misses: ${summary.e2eMissed} (unit column not run, --no-unit)`)
+  }
+  console.log(`not measured (crash / build-failed / timeout / no-baseline / no-result): ${summary.notMeasured}`)
+  console.log('Do not add these up: only the first line is an e2e score.')
+  console.log('\ne2e statuses:')
+  for (const s of STATUSES) if (counts[s]) console.log(`  ${s.padEnd(13)} ${counts[s]}`)
   for (const r of records.filter((x) => x.status === 'missed')) {
-    console.log(`MISSED ${r.id} [${r.journey}] ${r.expectedFailure}`)
+    const unit = r.unitRed == null ? 'unit n/a' : r.unitRed > 0 ? `UNIT-ONLY ${r.unitRed} red: ${(r.unitFiles ?? []).slice(0, 2).join(', ')}` : 'NOWHERE'
+    console.log(`MISSED ${r.id} [${r.journey}] ${unit}`)
   }
 }
 
@@ -340,58 +425,69 @@ async function main() {
   state.reportPath = path.resolve(opts.report ?? path.join(WORK_DIR, `report-${stamp}.json`))
   state.report = {
     startedAt: new Date().toISOString(), head: git('rev-parse', '--short', 'HEAD').trim(),
-    selected: faults.map((f) => f.id), baseline: null, faults: [], interrupted: false, complete: false,
+    selected: faults.map((f) => f.id), unitColumn: !opts.noUnit, faults: [], summary: null, interrupted: false, complete: false,
   }
   console.log(`[drill] ${faults.length} fault(s); logs in ${WORK_DIR}; report ${state.reportPath}`)
 
-  const abi = spawnSync(process.execPath, [path.join(ROOT, 'scripts/ensure-native-abi.js'), 'electron'], { cwd: ROOT, stdio: 'inherit' })
-  if (abi.status !== 0) { console.error('[drill] ensure-native-abi electron failed'); return 3 }
-
-  // Baseline: one clean build, the union of all selected specs, once.
-  const allSpecs = [...new Set(faults.flatMap((f) => inspections.get(f.id).specs))]
-  console.log(`[drill] baseline: build + ${allSpecs.length} spec file(s)`)
-  const b = await build('baseline-build')
-  if (b.code !== 0) { console.error(`[drill] baseline build failed:\n${b.tail}`); return 3 }
-  const base = await playwright('baseline-run', allSpecs, opts.baselineTimeoutMin * 60_000)
-  if (!base.parsed || base.timedOut) { console.error(`[drill] baseline run unusable (timedOut=${base.timedOut}):\n${base.tail}`); return 3 }
-  const baseline = base.parsed
-  state.report.baseline = tally(baseline)
-  writeReport()
-  console.log(`[drill] baseline: ${state.report.baseline.passed.length} passed, ${state.report.baseline.failed.length} red, ${state.report.baseline.skipped.length} skipped`)
-  if (state.report.baseline.passed.length === 0) { console.error('[drill] no test passed in baseline, nothing to measure'); return 3 }
+  if (!setAbi('electron')) { console.error('[drill] ensure-native-abi electron failed'); return 3 }
 
   for (const f of faults) {
     const t0 = Date.now()
-    const deadline = t0 + opts.timeoutMin * 60_000 // one budget per fault: build + run
+    const specs = inspections.get(f.id).specs
     let verdict
     let log = null
-    try {
-      plant(f)
-      state.outDirty = true
-      const bf = await build(`${f.id}-build`, Math.min(15 * 60_000, deadline - Date.now()))
-      if (bf.timedOut) {
-        log = bf.logPath
-        verdict = classifyFault({ specs: inspections.get(f.id).specs, baseline, timedOut: true })
-        verdict.detail = 'build ran out of the per-fault time limit'
-      } else if (bf.code !== 0) {
-        log = bf.logPath
-        verdict = classifyFault({ specs: inspections.get(f.id).specs, baseline, buildFailed: true })
-        verdict.detail = firstLine(bf.tail.split('\n').filter((l) => /error/i.test(l)).at(0) ?? bf.tail)
-      } else {
-        const r = await playwright(`${f.id}-run`, inspections.get(f.id).specs, Math.max(60_000, deadline - Date.now()))
-        log = r.logPath
-        if (r.timedOut) reapTestServers()
-        verdict = classifyFault({ specs: inspections.get(f.id).specs, baseline, result: r.parsed ?? { tests: [], errors: [r.tail] }, timedOut: r.timedOut })
-        if (!r.parsed) verdict.detail = 'no JSON report written'
+    let baselineInfo = null
+    let unit = {}
+
+    // This fault's own baseline: a clean build and the same specs in the same order,
+    // right before planting, so only tests that pass here can count as a catch.
+    const bb = await build(`${f.id}-baseline-build`)
+    state.outDirty = false
+    if (bb.code !== 0) { console.error(`[drill] clean build failed before ${f.id}:\n${bb.tail}`); return 3 }
+    const base = await playwright(`${f.id}-baseline-run`, specs, opts.baselineTimeoutMin * 60_000)
+    if (base.timedOut) reapTestServers()
+    if (base.parsed) baselineInfo = tally(base.parsed)
+
+    if (!base.parsed || base.timedOut) {
+      verdict = classifyFault({ specs, baseline: null })
+      verdict.detail = base.timedOut ? 'baseline run timed out' : 'baseline run wrote no JSON report'
+      log = base.logPath
+    } else if (classifyFault({ specs, baseline: base.parsed }).status === 'no-baseline') {
+      verdict = classifyFault({ specs, baseline: base.parsed }) // nothing passed clean: not worth planting
+      verdict.detail = 'none of the fault specs passed on the clean build'
+      log = base.logPath
+    } else {
+      const deadline = Date.now() + opts.timeoutMin * 60_000 // one budget per fault: build + run
+      try {
+        plant(f)
+        state.outDirty = true
+        const bf = await build(`${f.id}-build`, Math.min(15 * 60_000, deadline - Date.now()))
+        if (bf.timedOut) {
+          log = bf.logPath
+          verdict = classifyFault({ specs, baseline: base.parsed, timedOut: true })
+          verdict.detail = 'build ran out of the per-fault time limit'
+        } else if (bf.code !== 0) {
+          log = bf.logPath
+          verdict = classifyFault({ specs, baseline: base.parsed, buildFailed: true })
+          verdict.detail = firstLine(bf.tail.split('\n').filter((l) => /error/i.test(l)).at(0) ?? bf.tail)
+        } else {
+          const r = await playwright(`${f.id}-run`, specs, Math.max(60_000, deadline - Date.now()))
+          log = r.logPath
+          if (r.timedOut) reapTestServers()
+          verdict = classifyFault({ specs, baseline: base.parsed, result: r.parsed ?? { tests: [], errors: [r.tail] }, timedOut: r.timedOut })
+          if (!r.parsed) verdict.detail = 'no JSON report written'
+          if (verdict.status === 'missed' && !opts.noUnit) unit = await unitColumn(f) // fault still planted
+        }
+      } finally {
+        restore() // throws on hash mismatch: a failed restore ends the run (exit 4)
       }
-    } finally {
-      restore() // throws on hash mismatch: a failed restore ends the run (exit 4)
     }
-    const record = { id: f.id, journey: f.journey, origin: f.origin, file: f.file, specs: inspections.get(f.id).specs, expectedFailure: f.expectedFailure, ...verdict, seconds: Math.round((Date.now() - t0) / 1000), log }
+    const record = { id: f.id, journey: f.journey, origin: f.origin, file: f.file, specs, expectedFailure: f.expectedFailure, baseline: baselineInfo, ...verdict, ...unit, seconds: Math.round((Date.now() - t0) / 1000), log }
     state.report.faults.push(record)
     writeReport()
     const first = record.caught[0]
-    console.log(`[drill] ${f.id} ${record.status.toUpperCase()} (${record.seconds}s) ${f.journey}${first ? ` | ${record.caught.length} red, e.g. ${first.test}: ${first.error}` : ''}${record.detail ? ` | ${record.detail}` : ''}`)
+    const unitNote = record.status === 'missed' && !opts.noUnit ? ` | unit: ${record.unitRed == null ? `n/a (${record.unitDetail})` : `${record.unitRed} red${record.unitFiles?.length ? `, e.g. ${record.unitFiles[0]}` : ''}`}` : ''
+    console.log(`[drill] ${f.id} ${record.status.toUpperCase()} (${record.seconds}s) ${f.journey}${first ? ` | ${record.caught.length} red, e.g. ${first.test}: ${first.error}` : ''}${record.detail ? ` | ${record.detail}` : ''}${unitNote}`)
   }
 
   console.log('[drill] final clean rebuild')
@@ -401,9 +497,10 @@ async function main() {
   const left = srcDirty()
   if (left) { console.error(`[drill] FAILED: src/ is not clean after the run:\n${left}`); return 4 }
 
+  state.report.summary = summarizeDrill(state.report.faults, { unitRun: !opts.noUnit })
   state.report.complete = true
   writeReport()
-  printTable(state.report.counts, state.report.faults)
+  printTable(state.report.counts, state.report.faults, state.report.summary)
   console.log(`report: ${state.reportPath}`)
   return 0
 }

@@ -45,7 +45,11 @@ import { mockWindowApi } from './screens/_mount'
 import Workbench from '../../src/renderer/components/layout/Workbench'
 import { openOrReuseRunnerTab } from '../../src/renderer/lib/open-runner-tab'
 import { isRunnerBusy } from '../../src/renderer/lib/runner-activity'
-import { useRunnerLiveStore } from '../../src/renderer/stores/runner-live.store'
+import {
+  takeFinishedRun,
+  useRunnerLiveStore,
+  type LiveRun,
+} from '../../src/renderer/stores/runner-live.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
@@ -347,5 +351,38 @@ describe('leaving the live run for another view', () => {
     })
     fireEvent.click(await screen.findByTestId('runner-live-banner'))
     expect(await screen.findByTestId('runner-stop')).toBeTruthy()
+  })
+})
+
+describe('the live-run store hands a run to the tab only once it has ended', () => {
+  // The component also checks `running` before it asks (RunnerTab's adopt effect), so this
+  // guard is the second of two. Neither alone is observable through the UI; the pair is.
+  const live = (running: boolean): LiveRun => ({
+    running,
+    results: [row('item-1', 'First request')],
+    report: null,
+    error: null,
+    currentIndex: 1,
+    totalCount: 2,
+    startedAt: 1,
+    sourceLabel: 'Runner',
+    origin: 'runner',
+    teardownStarted: false,
+    stopRequested: null,
+    runTabId: TAB,
+    projectId: PROJECT,
+  })
+
+  it('takeFinishedRun leaves a run that is still going in the store', () => {
+    useRunnerLiveStore.setState({ runs: { k: live(true) } })
+    expect(takeFinishedRun('k')).toBeNull()
+    expect(useRunnerLiveStore.getState().runs.k?.running).toBe(true)
+  })
+
+  it('takeFinishedRun gives a finished run once and forgets it', () => {
+    useRunnerLiveStore.setState({ runs: { k: live(false) } })
+    expect(takeFinishedRun('k')?.results).toHaveLength(1)
+    expect(useRunnerLiveStore.getState().runs.k).toBeUndefined()
+    expect(takeFinishedRun('k')).toBeNull()
   })
 })

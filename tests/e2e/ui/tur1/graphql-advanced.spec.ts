@@ -217,6 +217,48 @@ uiTest.describe('Tur1 — GraphQL advanced [MST-128..131]', () => {
     })
   })
 
+  // ── MST-130b: an unticked header row is not sent ──────────────────────────
+  // MST-130 only proves a query succeeds with a header row present; the shared
+  // test server never looks at headers. This server records them.
+  uiTest('MST-130b GraphQL Send carries the ticked header row and not the unticked one', async ({ window }) => {
+    const port = await getFreePort()
+    const seen: Array<http.IncomingHttpHeaders> = []
+    const server = http.createServer((req, res) => {
+      seen.push(req.headers)
+      req.resume()
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ data: { hello: 'recorded' } }))
+    })
+    await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve))
+    try {
+      await openNewDropdownItem(window, /GraphQL/i)
+      await window.getByTestId('graphql-url').fill(`http://127.0.0.1:${port}/graphql`)
+
+      await window.getByRole('button', { name: /Headers/i }).last().click()
+      const addRow = async (key: string, value: string): Promise<void> => {
+        await window.getByRole('button', { name: /\+ Add Header/i }).click()
+        const rows = window.locator('[data-testid^="kv-row-"]')
+        const row = rows.nth((await rows.count()) - 1)
+        await row.getByTestId('kv-key').fill(key)
+        await row.getByTestId('kv-value').locator('input').fill(value)
+      }
+      await addRow('X-Ticked-130b', 'sent')
+      await addRow('X-Unticked-130b', 'must-not-be-sent')
+      // Untick the second row.
+      await window.locator('[data-testid^="kv-row-"]').last().getByTestId('kv-enable').click()
+
+      await fillMonaco(window, 'graphql-query-editor', '{ hello(name: "x") }')
+      await window.getByTestId('graphql-run').click()
+      await expect.poll(() => seen.length, { timeout: 15_000 }).toBeGreaterThan(0)
+
+      expect(seen[0]['x-ticked-130b']).toBe('sent')
+      expect(seen[0]['x-unticked-130b']).toBeUndefined()
+    } finally {
+      server.closeAllConnections?.()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
   // ── MST-131: Subscription query toggles the action button ─────────────────
   // The behaviour MST-131 names is the action button switching between "Run"
   // (query/mutation) and "Subscribe" (subscription) based on the query text.

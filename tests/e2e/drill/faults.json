@@ -229,7 +229,7 @@
   {
     "id": "F20",
     "journey": "GraphQL query",
-    "origin": "GraphQL header rows (disabled row still sent)",
+    "origin": "GraphQL header rows (disabled row still sent). Engine-only: buildHeaders is reached solely through the graphql:execute IPC, which no renderer code calls (GraphQL Send goes through request:send, and both graphql.store.ts and http.engine.ts filter unticked rows themselves). Covered by tests/main/graphql-engine.test.ts; e2e cannot see it.",
     "file": "src/main/protocols/graphql.engine.ts",
     "find": "      if (h.enabled && h.key) {\n        result[h.key] = h.value",
     "replace": "      if (h.key) {\n        result[h.key] = h.value",
@@ -306,14 +306,14 @@
   {
     "id": "F31",
     "journey": "Leaving the Runner while it runs",
-    "origin": "issue #317 (run state must outlive the tab)",
-    "file": "src/renderer/stores/runner-live.store.ts",
-    "find": "  if (!run || run.running) return null\n",
-    "replace": "  if (!run) return null\n",
+    "origin": "issue #317 (run state must outlive the tab). Retargeted twice: (1) the original fault in takeFinishedRun alone was equivalent, RunnerTab's adopt effect checks liveRun.running first; (2) removing both checks breaks the tab on its first render, before anything is left. This one reintroduces the bug itself: the live run is deleted when the tab unmounts, so leaving and returning finds nothing and later progress has no slice to land in.",
+    "file": "src/renderer/components/runner/RunnerTab.tsx",
+    "find": "  const isRunning = liveRun?.running ?? false\n",
+    "replace": "  const isRunning = liveRun?.running ?? false\n  // DRILL: the run's state dies with the tab again (issue #317).\n  useEffect(\n    () => () => {\n      useRunnerLiveStore.setState((s) => {\n        const runs = { ...s.runs }\n        delete runs[liveKey]\n        return { runs }\n      })\n    },\n    [liveKey],\n  )\n",
     "specs": [
       "tests/e2e/ui/59-tester-journeys-1.6.0.spec.ts"
     ],
-    "expectedFailure": "Coming back to a Runner tab mid-run adopts and deletes the in-flight run, so the results screen is blank and later progress is lost."
+    "expectedFailure": "Leave the Runner tab while a run is going and come back: the live run is gone (no Stop button, no rows, blank or empty results) and the progress that arrives afterwards is lost. A tab that stays mounted behaves normally."
   },
   {
     "id": "F33",

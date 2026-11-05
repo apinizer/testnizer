@@ -13,6 +13,7 @@ import {
   waitCollectionRunComplete,
   readCollectionRunSummary,
   closeCollectionRunner,
+  selectOnlyRunnerEndpoints,
 } from '../../helpers/ui/runner-flow'
 import {
   createTestSuite,
@@ -41,19 +42,23 @@ uiTest.describe('Tier 4 — Runner & Suite journeys', () => {
   })
 
   uiTest('F11 runner executes multiple saved requests', async ({ window }) => {
+    // Only this test's two requests run: the Collection Runner starts from every request
+    // in the project, with "Stop run if an error occurs" on, so one failing request that
+    // an earlier spec left behind ends the run after the first row (spec 59 once left an
+    // imported petstore folder: passed 1, "Stopped early").
+    const stamp = uid()
     for (let i = 1; i <= 2; i++) {
       await openHttpRequestTab(window)
       await fillUrl(window, `${http()}/get?runner=${i}`)
       await addVisualAssertion(window, /Status code equals/i, { expected: 200 })
-      await saveRequestToTree(window, `Runner Req ${i} ${uid()}`)
+      await saveRequestToTree(window, `Runner Req ${i} ${stamp}`)
     }
 
     await openCollectionRunner(window)
+    await selectOnlyRunnerEndpoints(window, stamp)
     await startCollectionRun(window)
     await waitCollectionRunComplete(window)
-    const summary = await readCollectionRunSummary(window)
-    expect(summary.passed + summary.failed).toBeGreaterThanOrEqual(2)
-    expect(summary.passed).toBeGreaterThanOrEqual(2)
+    expect(await readCollectionRunSummary(window)).toEqual({ passed: 2, failed: 0 })
     await closeCollectionRunner(window)
   })
 

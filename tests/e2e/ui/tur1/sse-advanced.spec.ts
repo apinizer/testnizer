@@ -189,6 +189,41 @@ uiTest.describe('Tur1 — SSE advanced [MST-123..126]', () => {
     }
   })
 
+  // ── MST-124b: the typed Last-Event-ID is for the first connect only ───────
+  // MST-124 above never reconnects: its server streams to the end and the test
+  // disconnects first. The bug this pins (the typed id laid back over the
+  // library's own on every reconnect) only shows on the SECOND request, so the
+  // server records each request's Last-Event-ID and hangs up after one event.
+  uiTest('MST-124b the reconnect sends the last received id, not the typed one', async ({ window }) => {
+    const port = await getFreePort()
+    const seen: Array<string | undefined> = []
+    const server = http.createServer((req, res) => {
+      const v = req.headers['last-event-id']
+      seen.push(Array.isArray(v) ? v.join(',') : v)
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
+      if (seen.length === 1) res.end('retry: 100\nid: 9\nevent: tick\ndata: {"n":9}\n\n')
+      else res.write('id: 10\nevent: tick\ndata: {"n":10}\n\n')
+    })
+    await new Promise<void>((resolve) => server.listen(port, '127.0.0.1', resolve))
+    try {
+      await openNewDropdownItem(window, /SSE/i)
+      await window.getByTestId('sse-url').fill(`http://127.0.0.1:${port}/events`)
+      await window.getByRole('button', { name: /Last-Event-ID/i }).click()
+      await window.getByTestId('sse-last-event-id').fill('3')
+      await window.getByTestId('sse-connect').click()
+
+      // The reconnect happened, and the stream carried on from event 10.
+      await expect.poll(() => seen.length, { timeout: 15_000 }).toBeGreaterThanOrEqual(2)
+      await expect(window.getByText(/"n":\s*10/).first()).toBeVisible({ timeout: 15_000 })
+      expect(seen.slice(0, 2), 'Last-Event-ID of the first two requests').toEqual(['3', '9'])
+
+      await window.getByTestId('sse-disconnect').click()
+    } finally {
+      server.closeAllConnections?.()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
   // ── MST-125: Server-close error handling + explicit disconnect ────────────
   // By design the SSE store keeps the "connected" state through transient
   // failures (eventsource@3 auto-reconnects) — it only surfaces the error

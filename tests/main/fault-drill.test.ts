@@ -11,7 +11,9 @@ import {
   isLaunchError,
   parseArgs,
   parseReport,
+  parseVitestReport,
   resolveSpec,
+  summarizeDrill,
   validateFaults,
 } from '../../scripts/e2e-fault-drill.mjs'
 
@@ -213,8 +215,56 @@ describe('helpers', () => {
       timeoutMin: 5,
       report: 'r.json',
     })
+    expect(parseArgs([])).toMatchObject({ noUnit: false, baselineTimeoutMin: 25 })
+    expect(parseArgs(['--no-unit', '--baseline-timeout-min', '3'])).toMatchObject({ noUnit: true, baselineTimeoutMin: 3 })
     expect(() => parseArgs(['--nope'])).toThrow(/unknown argument/)
     expect(() => parseArgs(['--only'])).toThrow(/needs a value/)
     expect(() => parseArgs(['--timeout-min', '0'])).toThrow(/positive/)
+  })
+})
+
+describe('parseVitestReport', () => {
+  const report = {
+    numTotalTests: 5,
+    testResults: [
+      { name: '/repo/tests/main/a.test.ts', status: 'failed', assertionResults: [{ status: 'passed' }, { status: 'failed', fullName: 'a one' }, { status: 'failed', fullName: 'a two' }] },
+      { name: '/repo/tests/renderer/b.test.tsx', status: 'passed', assertionResults: [{ status: 'passed' }] },
+      { name: '/repo/tests/main/c.test.ts', status: 'failed', assertionResults: [] }, // would not load
+    ],
+  }
+
+  it('counts failed tests plus files that failed without one, and names the files relative to tests/', () => {
+    expect(parseVitestReport(report)).toEqual({
+      total: 5,
+      red: 3,
+      files: ['main/a.test.ts', 'main/c.test.ts'],
+      tests: ['a one', 'a two'],
+    })
+  })
+
+  it('a green run and an empty report are red 0', () => {
+    expect(parseVitestReport({ numTotalTests: 2, testResults: [{ name: '/r/tests/x.test.ts', status: 'passed', assertionResults: [{ status: 'passed' }] }] }).red).toBe(0)
+    expect(parseVitestReport({})).toEqual({ total: 0, red: 0, files: [], tests: [] })
+  })
+})
+
+describe('summarizeDrill', () => {
+  const rec = (status: string, unitRed?: number | null) => ({ status, unitRed })
+  const records = [
+    rec('caught'), rec('caught'),
+    rec('missed', 4), rec('missed', 0), rec('missed', 1), rec('missed', null),
+    rec('crash'), rec('no-baseline'),
+  ]
+
+  it('keeps the e2e score apart from what only the unit suite saw', () => {
+    expect(summarizeDrill(records, { unitRun: true })).toEqual({
+      total: 8, e2eCaught: 2, e2eMissed: 4, unitOnly: 2, nowhere: 1, unitUnknown: 1, notMeasured: 2, unitRun: true,
+    })
+  })
+
+  it('without the unit column the misses are not split', () => {
+    expect(summarizeDrill(records, { unitRun: false })).toMatchObject({
+      e2eCaught: 2, e2eMissed: 4, unitOnly: null, nowhere: null, unitUnknown: null, notMeasured: 2, unitRun: false,
+    })
   })
 })
