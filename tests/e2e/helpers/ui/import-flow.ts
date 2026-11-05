@@ -17,10 +17,12 @@ export async function refreshWorkspaceTree(page: Page): Promise<void> {
   // Re-clicking the active project tab calls setActiveProject → buildTreeFromDB.
   // Multiple projects may be open (worker-scoped app) — target the active one.
   const tab = page.locator('[data-testid="header-project-tab"][data-active="true"]').first()
+  // optional: only re-clicks the project tab when one is on screen; the tree wait that follows is the check
   if (await tab.isVisible().catch(() => false)) {
     await tab.click()
     await page.waitForTimeout(500)
   }
+  // optional: opens the APIs panel only when the tree is not on screen
   if (!(await page.getByTestId('tree-search').isVisible().catch(() => false))) {
     await page.getByTestId('nav-apis').click().catch(() => {})
   }
@@ -136,7 +138,9 @@ export async function finishImportWizard(page: Page, timeout = 60_000): Promise<
   await expect(modal.or(result).first()).toBeVisible({ timeout: 5_000 }).catch(() => {})
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
+    // optional: polling loop: the import modal closing is the success exit
     if (!(await modal.isVisible().catch(() => false))) return
+    // optional: polling loop: the result step (issue #276) only shows for imports with a report
     if (await result.isVisible().catch(() => false)) {
       await page.getByTestId('import-result-done').click()
       break

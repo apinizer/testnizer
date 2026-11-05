@@ -86,11 +86,13 @@ async function importCollection(
     await modal.getByRole('button', { name: /^Import$/i }).click()
     // The report appears only when there is something to report; otherwise the modal closes.
     const report = window.getByTestId('import-result')
+    // optional: the report exists only when something was skipped; the poll waits for report or close
     await expect
       .poll(async () => (await report.isVisible()) || !(await modal.isVisible()), {
         timeout: 30_000,
       })
       .toBe(true)
+    // optional: closing the report is a dismissal; the modal-hidden assertion below is the check
     if (await report.isVisible()) await window.getByTestId('import-result-done').click()
     await expect(modal).toBeHidden({ timeout: 10_000 })
   } finally {

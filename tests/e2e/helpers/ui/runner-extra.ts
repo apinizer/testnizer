@@ -18,6 +18,8 @@ interface IpcResult<T> {
  *  NEEDS HOOK if runner-env-select is not yet in the UI. */
 export async function setRunnerEnvironment(page: Page, envName: string): Promise<void> {
   const sel = page.getByTestId('runner-env-select')
+  // optional: the Runner has no env select of its own (it uses the DB-active
+  // environment, issue #310), so the footer switcher below is the normal path.
   if (await sel.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await sel.selectOption({ label: envName })
     return
@@ -29,6 +31,7 @@ export async function setRunnerEnvironment(page: Page, envName: string): Promise
   await expect(modal).toBeVisible({ timeout: 8_000 })
   await modal.getByRole('button', { name: envName, exact: true }).click()
   const setActive = page.getByTestId('env-set-active')
+  // optional: the button is only rendered while the selected env is not active yet.
   if (await setActive.isVisible().catch(() => false)) await setActive.click()
   await page.keyboard.press('Escape')
   await expect(modal).toBeHidden({ timeout: 5_000 })
@@ -48,10 +51,9 @@ export async function loadIterationDataIpc(
   //
   // For now, assert the testid exists and fill the textarea if present.
   const textarea = page.getByTestId('runner-iteration-data-textarea')
-  if (await textarea.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await textarea.fill(JSON.stringify(rows))
-    await textarea.blur()
-  }
+  await expect(textarea).toBeVisible({ timeout: 3_000 })
+  await textarea.fill(JSON.stringify(rows))
+  await textarea.blur()
   // Mark as "needs hook": runner-iteration-data-textarea on IterationDataPicker
 }
 

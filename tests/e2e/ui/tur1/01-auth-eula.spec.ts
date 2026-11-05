@@ -61,9 +61,15 @@ uiTest.describe('Tur1 — Password lifecycle [MST-002]', () => {
       await win3.waitForLoadState('domcontentloaded')
       await waitForApiBridge(win3)
       await acceptEula(win3).catch(() => {})
-      // Guest path or project home without password prompt.
-      const hasLogin = await win3.locator('input[type="password"]').isVisible().catch(() => false)
-      expect(hasLogin).toBe(false)
+      // Guest path or project home without password prompt. Wait for a rendered
+      // post-login screen first: `isVisible()` alone is false before any render.
+      await expect(
+        win3
+          .getByTestId('login-continue-anonymous')
+          .or(win3.getByTestId('project-home'))
+          .or(win3.getByTestId('nav-apis')),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(win3.locator('input[type="password"]')).toHaveCount(0)
       await app3.close()
     } finally {
       if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true })

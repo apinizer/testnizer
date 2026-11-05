@@ -121,28 +121,28 @@ test.describe('Tur1 — DB corruption recovery [MST-279]', () => {
 
       // Truncate (zero-byte) the database file
       const dbPath = path.join(userDataDir, 'testnizer.db')
-      if (fs.existsSync(dbPath)) {
-        fs.writeFileSync(dbPath, Buffer.alloc(0))
-        for (const ext of ['-wal', '-shm']) {
-          const walPath = dbPath + ext
-          if (fs.existsSync(walPath)) fs.unlinkSync(walPath)
-        }
+      expect(fs.existsSync(dbPath)).toBe(true)
+      fs.writeFileSync(dbPath, Buffer.alloc(0))
+      for (const ext of ['-wal', '-shm']) {
+        const walPath = dbPath + ext
+        // optional: SQLite sidecars exist only while the DB was in WAL mode.
+        if (fs.existsSync(walPath)) fs.unlinkSync(walPath)
       }
 
       const launch2 = await launchApp(userDataDir)
       app = launch2.app
       const win2 = launch2.window
 
-      // App must remain alive
-      let alive = false
-      try {
-        await waitForApiBridge(win2)
-        alive = true
-      } catch {
-        const title = await win2.title().catch(() => '')
-        alive = title.length > 0
-      }
-      expect(alive).toBe(true)
+      // The IPC bridge must come up, and the app must be usable on the empty
+      // file. (A window title proves nothing — it is static.)
+      await waitForApiBridge(win2)
+      const wsRes = await win2.evaluate(async () => {
+        const w = window as Window & {
+          api?: { workspace?: { list: () => Promise<{ success: boolean; data?: unknown[] }> } }
+        }
+        return w.api?.workspace?.list()
+      })
+      expect(wsRes?.success).toBe(true)
     } finally {
       if (app) await app.close().catch(() => {})
       if (fs.existsSync(userDataDir)) fs.rmSync(userDataDir, { recursive: true, force: true })

@@ -1,0 +1,403 @@
+[
+  {
+    "id": "F01",
+    "journey": "Run verdict",
+    "origin": "CLAUDE.md gotcha: Runner verdict parity / issue #16 (idempotent DELETE oneOf)",
+    "file": "src/shared/runner-verdict.ts",
+    "find": "  if (r.assertions.length === 0) return (r.status ?? 0) < 400\n  return true\n",
+    "replace": "  return (r.status ?? 0) < 400\n",
+    "specs": [
+      "tests/e2e/ui/tur1/13-runner-parity.spec.ts",
+      "tests/e2e/ui/tur1/10-runner-scheduler.spec.ts",
+      "tests/e2e/ui/tur1/runner-iterations.spec.ts"
+    ],
+    "expectedFailure": "A request whose test explicitly allows a 4xx/5xx (e.g. oneOf([200,404])) is counted Failed in the Run summary even though its assertions pass."
+  },
+  {
+    "id": "F02",
+    "journey": "Run env var chaining",
+    "origin": "CLAUDE.md: Runner env chaining / mergeScriptUpdates (issue #12 class)",
+    "file": "src/main/ipc/runner.handler.ts",
+    "find": "    scopes.environment[k] = v\n    run.runEnvUpdates[k] = v\n",
+    "replace": "    run.runEnvUpdates[k] = v\n",
+    "specs": [
+      "tests/e2e/ui/flows/tier4-runner-suite.spec.ts",
+      "tests/e2e/ui/tur1/env-advanced.spec.ts",
+      "tests/e2e/ui/flows/tier1-core.spec.ts"
+    ],
+    "expectedFailure": "A producer request's post-script pm.environment.set value is not visible to the next request in the same Run (the consumer sends a literal or empty {{token}}), though it is persisted at the end."
+  },
+  {
+    "id": "F03",
+    "journey": "Critical request stop",
+    "origin": "issue #304 / #315 critical request",
+    "file": "src/main/ipc/runner.handler.ts",
+    "find": "      ((rawResult.skipped ?? 0) === 0 && !endpointDidPass(rawResult)))\n",
+    "replace": "      ((rawResult.skipped ?? 0) === 0 && !!rawResult.error))\n",
+    "specs": [
+      "tests/e2e/ui/52-critical-request-stops-run.spec.ts"
+    ],
+    "expectedFailure": "A Critical request that fails by assertion or a 5xx no longer stops the run; the following requests still execute (only a transport error stops it)."
+  },
+  {
+    "id": "F04",
+    "journey": "{{var}} resolution with initial-value fallback (Send)",
+    "origin": "CLAUDE.md gotcha: value vs initial_value paralelligi (issue #4)",
+    "file": "src/renderer/stores/environment.store.ts",
+    "find": "  return ev.value && ev.value.length > 0 ? ev.value : ev.initialValue || ''\n",
+    "replace": "  return ev.value ?? ''\n",
+    "specs": [
+      "tests/e2e/ui/tur1/01-env-parity.spec.ts",
+      "tests/e2e/ui/flows/tier3-env.spec.ts",
+      "tests/e2e/ui/tur1/13-runner-parity.spec.ts"
+    ],
+    "expectedFailure": "A variable that only has an Initial Value (typical after Postman import) stays as literal {{var}} on Send while Run still resolves it."
+  },
+  {
+    "id": "F05",
+    "journey": "{{var}} resolution with initial-value fallback (Run)",
+    "origin": "CLAUDE.md gotcha: effectiveValue() / issue #4 (Invalid URL on Run)",
+    "file": "src/main/lib/env-vars.ts",
+    "find": "  if (initial.failed) return undecryptable(row.key)\n  return initial.value\n}",
+    "replace": "  if (initial.failed) return undecryptable(row.key)\n  return ''\n}",
+    "specs": [
+      "tests/e2e/ui/tur1/13-runner-parity.spec.ts",
+      "tests/e2e/ui/tur1/01-env-parity.spec.ts"
+    ],
+    "expectedFailure": "An initial-value-only variable resolves on Send but is empty in Run/Mock, so the Run row fails with Invalid URL."
+  },
+  {
+    "id": "F06",
+    "journey": "pm.variables.set in Send",
+    "origin": "CLAUDE.md gotcha: pm.variables.set Send'de de cozulur (varUpdates)",
+    "file": "src/renderer/stores/request.store.ts",
+    "find": "        scriptResult.envUpdates,\n        scriptResult.varUpdates,\n      )\n      // Persist pre-request env/global",
+    "replace": "        scriptResult.envUpdates,\n      )\n      // Persist pre-request env/global",
+    "specs": [
+      "tests/e2e/ui/tur1/02-scripts-deep.spec.ts",
+      "tests/e2e/ui/flows/tier1-core.spec.ts",
+      "tests/e2e/ui/15-request-scripts-tests.spec.ts"
+    ],
+    "expectedFailure": "A pre-request pm.variables.set('x', ...) is resolved in Run but Send ships the literal {{x}} (the first-send Send-vs-Run mismatch)."
+  },
+  {
+    "id": "F07",
+    "journey": "Response stays on its own tab",
+    "origin": "issue #76 / #112 stale tab read",
+    "file": "src/renderer/stores/response.store.ts",
+    "find": "  const target = (tabId?: string | null): string | null =>\n    tabId !== undefined ? tabId : get().activeTabId\n",
+    "replace": "  const target = (_tabId?: string | null): string | null => get().activeTabId\n",
+    "specs": [
+      "tests/e2e/ui/29-tab-request-isolation.spec.ts",
+      "tests/e2e/ui/tur1/protocol-tab-isolation.spec.ts"
+    ],
+    "expectedFailure": "A slow response that arrives after the user switched tabs is painted into the tab they are looking at, and the originating tab stays on its spinner."
+  },
+  {
+    "id": "F08",
+    "journey": "Ctrl+S then close and reopen (endpoint row)",
+    "origin": "CLAUDE.md gotcha: In-place kayit TEK YOL / Ctrl+S path",
+    "file": "src/renderer/lib/save-active-request.ts",
+    "find": "      postScript: req.postScript,\n      assertions: req.assertions ?? [],\n",
+    "replace": "      assertions: req.assertions ?? [],\n",
+    "specs": [
+      "tests/e2e/ui/tur1/04-tree-tab-save.spec.ts",
+      "tests/e2e/ui/tur1/db-endpoint-roundtrip.spec.ts",
+      "tests/e2e/ui/flows/tier1-core.spec.ts",
+      "tests/e2e/ui/flows/tier9-tab-save.spec.ts"
+    ],
+    "expectedFailure": "After Ctrl+S on an endpoint tab, closing and reopening it from the tree comes back without its post-response script."
+  },
+  {
+    "id": "F10",
+    "journey": "History and masking",
+    "origin": "issue #195 / #137 (gateway credential header names)",
+    "file": "src/shared/credential-headers.ts",
+    "find": "  /auth|token|secret|key|password|passwd|cookie|session|signature/i\n",
+    "replace": "  /auth|token|secret|password|passwd|cookie|session|signature/i\n",
+    "specs": [
+      "tests/e2e/ui/tur1/db-history.spec.ts",
+      "tests/e2e/ui/tur1/17-history-advanced.spec.ts",
+      "tests/e2e/ui/tur1/actual-request-tab.spec.ts"
+    ],
+    "expectedFailure": "A header such as X-API-Key / Ocp-Apim-Subscription-Key is stored in clear text in History rows and shown unmasked in Console / run results."
+  },
+  {
+    "id": "F11",
+    "journey": "Secret not written to an exported environment file",
+    "origin": "CLAUDE.md gotcha: Secret degerler bu makinede kalir (issue #177)",
+    "file": "src/renderer/lib/variables-export.ts",
+    "find": "      value: v.secret ? '' : v.value || v.initialValue || '',\n",
+    "replace": "      value: v.value || v.initialValue || '',\n",
+    "specs": [
+      "tests/e2e/ui/tur1/export-env-postman.spec.ts",
+      "tests/e2e/ui/tur1/env-advanced.spec.ts",
+      "tests/e2e/ui/flows/tier3-env.spec.ts"
+    ],
+    "expectedFailure": "Exporting an environment to a Postman file writes the real value of every secret variable in clear text, on any machine."
+  },
+  {
+    "id": "F12",
+    "journey": "Tests panel suite order",
+    "origin": "CLAUDE.md gotcha: Suite yurutme sirasi TEK KAYNAK (issue #94 class)",
+    "file": "src/shared/suite-order.ts",
+    "find": "    out.push(...(itemsOf.get(folderId) ?? []))\n    for (const f of childrenOf.get(folderId) ?? []) {\n      if (seen.has(f.id)) continue\n      seen.add(f.id)\n      walk(f.id)\n    }\n",
+    "replace": "    for (const f of childrenOf.get(folderId) ?? []) {\n      if (seen.has(f.id)) continue\n      seen.add(f.id)\n      walk(f.id)\n    }\n    out.push(...(itemsOf.get(folderId) ?? []))\n",
+    "specs": [
+      "tests/e2e/ui/flows/tier4-runner-suite.spec.ts",
+      "tests/e2e/ui/tur1/runner-suite-crud.spec.ts",
+      "tests/e2e/ui/tur1/export-test-suite.spec.ts"
+    ],
+    "expectedFailure": "In a suite whose root has requests and sub-folders, the sub-folder requests run before the root-level requests (a login/setup request runs after its dependents)."
+  },
+  {
+    "id": "F13",
+    "journey": "OpenAPI import into mock server path",
+    "origin": "issue #318 mock path class",
+    "file": "src/shared/mock-path.ts",
+    "find": "mode: /(^|\\/):[^/]/.test(out) ? 'param' : 'exact' }",
+    "replace": "mode: /^:[^/]/.test(out) ? 'param' : 'exact' }",
+    "specs": [
+      "tests/e2e/ui/60-mock-import-on-create.spec.ts",
+      "tests/e2e/ui/59-tester-journeys-1.6.0.spec.ts",
+      "tests/e2e/ui/51-mock-open-in-request-tab.spec.ts"
+    ],
+    "expectedFailure": "Imported OpenAPI paths such as /pets/{id} are bound in exact mode, so GET /pets/42 on the mock returns 404 instead of the example."
+  },
+  {
+    "id": "F14",
+    "journey": "Mock from a bad file",
+    "origin": "issue #319 (a failed import must not leave a server behind)",
+    "file": "src/renderer/components/mock/new-mock-server.ts",
+    "find": "  if (error !== null || !result) {\n    await window.api.mock.server.delete(id)",
+    "replace": "  if (!result) {\n    await window.api.mock.server.delete(id)",
+    "specs": [
+      "tests/e2e/ui/60-mock-import-on-create.spec.ts"
+    ],
+    "expectedFailure": "Importing an empty or wrong file shows the error but leaves an empty mock server holding the name and port, so a retry says the name is taken."
+  },
+  {
+    "id": "F16",
+    "journey": "WebSocket",
+    "origin": "issue #282 (binary frame / WS parity)",
+    "file": "src/main/protocols/websocket.engine.ts",
+    "find": "    managed.ws.send(Buffer.from(res.bytes), { binary: true })\n",
+    "replace": "    managed.ws.send(message)\n",
+    "specs": [
+      "tests/e2e/ui/39-realtime-parity.spec.ts",
+      "tests/e2e/ui/tur1/ws-advanced.spec.ts"
+    ],
+    "expectedFailure": "A Binary Hex/Base64 message is sent as the literal hex/base64 text instead of the decoded bytes, so the server receives the wrong payload."
+  },
+  {
+    "id": "F17",
+    "journey": "Socket.IO",
+    "origin": "issue #283 (auth/token delivery)",
+    "file": "src/main/protocols/socketio-client.ts",
+    "find": "    auth: opts.auth,\n    extraHeaders: opts.extraHeaders,\n",
+    "replace": "    extraHeaders: opts.extraHeaders,\n",
+    "specs": [
+      "tests/e2e/ui/39-realtime-parity.spec.ts",
+      "tests/e2e/ui/tur1/socketio-advanced.spec.ts"
+    ],
+    "expectedFailure": "On a v3/v4 Socket.IO connection the Bearer/auth token is never sent in the handshake, so an auth-protected namespace rejects the connection."
+  },
+  {
+    "id": "F18",
+    "journey": "MQTT",
+    "origin": "issue #284 (publish options)",
+    "file": "src/main/protocols/mqtt.engine.ts",
+    "find": "      { qos: msg.qos, retain: msg.retain, ...(properties ? { properties } : {}) },\n",
+    "replace": "      { qos: msg.qos, ...(properties ? { properties } : {}) },\n",
+    "specs": [
+      "tests/e2e/ui/45-mqtt.spec.ts"
+    ],
+    "expectedFailure": "Publishing with the Retain flag set does not retain the message on the broker (a later subscriber gets nothing) although the log row shows retain."
+  },
+  {
+    "id": "F19",
+    "journey": "SSE",
+    "origin": "sse.engine.ts comment (Last-Event-ID collision on reconnect)",
+    "file": "src/main/protocols/sse.engine.ts",
+    "find": "        if (headers.has(key)) continue\n        try {\n          headers.set(key, value)",
+    "replace": "        try {\n          headers.set(key, value)",
+    "specs": [
+      "tests/e2e/ui/tur1/sse-advanced.spec.ts"
+    ],
+    "expectedFailure": "After an automatic reconnect the hand-typed Last-Event-ID overrides the library's last received id, so the server replays old events again."
+  },
+  {
+    "id": "F20",
+    "journey": "GraphQL query",
+    "origin": "GraphQL header rows (disabled row still sent)",
+    "file": "src/main/protocols/graphql.engine.ts",
+    "find": "      if (h.enabled && h.key) {\n        result[h.key] = h.value",
+    "replace": "      if (h.key) {\n        result[h.key] = h.value",
+    "specs": [
+      "tests/e2e/ui/tur1/graphql-advanced.spec.ts"
+    ],
+    "expectedFailure": "A GraphQL header row the user unticked is still sent with the query."
+  },
+  {
+    "id": "F23",
+    "journey": "cURL paste",
+    "origin": "issue #278 / #279 cURL import settings",
+    "file": "src/shared/curl/to-request.ts",
+    "find": "rawSettings.timeout = Math.round(seconds * 1000)",
+    "replace": "rawSettings.timeout = Math.round(seconds)",
+    "specs": [
+      "tests/e2e/ui/39-curl-paste.spec.ts",
+      "tests/e2e/ui/tur1/import-formats-2.spec.ts"
+    ],
+    "expectedFailure": "A pasted/imported `curl -m 30` becomes a 30 ms timeout, so the filled request times out immediately."
+  },
+  {
+    "id": "F24",
+    "journey": "Generate Code",
+    "origin": "issue #280 codegen: disabled rows",
+    "file": "src/shared/codegen/url.ts",
+    "find": "p.enabled !== false && p.key && !inUrl.has(p.key)",
+    "replace": "p.key && !inUrl.has(p.key)",
+    "specs": [
+      "tests/e2e/ui/43-codegen-variants.spec.ts"
+    ],
+    "expectedFailure": "Params the user unticked still appear in the generated code snippet's URL."
+  },
+  {
+    "id": "F25",
+    "journey": "Active environment",
+    "origin": "issue #310 (first-environment fallback)",
+    "file": "src/renderer/stores/environment.store.ts",
+    "find": "        const active = hydrated.find((e) => e.is_active)?.id ?? null\n",
+    "replace": "        const active = hydrated.find((e) => e.is_active)?.id ?? hydrated[0]?.id ?? null\n",
+    "specs": [
+      "tests/e2e/ui/tur1/08-env-vars.spec.ts",
+      "tests/e2e/ui/flows/tier3-env.spec.ts",
+      "tests/e2e/ui/tur1/env-advanced.spec.ts"
+    ],
+    "expectedFailure": "After choosing 'No environment' (or on a project with none active) the UI shows and Send uses the first environment while Run/Mock use none."
+  },
+  {
+    "id": "F26",
+    "journey": "Pull into a second project (Clone from remote)",
+    "origin": "CLAUDE.md gotcha: Proje dosyasi import'u = HEDEF projeye rebind",
+    "file": "src/main/ipc/save.handler.ts",
+    "find": "      ...row,\n      project_id: projectId,\n      ...(targetWorkspaceId && 'workspace_id' in row",
+    "replace": "      ...row,\n      ...(targetWorkspaceId && 'workspace_id' in row",
+    "specs": [
+      "tests/e2e/ui/tur1/git-sync.spec.ts",
+      "tests/e2e/ui/tur1/git-advanced.spec.ts"
+    ],
+    "expectedFailure": "Clone from remote then Pull on a different machine/project reports success but the tree stays empty (rows stay bound to the source project id)."
+  },
+  {
+    "id": "F27",
+    "journey": "File outside working directory (relative path escape)",
+    "origin": "issue #290 (relative path must stay inside working directory)",
+    "file": "src/main/lib/working-directory.ts",
+    "find": "  return rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)\n",
+    "replace": "  return rel === '..' || isAbsolute(rel)\n",
+    "specs": [
+      "tests/e2e/ui/63-files-outside-working-directory.spec.ts",
+      "tests/e2e/ui/tur1/06-body-upload.spec.ts"
+    ],
+    "expectedFailure": "A relative form-data/binary path like ../../secret.txt is uploaded instead of refused."
+  },
+  {
+    "id": "F31",
+    "journey": "Leaving the Runner while it runs",
+    "origin": "issue #317 (run state must outlive the tab)",
+    "file": "src/renderer/stores/runner-live.store.ts",
+    "find": "  if (!run || run.running) return null\n",
+    "replace": "  if (!run) return null\n",
+    "specs": [
+      "tests/e2e/ui/59-tester-journeys-1.6.0.spec.ts"
+    ],
+    "expectedFailure": "Coming back to a Runner tab mid-run adopts and deletes the in-flight run, so the results screen is blank and later progress is lost."
+  },
+  {
+    "id": "F33",
+    "journey": "Script permission gate (script-free import)",
+    "origin": "CLAUDE.md gotcha: Script izni, scriptHasCode (default comment script is no script)",
+    "file": "src/shared/script/has-code.ts",
+    "find": "const COMMENT = /\\/\\*[\\s\\S]*?\\*\\/|\\/\\/[^\\n\\r\\u2028\\u2029]*/g",
+    "replace": "const COMMENT = /\\/\\*[\\s\\S]*?\\*\\//g",
+    "specs": [
+      "tests/e2e/ui/64-project-script-trust.spec.ts"
+    ],
+    "expectedFailure": "A script-free project whose scripts hold only the default // comment is treated as having scripts: it is blocked on import and every Send/Run asks for permission."
+  },
+  {
+    "id": "F35",
+    "journey": "Script permission gate (Not now)",
+    "origin": "CLAUDE.md gotcha: Script izni - anything but a clear allow counts as refused",
+    "file": "src/renderer/lib/script-trust-gate.ts",
+    "find": "    return res?.success === true && res.data?.allowed === true\n",
+    "replace": "    return res?.success === true\n",
+    "specs": [
+      "tests/e2e/ui/64-project-script-trust.spec.ts"
+    ],
+    "expectedFailure": "Choosing Not now in the script prompt still sends the request / starts the run and runs the script."
+  },
+  {
+    "id": "F36",
+    "journey": "Proxy on a realtime connection (bypass list)",
+    "origin": "CLAUDE.md gotcha: Proxy TEK SAHIP, bypass HTTP + realtime ortak",
+    "file": "src/main/lib/proxy-tunnel.ts",
+    "find": "  if (isProxyBypassed(setting.bypass, targetUrl)) return null\n",
+    "replace": "",
+    "specs": [
+      "tests/e2e/ui/65-realtime-proxy.spec.ts"
+    ],
+    "expectedFailure": "A WebSocket / Socket.IO / MQTT / SSE host listed under Bypass for hosts still goes through the proxy (and fails when the proxy cannot reach it)."
+  },
+  {
+    "id": "F38",
+    "journey": "File rule: default for absolute paths",
+    "origin": "issue #290 (absolute path read only inside WD unless the setting is on)",
+    "file": "src/main/lib/working-directory.ts",
+    "find": "  if (settings?.readFilesOutsideWorkingDirectory !== true) {\n",
+    "replace": "  if (settings?.readFilesOutsideWorkingDirectory === false) {\n",
+    "specs": [
+      "tests/e2e/ui/63-files-outside-working-directory.spec.ts"
+    ],
+    "expectedFailure": "A request naming an absolute file outside the working directory is sent without the consent setting (the gate only closes when the setting was explicitly turned off)."
+  },
+  {
+    "id": "F40",
+    "journey": "GraphQL subscription (connection_init)",
+    "origin": "GraphQL subscription auth: connection_init payload",
+    "file": "src/main/protocols/graphql-ws.engine.ts",
+    "find": "          ...(options.connectionInit ? { payload: options.connectionInit } : {}),\n",
+    "replace": "",
+    "specs": [
+      "tests/e2e/ui/62-graphql-subscription.spec.ts"
+    ],
+    "expectedFailure": "A subscription to a server that needs credentials in connection_init is refused (4401/4403); the payload field is never sent."
+  },
+  {
+    "id": "F41",
+    "journey": "GraphQL operation select",
+    "origin": "CLAUDE.md gotcha: chooseGraphqlOperation - selected operation runs",
+    "file": "src/shared/graphql-row.ts",
+    "find": "  const chosen = match ?? operations[0]\n",
+    "replace": "  const chosen = operations[0]\n",
+    "specs": [
+      "tests/e2e/ui/62-graphql-subscription.spec.ts",
+      "tests/e2e/ui/58-graphql-tab-close-codegen.spec.ts"
+    ],
+    "expectedFailure": "In a document with several operations the first one always runs / subscribes, whatever the Operation select says."
+  },
+  {
+    "id": "F42",
+    "journey": "gRPC client streaming",
+    "origin": "gRPC End Streaming aggregate",
+    "file": "src/main/protocols/grpc.engine.ts",
+    "find": "        sendStreamEvent(windowId, { streamId, type: 'end', timestamp: Date.now() })\n        activeStreams.delete(streamId)\n      })\n      activeStreams.set(streamId, { streamId, call, windowId })",
+    "replace": "        activeStreams.delete(streamId)\n      })\n      activeStreams.set(streamId, { streamId, call, windowId })",
+    "specs": [
+      "tests/e2e/ui/tur1/grpc-advanced.spec.ts"
+    ],
+    "expectedFailure": "After End Streaming the aggregate response arrives but the stream never reports it ended, so the tab stays in the streaming state."
+  }
+]

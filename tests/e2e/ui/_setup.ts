@@ -202,6 +202,7 @@ export const uiTest = test.extend<
   treeFilterReset: [
     async ({ window }, use) => {
       const search = window.getByTestId('tree-search')
+      // optional: setup hygiene: clears a leftover tree filter from the previous spec
       if (await search.isVisible().catch(() => false)) {
         await search.fill('').catch(() => {})
       }

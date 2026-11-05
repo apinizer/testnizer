@@ -219,6 +219,7 @@ uiTest.describe('Files outside the working directory', () => {
       await expect
         .poll(
           async () =>
+            // optional: whichever panel shows first, the poll still has to reach a 200 body
             (await window.getByTestId('response-status').isVisible())
               ? await window.getByTestId('response-status').innerText()
               : ((await errorPanel.isVisible()) ? await errorPanel.innerText() : ''),

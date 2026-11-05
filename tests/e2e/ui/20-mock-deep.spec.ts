@@ -1,6 +1,7 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import { dismissOverlays, navigateSidebar } from '../helpers/ui/bootstrap'
+import { createMockServer, randomMockPort } from '../helpers/ui/mock-flow'
 
 uiTest.describe('Mock servers (deep)', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -33,13 +34,14 @@ uiTest.describe('Mock servers (deep)', () => {
   })
 
   uiTest('mock server editor tabs', async ({ window }) => {
-    const row = window.getByText(/Mock|Server/i).first()
-    if (await row.isVisible()) {
-      await row.click()
-      for (const tab of ['endpoints', 'settings', 'logs']) {
-        const btn = window.getByTestId(`mock-tab-${tab}`)
-        if (await btn.isVisible()) await btn.click()
-      }
+    // Own server (not whatever an earlier test left behind), so the editor is
+    // guaranteed to be open and a missing tab strip fails the test.
+    await createMockServer(window, `E2E Tabs Mock ${Date.now()}`, randomMockPort())
+    for (const tab of ['endpoints', 'settings', 'logs']) {
+      const btn = window.getByTestId(`mock-tab-${tab}`)
+      await expect(btn).toBeVisible({ timeout: 10_000 })
+      await btn.click()
+      await expect(btn).toHaveAttribute('aria-selected', 'true')
     }
   })
 })

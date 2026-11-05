@@ -100,10 +100,12 @@ export async function setRightPanelOpen(page: Page, open: boolean): Promise<void
   const panel = page.getByTestId('right-panel')
   const rail = page.getByTestId('right-panel-rail')
   if (open) {
+    // optional: already in the requested state; the expect after the click proves the new state
     if (await panel.isVisible().catch(() => false)) return
     await page.getByTestId('right-panel-rail-variables').click()
     await expect(panel).toBeVisible({ timeout: 5_000 })
   } else {
+    // optional: already in the requested state; the expect after the click proves the new state
     if (await rail.isVisible().catch(() => false)) return
     await page.getByTestId('right-panel-collapse').click()
     await expect(rail).toBeVisible({ timeout: 5_000 })

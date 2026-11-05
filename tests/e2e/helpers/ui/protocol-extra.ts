@@ -13,10 +13,8 @@ import type { Page } from '@playwright/test'
  */
 export async function expandSection(page: Page, label: RegExp | string): Promise<void> {
   const btn = page.getByRole('button', { name: label }).first()
-  if (await btn.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await btn.click()
-    await page.waitForTimeout(150)
-  }
+  await btn.click({ timeout: 3_000 })
+  await page.waitForTimeout(150)
 }
 
 /**
@@ -32,16 +30,10 @@ export async function addKvRow(
   await page.getByRole('button', { name: addLabel }).first().click()
   const rows = page.locator('[data-testid^="kv-row-"]')
   const count = await rows.count()
-  if (count === 0) return
+  if (count === 0) throw new Error(`addKvRow: no key/value row after clicking ${String(addLabel)}`)
   const row = rows.nth(count - 1)
-  const keyInput = row.getByTestId('kv-key').locator('input')
-  if (await keyInput.isVisible().catch(() => false)) {
-    await keyInput.fill(key)
-  }
-  const valueInput = row.getByTestId('kv-value').locator('input')
-  if (await valueInput.isVisible().catch(() => false)) {
-    await valueInput.fill(value)
-  }
+  await row.getByTestId('kv-key').locator('input').fill(key)
+  await row.getByTestId('kv-value').locator('input').fill(value)
 }
 
 /**
@@ -78,6 +70,7 @@ export async function waitForGrpcProtoLoad(page: Page, timeout = 20_000): Promis
 export async function disconnectIfConnected(page: Page): Promise<void> {
   for (const testId of ['ws-disconnect', 'sse-disconnect']) {
     const btn = page.getByTestId(testId)
+    // optional: cleanup helper — only disconnects connections that are open.
     if (await btn.isVisible({ timeout: 500 }).catch(() => false)) {
       await btn.click()
       await page.waitForTimeout(300)
@@ -87,6 +80,7 @@ export async function disconnectIfConnected(page: Page): Promise<void> {
   const disconnectBtns = page.getByRole('button', { name: /^Disconnect$/i })
   const count = await disconnectBtns.count()
   for (let i = 0; i < count; i++) {
+    // optional: cleanup helper — skips buttons that are not on screen.
     if (await disconnectBtns.nth(i).isVisible().catch(() => false)) {
       await disconnectBtns.nth(i).click()
       await page.waitForTimeout(300)

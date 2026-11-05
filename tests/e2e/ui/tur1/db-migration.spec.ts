@@ -295,6 +295,7 @@ test.describe('Tur1 — DB schema migration forward [MST-281]', () => {
 
       // Accept EULA if shown
       const eulaGate = window.getByTestId('eula-gate')
+      // optional: the EULA gate only shows when the seeded profile has no consent
       if (await eulaGate.isVisible().catch(() => false)) {
         await window.getByTestId('eula-accept-checkbox').check()
         await window.getByTestId('eula-accept-btn').click()

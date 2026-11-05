@@ -51,6 +51,7 @@ uiTest.describe('Tur1 — Protocol tab isolation + error i18n [MST-156, MST-159]
       for (let i = 0; i < n; i++) {
         await tabs.nth(i).click()
         await window.waitForTimeout(250)
+        // optional: search loop over open tabs for the one showing the wanted editor; it throws when none does
         if (await window.getByTestId(probe).isVisible().catch(() => false)) return
       }
       throw new Error(`no tab showed the ${wantEditor} editor (${probe})`)
@@ -97,15 +98,11 @@ uiTest.describe('Tur1 — Protocol tab isolation + error i18n [MST-156, MST-159]
     // inside it, so an .or() over both trips strict mode).
     await expect(window.getByTestId('response-error').first()).toBeVisible({ timeout: 15_000 })
 
-    // The message must not look like a raw JS stack trace
-    const errorText = await window
-      .getByText(/connection refused|network error|ECONNREFUSED|unreachable|bağlantı|hata/i)
-      .first()
-      .textContent()
-      .catch(() => 'ok')
-    if (errorText) {
-      // Should not contain raw "at Object." stack frames
-      expect(errorText).not.toMatch(/at Object\.|at Function\.\s/)
-    }
+    // The message is the classified, human-readable one (refused → "Connection
+    // refused" / "Bağlantı reddedildi"), inside the error pane, and not a raw
+    // JS stack trace.
+    const errorPane = window.getByTestId('response-error').first()
+    await expect(errorPane).toContainText(/connection refused|bağlantı reddedildi/i)
+    await expect(errorPane).not.toContainText(/at Object\.|at Function\.\s/)
   })
 })

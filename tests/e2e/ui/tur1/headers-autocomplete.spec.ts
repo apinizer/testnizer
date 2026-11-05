@@ -54,6 +54,7 @@ uiTest.describe('Tur1 — Headers autocomplete [MST-301, MST-302, MST-303]', () 
     // Ensure at least one editable row exists (the first row may be empty
     // already, but adding is idempotent for the test's purposes).
     const firstRow = window.getByTestId('kv-row-0')
+    // optional: a fresh request may or may not have an empty first row; the fill below fails if there is none
     if (!(await firstRow.isVisible().catch(() => false))) {
       await window.getByTestId('kv-add-row').click()
     }
@@ -87,6 +88,7 @@ uiTest.describe('Tur1 — Headers autocomplete [MST-301, MST-302, MST-303]', () 
     await window.getByTestId('req-tab-headers').click()
 
     const firstRow = window.getByTestId('kv-row-0')
+    // optional: a fresh request may or may not have an empty first row; the fill below fails if there is none
     if (!(await firstRow.isVisible().catch(() => false))) {
       await window.getByTestId('kv-add-row').click()
     }
@@ -148,6 +150,7 @@ uiTest.describe('Tur1 — Headers autocomplete [MST-301, MST-302, MST-303]', () 
     await window.getByTestId('req-tab-headers').click()
 
     const firstRow = window.getByTestId('kv-row-0')
+    // optional: a fresh request may or may not have an empty first row; the fill below fails if there is none
     if (!(await firstRow.isVisible().catch(() => false))) {
       await window.getByTestId('kv-add-row').click()
     }

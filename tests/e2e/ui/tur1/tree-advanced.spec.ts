@@ -83,7 +83,10 @@ uiTest.describe('Tur1 — Tree Advanced [MST-018, MST-020, MST-024, MST-027, MST
     // Delete the folder via context menu.
     await treeSearch(window, folderName)
     await treeContextAction(window, folderName, /Delete/i)
-    // Folder delete may show a confirmation dialog (typed or simple button).
+    // Folder delete shows a confirmation dialog (typed or simple button). Wait
+    // for it first, so the "does it want a typed word?" probe cannot run early.
+    await expect(window.getByTestId('delete-confirm-btn')).toBeVisible({ timeout: 8_000 })
+    // optional: the typed-confirmation input only exists for folders with children.
     const typed = await window.getByTestId('delete-confirm-input').isVisible().catch(() => false)
     await confirmDelete(window, typed)
 

@@ -151,24 +151,14 @@ uiTest.describe('Tur1 — WSSE Signature [MST-108]', () => {
     await wsSecBtn.click()
 
     const enableCheckbox = window.getByRole('checkbox', { name: /Enable WS-Security/i })
-    if (!(await enableCheckbox.isChecked())) {
-      await enableCheckbox.check()
-    }
+    await enableCheckbox.check()
 
-    // Enable Sign mode — label renders "sign".
-    const signLabel = window.getByText(/^sign$/i).first()
-    if (await signLabel.isVisible().catch(() => false)) {
-      const signCb = signLabel.locator('xpath=ancestor::label').getByRole('checkbox')
-      if (await signCb.isVisible().catch(() => false) && !(await signCb.isChecked())) {
-        await signCb.check()
-      }
-    }
+    // Enable Sign mode — the mode checkbox's label renders "sign". check() is
+    // a no-op when it is already ticked.
+    await window.getByRole('checkbox', { name: /^sign$/i }).check()
 
-    // Certificate PEM textarea should appear
-    const certHint = window.getByPlaceholder(/BEGIN CERTIFICATE/i)
-    const keyHint = window.getByPlaceholder(/BEGIN PRIVATE KEY/i)
-    const certVisible = await certHint.isVisible().catch(() => false)
-    const keyVisible = await keyHint.isVisible().catch(() => false)
-    expect(certVisible || keyVisible).toBe(true)
+    // Certificate and private-key PEM textareas must both appear.
+    await expect(window.getByPlaceholder(/BEGIN CERTIFICATE/i)).toBeVisible({ timeout: 8_000 })
+    await expect(window.getByPlaceholder(/BEGIN PRIVATE KEY/i)).toBeVisible({ timeout: 8_000 })
   })
 })

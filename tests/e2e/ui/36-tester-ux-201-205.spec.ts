@@ -103,6 +103,7 @@ uiTest.describe('tester UX findings #201 / #202 / #204 / #205', () => {
         // `ui.leftPanelCollapsed` is persisted and the instance is shared: a
         // collapsed panel would hide the tree from every spec after this one.
         // A page icon re-expands it.
+        // optional: cleanup in finally: re-expand the left panel if the test left it collapsed
         if (!(await leftPanel.isVisible().catch(() => false))) {
           await window.getByTestId('nav-apis').click()
         }

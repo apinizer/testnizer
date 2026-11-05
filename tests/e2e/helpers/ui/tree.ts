@@ -9,6 +9,7 @@ export async function treeSearch(page: Page, query: string): Promise<void> {
 /** Clear the tree search filter — stale filters hide nodes from later tests. */
 export async function treeClearSearch(page: Page): Promise<void> {
   const search = page.getByTestId('tree-search')
+  // optional: cleanup: clears the tree filter when the search box is on screen
   if (await search.isVisible().catch(() => false)) {
     await search.fill('')
   }

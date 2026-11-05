@@ -67,6 +67,7 @@ uiTest.describe('Issue #278 — paste a cURL command into the URL bar', () => {
   // The shared Electron instance outlives a test; do not leave a toast for the next one.
   uiTest.afterEach(async ({ window }) => {
     const close = window.getByTestId('curl-paste-close')
+    // optional: cleanup: dismiss the paste toast if the test left it open (the count check below proves it is gone)
     if (await close.isVisible().catch(() => false)) await close.click()
     await expect(window.getByTestId('curl-paste-toast')).toHaveCount(0)
   })

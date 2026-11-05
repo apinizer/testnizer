@@ -123,14 +123,17 @@ uiTest.describe('Security page', () => {
   uiTest('SAML builds an assertion from the form', async ({ window }) => {
     await window.getByText('SAML', { exact: false }).first().click()
     await expect(window.getByTestId('workbench')).toBeVisible()
-    const build = window.getByRole('button', { name: /Build|Oluştur/i }).first()
-    if (await build.isVisible().catch(() => false)) {
-      await build.click()
-      // A built assertion is XML carrying the SAML namespace — not an error.
-      await expect(window.getByText(/Assertion|saml2?:|urn:oasis/i).first()).toBeVisible({
-        timeout: 8_000,
-      })
-    }
+    // Two "Build" buttons exist (mode tab + toolbar action); the action sits in
+    // the tool's toolbar, above the panes, so it comes first in the DOM.
+    const build = window.getByRole('button', { name: /^(Build|Oluştur)$/ }).first()
+    await expect(build).toBeVisible({ timeout: 8_000 })
+    await build.click()
+    // The status footer reports the built document (`tools.saml.built`) and the
+    // output pane carries SAML XML — not an error.
+    await expect(window.getByText(/Built — ID|Oluşturuldu/).first()).toBeVisible({ timeout: 8_000 })
+    await expect(window.locator('.monaco-editor .view-lines').last()).toContainText(/saml/i, {
+      timeout: 8_000,
+    })
     await expectNoErrorBoundary(window)
   })
 

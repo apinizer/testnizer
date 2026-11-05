@@ -26,6 +26,7 @@ export async function createTestSuite(page: Page, name: string): Promise<void> {
   const headerBtn = page.getByTitle(/New Test Suite|Yeni Test Paketi/i)
   const createBtn = page.getByRole('button', { name: /Create.*suite|suite.*create/i })
   await expect(headerBtn.or(createBtn).first()).toBeVisible({ timeout: 15_000 })
+  // optional: header button vs empty-state button: whichever is on screen creates the suite, the name check below proves it
   if (await headerBtn.first().isVisible().catch(() => false)) {
     await headerBtn.first().click()
   } else {
@@ -80,6 +81,7 @@ export async function addSuiteItem(page: Page, suiteName: string): Promise<void>
   // Fresh suite items open on the welcome surface (no UrlBar) until a protocol
   // tile is picked — same guard as Workbench `isNewEmptyTab`.
   const httpTile = page.getByText(/^HTTP$/).first()
+  // optional: fresh suite items open on the welcome surface; url-input is awaited right after
   if (await httpTile.isVisible({ timeout: 3_000 }).catch(() => false)) {
     await httpTile.click()
   }

@@ -142,6 +142,7 @@ uiTest.describe('Tur1 — AI mock servers [issue #221]', () => {
     for (const s of created) {
       const row = aiRow(window, s.name)
       try {
+        // optional: cleanup in afterEach: stop the server only if it is running; the delete and the count check follow
         if (await row.getByTestId('mock-ai-stop').isVisible()) {
           await row.getByTestId('mock-ai-stop').click()
           await expect(row.getByTestId('mock-ai-start')).toBeVisible({ timeout: 10_000 })

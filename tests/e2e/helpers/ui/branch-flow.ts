@@ -20,6 +20,7 @@ export async function switchBranch(page: Page, name: string): Promise<void> {
   // an already-open state — so clicking once would close it. Open it explicitly:
   // click, and if the item list didn't appear, click again to toggle it open.
   await page.getByTestId('branch-pill').click()
+  // optional: the pill toggles the dropdown; a second click is only needed when the first closed it, and the expect below proves it opened
   if (!(await item.first().isVisible().catch(() => false))) {
     await page.getByTestId('branch-pill').click()
   }
@@ -37,6 +38,7 @@ export async function switchBranch(page: Page, name: string): Promise<void> {
 export async function switchToDefaultBranch(page: Page): Promise<void> {
   await page.keyboard.press('Escape').catch(() => {})
   const pill = page.getByTestId('branch-pill')
+  // optional: best-effort cleanup: no branch pill means the project has no git state to restore
   if (!(await pill.isVisible().catch(() => false))) return
   if (((await pill.textContent()) ?? '').includes('main')) return
   await switchBranch(page, 'main')

@@ -91,6 +91,8 @@ uiTest.describe('The proxy setting on realtime connections', () => {
 
   uiTest('MQTT connects through it', async ({ window }) => {
     const { mqtt } = getTestServerUrls()
+    // A broker that never started is a skip locally, a failure on CI (silent green otherwise).
+    if (!mqtt && process.env.CI) throw new Error('MQTT test broker did not start on CI')
     uiTest.skip(!mqtt, 'The MQTT broker did not start')
     await openNewDropdownItem(window, /MQTT/)
     await window.getByTestId('mqtt-url').fill(mqtt ?? '')

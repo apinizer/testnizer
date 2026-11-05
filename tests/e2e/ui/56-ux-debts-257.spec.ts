@@ -68,6 +68,7 @@ uiTest.describe('Issue #257 — UX debts', () => {
   uiTest(
     'right panel: the user choice is persisted as ui.rightPanelCollapsed',
     async ({ window }) => {
+      // optional: records the starting panel state so the finally block can restore it
       const wasOpen = await window
         .getByTestId('right-panel')
         .isVisible()

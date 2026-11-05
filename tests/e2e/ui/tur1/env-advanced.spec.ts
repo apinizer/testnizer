@@ -73,6 +73,7 @@ uiTest.describe('Tur1 — Env Advanced [MST-063, MST-064, MST-066, MST-068]', ()
 
     // Try to insert an example script first (to wire up the editor), then type.
     const insertExample = window.getByRole('button', { name: /Insert example/i })
+    // optional: the example button is only a convenience; the script is replaced right after
     if (await insertExample.isVisible().catch(() => false)) await insertExample.click()
 
     // The post-response (Tests) script editor wrapper is data-testid="tests-post-script".

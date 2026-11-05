@@ -22,6 +22,7 @@ import {
   navigateSidebar,
   openNewDropdownItem,
 } from '../../helpers/ui/bootstrap'
+import { localHttpBin } from '../../helpers/test-servers'
 
 
 async function getFreePort(): Promise<number> {
@@ -220,16 +221,18 @@ uiTest.describe('Tur1 — SSE advanced [MST-123..126]', () => {
 
   // ── MST-126: cancelConnect cleanup ────────────────────────────────────────
   uiTest('MST-126 cancel during connecting cleans up SSE state', async ({ window }) => {
-    // Point to an address that won't respond to keep "connecting" state
+    // The echo server holds /delay/10 open for 10 s before answering, so the
+    // connection stays in the "connecting" state long enough to cancel it.
+    // (A refused port such as 127.0.0.1:1 fails instantly: the Cancel button
+    // never lives long enough, and the test would prove nothing.)
     await openNewDropdownItem(window, /SSE/i)
-    await window.getByTestId('sse-url').fill('http://127.0.0.1:1/events')
+    await window.getByTestId('sse-url').fill(`${localHttpBin()}/delay/10`)
     await window.getByTestId('sse-connect').click()
 
-    // Cancel button appears in "connecting" state
-    const cancelBtn = window.getByRole('button', { name: /Cancel/i })
-    if (await cancelBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await cancelBtn.click()
-    }
+    // Cancel (same button, `sse-cancel` while connecting) must be there.
+    const cancelBtn = window.getByTestId('sse-cancel')
+    await expect(cancelBtn).toBeVisible({ timeout: 5_000 })
+    await cancelBtn.click()
 
     // Must return to disconnected with Connect button visible
     await expect(window.getByTestId('sse-connect')).toBeVisible({ timeout: 10_000 })

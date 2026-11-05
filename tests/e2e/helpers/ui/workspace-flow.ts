@@ -6,6 +6,7 @@ import { expect, type Page } from '@playwright/test'
  * (with header-home) isn't rendered — so only click header-home when it exists,
  * otherwise we're already there. */
 export async function goToProjectHome(page: Page): Promise<void> {
+  // optional: already on Project Home when no project is active; project-home is asserted right after
   const alreadyHome = await page.getByTestId('project-home').isVisible().catch(() => false)
   if (!alreadyHome) {
     await page.getByTestId('header-home').click()

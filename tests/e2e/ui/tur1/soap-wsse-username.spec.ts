@@ -110,16 +110,10 @@ uiTest.describe('Tur1 — WSSE UsernameToken [MST-107]', () => {
 
     // Enable WS-Security
     const enableCheckbox = window.getByRole('checkbox', { name: /Enable WS-Security/i })
-    if (!(await enableCheckbox.isChecked())) {
-      await enableCheckbox.check()
-    }
+    await enableCheckbox.check()
 
     // Enable username-token mode — the label renders "username token" (space).
-    const utLabel = window.getByText(/^username token$/i).first()
-    const utCheckbox = utLabel.locator('xpath=ancestor::label').getByRole('checkbox')
-    if (await utCheckbox.isVisible().catch(() => false)) {
-      if (!(await utCheckbox.isChecked())) await utCheckbox.check()
-    }
+    await window.getByRole('checkbox', { name: /^username token$/i }).check()
 
     // Fill credentials
     await window.getByPlaceholder('Enter username').fill('soap-user')

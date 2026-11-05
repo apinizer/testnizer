@@ -124,6 +124,7 @@ async function reenterProject(window: Page): Promise<void> {
 async function openBranchMenu(window: Page): Promise<void> {
   const pill = window.getByTestId('branch-pill')
   const commit = window.getByTestId('branch-commit')
+  // optional: helper reopens the branch menu fresh: closes it first if it was already open
   if (await commit.isVisible().catch(() => false)) {
     await pill.click()
     await expect(commit).toBeHidden()
@@ -134,6 +135,7 @@ async function openBranchMenu(window: Page): Promise<void> {
 
 async function closeBranchMenu(window: Page): Promise<void> {
   if (
+    // optional: cleanup: close the branch menu only if it is open
     await window
       .getByTestId('branch-commit')
       .isVisible()

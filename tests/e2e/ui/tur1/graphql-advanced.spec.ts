@@ -115,23 +115,26 @@ uiTest.describe('Tur1 — GraphQL advanced [MST-128..131]', () => {
         'graphql-query-editor',
         'mutation CreateItem($name: String!) { createItem(name: $name) { id name } }',
       )
-      // Set variables
-      const varsSectionBtn = window.getByRole('button', { name: /Variables/i })
-      if (await varsSectionBtn.isVisible().catch(() => false)) {
-        await varsSectionBtn.click()
-      }
-      // Variables area — Monaco in variables section
-      await window
-        .locator('.monaco-editor')
-        .nth(1)
-        .click()
-        .catch(() => {})
-      await window.keyboard.press('Control+KeyA')
+      // Set variables. The Variables panel is expanded by default — do NOT click
+      // its toggle (that collapses it). The variables editor is the 2nd Monaco
+      // (query is the 1st), same as MST-129.
+      await window.locator('.monaco-editor').nth(1).click()
+      const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+      await window.keyboard.press(`${mod}+KeyA`)
+      await window.keyboard.press('Backspace')
       await window.keyboard.insertText('{"name":"MST128"}')
+      // Commit the Monaco onChange before running.
+      await window.getByTestId('graphql-url').click()
       await window.waitForTimeout(200)
 
       await window.getByTestId('graphql-run').click()
-      await expect(window.getByText(/MST128|createItem/i).first()).toBeVisible({ timeout: 15_000 })
+      // The server echoes `variables.name` back inside createItem. Scope to the
+      // response body (last visible Monaco): the query/variables editors above
+      // contain "createItem" and "MST128" too, so an unscoped getByText passes
+      // without any response.
+      const responseBody = window.locator('.monaco-editor:visible').last()
+      await expect(responseBody).toContainText('"createItem"', { timeout: 15_000 })
+      await expect(responseBody).toContainText('"MST128"')
     } finally {
       await server.close()
     }
@@ -182,7 +185,11 @@ uiTest.describe('Tur1 — GraphQL advanced [MST-128..131]', () => {
     await window.waitForTimeout(300)
 
     await window.getByTestId('graphql-run').click()
-    await expect(window.getByText(/MST129/i).first()).toBeVisible({ timeout: 15_000 })
+    // `hello(name: $who)` answers "Hello MST129". The variables editor holds
+    // "MST129" as well, so match the greeting inside the response body only.
+    await expect(window.locator('.monaco-editor:visible').last()).toContainText('Hello MST129', {
+      timeout: 15_000,
+    })
   })
 
   // ── MST-130: Auth header ──────────────────────────────────────────────────
@@ -202,8 +209,12 @@ uiTest.describe('Tur1 — GraphQL advanced [MST-128..131]', () => {
 
     await fillMonaco(window, 'graphql-query-editor', '{ hello(name: "authtest") }')
     await window.getByTestId('graphql-run').click()
-    // Server accepts the request and returns data (auth not validated by test server)
-    await expect(window.getByText(/authtest|hello/i).first()).toBeVisible({ timeout: 15_000 })
+    // Server accepts the request and returns data (auth not validated by test
+    // server). The query text itself contains "authtest", so look for the
+    // answer in the response body.
+    await expect(window.locator('.monaco-editor:visible').last()).toContainText('Hello authtest', {
+      timeout: 15_000,
+    })
   })
 
   // ── MST-131: Subscription query toggles the action button ─────────────────

@@ -48,6 +48,7 @@ uiTest.describe('Tur1 — Tree / Tab / Save [MST-017..022]', () => {
     await expect
       .poll(async () => {
         await treeSearch(window, name)
+        // optional: poll body of expect.poll: the tree filter is retyped until the node renders
         return window.getByTestId('tree-node').filter({ hasText: name }).first().isVisible().catch(() => false)
       })
       .toBe(true)
