@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Play, Search, ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
+import { Play, Search, ChevronDown, ChevronRight, Settings2, Unplug } from 'lucide-react'
 import { useGraphQLStore } from '../../stores/graphql.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
@@ -96,7 +96,11 @@ export default function GraphQLQueryPane() {
               isSubscribing ? 'bg-[var(--red)]' : 'bg-[var(--accent)]'
             }`}
           >
-            <Play size={13} aria-hidden="true" />
+            {isSubscribing ? (
+              <Unplug size={13} aria-hidden="true" />
+            ) : (
+              <Play size={13} aria-hidden="true" />
+            )}
             {isConnected
               ? t('graphql.unsubscribe')
               : isSubscribing
