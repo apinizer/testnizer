@@ -181,13 +181,47 @@ describe('subscribe', () => {
     expect(state().subscriptionState).toBe('disconnected')
   })
 
-  it('a custom proxy is not used, and the log says so', async () => {
-    settings['project.p.settings'] = {
-      proxy: { mode: 'custom', host: 'proxy.test', port: 8080 },
-    }
-    await state().subscribe()
-    expect(state().subscriptionEvents.map((e) => e.kind)).toEqual(['notice'])
-    expect(state().subscriptionEvents[0].data).toMatch(/proxy is not used/)
+  describe('the proxy, by the chain HTTP Send uses', () => {
+    const custom = (host: string) => ({
+      mode: 'custom' as const,
+      host,
+      port: 8080,
+      auth: { username: 'u', password: 'p' },
+    })
+
+    it('the project proxy wins over the app proxy', async () => {
+      settings['project.p.settings'] = { proxy: custom('project.test') }
+      settings.proxy = custom('app.test')
+      await state().subscribe()
+      expect(sent().proxy).toEqual(custom('project.test'))
+    })
+
+    it('the app proxy applies when the project configures none', async () => {
+      // `system`: what every project saved before issue #254 holds.
+      settings['project.p.settings'] = { proxy: { mode: 'system' } }
+      settings.proxy = custom('app.test')
+      await state().subscribe()
+      expect(sent().proxy).toEqual(custom('app.test'))
+    })
+
+    it('"No proxy" on the project reaches main', async () => {
+      settings['project.p.settings'] = { proxy: { mode: 'none' } }
+      settings.proxy = custom('app.test')
+      await state().subscribe()
+      expect(sent().proxy).toEqual({ mode: 'none' })
+    })
+
+    it('nothing configured sends no proxy, and no row says otherwise', async () => {
+      await state().subscribe()
+      expect(sent()).not.toHaveProperty('proxy')
+      expect(state().subscriptionEvents).toEqual([])
+    })
+
+    it('a custom proxy adds no row to the log', async () => {
+      settings['project.p.settings'] = { proxy: custom('project.test') }
+      await state().subscribe()
+      expect(state().subscriptionEvents).toEqual([])
+    })
   })
 })
 

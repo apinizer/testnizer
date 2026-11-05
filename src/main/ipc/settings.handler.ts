@@ -8,6 +8,10 @@ import {
   splitProjectSettings,
   writeSharedProjectSettings,
 } from '../lib/project-settings'
+import {
+  isProjectScriptBlocksKey,
+  PROJECT_SCRIPT_BLOCKS_STORE_KEY,
+} from '../lib/project-script-trust'
 
 // Field names that must never be written in plaintext. When writing/reading
 // structured settings values we transparently run safeStorage encryption
@@ -93,6 +97,8 @@ function readSetting(store: StoreInstance, key: string): unknown {
 }
 
 function writeSetting(store: StoreInstance, key: string, value: unknown): void {
+  // Only main decides whether a project's scripts run (`lib/project-script-trust.ts`).
+  if (isProjectScriptBlocksKey(key)) throw new Error(`Setting "${key}" cannot be written here`)
   const projectId = projectIdOfSettingsKey(key)
   if (!projectId) {
     store.set(key, transformSecrets(value, 'encrypt'))
@@ -173,7 +179,10 @@ export function registerSettingsHandlers(): void {
   ipcMain.handle('settings:reset', async () => {
     try {
       const store = await getStore()
+      // A reset of preferences is not an Allow for every blocked project.
+      const blocks = store.get(PROJECT_SCRIPT_BLOCKS_STORE_KEY)
       store.clear()
+      if (blocks !== undefined) store.set(PROJECT_SCRIPT_BLOCKS_STORE_KEY, blocks)
       return { success: true, data: store.store }
     } catch (e) {
       return { success: false, error: (e as Error).message }

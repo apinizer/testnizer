@@ -37,11 +37,13 @@ export async function startGraphqlServer(port: number): Promise<GraphqlServer> {
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
         query?: string
         variables?: Record<string, unknown>
+        operationName?: string
       }
       const result = await graphql({
         schema,
         source: body.query ?? '',
         variableValues: body.variables,
+        operationName: body.operationName,
         rootValue: root,
       })
       const payload = JSON.stringify(result)

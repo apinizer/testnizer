@@ -9,6 +9,7 @@
  * project imported earlier, base environment as an active environment) it
  * goes to that environment, exactly as before.
  */
+import { allowScriptTrustBridge } from '../helpers/script-trust-bridge'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRequestStore } from '../../src/renderer/stores/request.store'
 import { useResponseStore } from '../../src/renderer/stores/response.store'
@@ -23,6 +24,7 @@ let sentUrls: string[] = []
 function installMockApi(): void {
   let n = 0
   const api = {
+    projectTrust: allowScriptTrustBridge,
     request: {
       send: vi.fn(async (opts: { url: string }) => {
         sentUrls.push(opts.url)

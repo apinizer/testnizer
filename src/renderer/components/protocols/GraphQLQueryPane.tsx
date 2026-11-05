@@ -10,7 +10,8 @@ import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { scrubJsonCredentials } from '../../lib/credential-text'
 import GraphQLSettingsSection from './GraphQLSettingsSection'
 import GraphQLConnectionInitSection from './GraphQLConnectionInitSection'
-import { isSubscriptionQuery } from '../../../shared/graphql-row'
+import GraphQLOperationSelect from './GraphQLOperationSelect'
+import { chooseGraphqlOperation } from '../../../shared/graphql-row'
 
 export default function GraphQLQueryPane() {
   const { t, locale } = useTranslation()
@@ -18,6 +19,7 @@ export default function GraphQLQueryPane() {
   const setUrl = useGraphQLStore((s) => s.setUrl)
   const query = useGraphQLStore((s) => s.query)
   const setQuery = useGraphQLStore((s) => s.setQuery)
+  const operationName = useGraphQLStore((s) => s.operationName)
   const variables = useGraphQLStore((s) => s.variables)
   const setVariables = useGraphQLStore((s) => s.setVariables)
   const headers = useGraphQLStore((s) => s.headers)
@@ -39,7 +41,8 @@ export default function GraphQLQueryPane() {
   const isConnected = subscriptionState === 'connected'
   const isSubscribing = isConnected || subscriptionState === 'connecting'
   // A running subscription keeps its control even while the query is being edited.
-  const isSubscription = isSubscriptionQuery(query) || isSubscribing
+  const isSubscription =
+    chooseGraphqlOperation(query, operationName).isSubscription || isSubscribing
 
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim()).length
 
@@ -61,6 +64,7 @@ export default function GraphQLQueryPane() {
             {isConnected ? t('graphql.subscribed') : t('graphql.subscription')}
           </span>
         )}
+        <GraphQLOperationSelect />
       </div>
 
       {/* URL bar */}

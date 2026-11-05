@@ -38,6 +38,7 @@ import { protocolChipLabel } from '../../lib/protocol-chip'
 import RequestBadge from '../shared/RequestBadge'
 import { useTranslation } from '../../lib/i18n'
 import { toast } from '../../lib/toast'
+import { exportNotesTitle } from '../../lib/project-export'
 import { formatExportSkipped } from '../../lib/export-skipped'
 import { openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { releaseTabsForDeletedRows, suiteFolderItemIds } from '../../lib/orphan-tab'
@@ -550,7 +551,7 @@ export default function TestsPanel() {
           if (msg) toast.warning(msg)
           const notes = result.data?.notes ?? []
           if (notes.length > 0) {
-            toast.warning(t('export.v3Notes').replace('{count}', String(notes.length)), {
+            toast.warning(exportNotesTitle(format, notes.length), {
               description: notes.slice(0, 3).join('\n') + (notes.length > 3 ? '\n…' : ''),
             })
           }

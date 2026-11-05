@@ -1,6 +1,7 @@
 import { registerRequestHandlers } from './request.handler'
 import { registerWorkspaceHandlers } from './workspace.handler'
 import { registerProjectHandlers } from './project.handler'
+import { registerProjectTrustHandlers } from './project-trust.handler'
 import { registerEndpointHandlers } from './endpoint.handler'
 import { registerEnvironmentHandlers } from './environment.handler'
 import { registerHistoryHandlers } from './history.handler'
@@ -47,6 +48,7 @@ export function registerAllHandlers(): void {
   registerRequestHandlers()
   registerWorkspaceHandlers()
   registerProjectHandlers()
+  registerProjectTrustHandlers()
   registerEndpointHandlers()
   registerEnvironmentHandlers()
   registerHistoryHandlers()

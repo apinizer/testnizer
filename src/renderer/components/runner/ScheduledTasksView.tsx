@@ -22,6 +22,7 @@ import NewRunButton from './NewRunButton'
 import RunReportExportButtons from './RunReportExportButtons'
 import { displayRunEnvironment, displayTaskEnvironment } from '../../lib/run-environment-label'
 import { useTranslation } from '../../lib/i18n'
+import { runScriptsAllowed } from '../../lib/script-trust-gate'
 import { formatDate, formatTime } from '../../lib/format-datetime'
 
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
@@ -47,6 +48,9 @@ interface ScheduledTask {
   schedule_days: string | null
   schedule_cron: string | null
   suite_id: string | null
+  run_pre_script?: string | null
+  run_post_script?: string | null
+  run_fail_script?: string | null
   /** A run is in flight: main's answer, so it survives leaving this tab. */
   running?: boolean
 }
@@ -202,11 +206,26 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
 
   const runTaskNow = useCallback(
     async (taskId: string) => {
+      // Before the first await: it is what stops a second click.
       setTasks((list) => list.map((t) => (t.id === taskId ? { ...t, running: true } : t)))
+      // Run now is interactive, unlike a schedule's tick: it may ask.
+      const task = tasks.find((x) => x.id === taskId)
+      if (
+        task &&
+        !(await runScriptsAllowed({
+          projectId: task.project_id,
+          runPreScript: task.run_pre_script ?? undefined,
+          runPostScript: task.run_post_script ?? undefined,
+          runFailScript: task.run_fail_script ?? undefined,
+        }))
+      ) {
+        setTasks((list) => list.map((t) => (t.id === taskId ? { ...t, running: false } : t)))
+        return
+      }
       await window.api?.scheduler?.runNow?.(taskId)
       loadTasks()
     },
-    [loadTasks],
+    [loadTasks, tasks],
   )
 
   const toggleTask = useCallback(

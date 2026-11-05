@@ -4,6 +4,7 @@
  * run that is (issue #317 made several runs at once reachable). Main's side is in
  * `tests/main/handlers/runner-stop-target.test.ts`.
  */
+import { allowScriptTrustBridge } from '../helpers/script-trust-bridge'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   liveRunKey,
@@ -30,6 +31,7 @@ beforeEach(() => {
   finishers.length = 0
   useRunnerLiveStore.setState({ runs: {} })
   ;(window as unknown as { api: unknown }).api = {
+    projectTrust: allowScriptTrustBridge,
     runner: {
       stop,
       execute: () =>
@@ -46,9 +48,13 @@ afterEach(() => {
 })
 
 describe('stopLiveRun', () => {
-  it('names the run, and marks only that tab as stopping', () => {
+  it('names the run, and marks only that tab as stopping', async () => {
     begin('tab-a', 'p1')
     begin('tab-b', 'p1')
+    // A run takes its slot after the script trust answer, one round trip away.
+    await vi.waitFor(() =>
+      expect(useRunnerLiveStore.getState().runs[liveRunKey('tab-b')]).toBeDefined(),
+    )
 
     stopLiveRun('tab-b', 'direct')
 

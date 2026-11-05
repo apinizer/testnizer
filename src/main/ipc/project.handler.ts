@@ -5,6 +5,7 @@ import * as aiConversationRepo from '../db/ai-conversation.repo'
 import { getDb } from '../db/database'
 import { getSettingsStore } from '../lib/git-config'
 import { syncRunningMocksWithDb } from './mock-runtime-sync'
+import { dropProjectScriptTrust } from '../lib/project-script-trust'
 
 export function registerProjectHandlers(): void {
   ipcMain.handle('project:list', async (_event, workspaceId: string) => {
@@ -77,6 +78,7 @@ export function registerProjectHandlers(): void {
   ipcMain.handle('project:delete', async (_event, id: string) => {
     try {
       const data = projectRepo.deleteProject(id)
+      await dropProjectScriptTrust(id)
       // The FK cascade just removed the project's mock rows; stop any mock
       // server still listening off them (issue #154).
       await syncRunningMocksWithDb()

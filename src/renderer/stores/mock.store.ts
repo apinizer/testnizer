@@ -8,6 +8,7 @@ import type {
 } from '../types'
 import type { MockServerKind } from '../../shared/mock-kind'
 import { collapseStreamLogs, mergeStreamLog } from '../lib/mock-log-streams'
+import { ensureScriptsAllowed } from '../lib/script-trust-gate'
 
 const api = window.api.mock
 
@@ -108,7 +109,7 @@ export interface MockState {
  */
 let loadSeq = 0
 
-export const useMockStore = create<MockState>((set) => ({
+export const useMockStore = create<MockState>((set, get) => ({
   servers: [],
   projectId: null,
   endpointsByServer: {},
@@ -158,7 +159,12 @@ export const useMockStore = create<MockState>((set) => ({
   },
 
   startServer: async (id) => {
+    // Asked once here so Allow does not wait for the first request. The answer
+    // does not stop the server: with "Not now" a scripted response answers with
+    // the reason, and the mock server reads the state on every request.
+    const owner = get().servers.find((srv) => srv.id === id)?.projectId ?? get().projectId
     set((s) => ({ statusByServer: { ...s.statusByServer, [id]: 'starting' } }))
+    await ensureScriptsAllowed(owner)
     const r = await api.server.start(id)
     if (!r.success) {
       set((s) => ({

@@ -33,6 +33,7 @@ import {
 } from '../db/mock.repo'
 import { mockServerManager, type MockServerDef } from '../mock/server'
 import { importOpenApi, importPostman, type ImportResult } from '../mock/importers'
+import { withProjectImportCheck } from './save.handler'
 import { normalizeMockServerKind, type MockServerKind } from '../../shared/mock-kind'
 import {
   normalizeLlmConfig,
@@ -384,7 +385,7 @@ export function registerMockHandlers(): void {
       source: string,
     ): Promise<{ success: boolean; data?: ImportResult; error?: string }> => {
       try {
-        const r = await importOpenApi(serverId, source)
+        const r = await withMockImportCheck(serverId, () => importOpenApi(serverId, source))
         await reloadIfRunning(serverId)
         return ok(r)
       } catch (e) {
@@ -401,7 +402,7 @@ export function registerMockHandlers(): void {
       source: string,
     ): Promise<{ success: boolean; data?: ImportResult; error?: string }> => {
       try {
-        const r = importPostman(serverId, source)
+        const r = await withMockImportCheck(serverId, () => importPostman(serverId, source))
         await reloadIfRunning(serverId)
         return ok(r)
       } catch (e) {
@@ -442,6 +443,13 @@ export async function reconcileRunningMockServers(): Promise<void> {
     // stale config.
     if (!r.ok && mockServerManager.status(id) === 'running') await mockServerManager.stop(id)
   }
+}
+
+/** A mock import is an import into the server's project (`withProjectImportCheck`). */
+function withMockImportCheck<T>(serverId: string, run: () => T | Promise<T>): Promise<T> {
+  const projectId = getMockServer(serverId)?.project_id
+  if (!projectId) return Promise.resolve().then(run)
+  return withProjectImportCheck(projectId, run)
 }
 
 async function reloadIfRunning(serverId: string): Promise<void> {

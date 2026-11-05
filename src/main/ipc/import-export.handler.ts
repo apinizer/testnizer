@@ -6,6 +6,7 @@ import { parseWsdl, parseWsdlFromContent, type WsdlParseResult } from '../protoc
 import { loadProto, type GrpcServiceDescription } from '../protocols/grpc.engine'
 import { ensureDefaultExtension, saveFileFiltersFor } from '../lib/save-file-filters'
 import { assertNotFolder, openFileDialogOptions } from '../lib/open-dialog'
+import { withProjectImportCheck } from './save.handler'
 import {
   encodeFollowRedirects,
   readRequestSettings,
@@ -14,6 +15,7 @@ import {
 } from '../../shared/request-settings'
 import { orderSuiteFolders, orderSuiteItems } from '../../shared/suite-order'
 import { orderTreeLevel, orderTreeRequests } from '../../shared/tree-order'
+import { chooseGraphqlOperation } from '../../shared/graphql-row'
 import {
   applyPathVariables,
   bracesToPathVariables,
@@ -446,11 +448,13 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importOpenApi(
-          payload.projectId,
-          payload.content,
-          payload.folderId ?? null,
-          payload.sourceUrl,
+        const result = await withProjectImportCheck(payload.projectId, () =>
+          importOpenApi(
+            payload.projectId,
+            payload.content,
+            payload.folderId ?? null,
+            payload.sourceUrl,
+          ),
         )
         return { success: true, data: result }
       } catch (e) {
@@ -463,8 +467,8 @@ export function registerImportExportHandlers(): void {
   // items the format could not carry (issue #197) so the UI can name them.
   ipcMain.handle('export:openApi', async (_event, projectId: string) => {
     try {
-      const { content, skipped } = buildOpenApiProjectExport(projectId)
-      return { success: true, data: content, skipped }
+      const { content, skipped, notes } = buildOpenApiProjectExport(projectId)
+      return { success: true, data: content, skipped, notes }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -502,11 +506,10 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importPostman(
-          payload.projectId,
-          payload.content,
-          payload.folderId ?? null,
-          { apisTree: true },
+        const result = await withProjectImportCheck(payload.projectId, () =>
+          importPostman(payload.projectId, payload.content, payload.folderId ?? null, {
+            apisTree: true,
+          }),
         )
         return { success: true, data: result }
       } catch (e) {
@@ -554,11 +557,10 @@ export function registerImportExportHandlers(): void {
           }
         }
         // A picked v3 folder, or a .zip prepared by `import:openFile`.
-        const result = await importPickedPostman(
-          payload.projectId,
-          picked.content,
-          payload.folderId ?? null,
-          { apisTree: true },
+        const result = await withProjectImportCheck(payload.projectId, () =>
+          importPickedPostman(payload.projectId, picked.content, payload.folderId ?? null, {
+            apisTree: true,
+          }),
         )
         return { success: true, data: result }
       } catch (e) {
@@ -570,8 +572,8 @@ export function registerImportExportHandlers(): void {
   // ─── Postman Export ─────────────────────────────────────────
   ipcMain.handle('export:postman', async (_event, projectId: string) => {
     try {
-      const { content, skipped } = buildPostmanProjectExport(projectId)
-      return { success: true, data: content, skipped }
+      const { content, skipped, notes } = buildPostmanProjectExport(projectId)
+      return { success: true, data: content, skipped, notes }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -617,7 +619,9 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importHar(payload.projectId, payload.content, payload.folderId ?? null)
+        const result = await withProjectImportCheck(payload.projectId, () =>
+          importHar(payload.projectId, payload.content, payload.folderId ?? null),
+        )
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -688,10 +692,8 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importInsomnia(
-          payload.projectId,
-          payload.content,
-          payload.folderId ?? null,
+        const result = await withProjectImportCheck(payload.projectId, () =>
+          importInsomnia(payload.projectId, payload.content, payload.folderId ?? null),
         )
         return { success: true, data: result }
       } catch (e) {
@@ -703,8 +705,8 @@ export function registerImportExportHandlers(): void {
   // ─── Insomnia Export ────────────────────────────────────────
   ipcMain.handle('export:insomnia', async (_event, projectId: string) => {
     try {
-      const { content, skipped } = buildInsomniaProjectExport(projectId)
-      return { success: true, data: content, skipped }
+      const { content, skipped, notes } = buildInsomniaProjectExport(projectId)
+      return { success: true, data: content, skipped, notes }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -722,7 +724,9 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = importCurl(payload.projectId, payload.curlCommand, payload.folderId ?? null)
+        const result = await withProjectImportCheck(payload.projectId, () =>
+          importCurl(payload.projectId, payload.curlCommand, payload.folderId ?? null),
+        )
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -754,7 +758,7 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importProto(payload)
+        const result = await withProjectImportCheck(payload.projectId, () => importProto(payload))
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -799,7 +803,7 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importWsdl(payload)
+        const result = await withProjectImportCheck(payload.projectId, () => importWsdl(payload))
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -819,7 +823,7 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importSoapUi(payload)
+        const result = await withProjectImportCheck(payload.projectId, () => importSoapUi(payload))
         return { success: true, data: result }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -839,10 +843,8 @@ export function registerImportExportHandlers(): void {
       },
     ) => {
       try {
-        const result = await importRaml(
-          payload.projectId,
-          payload.content,
-          payload.folderId ?? null,
+        const result = await withProjectImportCheck(payload.projectId, () =>
+          importRaml(payload.projectId, payload.content, payload.folderId ?? null),
         )
         return { success: true, data: result }
       } catch (e) {
@@ -1780,7 +1782,11 @@ export function buildOpenApiProjectExport(projectId: string): CollectionExportRe
     doc.components = { securitySchemes }
   }
 
-  return { content: JSON.stringify(doc, null, 2), skipped }
+  return {
+    content: JSON.stringify(doc, null, 2),
+    skipped,
+    notes: connectionInitNotes(endpoints, 'OpenAPI'),
+  }
 }
 
 // ─── Postman import → src/main/import/postman/ (issue #276) ───────────
@@ -1922,13 +1928,20 @@ export function bodyToPostman(body: UiRequestSchema['body']): PostmanBody | unde
   // GraphQL editor mode rather than degrading to a raw JSON body.
   if (body.type === 'json' && body.content) {
     try {
-      const parsed = JSON.parse(body.content) as { query?: unknown; variables?: unknown }
+      const parsed = JSON.parse(body.content) as {
+        query?: unknown
+        variables?: unknown
+        operationName?: unknown
+      }
       if (typeof parsed?.query === 'string') {
         return {
           mode: 'graphql',
           graphql: {
             query: parsed.query,
             variables: parsed.variables !== undefined ? JSON.stringify(parsed.variables) : '{}',
+            ...(typeof parsed.operationName === 'string'
+              ? { operationName: parsed.operationName }
+              : {}),
           },
         }
       }
@@ -2144,14 +2157,43 @@ function graphqlBodyForExport(
   metadata: Record<string, unknown> | null,
 ): UiRequestSchema['body'] {
   if (!body || body.type !== 'graphql') return body
-  const gql = metadata?.graphql as { variables?: unknown } | undefined
+  const gql = metadata?.graphql as { variables?: unknown; operationName?: unknown } | undefined
   let variables: unknown = {}
   if (typeof gql?.variables === 'string' && gql.variables.trim()) {
     variables = parseJsonColumn<unknown>(gql.variables, {})
   } else if (gql?.variables && typeof gql.variables === 'object') {
     variables = gql.variables
   }
-  return { type: 'json', content: JSON.stringify({ query: body.content ?? '', variables }) }
+  const query = body.content ?? ''
+  const operationName = chooseGraphqlOperation(
+    query,
+    typeof gql?.operationName === 'string' ? gql.operationName : undefined,
+  ).operationName
+  return {
+    type: 'json',
+    content: JSON.stringify({ query, ...(operationName ? { operationName } : {}), variables }),
+  }
+}
+
+/**
+ * The subscription `connection_init` payload has no field in the collection formats,
+ * and `x-apinizer` cannot bring it back either: a v2.1 re-import is an HTTP row, with
+ * no GraphQL editor to hold it. So it is reported, by request name, never by value.
+ * The project file and git keep it (`metadata.graphql`).
+ */
+function connectionInitNotes(rows: ExportEndpointRow[], format: string): string[] {
+  return rows
+    .filter((row) => {
+      const schema = parseJsonColumn<{
+        metadata?: { graphql?: { connectionInit?: unknown } }
+      } | null>(row.request_schema, null)
+      const text = schema?.metadata?.graphql?.connectionInit
+      return typeof text === 'string' && text.trim() !== ''
+    })
+    .map(
+      (row) =>
+        `"${row.name}": the subscription connection_init payload has no ${format} field and was not exported.`,
+    )
 }
 
 /**
@@ -2225,6 +2267,7 @@ function savedRequestToExportRow(row: SavedRequestExportRow): ExportEndpointRow 
     postScript: row.post_script ?? undefined,
     assertions: parseJsonColumn<TestAssertionLike[]>(row.assertions, []),
     ...readRequestSettingsJson(row.metadata),
+    ...(metadata ? { metadata } : {}),
   }
   return {
     id: row.id,
@@ -2683,6 +2726,7 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
     )
     .all(projectId) as ExportFolderRow[]
   const { rows: endpoints, skipped } = partitionExportable(loadProjectExportRows(db, projectId))
+  const notes = connectionInitNotes(endpoints, 'Postman v2.1')
 
   const collection = buildPostmanCollection(
     project.name,
@@ -2698,7 +2742,7 @@ export function buildPostmanProjectExport(projectId: string): CollectionExportRe
   )
   const projectAuth = readProjectAuthForExport(projectId)
   if (projectAuth) collection.auth = projectAuth
-  return { content: JSON.stringify(collection, null, 2), skipped }
+  return { content: JSON.stringify(collection, null, 2), skipped, notes }
 }
 
 /**
@@ -2779,20 +2823,22 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     }>,
     folders,
   )
-  const endpoints: ExportEndpointRow[] = items.map((it) => ({
-    id: it.id,
-    folder_id: it.folder_id,
-    method: it.method,
-    path: it.url ?? '',
-    name: it.name,
-    description: null,
-    request_schema: it.request_schema,
-    // Suite items carry assertions in their own column → thread so the
-    // x-apinizer export can emit them.
-    assertions: it.assertions,
-    protocol: it.protocol,
-    owner_type: 'test_suite_item' as const,
-  }))
+  const endpoints: ExportEndpointRow[] = items.map((it) =>
+    endpointToExportRow({
+      id: it.id,
+      folder_id: it.folder_id,
+      method: it.method,
+      path: it.url ?? '',
+      name: it.name,
+      description: null,
+      request_schema: it.request_schema,
+      // Suite items carry assertions in their own column → thread so the
+      // x-apinizer export can emit them.
+      assertions: it.assertions,
+      protocol: it.protocol,
+      owner_type: 'test_suite_item' as const,
+    }),
+  )
   const { rows, skipped } = partitionExportable(endpoints)
 
   const collection = buildPostmanCollection(
@@ -2817,7 +2863,11 @@ export function buildPostmanSuiteExport(suiteId: string): CollectionExportResult
     return [...list.filter((n) => !n.item), ...list.filter((n) => !!n.item)]
   }
   collection.item = requestsFirst(collection.item)
-  return { content: JSON.stringify(collection, null, 2), skipped }
+  return {
+    content: JSON.stringify(collection, null, 2),
+    skipped,
+    notes: connectionInitNotes(rows, 'Postman v2.1'),
+  }
 }
 
 /** The Postman v2.1 collection text of a test suite (see `buildPostmanSuiteExport`). */
@@ -4012,6 +4062,10 @@ export function mapInsomniaBodyToUi(body: InsomniaBody | undefined): {
   switch (mime) {
     case 'application/json':
       return { type: 'json', content: body.text ?? '' }
+    // Insomnia's GraphQL body: `{query, variables, operationName?}` as JSON text.
+    case 'application/graphql':
+    case 'graphql/json':
+      return body.text ? { type: 'json', content: body.text } : { type: 'none' }
     case 'application/xml':
     case 'text/xml':
       return { type: 'xml', content: body.text ?? '' }
@@ -4074,12 +4128,19 @@ function bodyToInsomnia(body: UiRequestSchema['body']): InsomniaBody | undefined
   // Postman exporter so round-tripping doesn't lose the editor mode.
   if (body.type === 'json' && body.content) {
     try {
-      const parsed = JSON.parse(body.content) as { query?: unknown; variables?: unknown }
+      const parsed = JSON.parse(body.content) as {
+        query?: unknown
+        variables?: unknown
+        operationName?: unknown
+      }
       if (typeof parsed?.query === 'string') {
         return {
           mimeType: 'application/graphql',
           text: JSON.stringify({
             query: parsed.query,
+            ...(typeof parsed.operationName === 'string'
+              ? { operationName: parsed.operationName }
+              : {}),
             variables: parsed.variables ?? {},
           }),
         }
@@ -4406,7 +4467,11 @@ export function buildInsomniaProjectExport(projectId: string): CollectionExportR
     endpoints,
     { projectAuth: readProjectAuthConfig(projectId) },
   )
-  return { content: JSON.stringify(wrapInsomniaExport(resources), null, 2), skipped }
+  return {
+    content: JSON.stringify(wrapInsomniaExport(resources), null, 2),
+    skipped,
+    notes: connectionInitNotes(endpoints, 'Insomnia'),
+  }
 }
 
 /** The Insomnia v4 export text of a project (see `buildInsomniaProjectExport`). */
@@ -4456,18 +4521,20 @@ export function buildInsomniaSuiteExport(suiteId: string): CollectionExportResul
     folders,
   )
   const { rows: endpoints, skipped } = partitionExportable(
-    items.map((it) => ({
-      id: it.id,
-      folder_id: it.folder_id,
-      method: it.method,
-      path: it.url ?? '',
-      name: it.name,
-      description: null,
-      request_schema: it.request_schema,
-      // Suite items keep their Tests-tab rows in their own column (issue #270).
-      assertions: it.assertions,
-      protocol: it.protocol,
-    })),
+    items.map((it) =>
+      endpointToExportRow({
+        id: it.id,
+        folder_id: it.folder_id,
+        method: it.method,
+        path: it.url ?? '',
+        name: it.name,
+        description: null,
+        request_schema: it.request_schema,
+        // Suite items keep their Tests-tab rows in their own column (issue #270).
+        assertions: it.assertions,
+        protocol: it.protocol,
+      }),
+    ),
   )
 
   const resources = buildInsomniaResources(
@@ -4478,7 +4545,11 @@ export function buildInsomniaSuiteExport(suiteId: string): CollectionExportResul
     endpoints,
     { executionOrder: true },
   )
-  return { content: JSON.stringify(wrapInsomniaExport(resources), null, 2), skipped }
+  return {
+    content: JSON.stringify(wrapInsomniaExport(resources), null, 2),
+    skipped,
+    notes: connectionInitNotes(endpoints, 'Insomnia'),
+  }
 }
 
 /** The Insomnia v4 export text of a test suite (see `buildInsomniaSuiteExport`). */

@@ -24,7 +24,8 @@ import { graphqlMaskedSendError } from '../lib/masked-send-guard'
 import { t } from '../lib/i18n'
 import { subscriptionFailureText, type SubscriptionEnd } from '../lib/graphql-subscription-text'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
-import { isSubscriptionQuery } from '../../shared/graphql-row'
+import { chooseGraphqlOperation } from '../../shared/graphql-row'
+import { graphqlJson } from '../../shared/codegen/normalize'
 import { GQL_MAX_SUBSCRIPTION_EVENTS, parseConnectionInit } from '../../shared/graphql-ws'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for GraphQL, not just HTTP (issue #8).
@@ -68,8 +69,8 @@ export interface GqlSchema {
 
 export interface GqlSubscriptionEvent {
   id: string
-  /** `data`: a server frame. `error`: a server error. `notice`: from this app. */
-  kind: 'data' | 'error' | 'notice'
+  /** `data`: a server frame. `error`: a server error. */
+  kind: 'data' | 'error'
   data: string
   timestamp: number
 }
@@ -93,6 +94,8 @@ interface TabGraphQLState extends WithheldState {
   _inflightRequestId: string | null
   /** The `connection_init` payload, JSON as typed; '' = none. */
   connectionInit: string
+  /** The Operation select's choice, as picked; '' = none. `chooseGraphqlOperation` reads it. */
+  operationName: string
   subscriptionState: SubscriptionState
   /** Newest last, at most `GQL_MAX_SUBSCRIPTION_EVENTS`. */
   subscriptionEvents: GqlSubscriptionEvent[]
@@ -121,6 +124,7 @@ interface GraphQLStore extends TabGraphQLState {
   setVariables: (vars: string) => void
   setHeaders: (headers: KeyValuePair[]) => void
   setConnectionInit: (text: string) => void
+  setOperationName: (name: string) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
   removeHeader: (id: string) => void
@@ -222,6 +226,7 @@ function emptyTabState(): TabGraphQLState {
     isLoading: false,
     _inflightRequestId: null,
     connectionInit: '',
+    operationName: '',
     subscriptionState: 'disconnected',
     subscriptionEvents: [],
     subscriptionDropped: 0,
@@ -248,6 +253,7 @@ function extractState(s: GraphQLStore): TabGraphQLState {
     isLoading: s.isLoading,
     _inflightRequestId: s._inflightRequestId,
     connectionInit: s.connectionInit,
+    operationName: s.operationName,
     subscriptionState: s.subscriptionState,
     subscriptionEvents: s.subscriptionEvents,
     subscriptionDropped: s.subscriptionDropped,
@@ -320,30 +326,30 @@ function idleGql(st: TabGraphQLState): TabGraphQLState {
 
 /**
  * The tab's saved fields: `metadata.graphql` on Ctrl+S and History's `configured`.
- * `connectionInit` only when set, so a row without one stays byte-identical.
+ * `connectionInit` and `operationName` only when set, so a row without one stays
+ * byte-identical. A selection the document no longer holds is not written.
  */
 export function gqlMetaOf(
-  s: Pick<TabGraphQLState, 'url' | 'query' | 'variables' | 'headers' | 'connectionInit'>,
+  s: Pick<
+    TabGraphQLState,
+    'url' | 'query' | 'variables' | 'headers' | 'connectionInit' | 'operationName'
+  >,
 ): Record<string, unknown> {
+  const choice = chooseGraphqlOperation(s.query, s.operationName)
+  const selected = s.operationName && !choice.staleSelection ? choice.operationName : undefined
   return {
     url: s.url,
     query: s.query,
     variables: s.variables,
     headers: s.headers,
     ...(s.connectionInit ? { connectionInit: s.connectionInit } : {}),
+    ...(selected ? { operationName: selected } : {}),
   }
 }
 
 function getSubscriptionApi() {
   return window.api?.graphqlWs
 }
-
-const noticeEvent = (data: string): GqlSubscriptionEvent => ({
-  id: makeId(),
-  kind: 'notice',
-  data,
-  timestamp: Date.now(),
-})
 
 /** Append, dropping the oldest past the cap. */
 function withEvent(
@@ -388,6 +394,10 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     set({ connectionInit })
     markActiveTabDirty()
   },
+  setOperationName: (operationName) => {
+    set({ operationName })
+    markActiveTabDirty()
+  },
 
   addHeader: () => {
     set((state) => ({ headers: [...state.headers, defaultKv()] }))
@@ -409,7 +419,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   executeQuery: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
     if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
-    const { url, query, variables, headers } = get()
+    const { url, query, variables, headers, operationName } = get()
     if (!url.trim() || !query.trim()) return
 
     const responseStore = useResponseStore.getState()
@@ -452,13 +462,6 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       activeVars,
     )
 
-    let parsedVars: Record<string, unknown> = {}
-    try {
-      parsedVars = JSON.parse(resolvedVarsRaw || '{}')
-    } catch {
-      // ignore parse errors, send empty
-    }
-
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
 
@@ -479,7 +482,12 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         headers: resolvedHeaders,
         body: {
           type: 'json',
-          content: JSON.stringify({ query: resolvedQuery, variables: parsedVars }),
+          // Variables that do not parse go out empty (`graphqlJson`, Run's builder too).
+          content: graphqlJson(
+            resolvedQuery,
+            resolvedVarsRaw,
+            chooseGraphqlOperation(query, operationName).operationName,
+          ),
         },
         ...network,
         _protocol: 'graphql',
@@ -660,7 +668,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     // Issue #244: a credential still withheld after a restart is reloaded first.
     if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const start = get()
-    if (!start.url.trim() || !isSubscriptionQuery(start.query)) return
+    const chosen = chooseGraphqlOperation(start.query, start.operationName)
+    if (!start.url.trim() || !chosen.isSubscription) return
     if (start.subscriptionState === 'connecting' || start.subscriptionState === 'connected') return
 
     const failNow = (text: string): void =>
@@ -758,10 +767,6 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       )
       // Given up while the settings loaded (Cancel, the tab closed, its project left).
       if (owner()?._pendingConnectId !== connectionId) return unsub()
-      if (network.proxy?.mode === 'custom') {
-        const notice = noticeEvent(t('graphql.sub.proxyNotApplied'))
-        patchOwner((sl) => withEvent(sl, notice))
-      }
 
       const headerMap: Record<string, string> = {}
       for (const row of resolveKeyValuePairs(headerRows, vars)) headerMap[row.key] = row.value
@@ -771,9 +776,11 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         headers: headerMap,
         query: resolveVariables(start.query, vars),
         variables: resolveVariables(start.variables || '', vars),
+        ...(chosen.operationName ? { operationName: chosen.operationName } : {}),
         connectionInit,
         sslVerification: network.sslVerification,
         tls: network.tls,
+        ...(network.proxy ? { proxy: network.proxy } : {}),
         _tabId: ownerTabId ?? undefined,
         _workspaceId: workspace.activeWorkspaceId || undefined,
         _projectId: workspace.activeProjectId || undefined,

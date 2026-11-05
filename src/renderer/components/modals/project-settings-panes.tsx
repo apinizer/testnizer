@@ -19,6 +19,7 @@ import { describeProxy, onOff } from '../../lib/settings-scope'
 import { toast } from '../../lib/toast'
 import { projectDisplayName } from '../../lib/project-export'
 import { useProjectExportStore } from '../../stores/project-export.store'
+import ProjectScriptTrustRow from './ProjectScriptTrustRow'
 
 // ════════════════════════════════════════════════════════════════
 // Shared types & styles
@@ -942,10 +943,12 @@ export interface AppNetworkDefaults {
 const APP_TIMEOUT_FALLBACK = 30000
 
 export function GeneralPane({
+  projectId,
   settings,
   onChange,
   appDefaults = {},
 }: {
+  projectId: string
   settings: ProjectSettings
   onChange: (patch: Partial<ProjectSettings>) => void
   appDefaults?: AppNetworkDefaults
@@ -1083,6 +1086,7 @@ export function GeneralPane({
             checked={settings.readFilesOutsideWorkingDirectory}
             onChange={(v) => onChange({ readFilesOutsideWorkingDirectory: v })}
           />
+          <ProjectScriptTrustRow projectId={projectId} />
         </SectionCard>
       </div>
     </div>
@@ -2102,7 +2106,9 @@ export function ProxyPane({
               >
                 <option value="http">HTTP</option>
                 <option value="https">HTTPS</option>
-                <option value="socks">SOCKS</option>
+                {proxy.proxyType === 'socks' && (
+                  <option value="socks">{t('proxy.socksUnsupported')}</option>
+                )}
               </select>
             </div>
             <div className="mt-3 grid grid-cols-[1fr_120px] gap-3">

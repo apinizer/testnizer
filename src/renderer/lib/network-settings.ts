@@ -10,7 +10,8 @@
  * `request:send` — HTTP (`request.store.ts`), SOAP (`soap.store.ts`) and
  * GraphQL (`graphql.store.ts`) — resolved with the same shared resolvers Run
  * uses (`src/shared/request-settings.ts`), so Send ≡ Run. The request
- * Settings tab reads the same loader to show the inherited value.
+ * Settings tab reads the same loader to show the inherited value. The realtime
+ * connections read their proxy from it too (`connectionProxy`).
  */
 import {
   resolveFollowRedirects,
@@ -89,6 +90,17 @@ const isObj = (v: unknown): boolean => !!v && typeof v === 'object' && !Array.is
 /** The proxy Send uses: the project's own, else the app Settings proxy (issue #254). */
 export function effectiveProxy(net: InheritedNetwork): ProxySetting | undefined {
   return resolveProxy(net.project.proxy, net.appProxy)
+}
+
+/**
+ * The part of a connect payload that carries the proxy (WebSocket, Socket.IO,
+ * MQTT, SSE): empty with none configured, so main reads the environment.
+ */
+export async function connectionProxy(
+  projectId: string | null | undefined,
+): Promise<{ proxy?: ProxySetting }> {
+  const proxy = effectiveProxy(await loadInheritedNetwork(projectId))
+  return proxy ? { proxy } : {}
 }
 
 /** The value a request inherits when its own is `null` (Settings tab display). */

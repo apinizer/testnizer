@@ -776,12 +776,6 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       // freshly-edited request isn't executed against its stale saved snapshot.
       await saveDirtyRunItemsBeforeRun(matched.map((ep) => ep.id))
 
-      setView('results')
-      setRunError(null)
-      setResults([])
-      setReport(null)
-      setSelectedResultId(null)
-
       const labelName = pending.folderName || runFolderName
       const origin = pending.sourceType || (folderId ? 'apis' : 'runner')
       const sourceLabel =
@@ -797,6 +791,13 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         totalCount: matched.length,
         sourceLabel,
         origin,
+        onStart: () => {
+          setView('results')
+          setRunError(null)
+          setResults([])
+          setReport(null)
+          setSelectedResultId(null)
+        },
         payload:
           // Quick Run is the THIRD caller of `runner:execute`, and it was still
           // assembling its payload by hand — dropping `stopOnError` and
@@ -1224,13 +1225,6 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     // fresh data, not the stale DB snapshot) + warn about other dirty run items.
     await saveDirtyRunItemsBeforeRun(selected.map((ep) => ep.id))
 
-    setView('results')
-    setPastRunOpen(false)
-    setRunError(null)
-    setResults([])
-    setReport(null)
-    setSelectedResultId(null)
-
     const sourceLabel =
       runOrigin === 'suite' && runFolderName
         ? `Suite: ${runFolderName}`
@@ -1243,6 +1237,14 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       totalCount: selected.length,
       sourceLabel,
       origin: runOrigin,
+      onStart: () => {
+        setView('results')
+        setPastRunOpen(false)
+        setRunError(null)
+        setResults([])
+        setReport(null)
+        setSelectedResultId(null)
+      },
       payload: buildExecutePayload(
         {
           projectId: activeProjectId || '',

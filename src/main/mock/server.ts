@@ -21,6 +21,8 @@ import { cachedSecretInventory } from '../lib/secret-inventory-cache'
 import { getDb } from '../db/database'
 import { getState, clearState } from './state'
 import { runScript, type ScriptResponse } from './script'
+import { scriptHasCode } from '../../shared/script/has-code'
+import { isProjectScriptsBlocked, MOCK_SCRIPT_BLOCKED_MESSAGE } from '../lib/project-script-trust'
 import { checkAuth, resolveAuthConfig } from './auth'
 import { rollFailure } from './failure'
 import { checkRateLimit, clearLimiter } from './rateLimit'
@@ -705,7 +707,17 @@ class MockServerManager extends EventEmitter {
     let finalBody = initial.body
     let scriptError: string | null = null
     let scriptLog: string[] = []
-    if (picked.script && picked.script.trim()) {
+    // Read per request: an Allow takes effect without restarting the server.
+    if (
+      scriptHasCode(picked.script) &&
+      s.def.projectId &&
+      (await isProjectScriptsBlocked(s.def.projectId))
+    ) {
+      scriptError = MOCK_SCRIPT_BLOCKED_MESSAGE
+      finalStatus = 500
+      finalHeaders = { 'content-type': 'application/json; charset=utf-8' }
+      finalBody = JSON.stringify({ error: 'Script error', message: MOCK_SCRIPT_BLOCKED_MESSAGE })
+    } else if (picked.script && picked.script.trim()) {
       const r = runScript(
         picked.script,
         initial,

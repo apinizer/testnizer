@@ -29,7 +29,7 @@ export interface CodegenInputBody {
   urlEncoded?: CodegenKv[]
   binaryPath?: string
   /** `type: 'graphql'` — the GraphQL tab's query + variables JSON text. */
-  graphql?: { query: string; variables: string }
+  graphql?: { query: string; variables: string; operationName?: string }
 }
 
 /** Effective auth (inheritance already resolved by the caller). */

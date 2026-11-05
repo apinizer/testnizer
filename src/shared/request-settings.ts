@@ -197,6 +197,7 @@ export interface ProxySetting {
   host?: string
   port?: number
   bypass?: string
+  proxyType?: 'http' | 'https' | 'socks'
   auth?: { username: string; password: string }
 }
 

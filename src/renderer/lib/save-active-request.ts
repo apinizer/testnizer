@@ -663,6 +663,7 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     if (Array.isArray(g.headers)) gql.setHeaders(g.headers as KeyValuePair[])
     useGraphQLStore.setState({
       connectionInit: typeof g.connectionInit === 'string' ? g.connectionInit : '',
+      operationName: typeof g.operationName === 'string' ? g.operationName : '',
     })
     return
   }

@@ -48,6 +48,7 @@ import {
   sendScriptScopes,
 } from '../lib/script-scopes'
 import { resolveInheritance } from '../lib/auth-inheritance'
+import { sendScriptsRefusal } from '../lib/script-trust-gate'
 import { makeId } from '../lib/utils'
 import { applyParamsToUrl, mergeParamsFromUrl } from '../lib/url-query-sync'
 import { httpMaskedSendError } from '../lib/masked-send-guard'
@@ -742,6 +743,20 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     const effectiveAuth = inheritance.auth
     const preScripts = inheritance.preScripts
     const postScripts = inheritance.postScripts
+    // A project from outside runs no script until the user allows it here: "Not
+    // now" sends nothing, and the tab that asked says why (it may no longer be
+    // the tab on screen once the prompt closes).
+    const refused = await sendScriptsRefusal(wsStore.activeProjectId, [
+      ...preScripts,
+      ...postScripts,
+    ])
+    if (refused) {
+      responseStore.setResponse(
+        { requestId: makeId(), protocol: 'http', timing: { total: 0 }, error: refused },
+        activeTabId,
+      )
+      return
+    }
     // `pm.info.requestId` / `pm.execution.location` — what Run reports too.
     const scriptRequestId = activeTab?.endpointId ?? activeTab?.savedRequestId
     const scriptRequestName = activeTab?.name ?? ''

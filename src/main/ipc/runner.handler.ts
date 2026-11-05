@@ -95,6 +95,11 @@ import type {
 import type { StoredProjectSettings } from '../lib/project-settings'
 import { mcpCallOnce, type McpOneShotCall, type McpTransport } from '../protocols/mcp.engine'
 import { isStdioServerTrusted, MCP_STDIO_UNTRUSTED_MESSAGE } from '../lib/mcp-stdio-trust'
+import {
+  isProjectScriptsBlocked,
+  PROJECT_SCRIPTS_BLOCKED_MESSAGE,
+} from '../lib/project-script-trust'
+import { scriptHasCode } from '../../shared/script/has-code'
 import { isCredentialHeaderName } from '../lib/credential-headers'
 import { MASKED_VALUE } from '../db/saved-response.repo'
 import {
@@ -142,7 +147,7 @@ interface RequestBody {
   type: string
   content?: string
   /** A saved GraphQL row until `resolveRequestOptions` turns it into its JSON body. */
-  graphql?: { query: string; variables: string }
+  graphql?: { query: string; variables: string; operationName?: string }
   formData?: KeyValuePair[]
   urlEncoded?: KeyValuePair[]
   binaryPath?: string
@@ -377,7 +382,11 @@ export function buildRequestFromEndpoint(
     ? {
         type: 'graphql',
         content: graphql.query,
-        graphql: { query: graphql.query, variables: graphql.variables },
+        graphql: {
+          query: graphql.query,
+          variables: graphql.variables,
+          ...(graphql.operationName ? { operationName: graphql.operationName } : {}),
+        },
       }
     : schema.body
 
@@ -779,6 +788,8 @@ interface RunVarScopes {
 }
 
 interface ScriptContext {
+  /** Refused by `runUserScript` before anything is compiled (see `RunContext`). */
+  scriptsBlocked: boolean
   /** This step's copies of the run's variable layers — the live pm scopes. */
   globals: Record<string, string>
   environment: Record<string, string>
@@ -883,12 +894,13 @@ function scriptTestToAssertion(t: ScriptTestResult): AssertionResult {
 }
 
 function newScriptContext(
-  scopes: RunVarScopes,
+  { scopes, scriptsBlocked }: Pick<RunContext, 'scopes' | 'scriptsBlocked'>,
   iterationData: Record<string, unknown>,
   iterationIndex: number,
   iterationCount: number,
 ): ScriptContext {
   return {
+    scriptsBlocked,
     globals: { ...scopes.globals },
     environment: { ...scopes.environment },
     locals: { ...scopes.locals },
@@ -1020,6 +1032,17 @@ async function runUserScript(
   override?: ScriptResponseOverride,
 ): Promise<void> {
   if (!script) return
+
+  // The last line of the trust gate: whatever the call site, a blocked project's
+  // script body is never compiled. A hook's row reads the error below; a request
+  // row has already failed before anything was sent (`runEndpointStep`).
+  if (ctx.scriptsBlocked) {
+    if (scriptHasCode(script)) {
+      pushConsoleLog(ctx, 'error', PROJECT_SCRIPTS_BLOCKED_MESSAGE)
+      ctx.scriptError = PROJECT_SCRIPTS_BLOCKED_MESSAGE
+    }
+    return
+  }
 
   // Level-preserving, and capped. The renderer's Send path already keeps
   // warn/error apart; main used to flatten all three into "log", which is the
@@ -1263,6 +1286,7 @@ function graphqlWireOptions(
   const content = graphqlJson(
     resolveRunnerVariables(parts.query, vars),
     resolveRunnerVariables(parts.variables, vars),
+    parts.operationName,
   )
   return { ...options, body: { type: 'json', content } as HttpRequestOptions['body'] }
 }
@@ -1435,6 +1459,8 @@ interface RunContext {
   criticalIds: ReadonlySet<string>
   /** The environment's name, snapshotted at run start (issue #307; '' = none). */
   environmentName: string
+  /** Scripts of this project are not allowed here; read once, at run start. */
+  scriptsBlocked: boolean
 }
 
 interface StepOutcome {
@@ -1806,7 +1832,7 @@ async function runEndpointStep(
   // that cannot tell "the user pulled the plug" from "DNS failed" would score
   // every hard stop as a transport failure.
   let cancelledOnWire = false
-  const scriptCtx = newScriptContext(ctx.scopes, iterationData[iter] ?? {}, iter, iterations)
+  const scriptCtx = newScriptContext(ctx, iterationData[iter] ?? {}, iter, iterations)
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
   scriptCtx.projectId = ctx.options.projectId
@@ -1876,6 +1902,29 @@ async function runEndpointStep(
     scriptCtx.requestName = endpoint.name
     scriptCtx.requestId = endpointId
     scriptCtx.location = [...folderChain.map((f) => f.name), endpoint.name]
+
+    // A row whose cascade holds a script fails here when the project's scripts
+    // are not allowed, even if only a post-response script exists: its request
+    // is not sent either.
+    if (ctx.scriptsBlocked && [...preScripts, ...postScripts].some(scriptHasCode)) {
+      const result: EndpointRunResult = {
+        endpointId,
+        endpointName: endpoint.name,
+        method: requestOptions.method,
+        url: stripUrlCredentials(requestOptions.url),
+        status: null,
+        statusText: 'SCRIPT',
+        duration: 0,
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        assertions: [],
+        error: PROJECT_SCRIPTS_BLOCKED_MESSAGE,
+        iteration,
+        phase,
+      }
+      return { ...recordStep(ctx, result), configError: true }
+    }
 
     // Run pre-request scripts in order. They share one context so a
     // project/folder script's env writes are visible to inner scripts.
@@ -2474,12 +2523,7 @@ async function runMcpStep(
     iteration,
     phase,
   }
-  const scriptCtx = newScriptContext(
-    ctx.scopes,
-    ctx.iterationData[iter] ?? {},
-    iter,
-    ctx.iterations,
-  )
+  const scriptCtx = newScriptContext(ctx, ctx.iterationData[iter] ?? {}, iter, ctx.iterations)
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
   scriptCtx.projectId = ctx.options.projectId
@@ -2522,6 +2566,16 @@ async function runMcpStep(
       schema.preScript,
       schema.postScript,
     )
+
+    // Same rule as HTTP: nothing runs and nothing is called for a blocked project.
+    if (ctx.scriptsBlocked && [...preScripts, ...postScripts].some(scriptHasCode)) {
+      return {
+        ...failRow(mcpDisplayTarget(saved.transport, saved.url), PROJECT_SCRIPTS_BLOCKED_MESSAGE, {
+          statusText: 'SCRIPT',
+        }),
+        configError: true,
+      }
+    }
 
     // pm.request on an MCP row: the server URL (raw, like Send) and the
     // enabled custom headers — a pre-request script may add one.
@@ -2813,7 +2867,7 @@ async function runHookScript(
 ): Promise<StepOutcome | null> {
   if (!script || !script.trim()) return null
   const startedAt = Date.now()
-  const scriptCtx = newScriptContext(ctx.scopes, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
+  const scriptCtx = newScriptContext(ctx, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
   scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
   scriptCtx.projectId = ctx.options.projectId
   // `pm.run` gets THIS script's live scopes: a secret it writes (pm.vault.set,
@@ -3223,6 +3277,9 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     emitted: 0,
     criticalIds: criticalRequestIds(options.endpointIds),
     environmentName,
+    // Once per run: a Scheduler tick never prompts, and an Allow given while a
+    // run is going applies from the next run.
+    scriptsBlocked: await isProjectScriptsBlocked(options.projectId),
   }
 
   let stopReason: RunStopReason | undefined

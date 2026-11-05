@@ -4,6 +4,7 @@ import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { afterWithheldReloaded, reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { connectErrorText } from '../lib/connection-error'
+import { connectionProxy } from '../lib/network-settings'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
@@ -583,7 +584,11 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
       patchTab(ownerTabId, () => ({ _unsubscribe: unsubscribe }))
 
       const ws = useWorkspaceStore.getState()
+      const proxy = await connectionProxy(ws.activeProjectId)
+      // Given up while the settings loaded (Cancel, the tab closed, its project left).
+      if (sliceOf(ownerTabId)?._pendingConnectId !== pendingConnectId) return
       const res = await api.connect({
+        ...proxy,
         url: resolvedUrl,
         namespace: resolvedNamespace || '/',
         auth: resolvedToken ? { token: resolvedToken } : undefined,

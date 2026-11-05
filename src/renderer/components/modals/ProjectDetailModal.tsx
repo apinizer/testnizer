@@ -576,6 +576,7 @@ export default function ProjectDetailModal() {
 
               {tab === 'general' && (
                 <GeneralPane
+                  projectId={activeProject.id}
                   settings={projSettings}
                   onChange={updateProjSettings}
                   appDefaults={appNet}

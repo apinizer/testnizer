@@ -17,7 +17,6 @@ function formatJson(str: string): string {
 const KIND_CLS: Record<GqlSubscriptionEvent['kind'], string> = {
   data: 'bg-[var(--accent-light)] text-[var(--accent-text)]',
   error: 'bg-[var(--red)]/10 text-[var(--red)]',
-  notice: 'bg-[var(--surface)] text-[var(--muted)]',
 }
 
 const STATUS_CLS: Record<string, string> = {

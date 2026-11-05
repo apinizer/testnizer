@@ -24,6 +24,7 @@ import type {
 import type { RunOrigin } from '../lib/reveal-run-result'
 import { runnerKey } from '../lib/runner-storage'
 import { useEnvironmentStore } from './environment.store'
+import { runScriptsAllowed } from '../lib/script-trust-gate'
 
 export type StopMode = 'graceful' | 'direct'
 
@@ -128,17 +129,26 @@ export interface StartLiveRun {
   totalCount: number
   sourceLabel: string
   origin: RunOrigin
+  /** The run is going ahead (after the script trust prompt): reset the tab's view. */
+  onStart?: () => void
 }
 
 /**
  * The ONE way a runner tab starts a run (the Run button and Quick Run). Resolves
  * when the run has ended, whether or not any component is still mounted. A second
  * start on a busy tab is ignored.
+ *
+ * Asks first whether this project's scripts may run: "Not now" does not start the
+ * run. The key was read before that await and stays valid: it is this tab's, in
+ * the project that asked, even if the user has moved on during the prompt.
  */
 export async function startLiveRun(o: StartLiveRun): Promise<void> {
   const { tabId, payload } = o
   const key = liveRunKey(tabId)
   if (useRunnerLiveStore.getState().runs[key]?.running) return
+  if (!(await runScriptsAllowed(payload))) return
+  if (useRunnerLiveStore.getState().runs[key]?.running) return
+  o.onStart?.()
 
   // Only this run's events: main broadcasts, and a run in another tab or a
   // scheduled one (no tab) ticks on the same channel.

@@ -1230,6 +1230,19 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.readFilesOutsideWorkingDirectory': 'Read files outside the working directory',
     'general.readFilesOutsideWorkingDirectoryHint':
       'Lets collections and projects you did not write read any file on this computer and send it. Turn it on only if you trust them. Choosing a file outside the folder for a request turns it on. Applies to this computer only.',
+    'general.scriptTrust': 'Scripts from this project',
+    'general.scriptTrustAllowed':
+      'Allowed on this computer. Scripts are not sandboxed: they can reach anything your user account can.',
+    'general.scriptTrustBlocked':
+      'Blocked on this computer: nothing runs them, and requests that have a script are not sent. This project holds {count} scripts.',
+    'general.scriptTrustBlockedOne':
+      'Blocked on this computer: nothing runs it, and requests that have a script are not sent. This project holds {count} script.',
+    'general.scriptTrustAllow': 'Allow',
+    'general.scriptTrustBlock': 'Block',
+    'scriptTrust.sendRefused':
+      'Scripts from this project are not allowed on this computer, so the request was not sent. Send again and choose Allow, or allow them in Project Settings.',
+    'scriptTrust.runRefused':
+      'The run did not start: scripts from this project are not allowed on this computer.',
     'general.headers': 'Headers',
     'general.requestBehavior': 'Request behavior',
     'general.editor': 'Editor',
@@ -1378,6 +1391,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'proxy.noProxy': 'No proxy',
     'proxy.custom': 'Custom proxy',
     'proxy.proxyType': 'Proxy type',
+    'proxy.socksUnsupported': 'SOCKS (not supported yet)',
     'proxy.host': 'Host',
     'proxy.port': 'Port',
     'proxy.bypass': 'Bypass for hosts',
@@ -1946,6 +1960,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'export.skipped': '{count} item(s) left out of the {format} export: {names}',
     'export.skippedMore': 'and {count} more',
     'export.v3Notes': '{count} detail(s) could not be carried into Postman v3',
+    'export.notesOne': '{count} detail could not be carried into the exported file',
+    'export.notes': '{count} details could not be carried into the exported file',
     'testsPanel.import': 'Import…',
     'testsPanel.duplicate': 'Duplicate',
     'testsPanel.delete': 'Delete',
@@ -4100,6 +4116,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.emptyResponse': 'Run a query to see the response',
     'graphql.errorsTitle': 'GraphQL errors ({count})',
     'graphql.moreErrors': '+{count} more — see body',
+    'graphql.operation.label': 'Operation',
+    'graphql.operation.stale': '"{name}" is no longer in the document. Using "{used}".',
     'graphql.subscribed': 'Subscribed',
     'graphql.subscription': 'Subscription',
     'graphql.subscribe': 'Subscribe',
@@ -4150,8 +4168,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.sub.hint.closed': 'Check the headers, the connection_init payload and the server logs',
     'graphql.sub.connectionInit': 'Connection init payload',
     'graphql.sub.invalidInit': 'The connection_init payload must be a JSON object',
-    'graphql.sub.proxyNotApplied':
-      'The configured proxy is not used for GraphQL subscriptions: this connection goes out directly',
     'graphql.sub.status.connecting': 'Connecting',
     'graphql.sub.status.ended': 'Ended',
     'graphql.sub.status.failed': 'Failed',
@@ -4606,6 +4622,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'connError.closed.what': 'Connection closed',
     'connError.closed.hint': 'Check the server logs and the connection settings',
     'connError.aborted.what': 'Connection aborted',
+    'connError.proxy.what': 'Proxy connection failed',
+    'connError.proxy.hint':
+      'Check the proxy host, port, username and password in the project or app Settings',
     'connError.spawn-failed.what': 'Could not start the server command',
     'connError.spawn-failed.hint': 'Check that the command is installed and on PATH',
     'connError.unknown.what': 'Connection failed',
@@ -5839,6 +5858,19 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.readFilesOutsideWorkingDirectory': 'Çalışma dizini dışındaki dosyaları oku',
     'general.readFilesOutsideWorkingDirectoryHint':
       'Sizin yazmadığınız koleksiyon ve projelerin bu bilgisayardaki herhangi bir dosyayı okuyup göndermesine izin verir. Yalnızca onlara güveniyorsanız açın. Bir istek için klasör dışından dosya seçmek bu seçeneği açar. Yalnızca bu bilgisayarda geçerlidir.',
+    'general.scriptTrust': "Bu projenin script'leri",
+    'general.scriptTrustAllowed':
+      "Bu bilgisayarda izinli. Script'ler korumalı alanda çalışmaz: kullanıcı hesabınızın erişebildiği her şeye erişebilir.",
+    'general.scriptTrustBlocked':
+      "Bu bilgisayarda engelli: çalıştırılmazlar ve script'i olan istekler gönderilmez. Bu projede {count} script var.",
+    'general.scriptTrustBlockedOne':
+      "Bu bilgisayarda engelli: çalıştırılmaz ve script'i olan istekler gönderilmez. Bu projede {count} script var.",
+    'general.scriptTrustAllow': 'İzin ver',
+    'general.scriptTrustBlock': 'Engelle',
+    'scriptTrust.sendRefused':
+      "Bu projenin script'lerine bu bilgisayarda izin verilmedi, istek gönderilmedi. Yeniden gönderip İzin ver'i seçin ya da Proje Ayarları'ndan izin verin.",
+    'scriptTrust.runRefused':
+      "Çalıştırma başlamadı: bu projenin script'lerine bu bilgisayarda izin verilmedi.",
     'general.headers': 'Header’lar',
     'general.requestBehavior': 'İstek davranışı',
     'general.editor': 'Editör',
@@ -5987,6 +6019,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'proxy.noProxy': 'Proxy yok',
     'proxy.custom': 'Özel proxy',
     'proxy.proxyType': 'Proxy tipi',
+    'proxy.socksUnsupported': 'SOCKS (henüz desteklenmiyor)',
     'proxy.host': 'Host',
     'proxy.port': 'Port',
     'proxy.bypass': 'Bu host’lar için bypass',
@@ -6557,6 +6590,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'export.skipped': '{count} öğe {format} dışa aktarımına dahil edilmedi: {names}',
     'export.skippedMore': 've {count} öğe daha',
     'export.v3Notes': '{count} ayrıntı Postman v3’e aktarılamadı',
+    'export.notesOne': '{count} ayrıntı dışa aktarılan dosyaya taşınamadı',
+    'export.notes': '{count} ayrıntı dışa aktarılan dosyaya taşınamadı',
     'testsPanel.import': 'İçe Aktar…',
     'testsPanel.duplicate': 'Çoğalt',
     'testsPanel.delete': 'Sil',
@@ -8721,6 +8756,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.emptyResponse': 'Yanıtı görmek için bir sorgu çalıştırın',
     'graphql.errorsTitle': 'GraphQL hataları ({count})',
     'graphql.moreErrors': '+{count} hata daha — gövdeye bakın',
+    'graphql.operation.label': 'İşlem',
+    'graphql.operation.stale': '"{name}" artık belgede yok. "{used}" kullanılıyor.',
     'graphql.subscribed': 'Abone olundu',
     'graphql.subscription': 'Abonelik',
     'graphql.subscribe': 'Abone ol',
@@ -8770,8 +8807,6 @@ const translations: Record<Locale, Record<string, string>> = {
       'Başlıkları, connection_init içeriğini ve sunucu günlüklerini kontrol edin',
     'graphql.sub.connectionInit': 'Bağlantı başlatma içeriği',
     'graphql.sub.invalidInit': 'connection_init içeriği bir JSON nesnesi olmalıdır',
-    'graphql.sub.proxyNotApplied':
-      'Ayarlanan proxy GraphQL aboneliklerinde kullanılmaz: bu bağlantı doğrudan çıkar',
     'graphql.sub.status.connecting': 'Bağlanıyor',
     'graphql.sub.status.ended': 'Bitti',
     'graphql.sub.status.failed': 'Başarısız',
@@ -9229,6 +9264,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'connError.closed.what': 'Bağlantı kapandı',
     'connError.closed.hint': 'Sunucu günlüklerini ve bağlantı ayarlarını kontrol edin',
     'connError.aborted.what': 'Bağlantı iptal edildi',
+    'connError.proxy.what': 'Proxy bağlantısı kurulamadı',
+    'connError.proxy.hint':
+      'Proje ya da uygulama Ayarları’ndaki proxy host, port, kullanıcı adı ve parolasını kontrol edin',
     'connError.spawn-failed.what': 'Sunucu komutu başlatılamadı',
     'connError.spawn-failed.hint':
       'Komutun kurulu olduğunu ve PATH üzerinde bulunduğunu kontrol edin',

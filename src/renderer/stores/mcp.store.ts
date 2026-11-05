@@ -99,6 +99,7 @@ import {
 } from './mcp-call.slice'
 import { getMcpCallApi, type McpCallReply, type McpElicitationEvent } from '../lib/mcp-call-api'
 import { loadArgsView, planArgsForm, prepareToolArgs, validateArgs } from '../lib/mcp-args-form'
+import { sendScriptsRefusal } from '../lib/script-trust-gate'
 import {
   beginMcpScripts,
   flushMcpScriptLogs,
@@ -1142,6 +1143,13 @@ async function preScriptsAllow(
   kind: McpCallKind,
   callId: string,
 ): Promise<boolean> {
+  // A project from outside runs no script until the user allows it here.
+  const refused = await sendScriptsRefusal(ctx.projectId, [...ctx.preScripts, ...ctx.postScripts])
+  if (!callIsCurrent(ctx.tabId, kind, callId)) return false
+  if (refused) {
+    stopCall(ctx.tabId, kind, callId, refused)
+    return false
+  }
   const pre = await runMcpPreScripts(ctx)
   if (!callIsCurrent(ctx.tabId, kind, callId)) {
     flushMcpScriptLogs(ctx, '')

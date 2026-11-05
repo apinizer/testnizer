@@ -43,14 +43,14 @@ const enabledRows = (rows: readonly CodegenKv[] | undefined): CodegenKv[] =>
   (rows ?? []).filter((r) => r.enabled !== false && r.key)
 
 /** GraphQL tab → the JSON body Send posts (`graphql.store.executeQuery`). */
-export function graphqlJson(query: string, variables: string): string {
+export function graphqlJson(query: string, variables: string, operationName?: string): string {
   let parsed: unknown = {}
   try {
     parsed = JSON.parse(variables.trim() || '{}')
   } catch {
     parsed = {}
   }
-  return JSON.stringify({ query, variables: parsed })
+  return JSON.stringify({ query, ...(operationName ? { operationName } : {}), variables: parsed })
 }
 
 /**
@@ -58,15 +58,19 @@ export function graphqlJson(query: string, variables: string): string {
  * `{graphql: {query, variables}}` and a saved row's `{content: query}`, which
  * `request.store` holds for that tab. Read it through this, never `body.graphql`.
  */
-export function graphqlParts(body: CodegenInputBody): { query: string; variables: string } {
+export function graphqlParts(body: CodegenInputBody): {
+  query: string
+  variables: string
+  operationName?: string
+} {
   return body.graphql ?? { query: body.content ?? '', variables: '{}' }
 }
 
 function normalizeBody(body: CodegenInputBody | undefined): CodegenBody | undefined {
   if (!body || body.type === 'none') return undefined
   if (body.type === 'graphql') {
-    const { query, variables } = graphqlParts(body)
-    return { mode: 'raw', format: 'json', content: graphqlJson(query, variables) }
+    const { query, variables, operationName } = graphqlParts(body)
+    return { mode: 'raw', format: 'json', content: graphqlJson(query, variables, operationName) }
   }
   if (RAW_FORMATS.has(body.type)) {
     return body.content

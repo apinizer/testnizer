@@ -26,7 +26,14 @@ import {
 } from '../protocols/graphql-ws.engine'
 import { logEvent, logRequestResponse } from '../lib/console-logger'
 import { getConnectionErrorInfo, type ConnectionErrorInfo } from '../lib/error-classifier'
-import { collectCredentialValues, scrubberFor, type Scrubber } from '../lib/sensitive-scrub'
+import {
+  collectCredentialValues,
+  proxySecretValues,
+  scrubberFor,
+  type Scrubber,
+} from '../lib/sensitive-scrub'
+import { resolveConnectionProxy, type ResolvedProxy } from '../lib/proxy-tunnel'
+import type { ProxySetting } from '../../shared/request-settings'
 import { resolveTlsPayload, type TlsPayload } from '../lib/tls-presets'
 import { onSenderGone, type SenderLike } from '../lib/sender-lifecycle'
 import { getDb } from '../db/database'
@@ -52,8 +59,12 @@ interface GraphqlWsConnectPayload {
   variables?: string
   /** The connection_init field as typed, `{{var}}` resolved. */
   connectionInit?: string
+  /** Which operation of the document runs; only for a document with several. */
+  operationName?: string
   sslVerification?: boolean
   tls?: TlsPayload
+  /** The project → app proxy (`effectiveProxy`); absent = the environment's. */
+  proxy?: ProxySetting
   _tabId?: string
   _workspaceId?: string
   _projectId?: string
@@ -191,19 +202,31 @@ export function registerGraphqlWsHandlers(): void {
     const query = str(payload?.query)
     const variables = str(payload?.variables)
     const connectionInitText = str(payload?.connectionInit)
+    const operationName = str(payload?.operationName) || undefined
     const headers = payload?.headers ?? {}
-    const secrets = collectCredentialValues({
-      url,
-      headers,
-      variables,
-      connectionInit: connectionInitText,
-    })
+    let proxy: ResolvedProxy | null = null
+    let proxyProblem = ''
+    try {
+      proxy = resolveConnectionProxy(payload?.proxy, url)
+    } catch (e) {
+      proxyProblem = (e as Error).message
+    }
+    const secrets = [
+      ...collectCredentialValues({
+        url,
+        headers,
+        variables,
+        connectionInit: connectionInitText,
+      }),
+      ...proxySecretValues(proxy),
+    ]
     const scrub = scrubberFor(getDb(), secrets)
     const snapshot = {
       url,
       headers,
       query,
       variables,
+      ...(operationName ? { operationName } : {}),
       ...(connectionInitText ? { connectionInit: connectionInitText } : {}),
       ...(payload?._configured ? { configured: payload._configured } : {}),
     }
@@ -260,6 +283,7 @@ export function registerGraphqlWsHandlers(): void {
     try {
       if (!connectionId) return fail('A connection id is required')
       if (!url) return fail('The GraphQL endpoint URL is required')
+      if (proxyProblem) return fail(proxyProblem)
       const init = parseConnectionInit(connectionInitText)
       if (!init.ok) return fail('The connection_init payload is not a JSON object')
 
@@ -288,7 +312,12 @@ export function registerGraphqlWsHandlers(): void {
         message: `GraphQL subscription connecting → ${url}`,
         url,
         tabId: payload?._tabId,
-        body: JSON.stringify({ query, variables, connectionInit: connectionInitText }),
+        body: JSON.stringify({
+          query,
+          ...(operationName ? { operationName } : {}),
+          variables,
+          connectionInit: connectionInitText,
+        }),
         secrets,
       })
 
@@ -298,10 +327,11 @@ export function registerGraphqlWsHandlers(): void {
           connectionId,
           url,
           headers,
-          payload: subscriptionPayload(query, variables),
+          payload: subscriptionPayload(query, variables, operationName),
           ...(init.value ? { connectionInit: init.value } : {}),
           rejectUnauthorized: payload?.sslVerification !== false,
           tls,
+          proxy,
           onEvent: (e) => forward(event, e, scrub),
         })
       } catch (e) {

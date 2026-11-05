@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { WsMessage, KeyValuePair } from '../types'
 import { useEnvironmentStore } from './environment.store'
+import { connectionProxy } from '../lib/network-settings'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
@@ -412,7 +413,11 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
       try {
         const wsStore = useWorkspaceStore.getState()
+        const proxy = await connectionProxy(wsStore.activeProjectId)
+        // Given up while the settings loaded (Cancel, the tab closed, its project left).
+        if (ownerSlice()?._pendingConnectId !== pendingConnectId) return
         const result = await ws.connect({
+          ...proxy,
           url: resolvedUrl,
           headers: headerMap,
           settings: start.settings,

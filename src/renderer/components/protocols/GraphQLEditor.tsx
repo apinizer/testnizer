@@ -3,7 +3,7 @@ import GraphQLQueryPane from './GraphQLQueryPane'
 import GraphQLResponsePane from './GraphQLResponsePane'
 import GraphQLSubscriptionLog from './GraphQLSubscriptionLog'
 import { useGraphQLStore } from '../../stores/graphql.store'
-import { isSubscriptionQuery } from '../../../shared/graphql-row'
+import { chooseGraphqlOperation } from '../../../shared/graphql-row'
 
 export default function GraphQLEditor() {
   const showSubscriptionLog = useGraphQLStore(
@@ -11,7 +11,7 @@ export default function GraphQLEditor() {
       // A running subscription keeps its log even while the query is being edited.
       s.subscriptionState === 'connecting' ||
       s.subscriptionState === 'connected' ||
-      (isSubscriptionQuery(s.query) &&
+      (chooseGraphqlOperation(s.query, s.operationName).isSubscription &&
         (s.subscriptionState === 'error' ||
           s.subscriptionEnd !== null ||
           s.subscriptionEvents.length > 0)),

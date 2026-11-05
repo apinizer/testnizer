@@ -29,6 +29,9 @@ import {
 } from '../protocols/mqtt.engine'
 import { logEvent, logRequestResponse } from '../lib/console-logger'
 import { getConnectionErrorInfo, type ConnectionErrorInfo } from '../lib/error-classifier'
+import { resolveConnectionProxy, type ResolvedProxy } from '../lib/proxy-tunnel'
+import { proxySecretValues } from '../lib/sensitive-scrub'
+import type { ProxySetting } from '../../shared/request-settings'
 import * as historyRepo from '../db/history.repo'
 import { certificateTlsMaterial, loadCertificatesFor } from './request.handler'
 import { onSenderGone, type SenderLike } from '../lib/sender-lifecycle'
@@ -62,6 +65,8 @@ interface MqttConnectPayload {
   properties?: MqttConnectProperties
   will?: MqttWireWill | null
   subscriptions?: MqttWireSubscription[]
+  /** The project → app proxy (`effectiveProxy`); absent = the environment's. */
+  proxy?: ProxySetting
   _tabId?: string
   _workspaceId?: string
   _projectId?: string
@@ -83,6 +88,8 @@ interface Ctx {
 
 const contexts = new Map<string, Ctx>()
 const watched = new Set<number>()
+/** A connect the proxy has not answered yet → its renderer, which may go away first. */
+const tunnelling = new Map<string, number>()
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
@@ -226,6 +233,9 @@ function watchSender(event: IpcMainInvokeEvent): void {
       mqttDisconnect(connectionId)
       contexts.delete(connectionId)
     }
+    for (const [pendingId, senderId] of tunnelling) {
+      if (senderId === id) mqttCancelConnect(pendingId)
+    }
     if (destroyed) watched.delete(id)
   })
 }
@@ -237,7 +247,14 @@ export function registerMqttHandlers(): void {
     const password = str(payload?.password)
     const properties = readConnectProperties(payload?.properties)
     const will = readWill(payload?.will)
-    const secrets = connectionSecrets(password, properties, will)
+    let proxy: ResolvedProxy | null = null
+    let proxyProblem = ''
+    try {
+      proxy = resolveConnectionProxy(payload?.proxy, url)
+    } catch (e) {
+      proxyProblem = (e as Error).message
+    }
+    const secrets = [...connectionSecrets(password, properties, will), ...proxySecretValues(proxy)]
     const settings = readMqttSettings(payload?.settings)
     const subscriptions = readSubscriptions(payload?.subscriptions)
     const version: MqttVersion = payload?.version === 4 ? 4 : 5
@@ -294,9 +311,13 @@ export function registerMqttHandlers(): void {
     }
     try {
       if (!url) return fail('Broker URL is required')
+      if (proxyProblem) return fail(proxyProblem)
       const { tls, error } = tlsFor(payload?._projectId, url)
       if (error) return fail(error)
       watchSender(event)
+      const pendingId = payload?._pendingId
+      const senderId = (event.sender as unknown as SenderLike | undefined)?.id
+      if (proxy && pendingId && senderId !== undefined) tunnelling.set(pendingId, senderId)
       const res = await mqttConnect({
         url,
         clientId: str(payload?.clientId),
@@ -308,6 +329,7 @@ export function registerMqttHandlers(): void {
         will: will ?? null,
         subscriptions,
         tls,
+        proxy,
         pendingId: payload?._pendingId,
         onEvent: (connectionId, e) => {
           sendTo(event, 'mqtt:event', { connectionId, ...e })
@@ -361,6 +383,8 @@ export function registerMqttHandlers(): void {
       return { success: true, data: res }
     } catch (e) {
       return fail((e as Error).message, getConnectionErrorInfo(e))
+    } finally {
+      tunnelling.delete(str(payload?._pendingId))
     }
   })
 

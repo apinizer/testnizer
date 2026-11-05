@@ -111,6 +111,13 @@ export interface ConnectionErrorContext {
   url?: string
   protocol?: 'websocket' | 'socketio' | 'sse' | 'mcp' | 'mqtt' | 'http' | 'graphql' | 'soap'
   transport?: 'stdio' | 'http' | 'sse'
+  /**
+   * The proxy this connection goes through failed, not the server: `url` is
+   * then the proxy's origin (never its credentials), so `target` names it.
+   */
+  viaProxy?: boolean
+  /** What the proxy answered to CONNECT, when it answered something other than 200. */
+  proxyStatus?: number
 }
 
 /** An engine's connect failure: `message` = `formatConnectionError(info)`. */
@@ -510,6 +517,23 @@ function classifyKind(
 }
 
 /**
+ * The proxy failed: one kind whatever the socket reported, the socket's own
+ * finding kept as the detail. A cancel the user asked for stays a cancel.
+ */
+function proxyKind(hit: KindHit & { httpStatus?: number }, status: number | undefined) {
+  // undici reports a refused tunnel as an abort, with the status in its message.
+  if (hit.kind === 'aborted' && status === undefined) return hit
+  const httpStatus = status ?? hit.httpStatus
+  if (httpStatus === 407) {
+    return { kind: 'proxy' as const, httpStatus, detail: 'The proxy rejected the credentials' }
+  }
+  if (httpStatus !== undefined) {
+    return { kind: 'proxy' as const, httpStatus, detail: 'The proxy refused the tunnel' }
+  }
+  return { kind: 'proxy' as const, detail: hit.detail ?? CONNECTION_ERROR_TEXT_EN[hit.kind].what }
+}
+
+/**
  * Classify any engine / library error. Accepts axios errors, plain `Error`s,
  * strings, `eventsource@3` `ErrorEvent`s, socket.io-client `connect_error`s,
  * MCP SDK errors and MQTT.js CONNACK errors. `message` is the English
@@ -524,7 +548,8 @@ export function classifyTransportError(
     return { kind: 'unknown', detail: 'Unknown error', message: 'Unknown error' }
   }
   const f = collectFacets(err)
-  const hit = classifyKind(err, f, ctx)
+  const classified = classifyKind(err, f, ctx)
+  const hit = ctx?.viaProxy ? proxyKind(classified, ctx.proxyStatus) : classified
   const target = targetOf(f, ctx)
   const detail = hit.detail ? scrubConnectionText(hit.detail, ctx?.url) || undefined : undefined
   const text = CONNECTION_ERROR_TEXT_EN[hit.kind]

@@ -28,6 +28,7 @@ import {
   type ConnectionErrorContext,
   type ConnectionErrorKind,
 } from '../lib/error-classifier'
+import { ProxyTunnel, type ResolvedProxy } from '../lib/proxy-tunnel'
 import { CONNECTION_ERROR_TEXT_EN, composeConnectionMessage } from '../../shared/connection-error'
 import {
   GRAPHQL_TRANSPORT_WS,
@@ -57,6 +58,8 @@ export interface GqlWsConnectOptions {
   rejectUnauthorized?: boolean
   /** Certificates and TLS limits for wss:// (`certificateTlsMaterial`, `resolveTlsPayload`). */
   tls?: SecureContextOptions & { minVersion?: string; maxVersion?: string }
+  /** Resolved by the handler; absent or `null` = direct. */
+  proxy?: ResolvedProxy | null
   handshakeTimeoutMs?: number
   ackTimeoutMs?: number
   /** Events after `gqlWsConnect` resolved, plus any that overtake its promise. */
@@ -140,12 +143,18 @@ function attempt(
   const handshakeMs = options.handshakeTimeoutMs ?? HANDSHAKE_TIMEOUT_MS
   const ackMs = options.ackTimeoutMs ?? ACK_TIMEOUT_MS
   return new Promise((resolve, reject) => {
+    // Per attempt: the one retry below opens a tunnel of its own.
+    const tunnel = options.proxy
+      ? new ProxyTunnel(options.proxy, { rejectUnauthorized: options.rejectUnauthorized })
+      : null
+    const failureCtx = (): ConnectionErrorContext => tunnel?.errorContext(ctx) ?? ctx
     let ws: WebSocket
     try {
       ws = new WebSocket(options.url, protocols, {
         headers: options.headers ?? {},
         rejectUnauthorized: options.rejectUnauthorized !== false,
         ...(options.tls ?? {}),
+        ...(tunnel ? { agent: tunnel.agent } : {}),
       })
     } catch (err) {
       reject(toConnectionError(err, ctx))
@@ -165,6 +174,7 @@ function attempt(
       if (!done()) return
       ws.removeAllListeners('message')
       ws.terminate()
+      tunnel?.abort()
       reject(err)
     }
 
@@ -175,7 +185,7 @@ function attempt(
       fail(
         connectTimeoutError(
           `WebSocket connection timeout (${Math.round(handshakeMs / 100) / 10}s)`,
-          ctx,
+          failureCtx(),
         ),
       )
     }, handshakeMs)
@@ -186,7 +196,7 @@ function attempt(
         return
       }
       // After the ack the close that follows ends the subscription.
-      fail(toConnectionError(err, ctx))
+      fail(toConnectionError(err, failureCtx()))
     })
 
     ws.on('open', () => {

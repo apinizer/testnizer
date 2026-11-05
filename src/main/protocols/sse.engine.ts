@@ -8,8 +8,10 @@ import {
   connectTimeoutError,
   formatConnectionError,
   toConnectionError,
+  type ConnectionErrorContext,
   type ConnectionErrorInfo,
 } from '../lib/error-classifier'
+import { openFetchTunnel, type FetchTunnel, type ResolvedProxy } from '../lib/proxy-tunnel'
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -37,6 +39,8 @@ export interface SseConnectOptions {
    * `cancelConnect()`. Cleared once the connection opens or errors out.
    */
   pendingId?: string
+  /** Resolved by the handler; absent or `null` = direct. */
+  proxy?: ResolvedProxy | null
 }
 
 export interface SseConnectionInfo {
@@ -116,6 +120,8 @@ export function describeSseError(
     data?: unknown
   },
   url?: string,
+  /** Replaces `{protocol, url}`: the proxy's context when the proxy failed. */
+  ctx?: ConnectionErrorContext,
 ): { message: string; httpStatus?: number; info: ConnectionErrorInfo } {
   const rawMessage =
     typeof err.message === 'string' && err.message.trim()
@@ -129,7 +135,7 @@ export function describeSseError(
       ...(err.code !== undefined ? { code: err.code } : {}),
       ...(rawMessage ? { message: rawMessage } : {}),
     },
-    { protocol: 'sse', url },
+    ctx ?? { protocol: 'sse', url },
   )
   return {
     message: formatConnectionError(info),
@@ -152,6 +158,7 @@ interface ManagedEventSourceConnection {
   url: string
   connectedAt: number
   windowId: number
+  tunnel: FetchTunnel | null
 }
 
 interface ManagedFetchConnection {
@@ -161,6 +168,7 @@ interface ManagedFetchConnection {
   url: string
   connectedAt: number
   windowId: number
+  tunnel: FetchTunnel | null
 }
 
 type ManagedSseConnection = ManagedEventSourceConnection | ManagedFetchConnection
@@ -209,6 +217,8 @@ function connectEventSource(
 ): Promise<SseConnectionInfo> {
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
+    const tunnel = options.proxy ? openFetchTunnel(options.proxy) : null
+    const ctx = { protocol: 'sse' as const, url: options.url }
 
     // `eventsource@3` no longer accepts a `headers` field on the init dict.
     // Custom request headers must be merged in via a custom `fetch`
@@ -241,7 +251,7 @@ function connectEventSource(
           // previously this surfaced as a connect failure with zero events.
         }
       }
-      return fetch(url, { ...init, headers } as RequestInit)
+      return (tunnel?.fetch ?? fetch)(url, { ...init, headers } as RequestInit)
     }
 
     let eventSource: EventSource
@@ -251,12 +261,16 @@ function connectEventSource(
         fetch: wrappedFetch,
       })
     } catch (err) {
-      reject(toConnectionError(err, { protocol: 'sse', url: options.url }))
+      tunnel?.close()
+      reject(toConnectionError(err, ctx))
       return
     }
 
     if (options.pendingId) {
-      pendingConnects.set(options.pendingId, () => eventSource.close())
+      pendingConnects.set(options.pendingId, () => {
+        eventSource.close()
+        tunnel?.close()
+      })
     }
 
     const managed: ManagedEventSourceConnection = {
@@ -266,19 +280,17 @@ function connectEventSource(
       url: options.url,
       connectedAt: Date.now(),
       windowId,
+      tunnel,
     }
 
     // Connection timeout
     const timeout = setTimeout(() => {
       if (eventSource.readyState === EventSource.CONNECTING) {
+        const failureCtx = tunnel?.errorContext(ctx) ?? ctx
         eventSource.close()
+        tunnel?.close()
         connections.delete(connectionId)
-        reject(
-          connectTimeoutError('SSE connection timeout (15s)', {
-            protocol: 'sse',
-            url: options.url,
-          }),
-        )
+        reject(connectTimeoutError('SSE connection timeout (15s)', failureCtx))
       }
     }, 15000)
 
@@ -327,7 +339,11 @@ function connectEventSource(
       if (options.pendingId) pendingConnects.delete(options.pendingId)
 
       // `eventsource@3` emits `ErrorEvent { code?: number, message?: string }`.
-      const described = describeSseError({ code: err.code, message: err.message }, options.url)
+      const described = describeSseError(
+        { code: err.code, message: err.message },
+        options.url,
+        tunnel?.errorContext(ctx),
+      )
       const { message, httpStatus } = described
       // CLOSED here = the library gave up (`failConnection`): a reconnect
       // answered 204 / non-200 / wrong type. CONNECTING = it will retry.
@@ -354,11 +370,15 @@ function connectEventSource(
       if (!connections.has(connectionId)) {
         connections.delete(connectionId)
         reject(sseFailure(described))
+        // Without this the library would go on retrying through the proxy, every
+        // 3 s, for a connection nobody holds any more.
+        if (tunnel) eventSource.close()
       }
 
       // If the connection is closed, clean up
       if (eventSource.readyState === EventSource.CLOSED) {
         connections.delete(connectionId)
+        tunnel?.close()
       }
     }
   })
@@ -448,6 +468,8 @@ function connectStreaming(
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
     const controller = new AbortController()
+    const tunnel = options.proxy ? openFetchTunnel(options.proxy) : null
+    const ctx = { protocol: 'sse' as const, url: options.url }
 
     const headers: Record<string, string> = { ...(options.headers ?? {}) }
     if (options.lastEventId) headers['Last-Event-ID'] = options.lastEventId
@@ -459,19 +481,19 @@ function connectStreaming(
 
     // 15s handshake timeout, mirroring the EventSource path.
     const timeout = setTimeout(() => {
+      const failureCtx = tunnel?.errorContext(ctx) ?? ctx
       controller.abort()
+      tunnel?.close()
       if (!connections.has(connectionId)) {
-        reject(
-          connectTimeoutError('SSE connection timeout (15s)', {
-            protocol: 'sse',
-            url: options.url,
-          }),
-        )
+        reject(connectTimeoutError('SSE connection timeout (15s)', failureCtx))
       }
     }, 15000)
 
     if (options.pendingId) {
-      pendingConnects.set(options.pendingId, () => controller.abort())
+      pendingConnects.set(options.pendingId, () => {
+        controller.abort()
+        tunnel?.close()
+      })
     }
 
     const connectedAt = Date.now()
@@ -482,7 +504,7 @@ function connectStreaming(
       signal: controller.signal,
     }
 
-    fetch(options.url, fetchInit)
+    ;(tunnel?.fetch ?? fetch)(options.url, fetchInit)
       .then(async (response) => {
         if (!response.ok) {
           // Surface as an HTTP-status error using the same enrichment as the
@@ -502,6 +524,7 @@ function connectStreaming(
             closed: 'failed',
             timestamp: Date.now(),
           })
+          tunnel?.close()
           reject(sseFailure(described))
           return
         }
@@ -520,6 +543,7 @@ function connectStreaming(
             closed: 'ended',
             timestamp: Date.now(),
           })
+          tunnel?.close()
           reject(sseFailure(described))
           return
         }
@@ -533,6 +557,7 @@ function connectStreaming(
             closed: 'failed',
             timestamp: Date.now(),
           })
+          tunnel?.close()
           reject(new Error(msg))
           return
         }
@@ -547,6 +572,7 @@ function connectStreaming(
           url: options.url,
           connectedAt,
           windowId,
+          tunnel,
         }
         connections.set(connectionId, managed)
         sendEventToRenderer(windowId, {
@@ -594,14 +620,16 @@ function connectStreaming(
             })
             connections.delete(connectionId)
           }
+          tunnel?.close()
         } catch (err) {
           // AbortError = explicit disconnect, not an error we report.
           const e = err as { name?: string; message?: string }
+          tunnel?.close()
           if (e?.name === 'AbortError') {
             connections.delete(connectionId)
             return
           }
-          const failure = toConnectionError(err, { protocol: 'sse', url: options.url })
+          const failure = toConnectionError(err, ctx)
           sendEventToRenderer(windowId, {
             connectionId,
             type: 'error',
@@ -624,7 +652,8 @@ function connectStreaming(
         }
         // `fetch` wraps low-level transport errors in `cause` (undici
         // `fetch failed`); the classifier unwraps it (issue #253).
-        const failure = toConnectionError(err, { protocol: 'sse', url: options.url })
+        const failure = toConnectionError(err, tunnel?.errorContext(ctx) ?? ctx)
+        tunnel?.close()
         sendEventToRenderer(windowId, {
           connectionId,
           type: 'error',
@@ -670,6 +699,7 @@ export function disconnect(connectionId: string): boolean {
   } else {
     managed.controller.abort()
   }
+  managed.tunnel?.close()
   connections.delete(connectionId)
   return true
 }

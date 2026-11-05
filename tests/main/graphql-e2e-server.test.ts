@@ -27,6 +27,24 @@ afterEach(async () => {
 })
 
 describe('e2e GraphQL server', () => {
+  it('POST runs the operation it is told to, and refuses to guess', async () => {
+    server = await startGraphqlServer(await freePort())
+    const query = 'query A { a: hello(name: "A") } query B { b: hello(name: "B") }'
+    const post = async (body: Record<string, unknown>): Promise<unknown> =>
+      (
+        await fetch(server!.url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      ).json()
+
+    expect(await post({ query, operationName: 'B' })).toEqual({ data: { b: 'Hello B' } })
+    expect(await post({ query })).toMatchObject({
+      errors: [{ message: expect.stringMatching(/must provide operation name/i) }],
+    })
+  })
+
   it('POST still answers, and a subscription streams on the same URL', async () => {
     server = await startGraphqlServer(await freePort())
 

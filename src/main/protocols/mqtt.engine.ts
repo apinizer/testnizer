@@ -20,12 +20,14 @@
  *  - With protocol 3.1.1 no MQTT 5 field is sent (properties, will
  *    properties, subscription options): MQTT.js would otherwise encode them.
  */
-import { connect as mqttConnectClient, type IClientOptions, type MqttClient } from 'mqtt'
+import { connect as mqttConnectClient, MqttClient, type IClientOptions } from 'mqtt'
 import { randomUUID } from 'crypto'
+import net from 'node:net'
 import {
   DEFAULT_MQTT_SETTINGS,
   MQTT_RECONNECT_PERIOD_MS,
   isRefusedGrant,
+  isSecureMqttUrl,
   normalizeMqttUrl,
   randomMqttClientId,
   readMqttSettings,
@@ -43,6 +45,7 @@ import {
 } from '../../shared/mqtt'
 import { bytesToBase64, decodeBinary, isBinaryContentType } from '../../shared/realtime'
 import { connectTimeoutError, toConnectionError } from '../lib/error-classifier'
+import { ProxyTunnel, type ResolvedProxy } from '../lib/proxy-tunnel'
 
 // ─── Types ───────────────────────────────────────────────────────────────
 
@@ -113,6 +116,8 @@ export interface MqttConnectOptions {
   onClose?: (info: MqttClosedInfo) => void
   /** Renderer-supplied id so `mqttCancelConnect(id)` can abort a pending connect. */
   pendingId?: string
+  /** Resolved by the handler; absent or `null` = direct. */
+  proxy?: ResolvedProxy | null
 }
 
 export interface MqttConnectResult {
@@ -128,6 +133,7 @@ export interface MqttConnectResult {
 
 interface Connection {
   client: MqttClient
+  tunnel: ProxyTunnel | null
   version: MqttVersion
   url: string
   onEvent: (connectionId: string, event: MqttEngineEvent) => void
@@ -140,7 +146,7 @@ interface Connection {
 
 const connections = new Map<string, Connection>()
 /** Pending connects keyed by the renderer-supplied id (Cancel). */
-const pendingConnects = new Map<string, MqttClient>()
+const pendingConnects = new Map<string, { client: MqttClient; tunnel: ProxyTunnel | null }>()
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -276,6 +282,51 @@ export function clientOptions(o: MqttConnectOptions, clientId: string): IClientO
   return opts
 }
 
+const TLS_OPTION_NAMES = ['ca', 'cert', 'key', 'pfx', 'passphrase'] as const
+
+/**
+ * A client over TCP or TLS through the proxy. `mqtt.connect` has no way in: it
+ * dials `net` / `tls` itself. `new MqttClient(streamBuilder, options)` is its
+ * documented form for any other transport, and the builder runs again on every
+ * reconnection, so each one opens a new tunnel. What `mqtt.connect` would read
+ * from the URL is read here, with the same precedence: URL credentials and a
+ * `clientId` query win over the options.
+ */
+function tunnelledTcpClient(url: string, opts: IClientOptions, tunnel: ProxyTunnel): MqttClient {
+  const u = new URL(url)
+  const secure = isSecureMqttUrl(url)
+  const host = u.hostname.replace(/^\[|\]$/g, '')
+  const port = Number(u.port) || (secure ? 8883 : 1883)
+  const options: IClientOptions = {
+    ...opts,
+    protocol: secure ? 'mqtts' : 'mqtt',
+    host,
+    hostname: host,
+    port,
+  }
+  if (u.username) options.username = decodeURIComponent(u.username)
+  if (u.password) options.password = decodeURIComponent(u.password)
+  const clientIdInUrl = u.searchParams.get('clientId')
+  if (clientIdInUrl) options.clientId = clientIdInUrl
+
+  const tlsOptions = secure
+    ? {
+        rejectUnauthorized: opts.rejectUnauthorized !== false,
+        ...(net.isIP(host) === 0 ? { servername: host } : {}),
+        ...Object.fromEntries(
+          TLS_OPTION_NAMES.flatMap((name) => {
+            const value = (opts as Record<string, unknown>)[name]
+            return value === undefined ? [] : [[name, value]]
+          }),
+        ),
+      }
+    : undefined
+  const client = new MqttClient(() => tunnel.openStream(host, port, tlsOptions), options)
+  // `mqtt.connect` keeps this one too: an error with no listener would throw.
+  client.on('error', () => {})
+  return client
+}
+
 function reasonText(err: unknown): string {
   const e = err as { message?: unknown; code?: unknown }
   const msg = typeof e?.message === 'string' && e.message ? e.message : String(err)
@@ -302,14 +353,25 @@ export function mqttConnect(o: MqttConnectOptions): Promise<MqttConnectResult> {
     const connectionId = randomUUID()
     let client: MqttClient
     // Issue #253: connect failures carry what happened + host:port + next step.
-    const failure = (err: unknown): Error => toConnectionError(err, { protocol: 'mqtt', url })
+    const ctx = { protocol: 'mqtt' as const, url }
+    const tunnel = o.proxy
+      ? new ProxyTunnel(o.proxy, { rejectUnauthorized: settings.strictSSL })
+      : null
+    const failure = (err: unknown): Error =>
+      toConnectionError(err, tunnel?.errorContext(ctx) ?? ctx)
     try {
-      client = mqttConnectClient(url, opts)
+      if (!tunnel) client = mqttConnectClient(url, opts)
+      else if (/^wss?:/i.test(url)) {
+        client = mqttConnectClient(url, { ...opts, wsOptions: { agent: tunnel.agent } })
+      } else client = tunnelledTcpClient(url, opts, tunnel)
     } catch (e) {
       reject(failure(e))
       return
     }
-    if (o.pendingId) pendingConnects.set(o.pendingId, client)
+    // MQTT.js's connect timeout destroys the stream, which cannot reach a socket
+    // still waiting for the proxy. On every attempt, reconnections too.
+    if (tunnel) client.on('close', () => tunnel.abort())
+    if (o.pendingId) pendingConnects.set(o.pendingId, { client, tunnel })
 
     let settled = false
     const fail = (error: Error): void => {
@@ -320,6 +382,7 @@ export function mqttConnect(o: MqttConnectOptions): Promise<MqttConnectResult> {
       client.removeAllListeners()
       client.on('error', () => {})
       client.end(true)
+      tunnel?.abort()
       reject(error)
     }
     // A second behind MQTT.js's own connack timer, whose error is clearer.
@@ -328,7 +391,7 @@ export function mqttConnect(o: MqttConnectOptions): Promise<MqttConnectResult> {
         fail(
           connectTimeoutError(
             `MQTT connection timeout (${Math.round(settings.connectionTimeout / 100) / 10}s)`,
-            { protocol: 'mqtt', url },
+            tunnel?.errorContext(ctx) ?? ctx,
           ),
         ),
       settings.connectionTimeout + 1000,
@@ -351,6 +414,7 @@ export function mqttConnect(o: MqttConnectOptions): Promise<MqttConnectResult> {
       client.off('close', onClose)
       const conn: Connection = {
         client,
+        tunnel,
         version,
         url,
         onEvent: o.onEvent,
@@ -469,6 +533,7 @@ function attachLive(connectionId: string, conn: Connection, settings: MqttSettin
     client.removeAllListeners()
     client.on('error', () => {})
     client.end(true)
+    conn.tunnel?.abort()
     try {
       conn.onClose?.({ connectionId, reason })
     } catch {
@@ -479,15 +544,16 @@ function attachLive(connectionId: string, conn: Connection, settings: MqttSettin
 
 /** Abort a connect still waiting for CONNACK. */
 export function mqttCancelConnect(pendingId: string): boolean {
-  const client = pendingConnects.get(pendingId)
-  if (!client) return false
+  const pending = pendingConnects.get(pendingId)
+  if (!pending) return false
   pendingConnects.delete(pendingId)
   try {
     // A forced close: the pending promise rejects through its `close` path.
-    client.end(true)
+    pending.client.end(true)
   } catch {
     /* best-effort */
   }
+  pending.tunnel?.abort()
   return true
 }
 
@@ -505,6 +571,7 @@ export function mqttDisconnect(connectionId: string): boolean {
   } catch {
     conn.client.end(true)
   }
+  conn.tunnel?.abort()
   return true
 }
 

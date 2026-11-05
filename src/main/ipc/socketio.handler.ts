@@ -15,6 +15,9 @@ import {
 import { sioDisplayTarget } from '../protocols/socketio-client'
 import { logRequestResponse, logEvent } from '../lib/console-logger'
 import { connectFailure } from '../lib/error-classifier'
+import { resolveConnectionProxy, type ResolvedProxy } from '../lib/proxy-tunnel'
+import { proxySecretValues } from '../lib/sensitive-scrub'
+import type { ProxySetting } from '../../shared/request-settings'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import {
@@ -40,9 +43,13 @@ const sioContext = new Map<string, { url: string; connectedAt: number; secrets: 
  * and EVERY Console entry (`secrets`) of the connection (issue #283): on a v2
  * server the token travels in the handshake QUERY, and a v2 refusal or a
  * transport error can carry that URL — or the bare token — in its message.
+ * The proxy credential is one of them.
  */
-function sioSecrets(auth: Record<string, unknown> | undefined): unknown[] {
-  return Object.values(auth ?? {})
+function sioSecrets(
+  auth: Record<string, unknown> | undefined,
+  proxy: ResolvedProxy | null,
+): unknown[] {
+  return [...Object.values(auth ?? {}), ...proxySecretValues(proxy)]
 }
 
 /** The secrets of an open connection (none once it is gone). */
@@ -118,6 +125,8 @@ export function registerSocketIOHandlers(): void {
         settings?: Partial<SioSettings>
         /** Listened events (issue #283); omitted = every event. */
         listen?: SioListenConfig
+        /** The project → app proxy (`effectiveProxy`); absent = the environment's. */
+        proxy?: ProxySetting
         _workspaceId?: string
         _projectId?: string
         _endpointId?: string
@@ -127,11 +136,20 @@ export function registerSocketIOHandlers(): void {
       },
     ) => {
       const started = Date.now()
-      const secrets = sioSecrets(options.auth)
+      let proxy: ResolvedProxy | null = null
+      let proxyProblem: Error | null = null
+      try {
+        proxy = resolveConnectionProxy(options.proxy, options.url)
+      } catch (e) {
+        proxyProblem = e as Error
+      }
+      const secrets = sioSecrets(options.auth, proxy)
       // What the client connects to (namespace on the path, query apart).
       const fullTarget = sioDisplayTarget(options.url, options.namespace)
       try {
+        if (proxyProblem) throw proxyProblem
         const data = await socketIOConnect({
+          proxy,
           url: options.url,
           namespace: options.namespace,
           auth: options.auth,

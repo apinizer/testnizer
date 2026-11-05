@@ -9,6 +9,8 @@ import type {
   IpcResult,
   Workspace,
   Project,
+  ProjectTrustEnsure,
+  ProjectTrustStatus,
   Folder,
   Endpoint,
   EndpointCase,
@@ -170,6 +172,20 @@ interface ProjectApi {
     workspaceId: string
     name?: string
   }): Promise<IpcResult<{ projectId: string }>>
+}
+
+/**
+ * Whether a project's scripts may run on this computer. Main owns the answer:
+ * `ensure` shows a native prompt and only the click there can allow.
+ */
+interface ProjectTrustApi {
+  /** `hasScript`: about to run a script that may not be saved; can only make the prompt appear. */
+  ensure(
+    projectId: string,
+    options?: { hasScript?: boolean },
+  ): Promise<IpcResult<ProjectTrustEnsure>>
+  status(projectId: string): Promise<IpcResult<ProjectTrustStatus>>
+  block(projectId: string): Promise<IpcResult<boolean>>
 }
 
 interface FolderApi {
@@ -577,7 +593,10 @@ import type {
   GitDiscardOutcome,
   GitPushOpts,
 } from '../shared/git-changes'
-type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
+type CollectionExportIpcResult = IpcResult<string> & {
+  skipped?: ExportSkippedItem[]
+  notes?: string[]
+}
 
 /** A picked Postman v3 folder, as the Import modal shows it. */
 interface PostmanFolderPick {
@@ -628,7 +647,7 @@ interface ImportExportApi {
    * = cancelled). The handle is single-use.
    */
   /** Postman v3 (issue #277): the single v3 JSON file's text + what it left out / could not carry. */
-  exportPostmanV3Json(projectId: string): Promise<CollectionExportIpcResult & { notes?: string[] }>
+  exportPostmanV3Json(projectId: string): Promise<CollectionExportIpcResult>
   /** Postman v3 folder: main asks where, writes it and returns the created folder (null = cancelled). */
   exportPostmanV3Folder(
     projectId: string,
@@ -1115,6 +1134,8 @@ interface GraphqlWsConnectPayload {
   variables?: string
   /** The connection_init field as typed, `{{var}}` resolved. */
   connectionInit?: string
+  /** Which operation of the document runs; only for a document with several. */
+  operationName?: string
   sslVerification?: boolean
   tls?: {
     minVersion?: string
@@ -3564,6 +3585,7 @@ interface ApiBridge {
   console: ConsoleApi
   workspace: WorkspaceApi
   project: ProjectApi
+  projectTrust: ProjectTrustApi
   folder: FolderApi
   endpoint: EndpointApi
   endpointCase: EndpointCaseApi

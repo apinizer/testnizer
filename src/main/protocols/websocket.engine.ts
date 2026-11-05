@@ -8,6 +8,7 @@ import {
   toConnectionError,
   type ConnectionErrorInfo,
 } from '../lib/error-classifier'
+import { ProxyTunnel, type ResolvedProxy } from '../lib/proxy-tunnel'
 import { decodeBinary } from '../../shared/realtime'
 
 // ─── Types ───────────────────────────────────────────────────
@@ -32,6 +33,8 @@ export interface WsConnectOptions {
    * works normally).
    */
   pendingId?: string
+  /** Resolved by the handler; absent or `null` = direct. */
+  proxy?: ResolvedProxy | null
 }
 
 export interface WsConnectionInfo {
@@ -78,6 +81,8 @@ interface ManagedConnection {
   /** Reconnection attempts since the last successful open. */
   attempts: number
   retryTimer?: ReturnType<typeof setTimeout>
+  /** Every socket of this connection, reconnections too, tunnels through it. */
+  tunnel: ProxyTunnel | null
 }
 
 const connections = new Map<string, ManagedConnection>()
@@ -88,7 +93,7 @@ const connections = new Map<string, ManagedConnection>()
  * looks up the entry, terminates the underlying socket, and the in-flight
  * `connect()` promise rejects through the existing 'error' / timeout path.
  */
-const pendingConnects = new Map<string, WebSocket>()
+const pendingConnects = new Map<string, { ws: WebSocket; tunnel: ProxyTunnel | null }>()
 
 function getWindow(windowId: number): BrowserWindow | null {
   return BrowserWindow.fromId(windowId) ?? null
@@ -115,7 +120,7 @@ export function describeWebSocketError(err: unknown, url?: string): string {
 
 // ─── Public API ─────────────────────────────────────────────
 
-function newSocket(options: WsConnectOptions): WebSocket {
+function newSocket(options: WsConnectOptions, tunnel: ProxyTunnel | null): WebSocket {
   const wsOptions: WebSocket.ClientOptions = {
     headers: options.headers ?? {},
     rejectUnauthorized: options.rejectUnauthorized !== false,
@@ -124,6 +129,7 @@ function newSocket(options: WsConnectOptions): WebSocket {
     handshakeTimeout: (options.handshakeTimeout ?? WS_DEFAULT_HANDSHAKE_TIMEOUT_MS) + 1000,
   }
   if (options.maxPayload !== undefined) wsOptions.maxPayload = options.maxPayload
+  if (tunnel) wsOptions.agent = tunnel.agent
   return new WebSocket(options.url, options.protocols ?? [], wsOptions)
 }
 
@@ -212,12 +218,25 @@ function reconnect(managed: ManagedConnection): void {
   if (connections.get(managed.connectionId) !== managed || managed.userClosed) return
   let ws: WebSocket
   try {
-    ws = newSocket(managed.options)
+    ws = newSocket(managed.options, managed.tunnel)
   } catch {
     onSocketClosed(managed, 1006, 'reconnect failed')
     return
   }
   managed.ws = ws
+  const { tunnel } = managed
+  if (tunnel) {
+    // `ws`'s own handshake timer starts when the request has a socket, which it
+    // has no while the proxy keeps CONNECT unanswered.
+    const guard = setTimeout(
+      () => {
+        if (ws.readyState === WebSocket.CONNECTING) ws.terminate()
+        tunnel.abort()
+      },
+      (managed.options.handshakeTimeout ?? WS_DEFAULT_HANDSHAKE_TIMEOUT_MS) + 1000,
+    )
+    ws.once('close', () => clearTimeout(guard))
+  }
   attachLive(managed)
   // A failed attempt surfaces as 'close' (handled above); its 'error' is not
   // a new error state for the renderer — the reconnecting row says it all.
@@ -239,11 +258,15 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
   return new Promise((resolve, reject) => {
     const connectionId = randomUUID()
     const timeoutMs = options.handshakeTimeout ?? WS_DEFAULT_HANDSHAKE_TIMEOUT_MS
+    const tunnel = options.proxy
+      ? new ProxyTunnel(options.proxy, { rejectUnauthorized: options.rejectUnauthorized })
+      : null
+    const ctx = { protocol: 'websocket' as const, url: options.url }
 
     let ws: WebSocket
 
     try {
-      ws = newSocket(options)
+      ws = newSocket(options, tunnel)
     } catch (err) {
       reject(toConnectionError(err, { protocol: 'websocket', url: options.url }))
       return
@@ -252,7 +275,7 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
     // Register against the renderer-supplied pendingId so `cancelConnect`
     // can terminate a long handshake before 'open' fires.
     if (options.pendingId) {
-      pendingConnects.set(options.pendingId, ws)
+      pendingConnects.set(options.pendingId, { ws, tunnel })
     }
 
     const managed: ManagedConnection = {
@@ -264,18 +287,21 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
       options,
       userClosed: false,
       attempts: 0,
+      tunnel,
     }
 
     // Our own timer next to `ws`'s `handshakeTimeout` so the message names
     // the configured value.
     const timeout = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
+        const failureCtx = tunnel?.errorContext(ctx) ?? ctx
         ws.terminate()
+        tunnel?.abort()
         connections.delete(connectionId)
         reject(
           connectTimeoutError(
             `WebSocket connection timeout (${Math.round(timeoutMs / 100) / 10}s)`,
-            { protocol: 'websocket', url: options.url },
+            failureCtx,
           ),
         )
       }
@@ -309,7 +335,7 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
 
       // One classification (issue #253) for the event and the rejection:
       // the renderer re-renders `errorInfo` in the active locale.
-      const failure = toConnectionError(err, { protocol: 'websocket', url: options.url })
+      const failure = toConnectionError(err, tunnel?.errorContext(ctx) ?? ctx)
       sendEventToRenderer(windowId, {
         connectionId,
         type: 'error',
@@ -332,14 +358,15 @@ export function connect(options: WsConnectOptions, windowId: number): Promise<Ws
  * (already open, already failed, or unknown id).
  */
 export function cancelConnect(pendingId: string): boolean {
-  const ws = pendingConnects.get(pendingId)
-  if (!ws) return false
+  const pending = pendingConnects.get(pendingId)
+  if (!pending) return false
   pendingConnects.delete(pendingId)
   try {
-    ws.terminate()
+    pending.ws.terminate()
   } catch {
     // Best-effort — the socket may already be torn down.
   }
+  pending.tunnel?.abort()
   return true
 }
 
@@ -356,6 +383,7 @@ export function disconnect(connectionId: string): boolean {
   } catch {
     managed.ws.terminate()
   }
+  managed.tunnel?.abort()
 
   connections.delete(connectionId)
   return true

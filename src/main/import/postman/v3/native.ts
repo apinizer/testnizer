@@ -32,6 +32,7 @@ import {
   type SioClientVersion,
 } from '../../../../shared/realtime'
 import { mqttMetaOf, sioMetaOf, wsMetaOf, type RtKeyValue } from '../../../../shared/realtime-meta'
+import { importedOperationName } from '../../../../shared/graphql-row'
 import {
   emptyPublishDraft,
   isMqttVersion,
@@ -161,9 +162,10 @@ function writeGraphql(a: NativeWriteArgs): string {
         ? JSON.stringify(doc.variables, null, 2)
         : '{}'
   const headers = rows(kvList(doc.headers))
-  if (typeof doc.operationName === 'string' && doc.operationName.trim()) {
+  const operation = importedOperationName(query, doc.operationName)
+  if (operation.lost) {
     a.warnings.push(
-      `"${label}": the GraphQL operation name "${doc.operationName}" was not imported (the query is kept).`,
+      `"${label}": the GraphQL operation name "${String(doc.operationName)}" is not in the query and was not imported (the query is kept).`,
     )
   }
   if (isRecord(doc.schema) && !['none', 'auto', undefined].includes(str(doc.schema.source))) {
@@ -182,7 +184,15 @@ function writeGraphql(a: NativeWriteArgs): string {
     body: { type: 'graphql', content: query },
     ...(auth ? { auth } : {}),
     ...scripts,
-    metadata: { graphql: { url, query, variables, headers } },
+    metadata: {
+      graphql: {
+        url,
+        query,
+        variables,
+        headers,
+        ...(operation.keep ? { operationName: operation.keep } : {}),
+      },
+    },
   }
   return insertEndpoint(a, 'graphql', 'POST', extractPath(url), schema)
 }

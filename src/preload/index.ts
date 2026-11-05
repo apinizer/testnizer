@@ -125,6 +125,14 @@ const api = {
   },
 
   // ─── Project ─────────────────────────────────────────────
+  projectTrust: {
+    ensure: (projectId: string, options?: { hasScript?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('projectTrust:ensure', projectId, options),
+    status: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('projectTrust:status', projectId),
+    block: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('projectTrust:block', projectId),
+  },
   project: {
     list: (workspaceId: string): Promise<unknown> =>
       ipcRenderer.invoke('project:list', workspaceId),

@@ -2,6 +2,7 @@
 import type { PostmanBody } from './types'
 import { genKvId, toText, tryParseJson } from './normalize'
 import { absoluteFileWarnings } from '../../lib/body-file-paths'
+import { importedOperationName } from '../../../shared/graphql-row'
 
 export interface UiBody {
   type: string
@@ -54,15 +55,18 @@ function mapMode(body: PostmanBody, label: string, warnings: string[]): UiBody {
     }
     case 'graphql': {
       const g = body.graphql
-      if (g && typeof g.operationName === 'string' && g.operationName.trim()) {
+      // This body goes out as it stands, so only a name the document holds goes in.
+      const operation = importedOperationName(toText(g?.query), g?.operationName)
+      if (operation.lost) {
         warnings.push(
-          `"${label}": the GraphQL operation name "${g.operationName}" was not imported (the request body keeps query and variables).`,
+          `"${label}": the GraphQL operation name "${g?.operationName}" is not in the query and was not imported (the request body keeps query and variables).`,
         )
       }
       const payload = g
         ? JSON.stringify(
             {
               query: g.query ?? '',
+              ...(operation.keep ? { operationName: operation.keep } : {}),
               variables:
                 tryParseJson(typeof g.variables === 'string' ? g.variables : undefined) ??
                 (g.variables && typeof g.variables === 'object' ? g.variables : {}),

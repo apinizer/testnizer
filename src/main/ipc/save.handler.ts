@@ -70,6 +70,13 @@ import { invalidateSecretInventory } from '../lib/secret-inventory-cache'
 import { withFkContext } from '../lib/fk-context'
 import { openFileDialogOptions } from '../lib/open-dialog'
 import {
+  blockProjectScripts,
+  copyProjectScriptTrust,
+  dropProjectScriptTrust,
+  withImportScriptCheck,
+} from '../lib/project-script-trust'
+import { collectProjectScripts, scriptFingerprints } from '../lib/project-scripts'
+import {
   orderSuiteFolders,
   orderSuiteItems,
   parentsFirst,
@@ -741,12 +748,68 @@ function importProjectData(
   projectId: string,
   options: ImportProjectOptions = {},
 ): Promise<void> {
+  // Rows arriving in a project that holds nothing: Clone from Git's first pull
+  // (the wizard creates the project, then pulls), or a first pull on a project
+  // that just got a remote. They came from outside, so the project is blocked
+  // BEFORE they are written. Later pulls of a project with rows change nothing
+  // (`lib/project-script-trust.ts`).
+  const blocking = projectHasNoContent(projectId) ? blockProjectScripts(projectId) : undefined
   // One transaction: a row the database refuses leaves the project as it was.
   getDb().transaction(() => writeProjectRows(data, projectId, options))()
   // Mock servers running off these rows: the prune may have deleted a row (stop
   // it) and the upserts may have rewritten one (reload it) — issue #154. A
   // running server never outlives or drifts from its row.
-  return syncRunningMocksWithDb()
+  return Promise.all([blocking, syncRunningMocksWithDb()]).then(() => undefined)
+}
+
+/**
+ * No request, folder, suite or mock yet, and no project-level script. Environments
+ * and variables do not count: they carry no script, and an empty project may
+ * have one.
+ */
+function projectHasNoContent(projectId: string): boolean {
+  const db = getDb()
+  for (const table of ['folders', 'endpoints', 'saved_requests', 'test_suites', 'mock_servers']) {
+    if (db.prepare(`SELECT 1 FROM ${table} WHERE project_id = ? LIMIT 1`).get(projectId)) {
+      return false
+    }
+  }
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(projectId) as
+    | Record<string, unknown>
+    | undefined
+  return collectProjectScripts({ project }).length === 0
+}
+
+/**
+ * The one wrapper for an import into an existing project: the project ends up
+ * blocked only if the import added or changed a script. Whatever writes rows
+ * from a file goes through here, except a whole project file (always blocked).
+ */
+export function withProjectImportCheck<T>(
+  projectId: string,
+  run: () => T | Promise<T>,
+): Promise<T> {
+  return withImportScriptCheck(
+    projectId,
+    () => scriptFingerprints(collectProjectScripts(exportProjectData(projectId))),
+    run,
+  )
+}
+
+/** A project file as a NEW project: blocked before a single row of it is written. */
+async function importProjectFileAsNew(
+  data: ProjectExport,
+  workspaceId: string,
+  name: string | undefined,
+): Promise<{ projectId: string }> {
+  const id = randomUUID()
+  await blockProjectScripts(id)
+  try {
+    return importProjectAsNew(data, workspaceId, { name, id })
+  } catch (e) {
+    await dropProjectScriptTrust(id)
+    throw e
+  }
 }
 
 function writeProjectRows(
@@ -2049,12 +2112,12 @@ function ensureUniqueProjectName(
 export function importProjectAsNew(
   data: ProjectExport,
   workspaceId: string,
-  overrides?: { name?: string },
+  overrides?: { name?: string; id?: string },
 ): { projectId: string } {
   const db = getDb()
   const now = Date.now()
 
-  const newProjectId = randomUUID()
+  const newProjectId = overrides?.id ?? randomUUID()
   const folderIdMap = new Map<string, string>()
   const endpointIdMap = new Map<string, string>()
   const savedReqIdMap = new Map<string, string>()
@@ -2679,11 +2742,12 @@ export function registerSaveHandlers(): void {
         // Items the collection format cannot carry (MCP, WebSocket, gRPC, AI …)
         // — returned so the Tests panel names them (issue #197).
         let skipped: ExportSkippedItem[] = []
+        let notes: string[] = []
         if (fmt === 'postman') {
-          ;({ content, skipped } = buildPostmanSuiteExport(suiteId))
+          ;({ content, skipped, notes } = buildPostmanSuiteExport(suiteId))
           suffix = 'postman'
         } else if (fmt === 'insomnia') {
-          ;({ content, skipped } = buildInsomniaSuiteExport(suiteId))
+          ;({ content, skipped, notes } = buildInsomniaSuiteExport(suiteId))
           suffix = 'insomnia'
         } else {
           content = JSON.stringify(exportTestSuiteData(suiteId), null, 2)
@@ -2692,7 +2756,7 @@ export function registerSaveHandlers(): void {
         const defaultName = `suite-${suiteName}-${suffix}-${date}.json`
         const res = await writeJsonViaSaveDialog(content, defaultName)
         if (!res.success) return { success: false, error: res.error }
-        return { success: true, data: { path: res.path, skipped } }
+        return { success: true, data: { path: res.path, skipped, notes } }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }
@@ -2717,8 +2781,16 @@ export function registerSaveHandlers(): void {
         const baseName =
           payload.name ||
           `${(data.project.display_name as string) || (data.project.name as string) || 'Project'} (copy)`
-        const res = importProjectAsNew(data, payload.workspaceId, { name: baseName })
-        return { success: true, data: { projectId: res.projectId } }
+        // The copy is as trusted as its source, before its rows exist.
+        const id = randomUUID()
+        await copyProjectScriptTrust(payload.projectId, id)
+        try {
+          const res = importProjectAsNew(data, payload.workspaceId, { name: baseName, id })
+          return { success: true, data: { projectId: res.projectId } }
+        } catch (e) {
+          await dropProjectScriptTrust(id)
+          throw e
+        }
       } catch (e) {
         return { success: false, error: (e as Error).message }
       }
@@ -2738,7 +2810,7 @@ export function registerSaveHandlers(): void {
         if (validationError) {
           return { success: false, error: validationError }
         }
-        const res = importProjectAsNew(parsed, payload.workspaceId, { name: payload.name })
+        const res = await importProjectFileAsNew(parsed, payload.workspaceId, payload.name)
         return { success: true, data: { projectId: res.projectId } }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -2769,7 +2841,7 @@ export function registerSaveHandlers(): void {
         if (validationError) {
           return { success: false, error: validationError }
         }
-        const res = importProjectAsNew(parsed, payload.workspaceId, { name: payload.name })
+        const res = await importProjectFileAsNew(parsed, payload.workspaceId, payload.name)
         return { success: true, data: { projectId: res.projectId } }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -2811,10 +2883,12 @@ export function registerSaveHandlers(): void {
         }
         const damaged = damagedFolderExport(parsed)
         if (damaged) return { success: false, error: damaged }
-        const out = importFolderData(
-          parsed as unknown as FolderExport,
-          payload.projectId,
-          payload.parentFolderId ?? null,
+        const out = await withProjectImportCheck(payload.projectId, () =>
+          importFolderData(
+            parsed as unknown as FolderExport,
+            payload.projectId,
+            payload.parentFolderId ?? null,
+          ),
         )
         return { success: true, data: out }
       } catch (e) {
@@ -2856,7 +2930,10 @@ export function registerSaveHandlers(): void {
           content = readImportFile(result.filePaths[0])
         }
 
-        const out = await importTestSuiteFromFile(content, payload.projectId, payload.suiteName)
+        const fileText = content
+        const out = await withProjectImportCheck(payload.projectId, () =>
+          importTestSuiteFromFile(fileText, payload.projectId, payload.suiteName),
+        )
         return { success: true, data: out }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
@@ -2954,6 +3031,8 @@ export function registerSaveHandlers(): void {
         const problem = projectFileProblem(parsed)
         if (problem) return { success: false, error: problem }
         const data = parsed as ProjectExport
+        // A whole project file, whatever the target holds: blocked first.
+        await blockProjectScripts(payload.projectId)
         await importProjectData(data, payload.projectId)
         return {
           success: true,

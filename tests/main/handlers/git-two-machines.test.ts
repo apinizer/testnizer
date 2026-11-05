@@ -387,6 +387,31 @@ describe('row-level sync on Pull', () => {
   }, 30_000)
 })
 
+describe('a GraphQL row travels whole', () => {
+  it('the selected operation and connection_init reach the other machine', async () => {
+    const A = machine('A')
+    const B = machine('B')
+    const id = addEndpoint(A, 'Feed')
+    const graphql = {
+      url: 'ws://gql.test/graphql',
+      query: 'query Now { now }\nsubscription Feed { tick }',
+      variables: '{}',
+      headers: [],
+      connectionInit: '{"tenant":"t1"}',
+      operationName: 'Feed',
+    }
+    A.db
+      .prepare("UPDATE endpoints SET protocol = 'graphql', request_schema = ? WHERE id = ?")
+      .run(JSON.stringify({ metadata: { graphql } }), id)
+    await push(A)
+    await pull(B)
+    const row = B.db.prepare('SELECT request_schema FROM endpoints WHERE id = ?').get(id) as {
+      request_schema: string
+    }
+    expect(JSON.parse(row.request_schema).metadata.graphql).toEqual(graphql)
+  }, 30_000)
+})
+
 describe('Clone from Git (New Project → Clone) — the first Pull of a fresh project', () => {
   it('a fresh machine imports the remote file into its NEW project (different id, renamed seed)', async () => {
     // Machine A's project is the renamed seed: internal name stays

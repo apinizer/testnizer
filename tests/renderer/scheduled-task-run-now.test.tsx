@@ -7,6 +7,7 @@
 import * as React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { allowScriptTrustBridge } from '../helpers/script-trust-bridge'
 import ScheduledTasksView from '../../src/renderer/components/runner/ScheduledTasksView'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 
@@ -58,6 +59,7 @@ beforeEach(() => {
   runNow.mockClear()
   useWorkspaceStore.setState({ activeProjectId: 'p1' })
   ;(window as unknown as { api: unknown }).api = {
+    projectTrust: allowScriptTrustBridge,
     scheduler: {
       list: async () => ({
         success: true,

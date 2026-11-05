@@ -598,6 +598,124 @@ describe('a saved GraphQL subscription', () => {
     expect(row()).not.toContain('connectionInit')
   })
 
+  it.each(ROW_KINDS)(
+    '%s: a selected query in a mixed document runs, on Send and on Run',
+    async (kind) => {
+      const id = emptyRow(kind, 'graphql')
+      openTab(kind, 'graphql', id)
+      useGraphQLStore.setState({
+        url: `${base}/graphql`,
+        query: 'subscription Feed { tick }\nquery Now { now }',
+        operationName: 'Now',
+        variables: '',
+        headers: [] as never,
+        withheldCredentials: [],
+      })
+      expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+      const sent = await sendFromEditor({
+        fill: () => {},
+        send: () => useGraphQLStore.getState().executeQuery(),
+        sentMatches: () => {},
+      })
+      const run = await runRow(id)
+      expect(sent.body).toBe(
+        '{"query":"subscription Feed { tick }\\nquery Now { now }","operationName":"Now","variables":{}}',
+      )
+      expect(run.body).toBe(sent.body)
+    },
+  )
+
+  it.each(ROW_KINDS)('%s: a selected subscription in a mixed document is skipped', async (kind) => {
+    const id = emptyRow(kind, 'graphql')
+    openTab(kind, 'graphql', id)
+    useGraphQLStore.setState({
+      url: `${base}/graphql`,
+      query: 'query Now { now }\nsubscription Feed { tick }',
+      operationName: 'Feed',
+      variables: '',
+      headers: [] as never,
+      withheldCredentials: [],
+    })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+    const res = (await harness.invoke('runner:execute', {
+      projectId,
+      workspaceId,
+      endpointIds: [id],
+    })) as { data?: { results: Array<Record<string, unknown>> } }
+    expect(received).toEqual([])
+    expect(res.data?.results[0].statusText).toBe('UNSUPPORTED')
+    expect(res.data?.results[0].skipped).toBe(1)
+  })
+
+  it.each(ROW_KINDS)('%s: no selection in a mixed document runs the first one', async (kind) => {
+    const id = emptyRow(kind, 'graphql')
+    openTab(kind, 'graphql', id)
+    useGraphQLStore.setState({
+      url: `${base}/graphql`,
+      query: 'query A { a }\nquery B { b }',
+      operationName: '',
+      variables: '',
+      headers: [] as never,
+      withheldCredentials: [],
+    })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+    expect(JSON.parse((await runRow(id)).body).operationName).toBe('A')
+  })
+
+  it.each(ROW_KINDS)('%s: one operation stays byte-identical, row and wire', async (kind) => {
+    const table = {
+      endpoint: 'endpoints',
+      savedRequest: 'saved_requests',
+      testSuiteItem: 'test_suite_items',
+    }[kind]
+    const id = emptyRow(kind, 'graphql')
+    openTab(kind, 'graphql', id)
+    useGraphQLStore.setState({
+      url: `${base}/graphql`,
+      query: 'query Only { only }',
+      // A selection left from when the document had more: it is not written or sent.
+      operationName: 'Only',
+      variables: '{"a":1}',
+      headers: [] as never,
+      withheldCredentials: [],
+    })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+    expect(JSON.stringify(testDb.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id))).not.toContain(
+      'operationName',
+    )
+    const sent = await sendFromEditor({
+      fill: () => {},
+      send: () => useGraphQLStore.getState().executeQuery(),
+      sentMatches: () => {},
+    })
+    const run = await runRow(id)
+    expect(sent.body).toBe('{"query":"query Only { only }","variables":{"a":1}}')
+    expect(run.body).toBe(sent.body)
+  })
+
+  it('a selection the document lost: Send and Run both use the first, the row keeps nothing', async () => {
+    const id = emptyRow('endpoint', 'graphql')
+    openTab('endpoint', 'graphql', id)
+    useGraphQLStore.setState({
+      url: `${base}/graphql`,
+      query: 'query A { a }\nquery C { c }',
+      operationName: 'B',
+      variables: '',
+      headers: [] as never,
+      withheldCredentials: [],
+    })
+    expect(await saveActiveRequestInPlace()).toEqual({ success: true })
+    const stored = JSON.stringify(testDb.prepare('SELECT * FROM endpoints WHERE id = ?').get(id))
+    expect(stored).not.toContain('operationName')
+    const sent = await sendFromEditor({
+      fill: () => {},
+      send: () => useGraphQLStore.getState().executeQuery(),
+      sentMatches: () => {},
+    })
+    expect(JSON.parse(sent.body).operationName).toBe('A')
+    expect(JSON.parse((await runRow(id)).body).operationName).toBe('A')
+  })
+
   it('a query whose text only mentions a subscription still runs', async () => {
     const id = emptyRow('endpoint', 'graphql')
     openTab('endpoint', 'graphql', id)

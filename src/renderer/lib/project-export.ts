@@ -18,6 +18,7 @@
 
 import type { CollectionExportFormat, ExportSkippedItem } from '../../shared/collection-export'
 import { formatExportSkipped } from './export-skipped'
+import { formatCount } from './plural'
 import { t as translate } from './i18n'
 import { toast } from './toast'
 import { useWorkspaceStore } from '../stores/workspace.store'
@@ -133,13 +134,20 @@ type CollectionExportCall = (projectId: string) => Promise<{
   notes?: string[]
 }>
 
+/** The title of an export's notes. Postman v3 names itself; the others share one. */
+export function exportNotesTitle(format: ProjectExportFormat, count: number): string {
+  return format.startsWith('postman-v3')
+    ? translate('export.v3Notes').replace('{count}', String(count))
+    : formatCount(count, translate('export.notesOne'), translate('export.notes'))
+}
+
 /**
- * What a Postman v3 export could not carry (a timeout, a Socket.IO token, …)
- * — one warning toast, the first lines as its description.
+ * What an export could not carry (a timeout, a Socket.IO token, a subscription's
+ * connection_init, …) — one warning toast, the first lines as its description.
  */
-function notesToast(notes: string[] | undefined): void {
+function notesToast(notes: string[] | undefined, format: ProjectExportFormat): void {
   if (!notes || notes.length === 0) return
-  toast.warning(translate('export.v3Notes').replace('{count}', String(notes.length)), {
+  toast.warning(exportNotesTitle(format, notes.length), {
     description: notes.slice(0, 3).join('\n') + (notes.length > 3 ? '\n…' : ''),
   })
 }
@@ -191,7 +199,7 @@ export async function exportProjectAs(
       exportedToast(res.data)
       const skippedMsg = formatExportSkipped(res.skipped, 'postman-v3', translate)
       if (skippedMsg) toast.warning(skippedMsg)
-      notesToast(res.notes)
+      notesToast(res.notes, format)
       return true
     }
 
@@ -219,7 +227,7 @@ export async function exportProjectAs(
     exportedToast(saved.data)
     const skippedMsg = formatExportSkipped(built.skipped, format, translate)
     if (skippedMsg) toast.warning(skippedMsg)
-    notesToast(built.notes)
+    notesToast(built.notes, format)
     return true
   } catch (err) {
     console.error('Project export failed:', err)

@@ -28,7 +28,7 @@ import {
 /** A GraphQL tab's body: Send posts `{query, variables}` as JSON. */
 export interface GraphqlCodeBody {
   type: 'graphql'
-  graphql: { query: string; variables: string }
+  graphql: { query: string; variables: string; operationName?: string }
 }
 
 export interface CodeGenRequest {
@@ -102,6 +102,7 @@ function resolveBody(
       graphql: {
         query: resolveVariables(g.query, vars),
         variables: resolveVariables(g.variables, vars),
+        ...(g.operationName ? { operationName: g.operationName } : {}),
       },
     }
   }
