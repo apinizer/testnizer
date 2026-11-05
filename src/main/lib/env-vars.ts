@@ -160,7 +160,7 @@ export interface MockTemplateVars {
 export function loadMockTemplateVars(opts: EnvVarLoadOptions): MockTemplateVars {
   const { globals, environment, vaultKeys, environmentSecretKeys } = loadEnvVarScopes(opts)
   const secret = new Set(environmentSecretKeys)
-  for (const key of vaultKeys) if (!(key in environment)) secret.add(key)
+  for (const key of vaultKeys) if (!Object.hasOwn(environment, key)) secret.add(key)
   const envVars = Object.fromEntries(
     Object.entries({ ...globals, ...environment }).filter(([key]) => !secret.has(key)),
   )

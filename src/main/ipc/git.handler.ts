@@ -17,7 +17,7 @@ import {
   readCheckoutFile,
 } from '../import/safe-input'
 import { openSecret } from '../lib/secret-at-rest'
-import { readSharedProjectSettings } from '../lib/project-settings'
+import { projectNeedsFileConsent, readSharedProjectSettings } from '../lib/project-settings'
 import {
   GIT_MERGE_IN_PROGRESS_ERROR,
   GIT_NOTHING_COMMITTED_ERROR,
@@ -1473,6 +1473,7 @@ export function registerGitHandlers(): void {
           branch: currentBranch,
           fastForwarded,
           emptySecrets: countEmptyLocalSecrets(projectId),
+          absoluteFiles: await projectNeedsFileConsent(projectId),
           skippedFiles: listCheckoutJsonFiles(config.localPath, ['package.json']).skipped.map(
             (s) => s.file,
           ),

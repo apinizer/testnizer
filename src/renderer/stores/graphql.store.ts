@@ -420,6 +420,8 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     // Issue #244: a credential still withheld after a restart is reloaded first.
     if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const { url, query, variables, headers, operationName } = get()
+    // Read now: the tab can change while the settings below load.
+    const configuredMeta = gqlMetaOf(get())
     if (!url.trim() || !query.trim()) return
 
     const responseStore = useResponseStore.getState()
@@ -496,7 +498,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         _projectId: ws.activeProjectId || undefined,
         // Editor state with `{{var}}` kept — the History row reopens from it
         // (issues #182, #195). Same shape `snapshotProtocol` saves.
-        _configured: { url, meta: { graphql: gqlMetaOf(get()) } },
+        _configured: { url, meta: { graphql: configuredMeta } },
       })
 
       if (result?.success && result.data) {

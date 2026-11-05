@@ -240,7 +240,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
   connect: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
     if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
-    const { url, customHeaders, lastEventId, method, body, bodyType } = get()
+    const { url, customHeaders, lastEventId, method, body, bodyType, eventTypeFilter } = get()
     if (!url.trim()) return
 
     const pendingConnectId = makeId()
@@ -421,7 +421,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
               bodyType,
               customHeaders,
               lastEventId,
-              eventTypeFilter: get().eventTypeFilter,
+              eventTypeFilter,
             },
           },
         },

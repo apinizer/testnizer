@@ -897,10 +897,10 @@ index e439eb2..5772309 100644
  [Full reference →](/docs/protocols/mcp)
  
 diff --git a/website/src/content/docs/protocols/graphql.md b/website/src/content/docs/protocols/graphql.md
-index d9bde12..d7da182 100644
+index d9bde12..7691634 100644
 --- a/website/src/content/docs/protocols/graphql.md
 +++ b/website/src/content/docs/protocols/graphql.md
-@@ -5,9 +5,8 @@ order: 4
+@@ -5,11 +5,10 @@ order: 4
  section: Protocols
  ---
  
@@ -910,7 +910,10 @@ index d9bde12..d7da182 100644
 +Testnizer's GraphQL editor sends queries and mutations over HTTP and opens a
 +WebSocket connection for subscriptions.
  
- > **Multi-tab:** URL, query, variables, headers, and response are stored per-tab. The introspected schema is **shared** across all tabs pointing at the same endpoint — introspect once, use everywhere.
+-> **Multi-tab:** URL, query, variables, headers, and response are stored per-tab. The introspected schema is **shared** across all tabs pointing at the same endpoint — introspect once, use everywhere.
++> **Multi-tab:** URL, query, variables, headers, response and the introspected schema are stored per tab. Introspect in each tab that needs the schema; restart clears it.
+ 
+ ## Creating a GraphQL request
  
 @@ -56,7 +55,7 @@ query GetUser($id: ID!) {
  Hit **Send** (or `Ctrl+Enter`). Testnizer detects the operation type:
@@ -2993,10 +2996,10 @@ index ce19098..9fa78e9 100644
  [Tam referans →](/tr/docs/protocols/mcp)
  
 diff --git a/website/src/content/docs/tr/protocols/graphql.md b/website/src/content/docs/tr/protocols/graphql.md
-index 94df85a..31ded3b 100644
+index 94df85a..bd5f1f8 100644
 --- a/website/src/content/docs/tr/protocols/graphql.md
 +++ b/website/src/content/docs/tr/protocols/graphql.md
-@@ -5,9 +5,8 @@ order: 4
+@@ -5,11 +5,10 @@ order: 4
  section: Protokoller
  ---
  
@@ -3006,7 +3009,10 @@ index 94df85a..31ded3b 100644
 +Testnizer'ın GraphQL editörü sorgu ve mutasyonları HTTP ile gönderir, abonelikler için
 +WebSocket bağlantısı açar.
  
- > **Çoklu sekme:** URL, sorgu, değişkenler, header'lar ve yanıt sekme bazında saklanır. İçgözlenen şema, aynı uç noktayı işaret eden tüm sekmeler arasında **paylaşılır** — bir kez içgözleyin, her yerde kullanın.
+-> **Çoklu sekme:** URL, sorgu, değişkenler, header'lar ve yanıt sekme bazında saklanır. İçgözlenen şema, aynı uç noktayı işaret eden tüm sekmeler arasında **paylaşılır** — bir kez içgözleyin, her yerde kullanın.
++> **Çoklu sekme:** URL, sorgu, değişkenler, header'lar, yanıt ve içgözlenen şema sekme bazında saklanır. Şemaya ihtiyaç duyan her sekmede içgözlem yapın; yeniden başlatınca şema temizlenir.
+ 
+ ## GraphQL isteği oluşturma
  
 @@ -56,7 +55,7 @@ query GetUser($id: ID!) {
  **Gönder**'e tıklayın (veya `Ctrl+Enter`). Testnizer operasyon türünü algılar:

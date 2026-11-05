@@ -366,8 +366,10 @@ describe('run hooks', () => {
   })
 })
 
-describe('the state is read once, at run start', () => {
-  it('a block that arrives during a run does not change that run', async () => {
+describe('the state is read for each row, after the row', () => {
+  // A project file imported while a run waits on a slow request: it blocks the
+  // project, and the next row already holds what it brought.
+  it('a block that arrives during a run stops the next row and its script', async () => {
     await allow()
     const first = endpoint('/first')
     const second = endpoint('/second', { preScript: SCRIPT })
@@ -375,9 +377,58 @@ describe('the state is read once, at run start', () => {
       void trust.blockProjectScripts(projectId)
     }
     const r = await run({ endpointIds: [first, second] })
+    expect(r.results.map((row) => row.status)).toEqual([200, null])
+    expect(r.results[1].error).toBe(MESSAGE)
+    expect(hits).toEqual(['/first'])
+    expect(canaryLines()).toEqual([])
+  })
+
+  it('a block that arrives during a run stops a later run hook', async () => {
+    await allow()
+    onHit = () => {
+      void trust.blockProjectScripts(projectId)
+    }
+    await run({ endpointIds: [endpoint('/first')], runPostScript: SCRIPT })
+    expect(canaryLines()).toEqual([])
+  })
+
+  it('an Allow that arrives during a run applies to the next row', async () => {
+    await trust.blockProjectScripts(projectId)
+    const first = endpoint('/first')
+    const second = endpoint('/second', { preScript: SCRIPT })
+    onHit = () => {
+      void allow()
+    }
+    const r = await run({ endpointIds: [first, second] })
     expect(r.results.map((row) => row.status)).toEqual([200, 200])
     expect(canaryLines().length).toBeGreaterThan(0)
-    expect(await trust.isProjectScriptsBlocked(projectId)).toBe(true)
+  })
+})
+
+describe('a row of another project', () => {
+  // `runner:execute` refuses this; a scheduled task stores whatever ids it was given.
+  it('never runs under the permission of the project that asked', async () => {
+    await allow()
+    const blockedProject = randomUUID()
+    db.prepare(
+      `INSERT INTO projects (id, workspace_id, name, type, sort_order, created_at, updated_at) VALUES (?, ?, 'B', 'http', 0, 1, 1)`,
+    ).run(blockedProject, workspaceId)
+    await trust.blockProjectScripts(blockedProject)
+    const foreign = randomUUID()
+    db.prepare(
+      `INSERT INTO endpoints (id, project_id, folder_id, name, protocol, method, path, status, request_schema, sort_order, created_at, updated_at)
+       VALUES (?, ?, NULL, 'foreign', 'http', 'GET', '/foreign', 'developing', ?, 0, 1, 1)`,
+    ).run(foreign, blockedProject, schema('/foreign', { preScript: SCRIPT }))
+
+    const report = await executeCollectionForScheduler({
+      projectId,
+      workspaceId,
+      endpointIds: [foreign],
+    } as Parameters<typeof executeCollectionForScheduler>[0])
+
+    expect(report.results[0].error).toMatch(/another project/)
+    expect(hits).toEqual([])
+    expect(canaryLines()).toEqual([])
   })
 })
 

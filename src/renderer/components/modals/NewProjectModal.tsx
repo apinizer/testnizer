@@ -18,7 +18,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
-import { emptySecretsMessage, skippedFilesMessage } from '../../lib/pull-messages'
+import { pullWarnings, type PullNotices } from '../../lib/pull-messages'
 import ProjectIcon from '../shared/ProjectIcon'
 import Modal from '../shared/Modal'
 
@@ -531,12 +531,12 @@ export default function NewProjectModal() {
 
           // Import data from local file if source was 'local'
           if (source === 'local' && localFilePath) {
-            await settled(
-              t('newProject.importFailed'),
-              Promise.resolve(
-                window.api?.save?.importLocal({ filePath: localFilePath, projectId }),
-              ),
-            )
+            const imported = window.api?.save?.importLocal({ filePath: localFilePath, projectId })
+            await settled(t('newProject.importFailed'), Promise.resolve(imported))
+            const local = (await Promise.resolve(imported).catch(() => undefined)) as
+              | { data?: PullNotices }
+              | undefined
+            warnings.push(...pullWarnings(t, local?.data))
           }
 
           if ((saveMode === 'git' || saveMode === 'both') && gitUrl) {
@@ -563,11 +563,7 @@ export default function NewProjectModal() {
                   | {
                       success?: boolean
                       error?: string
-                      data?: {
-                        imported?: boolean
-                        emptySecrets?: number
-                        skippedFiles?: string[]
-                      }
+                      data?: PullNotices & { imported?: boolean }
                     }
                   | undefined
                 if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
@@ -577,12 +573,7 @@ export default function NewProjectModal() {
                 if (res?.data?.imported === false) {
                   throw new Error(t('toast.pullNoProjectFile'))
                 }
-                if (res?.data?.emptySecrets) {
-                  warnings.push(emptySecretsMessage(t, res.data.emptySecrets))
-                }
-                if (res?.data?.skippedFiles?.length) {
-                  warnings.push(skippedFilesMessage(t, res.data.skippedFiles))
-                }
+                warnings.push(...pullWarnings(t, res?.data))
               } else {
                 // New project with a git remote — seed the remote with the
                 // project data.

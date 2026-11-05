@@ -2466,12 +2466,12 @@ interface SaveApi {
   importProject(payload: {
     workspaceId: string
     name?: string
-  }): Promise<IpcResult<{ projectId: string }>>
+  }): Promise<IpcResult<{ projectId: string; absoluteFiles?: boolean }>>
   importProjectFromContent(payload: {
     workspaceId: string
     content: string
     name?: string
-  }): Promise<IpcResult<{ projectId: string }>>
+  }): Promise<IpcResult<{ projectId: string; absoluteFiles?: boolean }>>
   importFolder(payload: {
     projectId: string
     parentFolderId?: string | null

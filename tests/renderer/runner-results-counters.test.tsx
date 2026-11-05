@@ -230,3 +230,38 @@ describe('script console output is counted and filterable (RL-6)', () => {
     expect(filterCount('console')).toBe(0)
   })
 })
+
+describe('the iteration header counts like the run summary', () => {
+  // A GraphQL subscription row in a Run: `skipped: 1`, with the reason in `error`.
+  const skipped = (id: string, iteration: number) =>
+    result({
+      endpointId: id,
+      iteration,
+      phase: 'main',
+      status: null,
+      statusText: 'SKIPPED',
+      skipped: 1,
+      error: 'A subscription cannot run in a Run.',
+    })
+
+  it('a skipped row is not a failed one', () => {
+    const rows = [skipped('sub', 1), skipped('sub', 2)]
+    renderTab(rows)
+    for (const header of screen.getAllByRole('button', { name: /Iteration/ })) {
+      expect(header.textContent).not.toMatch(/failed/i)
+    }
+    expect(screen.getAllByRole('button', { name: /Iteration/ }).length).toBe(2)
+  })
+
+  it('a real failure next to a skipped row is one failure', () => {
+    const rows = [
+      skipped('sub', 1),
+      result({ endpointId: 'bad', iteration: 1, phase: 'main', status: 500, statusText: 'E' }),
+      skipped('sub', 2),
+    ]
+    renderTab(rows)
+    expect(screen.getAllByRole('button', { name: /Iteration 1/ })[0].textContent).toMatch(
+      /1 failed/,
+    )
+  })
+})

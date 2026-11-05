@@ -4,6 +4,7 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import { getDb } from '../db/database'
+import { projectNeedsFileConsent } from '../lib/project-settings'
 import { addSaveHistory } from '../db/branch.repo'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
 import { sealMcpBearerRows, sealMockAuthRows, sealVariableRows } from '../lib/secret-at-rest'
@@ -2786,7 +2787,13 @@ export function registerSaveHandlers(): void {
         await copyProjectScriptTrust(payload.projectId, id)
         try {
           const res = importProjectAsNew(data, payload.workspaceId, { name: baseName, id })
-          return { success: true, data: { projectId: res.projectId } }
+          return {
+            success: true,
+            data: {
+              projectId: res.projectId,
+              absoluteFiles: await projectNeedsFileConsent(res.projectId),
+            },
+          }
         } catch (e) {
           await dropProjectScriptTrust(id)
           throw e
@@ -2811,7 +2818,13 @@ export function registerSaveHandlers(): void {
           return { success: false, error: validationError }
         }
         const res = await importProjectFileAsNew(parsed, payload.workspaceId, payload.name)
-        return { success: true, data: { projectId: res.projectId } }
+        return {
+          success: true,
+          data: {
+            projectId: res.projectId,
+            absoluteFiles: await projectNeedsFileConsent(res.projectId),
+          },
+        }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
       }
@@ -2842,7 +2855,13 @@ export function registerSaveHandlers(): void {
           return { success: false, error: validationError }
         }
         const res = await importProjectFileAsNew(parsed, payload.workspaceId, payload.name)
-        return { success: true, data: { projectId: res.projectId } }
+        return {
+          success: true,
+          data: {
+            projectId: res.projectId,
+            absoluteFiles: await projectNeedsFileConsent(res.projectId),
+          },
+        }
       } catch (e) {
         return { success: false, error: importErrorText(e) }
       }
@@ -3037,6 +3056,7 @@ export function registerSaveHandlers(): void {
         return {
           success: true,
           data: {
+            absoluteFiles: await projectNeedsFileConsent(payload.projectId),
             imported: {
               folders: data.folders?.length || 0,
               endpoints: data.endpoints?.length || 0,
@@ -3395,6 +3415,7 @@ export function registerSaveHandlers(): void {
               globalVariables: data.globalVariables?.length || 0,
             },
             skippedFiles: listCheckoutJsonFiles(tmpDir).skipped.map((s) => s.file),
+            absoluteFiles: await projectNeedsFileConsent(payload.projectId),
           },
         }
       } catch (e) {

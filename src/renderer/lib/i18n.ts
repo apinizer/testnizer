@@ -3337,6 +3337,8 @@ const translations: Record<Locale, Record<string, string>> = {
       '{count} file in the repository was not read because it is a link, a special file or too large: {files}',
     'toast.pullSkippedFiles':
       '{count} files in the repository were not read because each is a link, a special file or too large: {files}',
+    'toast.absoluteFiles':
+      'Some requests in this project read files by an absolute path. A file outside the working directory is refused until you turn on Project Settings → Read files outside the working directory.',
     'toast.pullFailed': 'Pull failed',
     'toast.pullNoProjectFile':
       'Pull finished, but the repository holds no project file — nothing was imported',
@@ -7973,6 +7975,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'Depodaki {count} dosya okunmadı; bağlantı, özel dosya ya da çok büyük: {files}',
     'toast.pullSkippedFiles':
       'Depodaki {count} dosya okunmadı; bağlantı, özel dosya ya da çok büyük: {files}',
+    'toast.absoluteFiles':
+      'Bu projedeki bazı istekler dosyaları mutlak yolla okuyor. Çalışma dizini dışındaki dosya, Proje Ayarları → Çalışma dizini dışındaki dosyaları oku açılana dek reddedilir.',
     'toast.pullFailed': 'Çekim başarısız',
     'toast.pullNoProjectFile':
       'Çekim tamamlandı ancak depoda proje dosyası yok — hiçbir şey içe aktarılmadı',

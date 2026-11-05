@@ -311,6 +311,55 @@ const ROWS: TabRow[] = [
     },
   },
   {
+    store: 'graphql',
+    action: 'executeQuery',
+    op: 'History holds the request of the tab that sent it after slow setting reads',
+    run: async () => {
+      const settings = held<unknown>()
+      const send = vi.fn(async () => ok(apiResponse('from A', 'graphql')))
+      setApi({ settings: { get: settings.spy }, request: { send, cancel: vi.fn() } })
+      useGraphQLStore.setState({ url: 'http://a.example/graphql', query: '{ a }' })
+      const done = useGraphQLStore.getState().executeQuery()
+      await vi.waitFor(() => expect(settings.spy).toHaveBeenCalled())
+
+      switchActiveTab(B)
+      useGraphQLStore.setState({ url: 'http://b.example/graphql', query: '{ b }' })
+      await drain(settings, () => send.mock.calls.length > 0)
+      await done
+
+      const [sent] = send.mock.calls[0] as unknown as [
+        { url: string; _configured: { url: string; meta: { graphql: Record<string, unknown> } } },
+      ]
+      expect(sent.url).toBe('http://a.example/graphql')
+      expect(sent._configured.url).toBe('http://a.example/graphql')
+      expect(sent._configured.meta.graphql.url).toBe('http://a.example/graphql')
+      expect(sent._configured.meta.graphql.query).toBe('{ a }')
+    },
+  },
+  {
+    store: 'sse',
+    action: 'connect',
+    op: 'History holds the filter of the tab that connected after slow setting reads',
+    run: async () => {
+      const settings = held<unknown>()
+      const connect = vi.fn(async () => ok({ connectionId: 'conn-a', url: 'x', clientId: 'x' }))
+      setApi({ settings: { get: settings.spy }, sse: realtimeBridge(connect) })
+      useSseStore.setState({ url: 'http://a.example/sse', eventTypeFilter: 'from-a' })
+      const done = useSseStore.getState().connect()
+      await vi.waitFor(() => expect(settings.spy).toHaveBeenCalled())
+
+      switchActiveTab(B)
+      useSseStore.setState({ eventTypeFilter: 'from-b' })
+      await drain(settings, () => connect.mock.calls.length > 0)
+      await done
+
+      const [sent] = connect.mock.calls[0] as unknown as [
+        { _configured: { meta: { sse: { eventTypeFilter: string } } } },
+      ]
+      expect(sent._configured.meta.sse.eventTypeFilter).toBe('from-a')
+    },
+  },
+  {
     store: 'http',
     action: 'sendRequest',
     op: 'Send uses the settings of the tab that sent it after slow setting reads',

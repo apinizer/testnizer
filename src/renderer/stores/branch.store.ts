@@ -46,8 +46,9 @@ export type Resolution =
   /**
    * `emptySecrets` (pull): secret values still empty on this machine.
    * `skippedFiles` (pull): repository files a read left out.
+   * `absoluteFiles` (pull): requests read absolute paths, and this project has no consent.
    */
-  | { success: true; emptySecrets?: number; skippedFiles?: string[] }
+  | { success: true; emptySecrets?: number; skippedFiles?: string[]; absoluteFiles?: boolean }
   | { success: false; conflict: ConflictContext }
   | { success: false; error: string }
 
@@ -348,6 +349,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
           success: true,
           emptySecrets: (result.data as { emptySecrets?: number }).emptySecrets,
           skippedFiles: (result.data as { skippedFiles?: string[] }).skippedFiles,
+          absoluteFiles: (result.data as { absoluteFiles?: boolean }).absoluteFiles,
         }
       }
       return { success: false, error: result?.error || 'Pull failed' }

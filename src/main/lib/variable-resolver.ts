@@ -14,5 +14,5 @@ import { resolveTemplate } from '../../shared/dynamic-variables'
  * Unknown variables stay `{{name}}`; unknown dynamic variables stay as written.
  */
 export function resolveVariables(template: string, vars: Record<string, string>): string {
-  return resolveTemplate(template, (name) => (name in vars ? vars[name] : undefined))
+  return resolveTemplate(template, (name) => (Object.hasOwn(vars, name) ? vars[name] : undefined))
 }

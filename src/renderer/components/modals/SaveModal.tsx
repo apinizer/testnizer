@@ -14,7 +14,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { toast } from '../../lib/toast'
-import { skippedFilesMessage } from '../../lib/pull-messages'
+import { pullWarnings, skippedFilesMessage, type PullNotices } from '../../lib/pull-messages'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate } from '../../lib/format-datetime'
 import type { SaveMode, GitRepoFile } from '../../types'
@@ -285,7 +285,7 @@ export default function SaveModal() {
     try {
       const result = (await window.api?.save?.gitPull({ projectId: activeProjectId })) as {
         success: boolean
-        data?: { imported?: Record<string, number>; skippedFiles?: string[] }
+        data?: PullNotices & { imported?: Record<string, number> }
         error?: string
       }
       if (result?.success) {
@@ -294,9 +294,7 @@ export default function SaveModal() {
           ? `${t('toast.pulled')}: ${imp.endpoints || 0} endpoints, ${imp.savedRequests || 0} requests, ${imp.environments || 0} environments`
           : t('toast.pulled')
         toast.success(msg)
-        if (result.data?.skippedFiles?.length) {
-          toast.warning(skippedFilesMessage(t, result.data.skippedFiles))
-        }
+        pullWarnings(t, result.data).forEach((m) => toast.warning(m))
         fetchSaveHistory(activeProjectId)
       } else {
         toast.error(result?.error || t('toast.pullFailed'))

@@ -24,6 +24,7 @@
  */
 
 import { getDb } from '../db/database'
+import { projectsWithAbsoluteFiles } from './body-file-paths'
 
 export interface StoredProjectAuth {
   type?: 'none' | 'inherit' | 'basic' | 'bearer' | 'api-key'
@@ -231,6 +232,22 @@ export async function loadProjectSettings(
     return raw as StoredProjectSettings
   } catch {
     return undefined
+  }
+}
+
+/**
+ * For the pull and import results: this project holds absolute file paths and has
+ * no consent to read outside its folder, so Send may refuse them. The startup
+ * migration covers only what existed at upgrade. A warning, so it never fails the
+ * pull or import that asks.
+ */
+export async function projectNeedsFileConsent(projectId: string): Promise<boolean> {
+  try {
+    const settings = await loadProjectSettings(projectId)
+    if (settings?.readFilesOutsideWorkingDirectory === true) return false
+    return projectsWithAbsoluteFiles(getDb()).has(projectId)
+  } catch {
+    return false
   }
 }
 

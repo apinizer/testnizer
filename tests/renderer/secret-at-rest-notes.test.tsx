@@ -25,6 +25,7 @@ vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
 
 import EnvironmentModal from '../../src/renderer/components/modals/EnvironmentModal'
 import SettingsAppPasswordSection from '../../src/renderer/components/modals/SettingsAppPasswordSection'
+import SettingsNetworkSection from '../../src/renderer/components/modals/SettingsNetworkSection'
 import MockServerEditor from '../../src/renderer/components/mock/MockServerEditor'
 import MockMcpServerEditor from '../../src/renderer/components/mock-mcp/MockMcpServerEditor'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
@@ -129,6 +130,36 @@ describe('keychain unavailable: "stored unencrypted" note', () => {
     expect(await screen.findByTestId('secret-storage-unencrypted')).toHaveTextContent(
       UNENCRYPTED_TR,
     )
+  })
+})
+
+describe('the proxy password is a secret too', () => {
+  const draft = {
+    timeout: 0,
+    sslVerification: true,
+    followRedirects: true,
+    proxyMode: 'custom',
+    proxyHost: 'p.test',
+    proxyPort: '8080',
+    proxyUser: 'u',
+    proxyPassword: 'x',
+  } as const
+
+  it('Settings → Network shows the note when the keychain cannot encrypt', async () => {
+    secureStorage(false)
+    render(<SettingsNetworkSection value={draft} onChange={() => undefined} />)
+    expect(await screen.findByTestId('secret-storage-unencrypted')).toHaveTextContent(
+      UNENCRYPTED_EN,
+    )
+  })
+
+  it('shows nothing while it can', async () => {
+    secureStorage(true)
+    render(<SettingsNetworkSection value={draft} onChange={() => undefined} />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(screen.queryByTestId('secret-storage-unencrypted')).toBeNull()
   })
 })
 

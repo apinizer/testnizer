@@ -24,3 +24,22 @@ export function skippedFilesMessage(t: (key: string) => string, files: readonly 
     t('toast.pullSkippedFiles'),
   ).replace('{files}', `${named}${rest}`)
 }
+
+/** Everything a finished pull has to tell the user; every entry point shows these. */
+export interface PullNotices {
+  emptySecrets?: number
+  skippedFiles?: string[]
+  absoluteFiles?: boolean
+}
+
+export function pullWarnings(
+  t: (key: string) => string,
+  pulled: PullNotices | undefined,
+): string[] {
+  if (!pulled) return []
+  return [
+    ...(pulled.emptySecrets ? [emptySecretsMessage(t, pulled.emptySecrets)] : []),
+    ...(pulled.skippedFiles?.length ? [skippedFilesMessage(t, pulled.skippedFiles)] : []),
+    ...(pulled.absoluteFiles ? [t('toast.absoluteFiles')] : []),
+  ]
+}

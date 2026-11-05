@@ -13,7 +13,7 @@ import EmptyState from '../shared/EmptyState'
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
-import { endpointDidPass, criticalStopOf } from '../../../shared/runner-verdict'
+import { endpointDidPass, criticalStopOf, isSkippedStep } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
@@ -730,8 +730,9 @@ export default function RunnerResults({
           )}
           {iterationGroups.map(([iter, rows]) => {
             const collapsed = collapsedIterations.has(iter)
-            const passed = rows.filter(endpointDidPass).length
-            const failed = rows.length - passed
+            const scored = rows.filter((r) => !isSkippedStep(r))
+            const passed = scored.filter(endpointDidPass).length
+            const failed = scored.length - passed
             return (
               <div key={iter}>
                 {!isRunning && (

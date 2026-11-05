@@ -90,6 +90,30 @@ describe('loadMockTemplateVars', () => {
   })
 })
 
+describe('a secret global named like an inherited object property', () => {
+  it.each(['toString', 'constructor', 'valueOf', 'hasOwnProperty'])(
+    '%s stays secret: the environment does not define it',
+    async (name) => {
+      testDb
+        .prepare(
+          `INSERT INTO global_variables (id, workspace_id, project_id, key, value, enabled, secret, initial_value)
+           VALUES (?, ?, ?, ?, ?, 1, 1, ?)`,
+        )
+        .run(`g-${name}`, workspaceId, projectId, name, GLOBAL_SECRET, GLOBAL_SECRET)
+      invalidateSecretInventory()
+      const { envVars, secretVarNames } = loadMockTemplateVars({ projectId })
+      expect(Object.hasOwn(envVars, name)).toBe(false)
+      expect(secretVarNames).toContain(name)
+      const port = await start([
+        { path: '/r', response: { bodyType: 'text', body: `v={{${name}}}` } },
+      ])
+      const r = await rawRead(port, '/r')
+      noSecret(r.text)
+      expect(r.text).toBe(`v={{${name}}}`)
+    },
+  )
+})
+
 describe('an HTTP mock with a hand-written response', () => {
   it('body: a secret stays literal, a non-secret variable is rendered', async () => {
     const port = await start([

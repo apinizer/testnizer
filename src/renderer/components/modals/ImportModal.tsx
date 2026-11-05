@@ -760,6 +760,9 @@ export default function ImportModal() {
           await Promise.all([envStore.fetchEnvironments(), envStore.fetchGlobalVariables()])
         }
         toast.success(t('toast.imported'))
+        if ((importResult?.data as { absoluteFiles?: boolean } | undefined)?.absoluteFiles) {
+          toast.warning(t('toast.absoluteFiles'))
+        }
         // Anything skipped or degraded is listed before the modal closes
         // (issue #276) — a toast cannot hold the list.
         const warnings = importResult?.data?.warnings ?? []

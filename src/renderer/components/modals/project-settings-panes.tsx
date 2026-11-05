@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Eye, EyeOff, GitBranch, Plus, Trash2, FileUp } from 'lucide-react'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyMaterialField from '../shared/KeyMaterialField'
+import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate } from '../../lib/format-datetime'
@@ -2172,6 +2173,7 @@ export function ProxyPane({
                 />
               </div>
             </div>
+            <SecretStorageUnencryptedNote className="mt-1" />
           </SectionCard>
         )}
       </div>

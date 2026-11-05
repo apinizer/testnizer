@@ -893,6 +893,16 @@ function scriptTestToAssertion(t: ScriptTestResult): AssertionResult {
   return { name: t.name, passed: t.passed, error: t.error, ...(t.skipped ? { skipped: true } : {}) }
 }
 
+/**
+ * Call after the row's scripts are read. An import blocks the project before it
+ * writes rows, so a row that already holds imported scripts always reads blocked here.
+ */
+async function readScriptPermission(ctx: RunContext, scriptCtx?: ScriptContext): Promise<boolean> {
+  ctx.scriptsBlocked = await isProjectScriptsBlocked(ctx.options.projectId)
+  if (scriptCtx) scriptCtx.scriptsBlocked = ctx.scriptsBlocked
+  return ctx.scriptsBlocked
+}
+
 function newScriptContext(
   { scopes, scriptsBlocked }: Pick<RunContext, 'scopes' | 'scriptsBlocked'>,
   iterationData: Record<string, unknown>,
@@ -1459,9 +1469,15 @@ interface RunContext {
   criticalIds: ReadonlySet<string>
   /** The environment's name, snapshotted at run start (issue #307; '' = none). */
   environmentName: string
-  /** Scripts of this project are not allowed here; read once, at run start. */
+  /**
+   * Scripts of this project are not allowed here. Only `readScriptPermission` writes
+   * it, once per row and hook: an import can block the project while a run waits on
+   * a slow request, and the next row may already hold what it imported.
+   */
   scriptsBlocked: boolean
 }
+
+const FOREIGN_ROW_MESSAGE = 'This request belongs to another project.'
 
 interface StepOutcome {
   didPass: boolean
@@ -1724,7 +1740,10 @@ async function runEndpointStep(
   const iteration = phase === 'main' ? iter + 1 : undefined
   const entity = getRunnableEntity(endpointId)
 
-  if (!entity) {
+  // Every caller, not only `runner:execute`: a scheduled task stores its ids as
+  // given. Its project decides the permission, the variables and the settings, so
+  // another project's row must not run under them.
+  if (!entity || !isRunnableInProject(endpointId, options.projectId)) {
     const result: EndpointRunResult = {
       endpointId,
       endpointName: 'Unknown',
@@ -1737,7 +1756,7 @@ async function runEndpointStep(
       failed: 0,
       skipped: 0,
       assertions: [],
-      error: 'Endpoint not found',
+      error: !entity ? 'Endpoint not found' : FOREIGN_ROW_MESSAGE,
       iteration,
       phase,
     }
@@ -1906,7 +1925,10 @@ async function runEndpointStep(
     // A row whose cascade holds a script fails here when the project's scripts
     // are not allowed, even if only a post-response script exists: its request
     // is not sent either.
-    if (ctx.scriptsBlocked && [...preScripts, ...postScripts].some(scriptHasCode)) {
+    if (
+      [...preScripts, ...postScripts].some(scriptHasCode) &&
+      (await readScriptPermission(ctx, scriptCtx))
+    ) {
       const result: EndpointRunResult = {
         endpointId,
         endpointName: endpoint.name,
@@ -2568,7 +2590,10 @@ async function runMcpStep(
     )
 
     // Same rule as HTTP: nothing runs and nothing is called for a blocked project.
-    if (ctx.scriptsBlocked && [...preScripts, ...postScripts].some(scriptHasCode)) {
+    if (
+      [...preScripts, ...postScripts].some(scriptHasCode) &&
+      (await readScriptPermission(ctx, scriptCtx))
+    ) {
       return {
         ...failRow(mcpDisplayTarget(saved.transport, saved.url), PROJECT_SCRIPTS_BLOCKED_MESSAGE, {
           statusText: 'SCRIPT',
@@ -2867,6 +2892,7 @@ async function runHookScript(
 ): Promise<StepOutcome | null> {
   if (!script || !script.trim()) return null
   const startedAt = Date.now()
+  await readScriptPermission(ctx)
   const scriptCtx = newScriptContext(ctx, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
   scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
   scriptCtx.projectId = ctx.options.projectId
@@ -3277,8 +3303,7 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     emitted: 0,
     criticalIds: criticalRequestIds(options.endpointIds),
     environmentName,
-    // Once per run: a Scheduler tick never prompts, and an Allow given while a
-    // run is going applies from the next run.
+    // A Scheduler tick never prompts: the state is only read.
     scriptsBlocked: await isProjectScriptsBlocked(options.projectId),
   }
 
@@ -3600,7 +3625,7 @@ function mergeScriptUpdates(ctx: ScriptContext, run: RunContext): void {
   // write won, whatever its scope).
   const merged = mergedRunVars(scopes)
   for (const k of Object.keys(run.envVars)) {
-    if (!(k in merged)) delete run.envVars[k]
+    if (!Object.hasOwn(merged, k)) delete run.envVars[k]
   }
   Object.assign(run.envVars, merged)
 }

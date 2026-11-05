@@ -1,6 +1,7 @@
 import { useId } from 'react'
 import { useNumberDraft } from '../../lib/number-draft'
 import { useTranslation } from '../../lib/i18n'
+import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 
 export interface NetworkDraft {
   timeout: number
@@ -159,6 +160,7 @@ export default function SettingsNetworkSection({
                 className={`flex-1 ${FIELD_CLS}`}
               />
             </div>
+            <SecretStorageUnencryptedNote className="mt-1" />
           </div>
         )}
         <OverrideNote field="proxy" />

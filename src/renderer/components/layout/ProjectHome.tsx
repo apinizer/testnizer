@@ -42,6 +42,7 @@ export default function ProjectHome() {
         await fetchProjects(activeWorkspaceId)
         setActiveProject(result.data.projectId)
         toast.success(t('toast.projectImported'))
+        if (result.data.absoluteFiles) toast.warning(t('toast.absoluteFiles'))
       } else if (result?.error && result.error !== 'Cancelled') {
         // Surface the underlying reason (parse error, invalid format,
         // missing file, etc.) so the user knows why nothing happened.
