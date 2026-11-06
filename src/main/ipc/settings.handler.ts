@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import { encryptSecret, decryptSecret } from '../lib/secure-storage'
+import { keepUndecryptable } from '../lib/secret-at-rest'
 import {
   mergeProjectSettings,
   migrateProjectSettingsToDb,
@@ -36,6 +37,29 @@ function transformSecrets(value: unknown, mode: 'encrypt' | 'decrypt'): unknown 
     return out
   }
   return value
+}
+
+/**
+ * The form receives empty for a value this machine cannot decrypt, and a Save sends
+ * that back: the stored ciphertext stays, as for database secrets. Only inside an
+ * object the save still sends: leaving one out (`Use app setting`) removes it.
+ */
+function keepUndecryptableFields(incoming: unknown, stored: unknown): unknown {
+  if (!isPlainObject(incoming) || !isPlainObject(stored)) return incoming
+  const out: Record<string, unknown> = { ...incoming }
+  for (const [k, previous] of Object.entries(stored)) {
+    if (SENSITIVE_FIELDS.has(k) && typeof previous === 'string') {
+      const kept = keepUndecryptable(out[k] as string | null | undefined, previous)
+      if (kept !== undefined) out[k] = kept
+    } else if (k in out) {
+      out[k] = keepUndecryptableFields(out[k], previous)
+    }
+  }
+  return out
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 interface AppSettings {
@@ -101,12 +125,13 @@ function writeSetting(store: StoreInstance, key: string, value: unknown): void {
   if (isProjectScriptBlocksKey(key)) throw new Error(`Setting "${key}" cannot be written here`)
   const projectId = projectIdOfSettingsKey(key)
   if (!projectId) {
-    store.set(key, transformSecrets(value, 'encrypt'))
+    store.set(key, transformSecrets(keepUndecryptableFields(value, store.get(key)), 'encrypt'))
     return
   }
   const { shared, local } = splitProjectSettings(value)
   if (shared) writeSharedProjectSettings(projectId, shared)
-  store.set(key, transformSecrets(withoutNulls(local), 'encrypt'))
+  const kept = keepUndecryptableFields(withoutNulls(local), store.get(key))
+  store.set(key, transformSecrets(kept, 'encrypt'))
 }
 
 /**
