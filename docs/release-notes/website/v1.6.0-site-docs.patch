@@ -348,7 +348,7 @@ index 4b4e440..5b206a1 100644
 -and your collections come with it. (Encrypted secrets are tied to the OS
 -keychain, so those need re-entering on a new machine.)
 +- `testnizer.db` — workspaces, projects, environments, history, certificates (secret-type variable values, mock tokens and certificate passphrases are stored in it encrypted with the OS keychain)
-+- `settings.json` — UI preferences, keyboard shortcuts, theme (credential-named settings and AI Chat API keys are keychain-encrypted)
++- `settings.json` — UI preferences, keyboard shortcuts, theme (credential-named settings and AI Chat API keys are keychain-encrypted; where no keychain is available, those settings are stored without encryption and AI Chat API keys are not saved)
 +- `backups/` — copies of the database taken before an update (see below)
 +
 +The database is portable. Copy `testnizer.db` to another machine running
@@ -2438,7 +2438,7 @@ index 043a49a..efd5581 100644
 -- `secrets/` — token'lar ve parola ifadeleri için işletim sistemi anahtarlığıyla şifrelenmiş bloblar
 -- `settings.json` — arayüz tercihleri, klavye kısayolları, tema
 +- `testnizer.db` — çalışma alanları, projeler, ortamlar, geçmiş, sertifikalar (gizli (secret) türündeki değişken değerleri, mock token'ları ve sertifika parolaları içinde, işletim sistemi anahtarlığıyla şifrelenmiş olarak saklanır)
-+- `settings.json` — arayüz tercihleri, klavye kısayolları, tema (kimlik bilgisi adı taşıyan ayarlar ve Yapay Zeka Sohbet API anahtarları anahtarlıkla şifrelenir)
++- `settings.json` — arayüz tercihleri, klavye kısayolları, tema (kimlik bilgisi adı taşıyan ayarlar ve Yapay Zeka Sohbet API anahtarları anahtarlıkla şifrelenir; anahtarlık yoksa bu ayarlar şifrelenmeden saklanır, Yapay Zeka Sohbet API anahtarları ise kaydedilmez)
 +- `backups/` — güncellemeden önce alınan veritabanı kopyaları (aşağıya bakın)
  
 -Veritabanı taşınabilirdir. `data.db`'yi Testnizer çalışan başka bir makineye kopyalayın
