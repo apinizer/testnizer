@@ -1,6 +1,8 @@
 /**
  * MST-017, MST-019, MST-021, MST-022, MST-023 — Tree / tab / save lifecycle
  */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
@@ -9,7 +11,12 @@ import {
   navigateSidebar,
   openHttpRequestTab,
 } from '../../helpers/ui/bootstrap'
-import { fillUrl, saveRequestToTree } from '../../helpers/ui/request-flow'
+import {
+  addPostScript,
+  clickRequestTab,
+  fillUrl,
+  saveRequestToTree,
+} from '../../helpers/ui/request-flow'
 import { saveInPlace } from '../../helpers/ui/save-flow'
 import { treeContextAction, treeOpenNode, treeSearch, confirmDelete } from '../../helpers/ui/tree'
 import {
@@ -131,6 +138,76 @@ uiTest.describe('Tur1 — Tree / Tab / Save [MST-017..022]', () => {
     expect(row?.id).toBeTruthy()
     const detail = (await getSavedRequest(window, row!.id)) as { url: string }
     expect(detail.url).toMatch(new RegExp(marker))
+  })
+
+  uiTest('MST-022b Ctrl+S on an imported endpoint keeps its post-response script', async ({ window }) => {
+    // Imports write `endpoints` rows; the Save As path above writes `saved_requests`. Ctrl+S
+    // takes a different branch for each, and every other save test here goes through the
+    // saved-request one. The row comes from the real importer, not from a hand-made one, and
+    // the script is a value no default can produce.
+    const marker = `post-${Math.random().toString(36).slice(2, 8)}`
+    const script = `pm.test('${marker}', () => pm.expect(1).to.equal(1))`
+    const projectId = await getActiveProjectId(window)
+
+    const endpointRows = (): Promise<Array<{ id: string; name: string }>> =>
+      window.evaluate(async (pid) => {
+        const w = window as unknown as {
+          api: {
+            endpoint: {
+              listByProject: (id: string) => Promise<{ data?: Array<{ id: string; name: string }> }>
+            }
+          }
+        }
+        return (await w.api.endpoint.listByProject(pid)).data ?? []
+      }, projectId)
+    const before = new Set((await endpointRows()).map((r) => r.id))
+    // The fixture, with one operation named for this run so the tree search finds only it.
+    const spec = JSON.parse(
+      readFileSync(join(process.cwd(), 'tests/fixtures/import-export/openapi-3.0.json'), 'utf8'),
+    )
+    const opName = `Listing ${uid()}`
+    spec.paths['/pets'].get.summary = opName
+    await window.evaluate(
+      async ({ pid, content }) => {
+        const w = window as unknown as {
+          api: {
+            importExport: { importOpenApi: (p: unknown) => Promise<{ success: boolean; error?: string }> }
+          }
+        }
+        const res = await w.api.importExport.importOpenApi({
+          projectId: pid,
+          content,
+          format: 'openapi',
+          sourceUrl: 'fixture://openapi-3.0.json',
+        })
+        if (!res.success) throw new Error(res.error ?? 'openapi import failed')
+      },
+      { pid: projectId, content: JSON.stringify(spec) },
+    )
+    await refreshWorkspaceTree(window)
+    const target = (await endpointRows()).find((r) => !before.has(r.id) && r.name === opName)
+    expect(target?.id).toBeTruthy()
+
+    await treeOpenNode(window, opName)
+    await expect(activeTab(window)).toBeVisible({ timeout: 10_000 })
+    await addPostScript(window, script)
+    await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true', { timeout: 8_000 })
+    await saveInPlace(window)
+
+    // Close the saved tab and open the row again from the tree.
+    const tab = activeTab(window)
+    await tab.hover()
+    await tab.getByTestId('tab-close').click()
+    await expect(window.getByTestId('endpoint-tab').filter({ hasText: opName })).toHaveCount(0, {
+      timeout: 8_000,
+    })
+    await treeOpenNode(window, opName)
+    await expect(activeTab(window)).toBeVisible({ timeout: 10_000 })
+    await clickRequestTab(window, 'scripts')
+    await window.getByTestId('scripts-post').click()
+    await expect(window.getByTestId('scripts-post-editor').locator('.view-lines')).toContainText(marker, {
+      timeout: 10_000,
+    })
   })
 
   uiTest('MST-023 protocol metadata roundtrip for WS and gRPC snapshots', async ({ window }) => {

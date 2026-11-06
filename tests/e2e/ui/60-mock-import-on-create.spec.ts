@@ -137,6 +137,51 @@ uiTest.describe('New mock server from a file (issue #319)', () => {
     }
   })
 
+  uiTest(
+    'a file the dialog accepts but the importer cannot use leaves no server, and a retry works',
+    async ({ window }) => {
+      // The two tests around this one stop at the dialog's own check, before any server is
+      // made. This file passes that check (a path item with a $ref counts as one operation,
+      // only main can follow it) and then fails in main, after the server exists. Only this
+      // reaches the clean-up in createMockServerFromFile (F14).
+      const port = randomMockPort()
+      const projectId = await getActiveProjectId(window)
+      const external = JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'External only' },
+        paths: { '/pets': { $ref: './pets-path.json' } },
+      })
+      try {
+        await openImportOption(window, port)
+        await window.getByTestId('mock-new-name').fill('Retry shop')
+        await pickFile(window, 'external.json', external)
+        await expect(window.getByTestId('mock-new-import-summary')).toContainText('OpenAPI')
+        await expect(window.getByTestId('mock-new-import-error')).toBeHidden()
+
+        await window.getByTestId('mock-new-create').click()
+        await expect(window.getByTestId('mock-new-error')).toBeVisible({ timeout: 15_000 })
+        await expect(window.getByTestId('mock-new-dialog')).toBeVisible()
+        // Nothing is left holding the name and the port.
+        await expect
+          .poll(async () => (await listServers(window, projectId)).filter((s) => s.port === port))
+          .toEqual([])
+        expect((await listServers(window, projectId)).filter((s) => s.name === 'Retry shop')).toEqual([])
+
+        // The same name and port, with a file that works.
+        await pickFile(window, 'openapi-3.0.json', readFileSync(FIXTURE, 'utf8'))
+        await expect(window.getByTestId('mock-new-name')).toHaveValue('Retry shop')
+        await expect(window.getByTestId('mock-new-port')).toHaveValue(String(port))
+        await window.getByTestId('mock-new-create').click()
+        await expect(window.getByTestId('mock-new-dialog')).toBeHidden({ timeout: 15_000 })
+        const made = (await listServers(window, projectId)).filter((s) => s.port === port)
+        expect(made.map((s) => s.name)).toEqual(['Retry shop'])
+      } finally {
+        await removeServers(window, projectId, port)
+        await closeAllTabs(window)
+      }
+    },
+  )
+
   uiTest('a wrong or empty file leaves no server behind', async ({ window }) => {
     const port = randomMockPort()
     const projectId = await getActiveProjectId(window)

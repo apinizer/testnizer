@@ -393,6 +393,94 @@ describe('a project file', () => {
     expect(await blocked(p)).toBe(true)
   })
 
+  /** A project with a known number of rows in each table the answer counts. */
+  function sourceWithRows(counts: {
+    folders: number
+    endpoints: number
+    savedRequests: number
+    environments: number
+    globalVariables: number
+  }): string {
+    const id = newProject()
+    const each = (n: number, insert: (i: number) => void): void => {
+      for (let i = 0; i < n; i++) insert(i)
+    }
+    each(counts.folders, (i) =>
+      db
+        .prepare(`INSERT INTO folders (id, project_id, name, sort_order) VALUES (?, ?, ?, ?)`)
+        .run(randomUUID(), id, `F${i}`, i),
+    )
+    each(counts.endpoints, (i) =>
+      db
+        .prepare(
+          `INSERT INTO endpoints (id, project_id, name, protocol, method, path, created_at, updated_at)
+           VALUES (?, ?, ?, 'http', 'GET', ?, 1, 1)`,
+        )
+        .run(randomUUID(), id, `E${i}`, `/e${i}`),
+    )
+    each(counts.savedRequests, (i) =>
+      db
+        .prepare(
+          `INSERT INTO saved_requests (id, project_id, name, protocol, method, url, created_at, updated_at)
+           VALUES (?, ?, ?, 'http', 'GET', ?, 1, 1)`,
+        )
+        .run(randomUUID(), id, `S${i}`, `http://x.test/s${i}`),
+    )
+    each(counts.environments, (i) =>
+      db
+        .prepare(
+          `INSERT INTO environments (id, workspace_id, project_id, name, is_active, created_at, updated_at)
+           VALUES (?, ?, ?, ?, 0, 1, 1)`,
+        )
+        .run(randomUUID(), workspaceId, id, `Env${i}`),
+    )
+    each(counts.globalVariables, (i) =>
+      db
+        .prepare(
+          `INSERT INTO global_variables (id, workspace_id, project_id, key, value) VALUES (?, ?, ?, ?, 'v')`,
+        )
+        .run(randomUUID(), workspaceId, id, `g${i}`),
+    )
+    return id
+  }
+  const importedCounts = async (counts: Parameters<typeof sourceWithRows>[0]) => {
+    const source = sourceWithRows(counts)
+    const file = join(tmp, `${randomUUID()}.json`)
+    writeFileSync(file, fileOf(source))
+    db.prepare('DELETE FROM projects WHERE id = ?').run(source)
+    const r = await call<{ imported: Record<string, number> }>('save:importLocal', {
+      filePath: file,
+      projectId: newProject(),
+    })
+    expect(r.success, r.error).toBe(true)
+    return r.data?.imported
+  }
+
+  it('save:importLocal reports how many of each it brought in', async () => {
+    // A different count for each, so a field read from the wrong list shows up too.
+    expect(
+      await importedCounts({
+        folders: 2,
+        endpoints: 3,
+        savedRequests: 4,
+        environments: 1,
+        globalVariables: 5,
+      }),
+    ).toEqual({ folders: 2, endpoints: 3, savedRequests: 4, environments: 1, globalVariables: 5 })
+  })
+
+  it('save:importLocal reports zero for what the file does not hold', async () => {
+    expect(
+      await importedCounts({
+        folders: 0,
+        endpoints: 3,
+        savedRequests: 0,
+        environments: 0,
+        globalVariables: 2,
+      }),
+    ).toEqual({ folders: 0, endpoints: 3, savedRequests: 0, environments: 0, globalVariables: 2 })
+  })
+
   it('a script-free project file is marked but never asks', async () => {
     const source = newProject()
     db.prepare(

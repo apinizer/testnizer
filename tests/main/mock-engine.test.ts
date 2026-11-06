@@ -203,6 +203,22 @@ describe('evaluateCondition — XPath', () => {
       ),
     ).toBe(true)
   })
+
+  // A scalar answer is not a node-set: a string() of nothing is '' and has to read as absent,
+  // while a string() of something, and a count of something, read as present.
+  it.each([
+    ['string(//Status)', true],
+    ['string(//Missing)', false],
+    ['count(//Status)', true],
+    ['//Missing', false],
+  ])('exists on %s is %s', (expression, expected) => {
+    expect(
+      evaluateCondition(
+        { type: 'xpath', expression, op: 'exists' },
+        { ...baseCtx, bodyText: '<order><Status>PAID</Status></order>' },
+      ),
+    ).toBe(expected)
+  })
 })
 
 describe('evaluateCondition — and / or', () => {

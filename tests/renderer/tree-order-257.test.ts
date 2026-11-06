@@ -98,3 +98,26 @@ describe('the APIs tree order (what exports must reproduce)', () => {
     expect(toOrder(root.children ?? [])).toEqual(EXPECTED_TREE_ORDER)
   })
 })
+
+describe('the tree root is named after the ACTIVE project', () => {
+  // The active project is second in the list: a lookup that took the first project (or
+  // the first one that is not active) would name the root after the wrong one.
+  const projects = (activeName: string, activeDisplay: string) =>
+    [
+      { id: 'p-other', name: 'other-slug', display_name: 'Other Hub' },
+      { id: PID, name: activeName, display_name: activeDisplay },
+      { id: 'p-third', name: 'third-slug', display_name: 'Third Hub' },
+    ] as never
+
+  it('uses the active project display_name', async () => {
+    useWorkspaceStore.setState({ projects: projects('order-slug', 'Order Hub') })
+    await useWorkspaceStore.getState().refreshTree()
+    expect(useWorkspaceStore.getState().treeData[0].label).toBe('Order Hub')
+  })
+
+  it('falls back to its name when display_name is empty', async () => {
+    useWorkspaceStore.setState({ projects: projects('order-slug', '') })
+    await useWorkspaceStore.getState().refreshTree()
+    expect(useWorkspaceStore.getState().treeData[0].label).toBe('order-slug')
+  })
+})

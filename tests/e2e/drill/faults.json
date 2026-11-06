@@ -174,7 +174,7 @@
     "specs": [
       "tests/e2e/ui/60-mock-import-on-create.spec.ts"
     ],
-    "expectedFailure": "Importing an empty or wrong file shows the error but leaves an empty mock server holding the name and port, so a retry says the name is taken."
+    "expectedFailure": "Importing a file the dialog accepts but the importer cannot use closes the dialog as if it worked (the failure shows only in a toast) and leaves an empty mock server holding the name and port, so a retry says the name is taken."
   },
   {
     "id": "F16",

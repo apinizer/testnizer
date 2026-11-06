@@ -470,6 +470,28 @@ describe('visible credential drop on a cross-origin redirect (issue #169)', () =
     expect(direct.message).not.toContain('cross-origin redirect')
   })
 
+  it('a drop is not blamed for an error that is not an auth rejection', async () => {
+    // The credential headers were dropped, but the target failed with a 500: the
+    // hint explains a 401/403 only, so it must not ride on any other error.
+    const failing = await listen(
+      http.createServer((req, res) => {
+        req.resume()
+        res.writeHead(500, { 'Content-Type': 'text/plain' })
+        res.end('boom')
+      }),
+    )
+    const origin = await redirector(`http://127.0.0.1:${failing}`)
+    const err = (await mcpConnect({
+      transport: 'http',
+      url: `${origin}/mcp`,
+      headers: { 'X-API-Key': 'k-500', Cookie: 'c=1' },
+      protocol: 'legacy',
+    }).catch((e: unknown) => e)) as Error
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).not.toContain('Credential headers')
+    expect(err.message).not.toContain('cross-origin redirect')
+  })
+
   it('fetchFollowingRedirects reports the drop (names only) to its callback', async () => {
     const drops: unknown[] = []
     const fetchFn = async (url: string | URL): Promise<Response> =>

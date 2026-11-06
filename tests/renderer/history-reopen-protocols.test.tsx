@@ -261,13 +261,15 @@ describe('WebSocket / gRPC / GraphQL reopen (issue #182)', () => {
           methodName: 'SayHello',
           metadata: { 'x-tenant': 'acme' },
           requestBody: '{"name":"Ada"}',
-          useTls: false,
+          // true: the store's own default is false, so only true shows it was read.
+          useTls: true,
         } as never,
       }),
     )
     const g = useGrpcStore.getState()
     expect(g._currentTabId).toBe(useTabsStore.getState().activeTabId)
     expect(g.address).toBe('localhost:50051')
+    expect(g.useTls).toBe(true)
     expect(g.selectedService).toBe('greeter.Greeter')
     expect(g.selectedMethod).toBe('SayHello')
     expect(g.protoPath).toBe('/protos/greeter.proto')
