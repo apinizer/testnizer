@@ -12,6 +12,11 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
+import {
+  collectEndpointsFromNode,
+  collectFolderGroups,
+  collectFolderGroupsFromNode,
+} from './runner-rows'
 import RunnerConfig, { type SchedulePayload } from './RunnerConfig'
 import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
@@ -80,85 +85,14 @@ export interface RunnerFolderGroup {
    */
   parentId: string | null
   endpoints: RunnerEndpointItem[]
+  /**
+   * The project root runs its folders before its own requests (`orderTreeLevel`).
+   * Every other group, a suite's included, runs its requests first.
+   */
+  foldersFirst?: boolean
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
-
-function collectEndpointsFromNode(node: TreeNode): RunnerEndpointItem[] {
-  const result: RunnerEndpointItem[] = []
-  if ((node.type === 'endpoint' || node.type === 'request') && node.method && node.path) {
-    result.push({
-      id: node.id,
-      name: node.label,
-      method: node.method as HttpMethod,
-      url: node.path,
-      selected: true,
-      protocol: node.protocol,
-      ...(node.critical ? { critical: true } : {}),
-    })
-  }
-  if (node.children) {
-    for (const child of node.children) {
-      result.push(...collectEndpointsFromNode(child))
-    }
-  }
-  return result
-}
-
-/**
- * Recursively collect folder groups — one group per folder, carrying its parent
- * so the sequence can be rendered as the tree the user organised (issue #90).
- *
- * Folders with no DIRECT requests are collected too, even though they produce
- * no rows themselves: dropping them broke the parent chain, and a child folder
- * whose parent is missing cannot be placed. The sequence prunes branches that
- * hold no requests at all at render time, where it can see the whole subtree.
- */
-function collectFolderGroupsFromNode(
-  node: TreeNode,
-  groups: RunnerFolderGroup[],
-  parentPath?: string,
-  parentId: string | null = null,
-): void {
-  if (!node.children) return
-  const fullName = parentPath ? `${parentPath} / ${node.label}` : node.label
-  const directEps: RunnerEndpointItem[] = []
-  for (const child of node.children) {
-    if ((child.type === 'endpoint' || child.type === 'request') && child.method && child.path) {
-      directEps.push({
-        id: child.id,
-        name: child.label,
-        method: child.method as HttpMethod,
-        url: child.path,
-        selected: true,
-        protocol: child.protocol,
-        ...(child.critical ? { critical: true } : {}),
-      })
-    }
-  }
-  groups.push({
-    folderId: node.id,
-    folderName: fullName,
-    label: node.label,
-    parentId,
-    endpoints: directEps,
-  })
-  for (const child of node.children) {
-    if (child.type === 'folder' || child.type === 'module') {
-      collectFolderGroupsFromNode(child, groups, fullName, node.id)
-    }
-  }
-}
-
-function collectFolderGroups(nodes: TreeNode[]): RunnerFolderGroup[] {
-  const groups: RunnerFolderGroup[] = []
-  for (const root of nodes) {
-    if (root.type === 'module' || root.type === 'folder') {
-      collectFolderGroupsFromNode(root, groups)
-    }
-  }
-  return groups
-}
 
 /**
  * Rows rebuilt from a changed tree keep this tab's selection and phases: they

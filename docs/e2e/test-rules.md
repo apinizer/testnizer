@@ -31,8 +31,8 @@ node scripts/e2e-fault-drill.mjs             # the drill; --only F01,F08 for a f
 - **The checkout to yourself.** It edits `src/`, rebuilds `out/` and flips the native ABI.
   No unit run, build or other Playwright run meanwhile; `src/` must be clean to start.
 - **Time.** Two builds per fault (a clean baseline, then the fault) plus the fault's specs
-  twice. Measured: about 100 s per fault with `--no-unit` (3 faults: 105, 113 and 89 s), so the 31 faults take about an
-  hour; a missed fault adds a `vitest related` run. Run it while doing something else.
+  twice; a fault e2e missed adds a `vitest related` run. Measured on 31 faults: 72 to 253 s,
+  133 s on average, 69 minutes in total. Run it while doing something else.
 - **Three numbers**, never added together:
   1. `E2E SCORE` — faults that made an e2e test fail. The only e2e score.
   2. `caught by unit only` — e2e missed it, `vitest related` went red. A second column.

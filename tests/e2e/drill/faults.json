@@ -399,5 +399,29 @@
       "tests/e2e/ui/tur1/grpc-advanced.spec.ts"
     ],
     "expectedFailure": "After End Streaming the aggregate response arrives but the stream never reports it ended, so the tab stays in the streaming state."
+  },
+  {
+    "id": "F43",
+    "journey": "Run sequence order",
+    "origin": "Found by MST-171b in the full run: rows numbered in an order the run does not follow",
+    "file": "src/renderer/components/runner/runner-rows.ts",
+    "find": "    ...(node.type === 'module' ? { foldersFirst: true } : {}),\n",
+    "replace": "",
+    "specs": [
+      "tests/e2e/ui/tur1/10-runner-scheduler.spec.ts"
+    ],
+    "expectedFailure": "The Run Sequence draws the requests at the project root first and numbers them 1 and up, while the run executes the folders first, so the screen shows a step order that does not happen."
+  },
+  {
+    "id": "F44",
+    "journey": "Save As location",
+    "origin": "Found by MST-171b in the full run: a stale closure in the Save dialog",
+    "file": "src/renderer/components/modals/EndpointSaveModal.tsx",
+    "find": "if (first) setSelectedFolder((current) => current || first.id)",
+    "replace": "if (first && !selectedFolder) setSelectedFolder(first.id)",
+    "specs": [
+      "tests/e2e/ui/tur1/04-tree-tab-save.spec.ts"
+    ],
+    "expectedFailure": "Every second Save As preselects no folder and saves to the project root, so two requests saved in a row land in different places."
   }
 ]

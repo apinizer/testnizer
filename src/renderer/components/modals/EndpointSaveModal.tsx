@@ -111,9 +111,10 @@ export default function EndpointSaveModal() {
             /* fall through */
           }
         }
-        if (result.data.length > 0 && !selectedFolder) {
-          setSelectedFolder(result.data[0].id)
-        }
+        // An updater, not the `selectedFolder` of this closure: on open that still holds the
+        // value from before the reset above, so every second Save As landed in the project root.
+        const first = result.data[0]
+        if (first) setSelectedFolder((current) => current || first.id)
       }
       // A `{success:false}` envelope is how this bridge reports failure; it
       // resolves, so the catch below never sees it.
@@ -477,6 +478,7 @@ export default function EndpointSaveModal() {
                         <div
                           data-testid="save-folder-row"
                           data-folder-name={f.name}
+                          data-selected={isSelected}
                           onClick={() => {
                             setSelectedFolder(f.id)
                             setCreatingFolder(false)

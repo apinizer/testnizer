@@ -145,8 +145,9 @@ export default function RunnerSequence({
     const ids: string[] = []
     const walk = (nodes: FolderNode[]): void => {
       for (const n of nodes) {
+        if (n.group.foldersFirst) walk(n.children)
         for (const ep of n.group.endpoints) ids.push(ep.id)
-        walk(n.children)
+        if (!n.group.foldersFirst) walk(n.children)
       }
     }
     ids.push(...tree.loose.map((ep) => ep.id))
@@ -178,6 +179,8 @@ export default function RunnerSequence({
         />
         {!isCollapsed && (
           <>
+            {node.group.foldersFirst &&
+              node.children.map((child) => renderFolder(child, depth + 1))}
             {node.group.endpoints.map((ep) => (
               <EndpointRow
                 key={ep.id}
@@ -192,7 +195,8 @@ export default function RunnerSequence({
                 t={t}
               />
             ))}
-            {node.children.map((child) => renderFolder(child, depth + 1))}
+            {!node.group.foldersFirst &&
+              node.children.map((child) => renderFolder(child, depth + 1))}
           </>
         )}
       </div>

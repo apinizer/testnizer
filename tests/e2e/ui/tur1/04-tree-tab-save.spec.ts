@@ -236,6 +236,28 @@ uiTest.describe('Tur1 — Tree / Tab / Save [MST-017..022]', () => {
     expect(grpcRow.protocol).toBe('grpc')
     expect(JSON.parse(grpcRow.metadata).service).toBe('EchoService')
   })
+
+  // Every second Save As used to skip the preselected folder and land in the project root, so
+  // two requests saved in a row ended up apart. Without a folder in the project it cannot show.
+  uiTest('MST-022c two Save As in a row land in the same folder', async ({ window }) => {
+    const tag = uid()
+    const projectId = await getActiveProjectId(window)
+    await createFolder(window, projectId, `Target ${tag}`)
+    const names = [`Saved one ${tag}`, `Saved two ${tag}`, `Saved three ${tag}`]
+    for (const name of names) {
+      await openHttpRequestTab(window)
+      await fillUrl(window, `${http()}/get`)
+      await saveRequestToTree(window, name)
+    }
+    const rows = (await listSavedRequestsByProject(window, projectId)) as Array<{
+      name: string
+      folder_id: string | null
+    }>
+    const folderIds = names.map((name) => rows.find((r) => r.name === name)?.folder_id)
+    expect(folderIds[0]).toBeTruthy()
+    expect(folderIds[1]).toBe(folderIds[0])
+    expect(folderIds[2]).toBe(folderIds[0])
+  })
 })
 
 async function listFolders(page: import('@playwright/test').Page, projectId: string) {

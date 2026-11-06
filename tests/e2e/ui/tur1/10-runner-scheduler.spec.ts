@@ -1,6 +1,7 @@
 /**
  * MST-171 — Collection runner pass+fail summary
  * MST-171b — a 4xx the request's own test allows counts as passed (issue #16)
+ * MST-171c — the Run Sequence shows the order the run executes
  */
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
@@ -24,6 +25,9 @@ import {
   startCollectionRun,
   waitCollectionRunComplete,
 } from '../../helpers/ui/runner-flow'
+import { createFolder, getActiveProjectId } from '../../helpers/ui/assert-ipc'
+import { createSavedRequestIpc } from '../../helpers/ui/db-flow'
+import { refreshWorkspaceTree } from '../../helpers/ui/import-flow'
 import { localHttpBin } from '../../helpers/test-servers'
 
 const http = () => localHttpBin()
@@ -79,6 +83,40 @@ uiTest.describe('Tur1 — Runner [MST-171]', () => {
     await startCollectionRun(window)
     await waitCollectionRunComplete(window)
     expect(await readCollectionRunSummary(window)).toEqual({ passed: 1, failed: 1 })
+    await closeCollectionRunner(window)
+  })
+
+  // A project run goes through the tree in its order, folders before the root's own requests.
+  // The sequence drew the root's requests first, numbered 1 and up, so a "Login" at the root
+  // read as the first step and ran after everything else.
+  uiTest('MST-171c the sequence shows the order the run executes', async ({ window }) => {
+    const tag = uid()
+    const inFolder = `InFolder ${tag}`
+    const inRoot = `InRoot ${tag}`
+    const projectId = await getActiveProjectId(window)
+    const folderId = await createFolder(window, projectId, `Order ${Date.now()}`)
+    await createSavedRequestIpc(window, { projectId, name: inRoot, url: `${http()}/get?r=1` })
+    await createSavedRequestIpc(window, {
+      projectId,
+      name: inFolder,
+      url: `${http()}/get?f=1`,
+      folderId,
+    })
+    await refreshWorkspaceTree(window)
+
+    await openCollectionRunner(window)
+    await selectOnlyRunnerEndpoints(window, tag)
+    const list = await window.getByTestId('runner-sequence-list').textContent()
+    expect(list?.indexOf(inFolder), 'the sequence draws the folder row first').toBeLessThan(
+      list?.indexOf(inRoot) ?? -1,
+    )
+
+    await startCollectionRun(window)
+    await waitCollectionRunComplete(window)
+    const results = await window.getByTestId('runner-results-list').textContent()
+    expect(results?.indexOf(inFolder), 'the run executes the folder row first').toBeLessThan(
+      results?.indexOf(inRoot) ?? -1,
+    )
     await closeCollectionRunner(window)
   })
 })
