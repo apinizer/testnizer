@@ -51,11 +51,6 @@ export interface WsdlOperation {
   exampleResponse: string
 }
 
-export interface SoapSchema {
-  url: string
-  body: string
-}
-
 /**
  * SOAP request WS-Security configuration. Accepts both the legacy single-mode
  * shape (kept for persisted projects) and the new multi-mode shape from
@@ -137,122 +132,6 @@ const xmlBuilder = new XMLBuilder({
   indentBy: '  ',
   suppressEmptyNode: true,
 })
-
-// ─── Schema resolution (ported from Java reference) ─────────
-
-function normalizeLocation(location: string): string {
-  return location.toLowerCase().replace(/\\/g, '/')
-}
-
-function resolveSchemaUrl(schemaLocation: string, parentUrl: string): string {
-  if (/^https?:\/\//i.test(schemaLocation) || /^file:\/\//i.test(schemaLocation)) {
-    return schemaLocation
-  }
-  try {
-    return new URL(schemaLocation, parentUrl).toString()
-  } catch {
-    return schemaLocation
-  }
-}
-
-async function fetchContent(url: string, sslVerification = true): Promise<string> {
-  if (/^file:\/\//i.test(url)) {
-    const { readFileSync } = await import('fs')
-    const filePath = url.replace(/^file:\/\//, '')
-    return readFileSync(filePath, 'utf-8')
-  }
-  const response = await axios.get<string>(url, {
-    responseType: 'text',
-    timeout: 15000,
-    // Keep HTTPS certificate validation enabled by default; callers may
-    // opt out explicitly when importing WSDL from trusted-but-self-signed
-    // internal endpoints.
-    httpsAgent: new https.Agent({ rejectUnauthorized: sslVerification }),
-  })
-  return response.data
-}
-
-/**
- * Recursively find all XSD schemas imported within a WSDL/XSD document.
- */
-export async function findAllSchemasRecursively(
-  schemaBody: string,
-  parentUrl: string,
-  resolvedLocations: Set<string> = new Set(),
-  schemas: SoapSchema[] = [],
-): Promise<SoapSchema[]> {
-  // Parse the XML to find xsd:import elements with schemaLocation
-  const parsed = xmlParser.parse(schemaBody) as Record<string, unknown>
-  const importLocations = extractImportSchemaLocations(parsed)
-
-  for (const oldXsdUrl of importLocations) {
-    const resolvedUrl = resolveSchemaUrl(oldXsdUrl, parentUrl)
-    const normalized = normalizeLocation(resolvedUrl)
-
-    // Duplicate prevention
-    if (resolvedLocations.has(normalized)) {
-      continue
-    }
-    resolvedLocations.add(normalized)
-
-    try {
-      const xsdContent = await fetchContent(resolvedUrl)
-      schemas.push({ url: resolvedUrl, body: xsdContent })
-
-      // Recurse into imported schema
-      await findAllSchemasRecursively(xsdContent, resolvedUrl, resolvedLocations, schemas)
-    } catch {
-      // Schema fetch failed — skip this import
-    }
-  }
-
-  return schemas
-}
-
-/**
- * Extract schemaLocation attributes from xsd:import and xsd:include elements
- */
-function extractImportSchemaLocations(obj: unknown, locations: string[] = []): string[] {
-  if (obj === null || obj === undefined || typeof obj !== 'object') {
-    return locations
-  }
-
-  if (Array.isArray(obj)) {
-    for (const item of obj) {
-      extractImportSchemaLocations(item, locations)
-    }
-    return locations
-  }
-
-  const record = obj as Record<string, unknown>
-  for (const key of Object.keys(record)) {
-    const lowerKey = key.toLowerCase()
-    // Match xsd:import, xs:import, import, xsd:include, xs:include, include
-    if (
-      lowerKey.endsWith(':import') ||
-      lowerKey === 'import' ||
-      lowerKey.endsWith(':include') ||
-      lowerKey === 'include'
-    ) {
-      const val = record[key]
-      if (val && typeof val === 'object') {
-        const items = Array.isArray(val) ? val : [val]
-        for (const item of items) {
-          const itemRecord = item as Record<string, unknown>
-          const schemaLoc =
-            itemRecord['@_schemaLocation'] ?? itemRecord['@_schemalocation'] ?? undefined
-          if (typeof schemaLoc === 'string' && schemaLoc.length > 0) {
-            locations.push(schemaLoc)
-          }
-        }
-      }
-    } else {
-      extractImportSchemaLocations(record[key], locations)
-    }
-  }
-
-  return locations
-}
 
 // ─── SOAP version detection ─────────────────────────────────
 
@@ -464,12 +343,20 @@ interface DescribeResult {
 }
 
 export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
+  return parseWsdlFrom(wsdlUrl)
+}
+
+async function parseWsdlFrom(
+  wsdlUrl: string,
+  wsdlOptions?: soap.IOptions['wsdl_options'],
+): Promise<WsdlParseResult> {
   let client: soap.Client
   try {
     client = await soap.createClientAsync(wsdlUrl, {
       disableCache: true,
       escapeXML: false,
       forceSoap12Headers: false,
+      ...(wsdlOptions ? { wsdl_options: wsdlOptions } : {}),
     })
   } catch (err) {
     // `soap.createClientAsync` lumps fetch failures and XML parse errors
@@ -594,6 +481,37 @@ export async function parseWsdl(wsdlUrl: string): Promise<WsdlParseResult> {
   }
 }
 
+/** Publishers of the standard schemas that rpc/encoded WSDLs import by absolute URL. */
+const STANDARD_SCHEMA_HOSTS = new Set(['schemas.xmlsoap.org', 'www.w3.org'])
+
+/**
+ * Text has no address its imports could be relative to, and it may have come from
+ * anyone. node-soap follows every `wsdl:import` / `xsd:import` / `xsd:include`:
+ * local paths through `fs`, http(s) through its client, so a shared file could read
+ * `~/.aws/config` or call a metadata endpoint from this machine. All of them go
+ * through this hook; throwing here fails the parse before any read. Only the
+ * standard SOAP and XML schemas may load, because real WSDLs need them.
+ */
+export function wsdlContentImportLocation(
+  resolved: string,
+  _parent: string,
+  location: string,
+): string {
+  let url: URL | null = null
+  try {
+    url = new URL(resolved)
+  } catch {
+    // A relative or local path: refused below.
+  }
+  if (url && /^https?:$/.test(url.protocol) && STANDARD_SCHEMA_HOSTS.has(url.hostname)) {
+    return resolved
+  }
+  throw new Error(
+    `This WSDL imports "${location}". A WSDL given as text or a file cannot load imports: ` +
+      'load it from its URL, or use one with its schemas inline.',
+  )
+}
+
 /**
  * Parse WSDL from raw file content by writing a temp file and parsing it.
  */
@@ -606,7 +524,7 @@ export async function parseWsdlFromContent(content: string): Promise<WsdlParseRe
   writeFileSync(tmpFile, content, 'utf-8')
 
   try {
-    return await parseWsdl(tmpFile)
+    return await parseWsdlFrom(tmpFile, { overrideImportLocation: wsdlContentImportLocation })
   } finally {
     try {
       unlinkSync(tmpFile)

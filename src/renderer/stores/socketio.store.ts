@@ -1,9 +1,10 @@
 import { create } from 'zustand'
 import type { KeyValuePair } from '../types'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { afterWithheldReloaded, reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { connectErrorText } from '../lib/connection-error'
+import { connectionProxy } from '../lib/network-settings'
 import { useWorkspaceStore } from './workspace.store'
 import { useEnvironmentStore } from './environment.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
@@ -34,6 +35,7 @@ import {
 import { readSioMeta, sioMetaOf, type SioRequestFields } from '../lib/realtime-meta'
 import { savedMessageFromTimeline } from '../lib/socketio-timeline'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
+import { withoutTab } from '../lib/tab-slice'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -476,8 +478,11 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
 
     connect: async () => {
       // Issue #244: a credential still withheld after a restart is reloaded first.
-      if (get().bearerTokenWithheld || get().withheldCredentials.length > 0) {
-        await reloadWithheldBeforeSend()
+      if (
+        (get().bearerTokenWithheld || get().withheldCredentials.length > 0) &&
+        !(await reloadedOnSameTab(get))
+      ) {
+        return
       }
       const start = get()
       const { url, namespace, bearerToken } = start
@@ -579,7 +584,11 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
       patchTab(ownerTabId, () => ({ _unsubscribe: unsubscribe }))
 
       const ws = useWorkspaceStore.getState()
+      const proxy = await connectionProxy(ws.activeProjectId)
+      // Given up while the settings loaded (Cancel, the tab closed, its project left).
+      if (sliceOf(ownerTabId)?._pendingConnectId !== pendingConnectId) return
       const res = await api.connect({
+        ...proxy,
         url: resolvedUrl,
         namespace: resolvedNamespace || '/',
         auth: resolvedToken ? { token: resolvedToken } : undefined,
@@ -632,7 +641,13 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
     },
 
     disconnect: async () => {
-      const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
+      const {
+        connectionId,
+        _unsubscribe,
+        _pendingConnectId,
+        connectionState,
+        _currentTabId: ownerTabId,
+      } = get()
       // Cleared before the engine is told: its cancelled connect then fails
       // with nothing left to mark as an error.
       set({ _pendingConnectId: undefined })
@@ -652,7 +667,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
       // (issue #21): only the transient connection state is cleared. The
       // timeline stays, with a closing system row.
       const wasOpen = connectionId !== null
-      set((s) => ({
+      patchTab(ownerTabId, (s) => ({
         connectionId: null,
         connectionState: 'disconnected',
         errorMessage: null,
@@ -666,7 +681,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
 
     emit: async () => {
       // Issue #284: an emit argument credential withheld after a restart is reloaded first.
-      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+      if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
       const s = get()
       const { connectionId } = s
       if (!connectionId) return
@@ -716,9 +731,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
           _unsubscribe: undefined,
         })
       }
-      const tabStates = new Map(get()._tabStates)
-      tabStates.delete(tabId)
-      set({ _tabStates: tabStates })
+      set(withoutTab<TabSioState>(get(), tabId))
     },
 
     isTokenWithheld: (tabId) => sliceOf(tabId)?.bearerTokenWithheld ?? false,

@@ -23,7 +23,13 @@
  */
 import { useWorkspaceStore } from '../stores/workspace.store'
 
-export type RunnerStorageKind = 'report' | 'report-spent' | 'view' | 'run-data' | 'results'
+export type RunnerStorageKind =
+  | 'report'
+  | 'report-spent'
+  | 'view'
+  | 'run-data'
+  | 'results'
+  | 'past-run'
 
 /**
  * Project used for scoping. `none` covers the Home screen, where no project is

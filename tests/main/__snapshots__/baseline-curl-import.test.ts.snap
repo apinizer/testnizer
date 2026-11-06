@@ -292,7 +292,9 @@ exports[`baseline cURL import — import:curl IPC (persisted endpoint) > form-da
       "endpointCount": 1,
       "folderCount": 0,
       "success": true,
-      "warnings": undefined,
+      "warnings": [
+        "The file path "/tmp/a.png" is absolute. It is read only if it is inside Project Settings → Working directory or Project Settings → Read files outside the working directory is on.",
+      ],
     },
     "success": true,
   },

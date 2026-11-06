@@ -80,7 +80,8 @@ export interface PmLike {
    */
   globals: PmScope
   collectionVariables: PmScope
-  variables: PmScope
+  /** `get` can return a data row's value as parsed (`iterationData`), so not only text. */
+  variables: Omit<PmScope, 'get'> & { get(key: string): unknown }
   /**
    * Postman Vault → the project's SECRET variables (issue #281): `get` reads
    * only variables marked secret, `set` creates or updates one as secret,

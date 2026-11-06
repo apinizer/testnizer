@@ -213,6 +213,7 @@ uiTest.describe('Tur1 — AI Chat deep [MST-151, 152, 153, 154]', () => {
   // through the field, so later AI specs in the shared window start blank.
   uiTest.afterEach(async ({ window }) => {
     const key = window.getByTestId('ai-api-key')
+    // optional: cleanup: clear the typed API key if the field is on screen
     if (await key.isVisible().catch(() => false)) await key.fill('').catch(() => {})
   })
 

@@ -42,6 +42,7 @@ export async function fillMonaco(page: Page, testId: string, text: string): Prom
   await page.keyboard.press('Backspace')
   // HTTP tabs expose url-input; protocol editors (WS, GraphQL, gRPC…) do not.
   const urlInput = page.getByTestId('url-input')
+  // optional: only HTTP tabs have a url-input; other editors blur through the body click
   if (await urlInput.isVisible().catch(() => false)) {
     await urlInput.click()
   } else {

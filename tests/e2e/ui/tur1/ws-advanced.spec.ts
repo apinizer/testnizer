@@ -295,11 +295,10 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
     // input (autofocused) and the confirm button is labelled "Save".
     await pressModShortcut(window, 's')
     const modal = window.getByTestId('endpoint-save-modal')
-    if (await modal.isVisible({ timeout: 3_000 }).catch(() => false)) {
-      await modal.locator('input').first().fill(name)
-      await modal.getByRole('button', { name: 'Save', exact: true }).click()
-      await expect(modal).toBeHidden({ timeout: 10_000 })
-    }
+    await expect(modal).toBeVisible({ timeout: 5_000 })
+    await modal.locator('input').first().fill(name)
+    await modal.getByRole('button', { name: 'Save', exact: true }).click()
+    await expect(modal).toBeHidden({ timeout: 10_000 })
 
     // Assert the save actually persisted — URL + headers + composer land in the
     // saved request's row (url column + metadata.websocket.*). This is the
@@ -343,18 +342,33 @@ uiTest.describe('Tur1 — WebSocket advanced [MST-115..121]', () => {
 
   // ── MST-121: cancelConnect timeout cleanup ────────────────────────────────
   uiTest('MST-121 cancel during connecting cleans up state', async ({ window }) => {
-    // Use an address that will not connect (closed port) to stay in "connecting"
-    await openNewDropdownItem(window, /WebSocket/i)
-    await window.getByTestId('ws-url').fill('ws://127.0.0.1:1')
+    // A TCP listener that accepts and never answers the HTTP upgrade keeps the
+    // socket in "connecting" for as long as the test needs. A closed port
+    // (ws://127.0.0.1:1) is refused instantly, so Cancel would never be there
+    // and the test would pass without exercising cancel at all.
+    const sockets = new Set<net.Socket>()
+    const blackhole = net.createServer((sock) => {
+      sockets.add(sock)
+      sock.on('close', () => sockets.delete(sock))
+      sock.on('error', () => {})
+    })
+    await new Promise<void>((resolve) => blackhole.listen(0, '127.0.0.1', resolve))
+    const { port } = blackhole.address() as net.AddressInfo
+    try {
+      await openNewDropdownItem(window, /WebSocket/i)
+      await window.getByTestId('ws-url').fill(`ws://127.0.0.1:${port}`)
+      await window.getByTestId('ws-connect').click()
 
-    await window.getByTestId('ws-connect').click()
-    // Connecting state may be brief; try to click cancel immediately
-    // If it already transitioned to error, that's also acceptable
-    const cancelBtn = window.getByRole('button', { name: /Cancel/i })
-    if (await cancelBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      // Cancel (same button, `ws-cancel` while connecting) must be offered.
+      const cancelBtn = window.getByTestId('ws-cancel')
+      await expect(cancelBtn).toBeVisible({ timeout: 5_000 })
       await cancelBtn.click()
+
+      // Should end up disconnected (not stuck in connecting)
+      await expect(window.getByTestId('ws-connect')).toBeVisible({ timeout: 10_000 })
+    } finally {
+      for (const sock of sockets) sock.destroy()
+      await new Promise<void>((resolve) => blackhole.close(() => resolve()))
     }
-    // Should end up disconnected (not stuck in connecting)
-    await expect(window.getByTestId('ws-connect')).toBeVisible({ timeout: 10_000 })
   })
 })

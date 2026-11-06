@@ -254,6 +254,42 @@ describe('sse.engine — Last-Event-ID header merge', () => {
   })
 })
 
+// The hand-typed Last-Event-ID is only for the FIRST connect. After the server
+// ends the stream, eventsource@3 reconnects with the id of the last event it
+// received; our wrapped fetch must not put the hand-typed value back on top
+// (the replay would start at the wrong event). Needs a real reconnect, which the
+// capture server above (one request, keep-alive) never causes.
+describe('sse.engine — Last-Event-ID after an automatic reconnect', () => {
+  it('sends the typed id on the first connect and the last received id on the reconnect', async () => {
+    const seen: Array<string | undefined> = []
+    const server = createServer((req, res) => {
+      const v = req.headers['last-event-id']
+      seen.push(Array.isArray(v) ? v.join(',') : v)
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' })
+      if (seen.length === 1) {
+        // First response: one event with id 9, a short retry, then the server hangs up.
+        res.end('retry: 20\nid: 9\ndata: first\n\n')
+      } else {
+        res.write('id: 10\ndata: second\n\n')
+      }
+    })
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`
+    let connectionId: string | undefined
+    try {
+      const info = await connect({ url, lastEventId: '3' }, 1)
+      connectionId = info.connectionId
+      await waitFor(() => sseEvents().find((e) => e.type === 'event' && e.data === 'second'), 5000)
+      expect(seen.slice(0, 2)).toEqual(['3', '9'])
+    } finally {
+      // Always stop the client: left reconnecting, it would feed events to the next test.
+      if (connectionId) disconnect(connectionId)
+      server.closeAllConnections?.()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+})
+
 describe('sse.engine — error path', () => {
   it('emits an `error` payload when the server drops the connection', async () => {
     const info = await connect({ url: srv.url + '/' }, 1)

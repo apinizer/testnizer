@@ -48,10 +48,14 @@ import {
   resolveMcpTimeout,
   resolveProxy,
   resolveSslVerification,
+  withCriticalFlag,
 } from '../../shared/request-settings'
+import { NotFoundError, ipcResult } from '../lib/ipc-helpers'
 import { resolveTlsPayload } from '../lib/tls-presets'
 import { decryptSecret } from '../lib/secure-storage'
 import { soapTransportForRow, withSoapTransportHeaders } from '../../shared/soap-transport'
+import { graphqlJson } from '../../shared/codegen/normalize'
+import { isSavedSubscription, readSavedGraphql } from '../../shared/graphql-row'
 import {
   projectAuthToAuthConfig,
   resolveEffectiveAuth,
@@ -81,6 +85,7 @@ import type {
   ResponseTiming,
   RunnerExecuteOptions,
   RunnerExportOptions,
+  RunnerPhaseEvent,
   RunnerProgress,
   RunnerReport,
   RunStopMode,
@@ -90,6 +95,11 @@ import type {
 import type { StoredProjectSettings } from '../lib/project-settings'
 import { mcpCallOnce, type McpOneShotCall, type McpTransport } from '../protocols/mcp.engine'
 import { isStdioServerTrusted, MCP_STDIO_UNTRUSTED_MESSAGE } from '../lib/mcp-stdio-trust'
+import {
+  isProjectScriptsBlocked,
+  PROJECT_SCRIPTS_BLOCKED_MESSAGE,
+} from '../lib/project-script-trust'
+import { scriptHasCode } from '../../shared/script/has-code'
 import { isCredentialHeaderName } from '../lib/credential-headers'
 import { MASKED_VALUE } from '../db/saved-response.repo'
 import {
@@ -136,6 +146,8 @@ interface KeyValuePair {
 interface RequestBody {
   type: string
   content?: string
+  /** A saved GraphQL row until `resolveRequestOptions` turns it into its JSON body. */
+  graphql?: { query: string; variables: string; operationName?: string }
   formData?: KeyValuePair[]
   urlEncoded?: KeyValuePair[]
   binaryPath?: string
@@ -232,6 +244,11 @@ interface RunState {
    * teardown DELETE with a green 200 (also reported 5 Aug).
    */
   teardownSkipped: boolean
+  /** Whose run: `runner:stop` addresses one by these, like the progress events. */
+  runTabId?: string
+  projectId: string
+  /** Has no tab, so no tab's Stop can ever be meant for it. */
+  scheduled: boolean
 }
 const activeRuns = new Map<string, RunState>()
 let nextRunId = 1
@@ -309,6 +326,11 @@ export function inheritedNetworkFor(
   }
 }
 
+function isSavedGraphqlSubscription(requestSchema: string | null): boolean {
+  const schema = parseJsonSafe<{ body?: unknown; metadata?: unknown }>(requestSchema, {})
+  return isSavedSubscription(schema.body, schema.metadata)
+}
+
 export function buildRequestFromEndpoint(
   endpoint: endpointRepo.EndpointRow,
   inherited: InheritedTimeouts = {},
@@ -321,7 +343,7 @@ export function buildRequestFromEndpoint(
     headers?: KeyValuePair[]
     body?: RequestBody
     auth?: AuthConfig
-    metadata?: { soap?: unknown }
+    metadata?: { soap?: unknown; graphql?: unknown }
   }>(endpoint.request_schema, {})
   // Timeout / redirects / SSL as Ctrl+S wrote them (issue #185) — the same
   // reader the tab-open paths use.
@@ -347,13 +369,34 @@ export function buildRequestFromEndpoint(
     ) as KeyValuePair[]
   }
 
+  // A row saved from the GraphQL tab holds the query in a body the engine has no
+  // case for and its headers in the metadata, so Run sent nothing and no
+  // Authorization. Same inputs as `graphql.store.executeQuery`: no Params table and
+  // no auth, so nothing inherited either (that tab has no Auth section; credentials
+  // are its headers). The JSON is built after `{{var}}` resolution, like Send's: a
+  // value holding a quote, or `{"n": {{n}}}` in the variables, is not JSON until then.
+  const graphql =
+    endpoint.protocol === 'graphql' ? readSavedGraphql(schema.body, schema.metadata) : null
+  if (graphql?.headers) headers = graphql.headers as KeyValuePair[]
+  const body: RequestBody | undefined = graphql
+    ? {
+        type: 'graphql',
+        content: graphql.query,
+        graphql: {
+          query: graphql.query,
+          variables: graphql.variables,
+          ...(graphql.operationName ? { operationName: graphql.operationName } : {}),
+        },
+      }
+    : schema.body
+
   return {
     method: schema.method || endpoint.method || 'GET',
     url,
-    params: schema.params,
+    params: graphql ? [] : schema.params,
     headers,
-    body: schema.body as HttpRequestOptions['body'],
-    auth: schema.auth as HttpRequestOptions['auth'],
+    body: body as HttpRequestOptions['body'],
+    auth: (graphql ? { type: 'none' } : schema.auth) as HttpRequestOptions['auth'],
     // Send's chain (issue #185): per-request (explicit 0 = no timeout, issue
     // #24) → project → app-wide → the engine's 30 s.
     timeout:
@@ -704,10 +747,15 @@ function sendProgress(progress: RunnerProgress): void {
  * what removes the safe Stop from the screen (issue #92), which is the other
  * reason it cannot wait for a result.
  */
-function sendPhaseStarted(phase: RunPhase): void {
+function sendPhaseStarted(phase: RunPhase, options: RunnerExecuteOptions): void {
+  const event: RunnerPhaseEvent = {
+    phase,
+    runTabId: options.runTabId,
+    projectId: options.projectId,
+  }
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
-      win.webContents.send('runner:phase', phase)
+      win.webContents.send('runner:phase', event)
     }
   }
 }
@@ -740,6 +788,8 @@ interface RunVarScopes {
 }
 
 interface ScriptContext {
+  /** Refused by `runUserScript` before anything is compiled (see `RunContext`). */
+  scriptsBlocked: boolean
   /** This step's copies of the run's variable layers — the live pm scopes. */
   globals: Record<string, string>
   environment: Record<string, string>
@@ -756,7 +806,7 @@ interface ScriptContext {
   /** pm.variables.set writes. Visible to later requests IN THIS RUN but
    *  deliberately NOT persisted to the DB. Empty-string value = unset. */
   varUpdates: Record<string, string>
-  iterationData: Record<string, string>
+  iterationData: Record<string, unknown>
   iterationIndex: number
   iterationCount: number
   /** `pm.info.eventName` for the next script: 'prerequest' or 'test'. It was
@@ -843,13 +893,24 @@ function scriptTestToAssertion(t: ScriptTestResult): AssertionResult {
   return { name: t.name, passed: t.passed, error: t.error, ...(t.skipped ? { skipped: true } : {}) }
 }
 
+/**
+ * Call after the row's scripts are read. An import blocks the project before it
+ * writes rows, so a row that already holds imported scripts always reads blocked here.
+ */
+async function readScriptPermission(ctx: RunContext, scriptCtx?: ScriptContext): Promise<boolean> {
+  ctx.scriptsBlocked = await isProjectScriptsBlocked(ctx.options.projectId)
+  if (scriptCtx) scriptCtx.scriptsBlocked = ctx.scriptsBlocked
+  return ctx.scriptsBlocked
+}
+
 function newScriptContext(
-  scopes: RunVarScopes,
-  iterationData: Record<string, string>,
+  { scopes, scriptsBlocked }: Pick<RunContext, 'scopes' | 'scriptsBlocked'>,
+  iterationData: Record<string, unknown>,
   iterationIndex: number,
   iterationCount: number,
 ): ScriptContext {
   return {
+    scriptsBlocked,
     globals: { ...scopes.globals },
     environment: { ...scopes.environment },
     locals: { ...scopes.locals },
@@ -981,6 +1042,17 @@ async function runUserScript(
   override?: ScriptResponseOverride,
 ): Promise<void> {
   if (!script) return
+
+  // The last line of the trust gate: whatever the call site, a blocked project's
+  // script body is never compiled. A hook's row reads the error below; a request
+  // row has already failed before anything was sent (`runEndpointStep`).
+  if (ctx.scriptsBlocked) {
+    if (scriptHasCode(script)) {
+      pushConsoleLog(ctx, 'error', PROJECT_SCRIPTS_BLOCKED_MESSAGE)
+      ctx.scriptError = PROJECT_SCRIPTS_BLOCKED_MESSAGE
+    }
+    return
+  }
 
   // Level-preserving, and capped. The renderer's Send path already keeps
   // warn/error apart; main used to flatten all three into "log", which is the
@@ -1184,6 +1256,29 @@ function mergedRunVars(scopes: RunVarScopes): Record<string, string> {
   return { ...scopes.globals, ...scopes.environment, ...scopes.locals }
 }
 
+/**
+ * What `{{x}}` means in one step: the run's variables with the iteration's data
+ * row between environment and local, the order `pm.variables.get` follows.
+ * Called at each use because a script may have changed the run's view since.
+ */
+function stepVars(
+  run: RunContext,
+  row: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const data: Record<string, string> = {}
+  for (const [key, value] of Object.entries(row ?? {})) {
+    if (value == null) data[key] = ''
+    else
+      data[key] =
+        typeof value === 'string'
+          ? value
+          : typeof value === 'object'
+            ? JSON.stringify(value)
+            : String(value)
+  }
+  return { ...run.envVars, ...data, ...run.scopes.locals }
+}
+
 // Renamed for clarity — `resolveVariables` from the shared resolver handles
 // `{{$dynamicValue}}` + chained refs that the old runner-local function
 // silently skipped.
@@ -1191,11 +1286,26 @@ function resolveRunnerVariables(template: string, vars: Record<string, string>):
   return resolveVariables(template, vars)
 }
 
+/** A saved GraphQL body → what goes on the wire, once its parts are resolved. */
+function graphqlWireOptions(
+  options: HttpRequestOptions,
+  vars: Record<string, string>,
+): HttpRequestOptions {
+  const parts = (options.body as RequestBody | undefined)?.graphql
+  if (!parts) return options
+  const content = graphqlJson(
+    resolveRunnerVariables(parts.query, vars),
+    resolveRunnerVariables(parts.variables, vars),
+    parts.operationName,
+  )
+  return { ...options, body: { type: 'json', content } as HttpRequestOptions['body'] }
+}
+
 function resolveRequestOptions(
   options: HttpRequestOptions,
   vars: Record<string, string>,
 ): HttpRequestOptions {
-  if (Object.keys(vars).length === 0) return options
+  if (Object.keys(vars).length === 0) return graphqlWireOptions(options, vars)
 
   const resolved = { ...options }
   resolved.url = resolveRunnerVariables(resolved.url, vars)
@@ -1298,7 +1408,7 @@ function resolveRequestOptions(
     resolved.auth = next as HttpRequestOptions['auth']
   }
 
-  return resolved
+  return graphqlWireOptions(resolved, vars)
 }
 
 // ─── Runner Execution ────────────────────────────────────────────
@@ -1337,7 +1447,7 @@ interface RunContext {
   /** SSL / redirects / TLS / proxy below a request's own — Send's chain (issue #287). */
   inheritedNetwork: InheritedNetwork
   projectAuth: AuthConfigLike | null
-  iterationData: Record<string, string>[]
+  iterationData: Record<string, unknown>[]
   iterations: number
   persistResponses: boolean
   runEnvUpdates: Record<string, string>
@@ -1359,7 +1469,15 @@ interface RunContext {
   criticalIds: ReadonlySet<string>
   /** The environment's name, snapshotted at run start (issue #307; '' = none). */
   environmentName: string
+  /**
+   * Scripts of this project are not allowed here. Only `readScriptPermission` writes
+   * it, once per row and hook: an import can block the project while a run waits on
+   * a slow request, and the next row may already hold what it imported.
+   */
+  scriptsBlocked: boolean
 }
+
+const FOREIGN_ROW_MESSAGE = 'This request belongs to another project.'
 
 interface StepOutcome {
   didPass: boolean
@@ -1524,6 +1642,8 @@ function recordStep(
     total: Math.max(ctx.total, ctx.emitted),
     endpointId: result.endpointId,
     result,
+    runTabId: ctx.options.runTabId,
+    projectId: ctx.options.projectId,
   })
   return { didPass, skipped, ...(criticalStop ? { criticalStop: true } : {}) }
 }
@@ -1610,7 +1730,6 @@ async function runEndpointStep(
   iter: number,
 ): Promise<StepOutcome> {
   const options = ctx.options
-  const envVars = ctx.envVars
   const iterationData = ctx.iterationData
   const iterations = ctx.iterations
   const persistResponses = ctx.persistResponses
@@ -1621,7 +1740,10 @@ async function runEndpointStep(
   const iteration = phase === 'main' ? iter + 1 : undefined
   const entity = getRunnableEntity(endpointId)
 
-  if (!entity) {
+  // Every caller, not only `runner:execute`: a scheduled task stores its ids as
+  // given. Its project decides the permission, the variables and the settings, so
+  // another project's row must not run under them.
+  if (!entity || !isRunnableInProject(endpointId, options.projectId)) {
     const result: EndpointRunResult = {
       endpointId,
       endpointName: 'Unknown',
@@ -1634,7 +1756,7 @@ async function runEndpointStep(
       failed: 0,
       skipped: 0,
       assertions: [],
-      error: 'Endpoint not found',
+      error: !entity ? 'Endpoint not found' : FOREIGN_ROW_MESSAGE,
       iteration,
       phase,
     }
@@ -1666,6 +1788,29 @@ async function runEndpointStep(
       skipped: 1,
       assertions: [],
       error: `Protocol "${proto}" is not supported in the collection runner yet`,
+      iteration,
+      phase,
+    }
+    return recordStep(ctx, result)
+  }
+
+  // A subscription stays open until someone ends it, and POSTing its query would
+  // only earn a server error. Same neutral skip as a protocol the Run cannot drive.
+  if (proto === 'graphql' && isSavedGraphqlSubscription(endpoint.request_schema)) {
+    const result: EndpointRunResult = {
+      endpointId,
+      endpointName: endpoint.name,
+      method: 'SUBSCRIBE',
+      url: endpoint.path,
+      status: null,
+      statusText: 'UNSUPPORTED',
+      duration: 0,
+      passed: 0,
+      failed: 0,
+      skipped: 1,
+      assertions: [],
+      error:
+        'GraphQL subscriptions cannot run in the collection runner: open the request and use Subscribe',
       iteration,
       phase,
     }
@@ -1706,7 +1851,7 @@ async function runEndpointStep(
   // that cannot tell "the user pulled the plug" from "DNS failed" would score
   // every hard stop as a transport failure.
   let cancelledOnWire = false
-  const scriptCtx = newScriptContext(ctx.scopes, iterationData[iter] ?? {}, iter, iterations)
+  const scriptCtx = newScriptContext(ctx, iterationData[iter] ?? {}, iter, iterations)
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
   scriptCtx.projectId = ctx.options.projectId
@@ -1776,6 +1921,32 @@ async function runEndpointStep(
     scriptCtx.requestName = endpoint.name
     scriptCtx.requestId = endpointId
     scriptCtx.location = [...folderChain.map((f) => f.name), endpoint.name]
+
+    // A row whose cascade holds a script fails here when the project's scripts
+    // are not allowed, even if only a post-response script exists: its request
+    // is not sent either.
+    if (
+      [...preScripts, ...postScripts].some(scriptHasCode) &&
+      (await readScriptPermission(ctx, scriptCtx))
+    ) {
+      const result: EndpointRunResult = {
+        endpointId,
+        endpointName: endpoint.name,
+        method: requestOptions.method,
+        url: stripUrlCredentials(requestOptions.url),
+        status: null,
+        statusText: 'SCRIPT',
+        duration: 0,
+        passed: 0,
+        failed: 0,
+        skipped: 0,
+        assertions: [],
+        error: PROJECT_SCRIPTS_BLOCKED_MESSAGE,
+        iteration,
+        phase,
+      }
+      return { ...recordStep(ctx, result), configError: true }
+    }
 
     // Run pre-request scripts in order. They share one context so a
     // project/folder script's env writes are visible to inner scripts.
@@ -1867,7 +2038,9 @@ async function runEndpointStep(
     // Resolve environment variables in request. A copy: with no variables the
     // resolver hands back `requestOptions` itself, and the History row's
     // `configured` snapshot must keep the unsecured template.
-    const resolvedOptions = { ...resolveRequestOptions(requestOptions, envVars) }
+    const resolvedOptions = {
+      ...resolveRequestOptions(requestOptions, stepVars(ctx, iterationData[iter])),
+    }
     // SOAP WS-Security from the saved row (`metadata.soap.wsSecurity`) — the
     // same applier and the same `{{var}}` rule Send uses, applied last so a
     // signature covers the final bytes (tester report 2026-10-30).
@@ -1879,7 +2052,7 @@ async function runEndpointStep(
       ).metadata?.soap?.wsSecurity
       if (isWsSecurityEnabled(saved)) {
         const wsSecurity = resolveWsSecurityVariables(saved, (v) =>
-          resolveRunnerVariables(v, envVars),
+          resolveRunnerVariables(v, stepVars(ctx, iterationData[iter])),
         )
         wsseSecrets = wsSecuritySecretValues(wsSecurity)
         resolvedOptions.body = (await applySoapWsSecurityToBody(
@@ -2114,9 +2287,9 @@ async function runEndpointStep(
         bodySize: response.bodySize,
         timing: response.timing,
       },
-      // envVars at this point reflects any pre-script `pm.environment.set`
-      // calls — assertions see the same variable space the request did.
-      envVars,
+      // Read now, so it reflects any pre-script `pm.environment.set` calls:
+      // assertions see the same variable space the request did.
+      stepVars(ctx, iterationData[iter]),
     )
     const assertionResults = [...declarativeAssertions, ...scriptTestResults]
 
@@ -2363,7 +2536,6 @@ async function runMcpStep(
   iter: number,
 ): Promise<StepOutcome> {
   const endpoint = entity.row
-  const envVars = ctx.envVars
   const iteration = phase === 'main' ? iter + 1 : undefined
   const saved = readSavedMcpRequest(endpoint)
   const rowBase = {
@@ -2373,12 +2545,7 @@ async function runMcpStep(
     iteration,
     phase,
   }
-  const scriptCtx = newScriptContext(
-    ctx.scopes,
-    ctx.iterationData[iter] ?? {},
-    iter,
-    ctx.iterations,
-  )
+  const scriptCtx = newScriptContext(ctx, ctx.iterationData[iter] ?? {}, iter, ctx.iterations)
   const consoleTag = runConsoleTag(ctx, { step: endpoint.name, phase, iteration })
   scriptCtx.consoleTag = consoleTag
   scriptCtx.projectId = ctx.options.projectId
@@ -2421,6 +2588,19 @@ async function runMcpStep(
       schema.preScript,
       schema.postScript,
     )
+
+    // Same rule as HTTP: nothing runs and nothing is called for a blocked project.
+    if (
+      [...preScripts, ...postScripts].some(scriptHasCode) &&
+      (await readScriptPermission(ctx, scriptCtx))
+    ) {
+      return {
+        ...failRow(mcpDisplayTarget(saved.transport, saved.url), PROJECT_SCRIPTS_BLOCKED_MESSAGE, {
+          statusText: 'SCRIPT',
+        }),
+        configError: true,
+      }
+    }
 
     // pm.request on an MCP row: the server URL (raw, like Send) and the
     // enabled custom headers — a pre-request script may add one.
@@ -2481,7 +2661,10 @@ async function runMcpStep(
     }
 
     // ── Resolve against the run's live variables (pre-script writes included) ──
-    const { connect, call: resolvedCall } = mcpRunRequest({ ...saved, customHeaders }, envVars)
+    const { connect, call: resolvedCall } = mcpRunRequest(
+      { ...saved, customHeaders },
+      stepVars(ctx, ctx.iterationData[iter]),
+    )
     const target = mcpDisplayTarget(saved.transport, connect.url)
     if (asRecord(saved.auth)?.type === 'oauth2') return failRow(target, MCP_RUN_OAUTH)
     if (resolvedCall.problem !== undefined) {
@@ -2612,7 +2795,7 @@ async function runMcpStep(
         bodySize: response.responseSize,
         timing: { total: response.responseTime },
       },
-      envVars,
+      stepVars(ctx, ctx.iterationData[iter]),
     )
     const assertionResults: AssertionResult[] = [
       ...declarative,
@@ -2709,7 +2892,8 @@ async function runHookScript(
 ): Promise<StepOutcome | null> {
   if (!script || !script.trim()) return null
   const startedAt = Date.now()
-  const scriptCtx = newScriptContext(ctx.scopes, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
+  await readScriptPermission(ctx)
+  const scriptCtx = newScriptContext(ctx, ctx.iterationData[0] ?? {}, 0, ctx.iterations)
   scriptCtx.consoleTag = runConsoleTag(ctx, { step: label, phase })
   scriptCtx.projectId = ctx.options.projectId
   // `pm.run` gets THIS script's live scopes: a secret it writes (pm.vault.set,
@@ -2775,7 +2959,7 @@ async function runTeardownPhase(
 ): Promise<void> {
   const runState = ctx.runState
   runState.teardownStarted = true
-  sendPhaseStarted('teardown')
+  sendPhaseStarted('teardown', ctx.options)
   for (const [i, id] of ids.entries()) {
     if (runState.abortTeardown) {
       // An explicit hard stop cut cleanup short. Say which steps were left
@@ -2954,6 +3138,29 @@ export function criticalRequestIds(ids: readonly string[]): Set<string> {
   return out
 }
 
+/**
+ * Set a row's Critical flag from the run sequence (issue #315), which holds
+ * only ids. Same lookup order as `getRunnableEntity`, same column as the
+ * Settings tab's Ctrl+S.
+ */
+export function setRequestCritical(id: string, critical: boolean): void {
+  const endpoint = endpointRepo.getEndpointById(id)
+  if (endpoint) {
+    endpointRepo.updateEndpoint(id, {
+      request_schema: withCriticalFlag(endpoint.request_schema, critical),
+    })
+    return
+  }
+  const saved = endpointRepo.getSavedRequestById(id)
+  if (saved) {
+    endpointRepo.updateSavedRequest(id, { metadata: withCriticalFlag(saved.metadata, critical) })
+    return
+  }
+  const item = tsiRepo.getItemById(id)
+  if (!item) throw new NotFoundError('Request not found')
+  tsiRepo.updateItem(id, { request_schema: withCriticalFlag(item.request_schema, critical) })
+}
+
 async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<RunnerReport> {
   const options: RunnerExecuteOptions = {
     ...rawOptions,
@@ -2973,6 +3180,9 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     cancelInFlight: null,
     teardownStarted: false,
     teardownSkipped: false,
+    runTabId: options.runTabId,
+    projectId: options.projectId,
+    scheduled: options.source === 'Scheduler',
   }
   activeRuns.set(runId, runState)
 
@@ -3093,6 +3303,8 @@ async function executeCollection(rawOptions: RunnerExecuteOptions): Promise<Runn
     emitted: 0,
     criticalIds: criticalRequestIds(options.endpointIds),
     environmentName,
+    // A Scheduler tick never prompts: the state is only read.
+    scriptsBlocked: await isProjectScriptsBlocked(options.projectId),
   }
 
   let stopReason: RunStopReason | undefined
@@ -3413,7 +3625,7 @@ function mergeScriptUpdates(ctx: ScriptContext, run: RunContext): void {
   // write won, whatever its scope).
   const merged = mergedRunVars(scopes)
   for (const k of Object.keys(run.envVars)) {
-    if (!(k in merged)) delete run.envVars[k]
+    if (!Object.hasOwn(merged, k)) delete run.envVars[k]
   }
   Object.assign(run.envVars, merged)
 }
@@ -3549,20 +3761,31 @@ export function registerRunnerHandlers(): void {
 
   ipcMain.handle(
     'runner:stop',
-    async (_event, opts?: { mode?: RunStopMode; skipTeardown?: boolean }) => {
+    async (
+      _event,
+      opts?: { mode?: RunStopMode; skipTeardown?: boolean; runTabId?: string; projectId?: string },
+    ) => {
       try {
-        // Stop every in-flight run. Today the renderer doesn't pass a run id,
-        // and there's no UI affordance to target one of several concurrent
-        // runs, so "Stop" is project-wide by design. The shouldStop flag is
-        // per-RunState now, so this only nudges currently-registered runs
-        // — finished runs are no longer in the map.
+        // A tab stops ITS run. A run outlives its tab (issue #317), so another
+        // tab can be running, and so can a scheduled run; a Stop that reached
+        // those aborted them with nothing on their tab to say why. `projectId`
+        // is what makes a call addressed: `runner-main` exists in every project,
+        // and a tabless runner has no `runTabId` at all. An unaddressed call has
+        // no tab to speak for, so it stops everything.
         //
         // `skipTeardown` is the pre-#91 spelling of `mode: 'direct'`, still
         // accepted so an older renderer talking to a newer main doesn't
         // silently get a graceful stop when it asked to abandon cleanup.
         const direct = opts?.mode === 'direct' || opts?.skipTeardown === true
         let stopped = 0
+        const addressed = opts?.projectId !== undefined
         for (const run of activeRuns.values()) {
+          if (
+            addressed &&
+            (run.scheduled || run.projectId !== opts.projectId || run.runTabId !== opts.runTabId)
+          ) {
+            continue
+          }
           run.shouldStop = true
           // Graceful Stop ends the flow and leaves cleanup alone — deliberately
           // including the request already on the wire, because killing it is how
@@ -3591,6 +3814,10 @@ export function registerRunnerHandlers(): void {
         return { success: false, error: (e as Error).message }
       }
     },
+  )
+
+  ipcMain.handle('runner:setRequestCritical', (_event, id: string, critical: boolean) =>
+    ipcResult(() => setRequestCritical(id, critical === true)),
   )
 
   ipcMain.handle('runner:export', async (_event, options: RunnerExportOptions) => {

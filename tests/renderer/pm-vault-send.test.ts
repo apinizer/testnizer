@@ -11,6 +11,7 @@
  *  - `pm.collectionVariables.set` persists like `pm.globals.set` (project
  *    variable), never into the active environment.
  */
+import { allowScriptTrustBridge } from '../helpers/script-trust-bridge'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useRequestStore } from '../../src/renderer/stores/request.store'
 import { useResponseStore } from '../../src/renderer/stores/response.store'
@@ -84,6 +85,7 @@ function installMockApi(): Record<string, Record<string, ReturnType<typeof vi.fn
       }),
     },
   }
+  ;(api as Record<string, unknown>).projectTrust = allowScriptTrustBridge
   ;(globalThis as unknown as { window: { api: typeof api } }).window = { api }
   return api as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>>
 }

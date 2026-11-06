@@ -20,6 +20,7 @@ import {
   seedProject,
   seedWorkspace,
 } from './helpers'
+import { parseIterationData } from '../../../src/renderer/lib/iteration-data'
 
 const harness = setupHandlerHarness()
 vi.mock('electron', () => ({
@@ -126,6 +127,42 @@ describe('Run variable scopes (issue #281)', () => {
     expect(data.envUpdates.fromVars).toBe('D')
     expect(data.envUpdates.fromEnv).toBe('E')
     expect(data.envUpdates.afterLocal).toBe('L')
+  })
+
+  it('a JSON data file reaches the script with its values as parsed', async () => {
+    const ep = seedEndpoint('A', {
+      url: 'http://api.test/a',
+      method: 'GET',
+      preScript: `
+        pm.environment.set('userId', pm.iterationData.get('user').id);
+        pm.environment.set('firstTag', pm.iterationData.get('tags')[0]);
+        pm.environment.set('nType', typeof pm.iterationData.get('n'));
+        pm.environment.set('viaData', data.user.id);
+        pm.environment.set('inTemplate', pm.variables.replaceIn('{{user}}'));
+      `,
+    })
+    const iterationData = parseIterationData(
+      '[{"user":{"id":7},"tags":["x"],"n":1}]',
+      'data.json',
+      (key) => key,
+    )
+    const data = await run([ep], { iterationData })
+    expect(data.envUpdates.userId).toBe('7')
+    expect(data.envUpdates.firstTag).toBe('x')
+    expect(data.envUpdates.nType).toBe('number')
+    expect(data.envUpdates.viaData).toBe('7')
+    expect(data.envUpdates.inTemplate).toBe('{"id":7}')
+  })
+
+  it('a CSV data file reaches the script as text', async () => {
+    const ep = seedEndpoint('A', {
+      url: 'http://api.test/a',
+      method: 'GET',
+      preScript: "pm.environment.set('nType', typeof pm.iterationData.get('n'))",
+    })
+    const iterationData = parseIterationData('n\n1\n', 'data.csv', (key) => key)
+    const data = await run([ep], { iterationData })
+    expect(data.envUpdates.nType).toBe('string')
   })
 
   it('a pm.globals.set no longer shadows the environment value for later requests', async () => {

@@ -232,6 +232,27 @@ export function loadCertificatesFor(projectId: string | undefined, url: string):
   return { certificates: { caCerts: caCerts.length ? caCerts : undefined, clientCert } }
 }
 
+/**
+ * The project's certificates as Node TLS options (`https.Agent`, `ws`, MQTT.js).
+ * The client chain stays out of `ca`: that option replaces the trust store.
+ */
+export function certificateTlsMaterial(certificates: NonNullable<CertLoadResult['certificates']>): {
+  ca?: Buffer[]
+  pfx?: Buffer
+  cert?: Buffer
+  key?: Buffer
+  passphrase?: string
+} {
+  const c = certificates.clientCert
+  return {
+    ...(certificates.caCerts?.length ? { ca: certificates.caCerts } : {}),
+    ...(c?.pfx ? { pfx: c.pfx } : {}),
+    ...(c?.cert ? { cert: c.cert } : {}),
+    ...(c?.key ? { key: c.key } : {}),
+    ...(c?.passphrase ? { passphrase: c.passphrase } : {}),
+  }
+}
+
 // Map of in-flight request IDs → AbortController, so the renderer can call
 // request:cancel(id) to abort a long-running request (e.g. a user-initiated
 // "cancel" during a slow response).

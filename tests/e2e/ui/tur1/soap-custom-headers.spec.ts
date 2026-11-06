@@ -66,8 +66,7 @@ uiTest.describe('Tur1 — SOAP custom headers [MST-111]', () => {
 
     // kv-add-row or similar add button must be present for custom headers
     const addBtn = window.getByTestId('kv-add-row').or(window.getByRole('button', { name: /Add Header|Add row/i }))
-    const addVisible = await addBtn.first().isVisible().catch(() => false)
-    expect(addVisible).toBe(true)
+    await expect(addBtn.first()).toBeVisible({ timeout: 10_000 })
   })
 
   uiTest('MST-111c SOAP editor custom header is fillable and send works', async ({ window }) => {
@@ -85,16 +84,12 @@ uiTest.describe('Tur1 — SOAP custom headers [MST-111]', () => {
 
     // Add a custom header
     const addBtn = window.getByTestId('kv-add-row').first()
-    if (await addBtn.isVisible().catch(() => false)) {
-      await addBtn.click()
-      await kvFillLastRow(window, { key: 'X-SOAP-Client', value: customVal })
-    }
+    await expect(addBtn).toBeVisible({ timeout: 10_000 })
+    await addBtn.click()
+    await kvFillLastRow(window, { key: 'X-SOAP-Client', value: customVal })
 
     // Fill body with sample envelope
-    const bodyTab = window.getByRole('button', { name: /^Body$/i })
-    if (await bodyTab.isVisible().catch(() => false)) {
-      await bodyTab.click()
-    }
+    await window.getByTestId('soap-detail-tab-body').click()
     await window.locator('.monaco-editor').first().click()
     const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
     await window.keyboard.press(`${mod}+KeyA`)
@@ -106,12 +101,11 @@ uiTest.describe('Tur1 — SOAP custom headers [MST-111]', () => {
 
     // Check if custom header was reflected in response body
     await window.getByTestId('res-tab-body').click()
+    // The echo server reflects every received request header in the body, so
+    // the custom header typed in the Headers tab must come back verbatim.
     const resBody = window.getByTestId('res-body-content')
-    const bodyText = await resBody.innerText().catch(() => '')
-    if (bodyText) {
-      // If the echo server reflected headers in the response body, check it
-      expect(bodyText.length).toBeGreaterThan(0)
-    }
+    await expect(resBody).toContainText(customVal, { timeout: 15_000 })
+    await expect(resBody).toContainText(/x-soap-client/i)
   })
 
   uiTest('MST-111d SOAPAction header is sent with SOAP 1.1 request', async ({ window }) => {

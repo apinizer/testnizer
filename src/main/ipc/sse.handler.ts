@@ -8,6 +8,9 @@ import {
 } from '../protocols/sse.engine'
 import { logEvent } from '../lib/console-logger'
 import { connectFailure } from '../lib/error-classifier'
+import { resolveConnectionProxy } from '../lib/proxy-tunnel'
+import { proxySecretValues } from '../lib/sensitive-scrub'
+import type { ProxySetting } from '../../shared/request-settings'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 
@@ -18,6 +21,8 @@ interface SseConnectPayload {
   withCredentials?: boolean
   method?: SseHttpMethod
   body?: string
+  /** The project → app proxy (`effectiveProxy`); absent = the environment's. */
+  proxy?: ProxySetting
   _tabId?: string
   _workspaceId?: string
   _projectId?: string
@@ -28,7 +33,10 @@ interface SseConnectPayload {
   _configured?: HistoryConfigured
 }
 
-const sseContext = new Map<string, { url: string; tabId?: string; connectedAt: number }>()
+const sseContext = new Map<
+  string,
+  { url: string; tabId?: string; connectedAt: number; secrets: string[] }
+>()
 
 export function registerSseHandlers(): void {
   // ─── Connect to SSE endpoint ────────────────────────────────
@@ -39,7 +47,10 @@ export function registerSseHandlers(): void {
         return { success: false, error: 'No window found for this request' }
       }
 
+      const proxy = resolveConnectionProxy(payload.proxy, payload.url)
+      const secrets = proxySecretValues(proxy)
       const options: SseConnectOptions = {
+        proxy,
         url: payload.url,
         headers: payload.headers,
         lastEventId: payload.lastEventId,
@@ -56,6 +67,7 @@ export function registerSseHandlers(): void {
         message: `SSE connecting (${payload.method ?? 'GET'}) → ${payload.url}`,
         url: payload.url,
         tabId: payload._tabId,
+        secrets,
       })
 
       try {
@@ -65,6 +77,7 @@ export function registerSseHandlers(): void {
           url: payload.url,
           tabId: payload._tabId,
           connectedAt,
+          secrets,
         })
         logEvent({
           protocol: 'sse',
@@ -76,6 +89,7 @@ export function registerSseHandlers(): void {
           status: 200,
           statusText: 'OK',
           durationMs: connectedAt - connectStart,
+          secrets,
         })
         try {
           historyRepo.addHistory({
@@ -95,6 +109,7 @@ export function registerSseHandlers(): void {
               body: payload.body,
               ...(payload._configured ? { configured: payload._configured } : {}),
             }),
+            extra_secrets: secrets,
             response_snapshot: JSON.stringify({
               status: 200,
               statusText: 'OK',
@@ -117,6 +132,7 @@ export function registerSseHandlers(): void {
           tabId: payload._tabId,
           durationMs: failedAt - connectStart,
           error: { message: (err as Error).message },
+          secrets,
         })
         try {
           historyRepo.addHistory({
@@ -134,6 +150,7 @@ export function registerSseHandlers(): void {
               headers: payload.headers,
               ...(payload._configured ? { configured: payload._configured } : {}),
             }),
+            extra_secrets: secrets,
             response_snapshot: JSON.stringify({ error: (err as Error).message }),
           })
         } catch {
@@ -172,6 +189,7 @@ export function registerSseHandlers(): void {
         url: ctx?.url,
         tabId: ctx?.tabId,
         durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+        secrets: ctx?.secrets,
       })
       sseContext.delete(connectionId)
       return { success: true, data: result }

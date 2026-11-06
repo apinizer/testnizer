@@ -52,12 +52,17 @@ uiTest.describe('Tools panel', () => {
     const search = window
       .locator('input[placeholder*="Search"], input[placeholder*="search"]')
       .first()
-    if (await search.isVisible()) {
+    await expect(search).toBeVisible({ timeout: 10_000 })
+    try {
       await search.fill('UUID')
-      await expect(window.getByText('UUID', { exact: false }).first()).toBeVisible()
+      await expect(window.getByText('UUID Generator', { exact: false }).first()).toBeVisible()
+      // Filtering must actually remove the tools that do not match.
+      await expect(window.getByText('JSON Formatter', { exact: false })).toHaveCount(0)
+    } finally {
       // Leave the panel unfiltered: these specs share one Electron instance, so
       // a leftover query hides every other tool from the NEXT spec file.
       await search.fill('')
     }
+    await expect(window.getByText('JSON Formatter', { exact: false }).first()).toBeVisible()
   })
 })

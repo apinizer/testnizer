@@ -1,3 +1,4 @@
+import type { Agent } from 'node:http'
 import { io, type Socket } from 'socket.io-client'
 import type { SioSettings } from '../../shared/realtime'
 
@@ -52,6 +53,8 @@ export interface SioClientOptions {
   auth?: Record<string, unknown>
   extraHeaders?: Record<string, string>
   settings: SioSettings
+  /** Tunnels every transport, polling and WebSocket, on both clients. */
+  agent?: Agent
 }
 
 /** v4's message when an ack does not arrive in time; v2 reports the same. */
@@ -125,6 +128,8 @@ function createV4Client(opts: SioClientOptions): SioClient {
     ...commonOptions(opts.settings),
     auth: opts.auth,
     extraHeaders: opts.extraHeaders,
+    // engine.io takes any `http.Agent` here; its type only admits string | boolean.
+    ...(opts.agent ? { agent: opts.agent as unknown as boolean } : {}),
   })
   return {
     get connected() {
@@ -219,6 +224,7 @@ function createV2Client(opts: SioClientOptions): SioClient {
     // Node's built-in WebSocket (Node ≥ 22) would otherwise be picked; it
     // takes neither the headers nor `rejectUnauthorized`.
     forceNode: true,
+    ...(opts.agent ? { agent: opts.agent } : {}),
     transportOptions: {
       polling: { extraHeaders: headers },
       websocket: { extraHeaders: headers },

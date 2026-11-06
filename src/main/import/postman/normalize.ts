@@ -116,18 +116,20 @@ export function reconstructPostmanUrl(url: PostmanUrl | string | undefined): str
 }
 
 /** Best-effort path extraction for the endpoints.path column. Falls back to
- * the raw URL if the URL contains template variables that break URL parsing. */
+ * the raw URL if the URL contains template variables that break URL parsing.
+ * Variables keep their names: the tree and search show this, and it used to say
+ * `/pets/*`, which told nobody which value goes there. */
 export function extractPath(url: string): string {
   if (!url) return '/'
-  // If the URL contains {{vars}} we can't reliably parse it — use a safe
-  // substitution then strip back the placeholder.
-  const PLACEHOLDER = '__VAR__'
-  const safe = url.replace(/\{\{[^}]+\}\}/g, PLACEHOLDER)
+  // `new URL` rejects `{{…}}` and encodes `{`: parse with a stand-in for each one.
+  const vars: string[] = []
+  const safe = url.replace(/\{\{[^}]+\}\}/g, (variable) => {
+    vars.push(variable)
+    return `tnzvar${vars.length - 1}tnz`
+  })
   try {
-    const parsed = new URL(safe)
-    let pathname = parsed.pathname || '/'
-    pathname = pathname.replace(new RegExp(PLACEHOLDER, 'g'), '*')
-    return pathname
+    const pathname = new URL(safe).pathname || '/'
+    return pathname.replace(/tnzvar(\d+)tnz/g, (_, i: string) => vars[Number(i)] ?? '')
   } catch {
     // Relative URL or `{{baseUrl}}/path` form — strip protocol/host best-effort.
     const m = url.match(/(?:https?:\/\/[^/]+)?(\/.*)$/)

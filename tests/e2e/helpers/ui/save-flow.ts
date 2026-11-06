@@ -8,6 +8,6 @@ const activeTab = (page: Page) =>
 export async function saveInPlace(page: Page): Promise<void> {
   await pressModShortcut(page, 's')
   // Save modal must NOT appear for in-place updates.
-  await expect(page.getByTestId('endpoint-save-modal')).toBeHidden({ timeout: 3_000 }).catch(() => {})
+  await expect(page.getByTestId('endpoint-save-modal')).toBeHidden({ timeout: 3_000 })
   await expect(activeTab(page)).toHaveAttribute('data-dirty', 'false', { timeout: 10_000 })
 }

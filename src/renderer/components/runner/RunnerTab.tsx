@@ -12,11 +12,17 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import type { TreeNode, HttpMethod } from '../../types'
 import RunnerSequence from './RunnerSequence'
+import {
+  collectEndpointsFromNode,
+  collectFolderGroups,
+  collectFolderGroupsFromNode,
+} from './runner-rows'
 import RunnerConfig, { type SchedulePayload } from './RunnerConfig'
 import RunnerResults from './RunnerResults'
 import { openEndpointTab, openSuiteItemTab } from '../../lib/open-endpoint-tab'
 import { runnerKey } from '../../lib/runner-storage'
 import { saveDirtyRunItemsBeforeRun } from '../../lib/dirty-run-guard'
+import { setRequestCritical } from '../../lib/request-critical'
 import { useUIStore, selectRightPanelCollapsed } from '../../stores/ui.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatDateTime } from '../../lib/format-datetime'
@@ -28,32 +34,17 @@ import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
 import type { RunPhase } from '../../../shared/runner-verdict'
 import { readRequestSettingsJson } from '../../../shared/request-settings'
 import { lockDragStyles } from '../../lib/drag-lock'
-import { setRunnerBusy } from '../../lib/runner-activity'
 import { revealRunResult, revealTargetFor, type RunOrigin } from '../../lib/reveal-run-result'
 import { asRunOrigin, runOriginFromSourceLabel } from '../../lib/runner-source-label'
 import RunnerConfigSplit from './RunnerConfigSplit'
-
-/**
- * After a run, refresh the renderer env store from the DB so script-written
- * variables (e.g. a token captured by a post-response `pm.environment.set`)
- * show up in the env editor and resolve on the next Send — the main process
- * already persisted them ("Keep variable values"). Without this the folder /
- * APIs run path left the store stale, so `{{accessToken}}` came back empty and
- * users had to retype it by hand (mirrors runner.store.run, which already did
- * this — RunnerTab's own execute path was the gap).
- */
-export async function refreshEnvAfterRun(
-  report: RunnerReport | undefined,
-  keepVariableValues: boolean,
-): Promise<void> {
-  if (!report || !keepVariableValues) return
-  const wrote =
-    Object.keys(report.envUpdates ?? {}).length > 0 ||
-    Object.keys(report.globalUpdates ?? {}).length > 0
-  if (!wrote) return
-  const env = useEnvironmentStore.getState()
-  await Promise.all([env.fetchEnvironments(), env.fetchGlobalVariables()])
-}
+import RunnerLiveBanner from './RunnerLiveBanner'
+import {
+  liveRunKey,
+  startLiveRun,
+  stopLiveRun,
+  takeFinishedRun,
+  useRunnerLiveStore,
+} from '../../stores/runner-live.store'
 
 /* ── Types ─────────────────────────────────────────────────── */
 
@@ -65,7 +56,7 @@ export interface RunnerEndpointItem {
   selected: boolean
   /** Non-HTTP rows (MCP runs, issue #161) show the protocol chip, not their placeholder method. */
   protocol?: string
-  /** Marked Critical in its Settings tab — a failure stops the run (issue #304). */
+  /** Marked Critical, in its Settings tab or the sequence — a failure stops the run (issue #304). */
   critical?: boolean
   folderName?: string
   /**
@@ -94,84 +85,29 @@ export interface RunnerFolderGroup {
    */
   parentId: string | null
   endpoints: RunnerEndpointItem[]
+  /**
+   * The project root runs its folders before its own requests (`orderTreeLevel`).
+   * Every other group, a suite's included, runs its requests first.
+   */
+  foldersFirst?: boolean
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
 
-function collectEndpointsFromNode(node: TreeNode): RunnerEndpointItem[] {
-  const result: RunnerEndpointItem[] = []
-  if ((node.type === 'endpoint' || node.type === 'request') && node.method && node.path) {
-    result.push({
-      id: node.id,
-      name: node.label,
-      method: node.method as HttpMethod,
-      url: node.path,
-      selected: true,
-      protocol: node.protocol,
-      ...(node.critical ? { critical: true } : {}),
-    })
-  }
-  if (node.children) {
-    for (const child of node.children) {
-      result.push(...collectEndpointsFromNode(child))
-    }
-  }
-  return result
-}
-
 /**
- * Recursively collect folder groups — one group per folder, carrying its parent
- * so the sequence can be rendered as the tree the user organised (issue #90).
- *
- * Folders with no DIRECT requests are collected too, even though they produce
- * no rows themselves: dropping them broke the parent chain, and a child folder
- * whose parent is missing cannot be placed. The sequence prunes branches that
- * hold no requests at all at render time, where it can see the whole subtree.
+ * Rows rebuilt from a changed tree keep this tab's selection and phases: they
+ * are the plan being prepared, and the tree says nothing about them. Same rule
+ * as the suite path's refetch.
  */
-function collectFolderGroupsFromNode(
-  node: TreeNode,
-  groups: RunnerFolderGroup[],
-  parentPath?: string,
-  parentId: string | null = null,
-): void {
-  if (!node.children) return
-  const fullName = parentPath ? `${parentPath} / ${node.label}` : node.label
-  const directEps: RunnerEndpointItem[] = []
-  for (const child of node.children) {
-    if ((child.type === 'endpoint' || child.type === 'request') && child.method && child.path) {
-      directEps.push({
-        id: child.id,
-        name: child.label,
-        method: child.method as HttpMethod,
-        url: child.path,
-        selected: true,
-        protocol: child.protocol,
-        ...(child.critical ? { critical: true } : {}),
-      })
-    }
-  }
-  groups.push({
-    folderId: node.id,
-    folderName: fullName,
-    label: node.label,
-    parentId,
-    endpoints: directEps,
+function keepRunChoices(
+  built: RunnerEndpointItem[],
+  prev: RunnerEndpointItem[],
+): RunnerEndpointItem[] {
+  const prevById = new Map(prev.map((ep) => [ep.id, ep]))
+  return built.map((ep) => {
+    const p = prevById.get(ep.id)
+    return p ? { ...ep, selected: p.selected, phase: p.phase } : ep
   })
-  for (const child of node.children) {
-    if (child.type === 'folder' || child.type === 'module') {
-      collectFolderGroupsFromNode(child, groups, fullName, node.id)
-    }
-  }
-}
-
-function collectFolderGroups(nodes: TreeNode[]): RunnerFolderGroup[] {
-  const groups: RunnerFolderGroup[] = []
-  for (const root of nodes) {
-    if (root.type === 'module' || root.type === 'folder') {
-      collectFolderGroupsFromNode(root, groups)
-    }
-  }
-  return groups
 }
 
 function findNodeById(nodes: TreeNode[], id: string): TreeNode | null {
@@ -256,6 +192,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const setRightPanelCollapsed = useUIStore((s) => s.setRightPanelCollapsed)
 
   const [endpoints, setEndpoints] = useState<RunnerEndpointItem[]>([])
+  const treeScopeRef = useRef<{
+    folderId: string | undefined
+    suiteFilterIds: Set<string> | null
+  } | null>(null)
   const [folderGroups, setFolderGroups] = useState<RunnerFolderGroup[]>([])
   // Persist runner view + selected run id under the tab so tab switches don't
   // bounce the user back to "config" (v1.3.1 §5.11 E11). The key intentionally
@@ -328,7 +268,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [delay, setDelay] = useState(RUNNER_DEFAULTS.delay)
   const [iterationDelay, setIterationDelay] = useState(RUNNER_DEFAULTS.iterationDelay)
   const [iterations, setIterations] = useState(RUNNER_DEFAULTS.iterations)
-  const [iterationData, setIterationData] = useState<Record<string, string>[]>([])
+  const [iterationData, setIterationData] = useState<Record<string, unknown>[]>([])
   const [environmentId, setEnvironmentId] = useState('')
   const [stopOnError, setStopOnError] = useState(RUNNER_DEFAULTS.stopOnError)
   const [persistResponses, setPersistResponses] = useState(RUNNER_DEFAULTS.persistResponses)
@@ -354,29 +294,26 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [sequenceWidth, setSequenceWidth] = useState(360)
   const [variablesWidth, setVariablesWidth] = useState(260)
 
-  // Run state
-  const [isRunning, setIsRunning] = useState(false)
-  /** Cleanup has begun — signalled by main, since a finished-step tick can't say so. */
-  const [teardownStarted, setTeardownStarted] = useState(false)
-  /**
-   * Which stop the user has asked for, if any (issue #91).
-   *
-   * Purely so the click leaves a mark. A graceful Stop cannot interrupt the
-   * request already on the wire, so for up to a request's worth of time the
-   * screen looked exactly as it did before the click — and "the Stop button
-   * does nothing" is precisely how the bug was reported. The buttons read
-   * "Stopping…" / "Halting…" from here.
-   */
-  const [stopRequested, setStopRequested] = useState<'graceful' | 'direct' | null>(null)
-  // Publish it so a second "Run" on this folder focuses the live run instead of
-  // remounting the tab out from under it (see runner-activity.ts).
+  // The run in flight lives in the live-run store: this component unmounts
+  // whenever another tab is on screen, and the run does not stop for that.
+  const liveKey = liveRunKey(tabId)
+  const liveRun = useRunnerLiveStore((s) => s.runs[liveKey])
+  const isRunning = liveRun?.running ?? false
+  /** A past run opened from All Runs / Overview: its rows show, not the live ones. */
+  const pastRunStorageKey = runnerKey('past-run', tabId)
+  const [pastRunOpen, setPastRunOpen] = useState(
+    () => !!pastRunStorageKey && sessionStorage.getItem(pastRunStorageKey) === '1',
+  )
+  // Survives a tab switch: a report being read does not give way to the live
+  // run just because the user looked at another tab.
   useEffect(() => {
-    if (!tabId) return
-    setRunnerBusy(tabId, isRunning)
-    return () => setRunnerBusy(tabId, false)
-  }, [tabId, isRunning])
-  const [currentIndex, setCurrentIndex] = useState(0)
-  const [totalCount, setTotalCount] = useState(0)
+    if (!pastRunStorageKey) return
+    if (pastRunOpen) sessionStorage.setItem(pastRunStorageKey, '1')
+    else sessionStorage.removeItem(pastRunStorageKey)
+  }, [pastRunOpen, pastRunStorageKey])
+  const live = pastRunOpen ? undefined : liveRun
+  /** Why the last run produced nothing (main's error), for the empty results view. */
+  const [runError, setRunError] = useState<string | null>(null)
   // Persist the inspected run snapshot too (not just the selectedResultId).
   // Without this, opening an All Runs detail → switching tabs → coming back
   // restored `view='results'` via runner-view-${tabId} but `results`/`report`
@@ -395,6 +332,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     report: RunnerReport | null
     startedAt: number | null
     origin?: RunOrigin
+    sourceLabel?: string
   } | null => {
     if (!runDataStorageKey) return null
     try {
@@ -405,20 +343,27 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         report: RunnerReport | null
         startedAt: number | null
         origin?: RunOrigin
+        sourceLabel?: string
       }
     } catch {
       return null
     }
   }
-  const [results, setResults] = useState<EndpointRunResult[]>(
+  const [localResults, setResults] = useState<EndpointRunResult[]>(
     () => readStoredRunData()?.results ?? [],
   )
-  const [report, setReport] = useState<RunnerReport | null>(
+  const [localReport, setReport] = useState<RunnerReport | null>(
     () => readStoredRunData()?.report ?? null,
   )
-  const [runStartedAt, setRunStartedAt] = useState<number | null>(
+  const [localStartedAt, setRunStartedAt] = useState<number | null>(
     () => readStoredRunData()?.startedAt ?? null,
   )
+  const [runSourceLabel, setRunSourceLabel] = useState<string>(
+    () => readStoredRunData()?.sourceLabel ?? 'Runner',
+  )
+  const results = live ? live.results : localResults
+  const report = live ? live.report : localReport
+  const runStartedAt = live ? live.startedAt : localStartedAt
   // Where the results ON SCREEN came from — what reveal / open route by
   // (issue #302). Not `runOrigin`: that is the tab's scope, the next Run's
   // label, and a past run opened from All Runs may come from anywhere. A
@@ -428,9 +373,10 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const [storedResultsOrigin] = useState<RunOrigin | null>(() =>
     asRunOrigin(readStoredRunData()?.origin),
   )
-  const [resultsOrigin, setResultsOrigin] = useState<RunOrigin>(
+  const [localOrigin, setResultsOrigin] = useState<RunOrigin>(
     () => storedResultsOrigin ?? (folderId ? 'apis' : 'runner'),
   )
+  const resultsOrigin = live ? live.origin : localOrigin
   // Persist the currently inspected result so leaving + returning to the
   // tab (or switching between Overview / All Runs and back to a results
   // view) does not drop the user back to an unscoped blank state
@@ -470,15 +416,23 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // the main thread, plus a real risk of `QuotaExceededError` on big
   // runs). We only need the final snapshot — the next `isRunning=false`
   // transition will trigger this effect once with the complete data,
-  // because `results`/`report` change on completion too.
+  // because `results`/`report` change on completion too. A past report open
+  // during a run is a different matter: it does not tick, it is what a tab
+  // switch must bring back, and the run's own snapshot comes when it ends.
   useEffect(() => {
     if (!runDataStorageKey) return
-    if (isRunning) return
+    if (isRunning && !pastRunOpen) return
     if (results.length > 0 || report) {
       try {
         sessionStorage.setItem(
           runDataStorageKey,
-          JSON.stringify({ results, report, startedAt: runStartedAt, origin: resultsOrigin }),
+          JSON.stringify({
+            results,
+            report,
+            startedAt: runStartedAt,
+            origin: resultsOrigin,
+            sourceLabel: runSourceLabel,
+          }),
         )
       } catch (err) {
         // QuotaExceededError on a huge run — drop the snapshot rather
@@ -489,13 +443,36 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     } else {
       sessionStorage.removeItem(runDataStorageKey)
     }
-  }, [isRunning, results, report, runStartedAt, resultsOrigin, runDataStorageKey])
+  }, [
+    isRunning,
+    pastRunOpen,
+    results,
+    report,
+    runStartedAt,
+    resultsOrigin,
+    runSourceLabel,
+    runDataStorageKey,
+  ])
 
   // Origin tracking: 'apis' if opened via right-click Run on APIs tree, 'suite' if from Test Suite, 'runner' otherwise
   const [runOrigin, setRunOrigin] = useState<'apis' | 'suite' | 'runner'>(
     folderId ? 'apis' : 'runner',
   )
-  const [runSourceLabel, setRunSourceLabel] = useState<string>('Runner')
+
+  // A run that ended becomes this tab's results — also when it ended while the
+  // tab was not on screen (then this runs on the way back).
+  useEffect(() => {
+    if (!liveRun || liveRun.running) return
+    const done = takeFinishedRun(liveKey)
+    if (!done) return
+    setRunError(done.error)
+    if (pastRunOpen) return
+    setResults(done.results)
+    setReport(done.report)
+    setRunStartedAt(done.startedAt)
+    setRunSourceLabel(done.sourceLabel)
+    setResultsOrigin(done.origin)
+  }, [liveKey, liveRun, pastRunOpen])
 
   // Track pending autoRun data so we can trigger after endpoints are loaded
   const pendingAutoRunRef = useRef<{
@@ -645,7 +622,16 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     const spentKey = runnerKey('report-spent', tabId) ?? ''
     const token = sessionKey ?? ''
     if (sessionStorage.getItem(spentKey) === token) return
-    sessionStorage.setItem(spentKey, token)
+    // An auto-run is spent when it is picked up, once the endpoints have loaded
+    // (the effect below). Leaving before that unmounts this component with the
+    // pending ref, and the run has to be armed again on return.
+    const armsAutoRun =
+      !data.viewHome &&
+      !data.viewAllRuns &&
+      !data.viewScheduledTasks &&
+      !!data.autoRun &&
+      Array.isArray(data.endpointIds)
+    if (!armsAutoRun) sessionStorage.setItem(spentKey, token)
 
     if (data.viewHome) {
       setView('home')
@@ -686,6 +672,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setRunStartedAt(data.startedAt ?? 0)
       setRunSourceLabel(data.sourceLabel || 'Runner')
       setResultsOrigin(asRunOrigin(data.origin) ?? runOriginFromSourceLabel(data.sourceLabel))
+      setPastRunOpen(true)
       setView('results')
     }
     // `storedResultsOrigin` is mount-time state and never changes.
@@ -696,6 +683,11 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     const pending = pendingAutoRunRef.current
     if (!pending || endpoints.length === 0) return
     pendingAutoRunRef.current = null
+    // Spent here and not in the timer below: the timer is not cancelled by an
+    // unmount, so a return within it must not arm a second run.
+    const spentKey = runnerKey('report-spent', tabId)
+    if (spentKey) sessionStorage.setItem(spentKey, sessionKey ?? '')
+    setPastRunOpen(false)
 
     const targetIds = new Set(pending.endpointIds)
     // Select only the target endpoints
@@ -718,22 +710,6 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       // freshly-edited request isn't executed against its stale saved snapshot.
       await saveDirtyRunItemsBeforeRun(matched.map((ep) => ep.id))
 
-      setView('results')
-      setIsRunning(true)
-      setResults([])
-      setReport(null)
-      setCurrentIndex(0)
-      setTotalCount(matched.length)
-      setRunStartedAt(Date.now())
-      setSelectedResultId(null)
-
-      const unsubscribe = window.api?.runner?.onProgress?.((progress: unknown) => {
-        const p = progress as { current: number; total: number; result: EndpointRunResult }
-        setCurrentIndex(p.current)
-        setTotalCount(p.total)
-        setResults((prev) => [...prev, p.result])
-      })
-
       const labelName = pending.folderName || runFolderName
       const origin = pending.sourceType || (folderId ? 'apis' : 'runner')
       const sourceLabel =
@@ -742,12 +718,21 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           : origin === 'apis' && labelName
             ? `APIs: ${labelName}`
             : 'Runner'
-      setRunSourceLabel(sourceLabel)
       setRunOrigin(origin)
-      setResultsOrigin(origin)
 
-      window.api?.runner
-        ?.execute(
+      void startLiveRun({
+        tabId,
+        totalCount: matched.length,
+        sourceLabel,
+        origin,
+        onStart: () => {
+          setView('results')
+          setRunError(null)
+          setResults([])
+          setReport(null)
+          setSelectedResultId(null)
+        },
+        payload:
           // Quick Run is the THIRD caller of `runner:execute`, and it was still
           // assembling its payload by hand — dropping `stopOnError` and
           // `persistResponses` exactly as the runner tab used to. Going through
@@ -773,21 +758,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
               keepVariableValues,
             },
           ),
-        )
-        .then(async (result: unknown) => {
-          const res = result as { success: boolean; data?: RunnerReport }
-          if (res?.success && res.data) {
-            setReport(res.data)
-            setResults(res.data.results)
-            setCurrentIndex(res.data.totalEndpoints)
-            setTotalCount(res.data.totalEndpoints)
-            await refreshEnvAfterRun(res.data, keepVariableValues)
-          }
-        })
-        .finally(() => {
-          unsubscribe?.()
-          setIsRunning(false)
-        })
+      })
     }, 100)
   }, [
     endpoints,
@@ -804,6 +775,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     stopOnError,
     persistResponses,
     tabId,
+    sessionKey,
   ])
 
   // Collect endpoints and folder groups from the target folder/module.
@@ -815,14 +787,29 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     // suite items live in their own table, not in the APIs treeData.
     if (suiteIdForRunner) return
 
+    // Another folder or suite is a new plan; the same scope with a changed tree
+    // (a save, a Critical toggle) is the plan being prepared.
+    const sameScope =
+      treeScopeRef.current?.folderId === folderId &&
+      treeScopeRef.current?.suiteFilterIds === suiteFilterIds
+    treeScopeRef.current = { folderId, suiteFilterIds }
+    const applyEndpoints = (eps: RunnerEndpointItem[]): void =>
+      setEndpoints((prev) => (sameScope ? keepRunChoices(eps, prev) : eps))
+    const applyGroups = (groups: RunnerFolderGroup[]): void =>
+      setFolderGroups((prev) => {
+        if (!sameScope) return groups
+        const prevRows = prev.flatMap((g) => g.endpoints)
+        return groups.map((g) => ({ ...g, endpoints: keepRunChoices(g.endpoints, prevRows) }))
+      })
+
     if (!folderId) {
       const all: RunnerEndpointItem[] = []
       for (const root of treeData) {
         all.push(...collectEndpointsFromNode(root))
       }
       const eps = suiteFilterIds ? all.filter((ep) => suiteFilterIds.has(ep.id)) : all
-      setEndpoints(eps)
-      setFolderGroups(suiteFilterIds ? [] : collectFolderGroups(treeData))
+      applyEndpoints(eps)
+      applyGroups(suiteFilterIds ? [] : collectFolderGroups(treeData))
       setRunFolderName(suiteFilterIds ? runFolderName || 'Suite' : treeData[0]?.label || 'All')
       return
     }
@@ -831,12 +818,12 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     if (node) {
       const collected = collectEndpointsFromNode(node)
       const eps = suiteFilterIds ? collected.filter((ep) => suiteFilterIds.has(ep.id)) : collected
-      setEndpoints(eps)
+      applyEndpoints(eps)
       setRunFolderName(node.label)
       if (node.type === 'folder' || node.type === 'module') {
         const groups: RunnerFolderGroup[] = []
         collectFolderGroupsFromNode(node, groups)
-        setFolderGroups(
+        applyGroups(
           groups.length > 0
             ? groups
             : [
@@ -877,6 +864,14 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         // runner simply never read it, which is why a two-level suite arrived
         // here as one flat level of groups (issue #90).
         folders: Array<{ id: string; name: string; parent_id?: string | null }>
+      }
+
+      // Nothing to run: a Quick Run waiting on this load is over, so it cannot
+      // start by itself on a later visit if the suite has gained items by then.
+      if (items.length === 0 && pendingAutoRunRef.current) {
+        pendingAutoRunRef.current = null
+        const spentKey = runnerKey('report-spent', tabId)
+        if (spentKey) sessionStorage.setItem(spentKey, sessionKey ?? '')
       }
 
       // Persisted per-suite run configuration (issue #100): loaded once per
@@ -1055,6 +1050,21 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
   }, [])
 
+  const setEndpointCritical = useCallback(
+    async (id: string, critical: boolean) => {
+      if (!(await setRequestCritical(id, critical))) return
+      const apply = (ep: RunnerEndpointItem): RunnerEndpointItem =>
+        ep.id === id ? { ...ep, critical } : ep
+      setEndpoints((eps) => eps.map(apply))
+      setFolderGroups((groups) => groups.map((g) => ({ ...g, endpoints: g.endpoints.map(apply) })))
+      // The tree and the suite list read the flag off the row; a Runner opened
+      // later builds its rows from them.
+      if (suiteIdForRunner) window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
+      else void useWorkspaceStore.getState().refreshTree()
+    },
+    [suiteIdForRunner],
+  )
+
   /**
    * Every request id at or below `folderId`, including nested folders.
    *
@@ -1149,77 +1159,45 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     // fresh data, not the stale DB snapshot) + warn about other dirty run items.
     await saveDirtyRunItemsBeforeRun(selected.map((ep) => ep.id))
 
-    setView('results')
-    setIsRunning(true)
-    setResults([])
-    setReport(null)
-    setCurrentIndex(0)
-    setTotalCount(selected.length)
-    setRunStartedAt(Date.now())
-    setSelectedResultId(null)
-    setTeardownStarted(false)
-    setStopRequested(null)
-
-    const unsubscribe = window.api?.runner?.onProgress?.((progress: unknown) => {
-      const p = progress as { current: number; total: number; result: EndpointRunResult }
-      setCurrentIndex(p.current)
-      setTotalCount(p.total)
-      setResults((prev) => [...prev, p.result])
-    })
-    // Cleanup has BEGUN — which a progress tick cannot tell us, because one
-    // arrives only when a step finishes. The case that most needs "Skip
-    // teardown" is a cleanup endpoint that never answers, and that one produces
-    // no result at all.
-    const unsubscribePhase = window.api?.runner?.onPhase?.((phase: unknown) => {
-      if (phase === 'teardown') setTeardownStarted(true)
-    })
-
     const sourceLabel =
       runOrigin === 'suite' && runFolderName
         ? `Suite: ${runFolderName}`
         : runOrigin === 'apis' && runFolderName
           ? `APIs: ${runFolderName}`
           : 'Runner'
-    setRunSourceLabel(sourceLabel)
-    setResultsOrigin(runOrigin)
 
-    try {
-      const result = await window.api?.runner?.execute(
-        buildExecutePayload(
-          {
-            projectId: activeProjectId || '',
-            endpointIds: mainIds,
-            setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
-            teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
-            runPreScript: runPreScript.trim() || undefined,
-            runPostScript: runPostScript.trim() || undefined,
-            runFailScript: runFailScript.trim() || undefined,
-            environmentId: environmentId || undefined,
-            workspaceId: activeWorkspaceId || undefined,
-            iterationData: iterationData.length > 0 ? iterationData : undefined,
-            folderName: runFolderName || undefined,
-            sourceLabel,
-            runTabId: tabId,
-          },
-          { delay, iterationDelay, iterations, stopOnError, persistResponses, keepVariableValues },
-        ),
-      )
-
-      if (result?.success && result.data) {
-        const rep = result.data as RunnerReport
-        setReport(rep)
-        setResults(rep.results)
-        setCurrentIndex(rep.totalEndpoints)
-        setTotalCount(rep.totalEndpoints)
-        await refreshEnvAfterRun(rep, keepVariableValues)
-      }
-    } catch {
-      // handled by results
-    } finally {
-      unsubscribe?.()
-      unsubscribePhase?.()
-      setIsRunning(false)
-    }
+    await startLiveRun({
+      tabId,
+      totalCount: selected.length,
+      sourceLabel,
+      origin: runOrigin,
+      onStart: () => {
+        setView('results')
+        setPastRunOpen(false)
+        setRunError(null)
+        setResults([])
+        setReport(null)
+        setSelectedResultId(null)
+      },
+      payload: buildExecutePayload(
+        {
+          projectId: activeProjectId || '',
+          endpointIds: mainIds,
+          setupEndpointIds: setupIds.length > 0 ? setupIds : undefined,
+          teardownEndpointIds: teardownIds.length > 0 ? teardownIds : undefined,
+          runPreScript: runPreScript.trim() || undefined,
+          runPostScript: runPostScript.trim() || undefined,
+          runFailScript: runFailScript.trim() || undefined,
+          environmentId: environmentId || undefined,
+          workspaceId: activeWorkspaceId || undefined,
+          iterationData: iterationData.length > 0 ? iterationData : undefined,
+          folderName: runFolderName || undefined,
+          sourceLabel,
+          runTabId: tabId,
+        },
+        { delay, iterationDelay, iterations, stopOnError, persistResponses, keepVariableValues },
+      ),
+    })
   }, [
     endpoints,
     activeProjectId,
@@ -1241,6 +1219,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     runPostScript,
     runFailScript,
     splitByPhase,
+    tabId,
   ])
 
   /**
@@ -1256,8 +1235,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
    * seemingly at random.
    */
   const inTeardown = useMemo(
-    () => teardownStarted || results.some((r) => r.phase === 'teardown'),
-    [teardownStarted, results],
+    () => live?.teardownStarted || results.some((r) => r.phase === 'teardown'),
+    [live?.teardownStarted, results],
   )
 
   /**
@@ -1271,9 +1250,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
    * be pressed any number of times, at any moment, and cleanup still completes.
    */
   const handleStop = useCallback(() => {
-    setStopRequested('graceful')
-    window.api?.runner?.stop({ mode: 'graceful' })
-  }, [])
+    stopLiveRun(tabId, 'graceful')
+  }, [tabId])
 
   /**
    * Direct Stop: nothing after this click runs — the request on the wire is
@@ -1281,9 +1259,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
    * the old single control had to guess which of the two the user meant.
    */
   const handleStopDirect = useCallback(() => {
-    setStopRequested('direct')
-    window.api?.runner?.stop({ mode: 'direct' })
-  }, [])
+    stopLiveRun(tabId, 'direct')
+  }, [tabId])
 
   const handleNewRun = useCallback((mode?: 'manual' | 'schedule' | unknown) => {
     // Defensive guard: this callback is wired to several <button onClick>
@@ -1314,6 +1291,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   }, [])
 
   const handleViewAllRuns = useCallback(() => {
+    setPastRunOpen(false)
     setView('history')
   }, [])
 
@@ -1332,6 +1310,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setRunSourceLabel(sourceLabel || 'Runner')
       // The run's own origin, not the tab's scope (issue #302).
       setResultsOrigin(origin ?? runOriginFromSourceLabel(sourceLabel))
+      setPastRunOpen(true)
       setView('results')
     },
     [],
@@ -1463,142 +1442,159 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   return (
     <div ref={containerRef} className="flex flex-1 overflow-hidden">
       {/* Left + Middle */}
-      <div className="flex flex-1 overflow-hidden" style={{ minWidth: 0 }}>
-        {view === 'home' ? (
-          <TestsHome
-            onViewAllRuns={() => setView('history')}
-            onViewScheduled={() => setView('scheduled')}
-            onNewRun={handleNewRun}
-            onViewReport={handleViewReport}
-          />
-        ) : view === 'scheduled' ? (
-          <ScheduledTasksView onBack={() => setView('home')} />
-        ) : view === 'history' ? (
-          <RunnerHistory
-            onBack={() => setView(results.length > 0 ? 'results' : 'home')}
-            onNewRun={handleNewRun}
-            onViewReport={handleViewReport}
-          />
-        ) : view === 'config' ? (
-          // Run Sequence + config: side by side (the sequence shrinks first,
-          // G-16) or stacked when the view is too narrow for both (#308).
-          <RunnerConfigSplit
-            sequenceWidth={sequenceWidth}
-            divider={<ResizeDivider onDrag={handleSequenceResize} />}
-            sequence={
-              <RunnerSequence
-                endpoints={endpoints}
-                folderGroups={folderGroups}
-                onToggle={toggleEndpoint}
-                onSelectAll={selectAll}
-                onDeselectAll={deselectAll}
-                onReset={selectAll}
-                onSetPhase={setEndpointPhase}
-                onSetFolderPhase={setFolderPhase}
-                onToggleFolder={toggleFolder}
-                onReorder={
-                  suiteIdForRunner
-                    ? async (draggedId, insertBeforeId, anchorId) => {
-                        // Persist through the suite move IPC (single
-                        // transaction renumber). The shared event drives both
-                        // the sidebar reload and the runner's suite-items
-                        // effect — one signal, both surfaces stay in sync.
-                        // Into the folder of the row it was dropped on — see
-                        // lib/suite-reorder.ts (it used to go to the suite root).
-                        const target = suiteReorderTarget(
-                          folderGroups,
-                          draggedId,
-                          insertBeforeId,
-                          anchorId,
-                        )
-                        await window.api?.testSuiteItem?.move({
-                          id: draggedId,
-                          targetSuiteId: suiteIdForRunner,
-                          ...target,
-                        })
-                        window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
-                      }
-                    : undefined
-                }
-              />
-            }
-            config={
-              <RunnerConfig
-                delay={delay}
-                setDelay={setDelay}
-                iterationDelay={iterationDelay}
-                setIterationDelay={setIterationDelay}
-                iterations={iterations}
-                setIterations={setIterations}
-                environmentId={environmentId}
-                setEnvironmentId={setEnvironmentId}
-                stopOnError={stopOnError}
-                setStopOnError={setStopOnError}
-                persistResponses={persistResponses}
-                setPersistResponses={setPersistResponses}
-                keepVariableValues={keepVariableValues}
-                setKeepVariableValues={setKeepVariableValues}
-                iterationData={iterationData}
-                setIterationData={setIterationData}
-                runPreScript={runPreScript}
-                setRunPreScript={setRunPreScript}
-                runPostScript={runPostScript}
-                setRunPostScript={setRunPostScript}
-                runFailScript={runFailScript}
-                setRunFailScript={setRunFailScript}
-                onRun={handleRun}
-                onSchedule={handleSchedule}
-                isRunning={isRunning}
-                selectedCount={selectedCount}
-                initialRunMode={defaultRunMode}
-                initialRunModeKey={configRunModeKey}
-                // Scheduling lives on Test Suites. APIs / folder runs are
-                // one-shots; hiding the Schedule radio prevents stranded
-                // "Scheduled: ad-hoc" tasks that no one knows where to find.
-                canSchedule={!!suiteIdForRunner}
-                // Saving a run configuration also lives on Test Suites — an
-                // APIs / folder run has no suite row to store it on (#100).
-                onSaveConfig={suiteIdForRunner ? handleSaveConfig : undefined}
-              />
-            }
-          />
-        ) : (
-          <RunnerResults
-            results={results}
-            report={report}
-            isRunning={isRunning}
-            currentIndex={currentIndex}
-            totalCount={totalCount}
-            runStartedAt={runStartedAt}
-            sourceLabel={runSourceLabel}
-            onStop={handleStop}
-            onStopDirect={handleStopDirect}
-            inTeardown={inTeardown}
-            stopRequested={stopRequested}
-            onNewRun={handleNewRun}
-            onRunAgain={handleRun}
-            onViewAllRuns={handleViewAllRuns}
-            selectedResultId={selectedResultId}
-            onSelectResult={setSelectedResultId}
-            // Suite runs carry test-suite item ids → revealed in the Tests
-            // sidebar; APIs / Runner runs → the APIs tree (issue #115).
-            // Routed by the results' own origin — a past run opened from All
-            // Runs need not match the tab's scope (issue #302).
-            onReveal={(id) => void revealRunResult(resultsOrigin, id)}
-            revealIn={revealTargetFor(resultsOrigin)}
-            onOpenEndpoint={(itemId) => {
-              // Suite runs carry test_suite_items ids — those open as suite
-              // item tabs and the sidebar stays on Tests. APIs / Runner runs
-              // carry endpoint ids and route to the APIs workbench instead.
-              if (resultsOrigin === 'suite') {
-                void openSuiteItemTab(itemId)
-              } else {
-                useUIStore.getState().setActiveSidebarPage('apis')
-                void openEndpointTab(itemId)
-              }
+      <div className="flex flex-1 flex-col overflow-hidden" style={{ minWidth: 0 }}>
+        {isRunning && (view !== 'results' || pastRunOpen) && (
+          <RunnerLiveBanner
+            current={liveRun?.currentIndex ?? 0}
+            total={liveRun?.totalCount ?? 0}
+            onShow={() => {
+              setPastRunOpen(false)
+              setView('results')
             }}
           />
         )}
+        <div className="flex flex-1 overflow-hidden" style={{ minWidth: 0 }}>
+          {view === 'home' ? (
+            <TestsHome
+              onViewAllRuns={() => setView('history')}
+              onViewScheduled={() => setView('scheduled')}
+              onNewRun={handleNewRun}
+              onViewReport={handleViewReport}
+            />
+          ) : view === 'scheduled' ? (
+            <ScheduledTasksView onBack={() => setView('home')} />
+          ) : view === 'history' ? (
+            <RunnerHistory
+              onBack={() => {
+                setPastRunOpen(false)
+                setView(isRunning || results.length > 0 ? 'results' : 'home')
+              }}
+              onNewRun={handleNewRun}
+              onViewReport={handleViewReport}
+            />
+          ) : view === 'config' ? (
+            // Run Sequence + config: side by side (the sequence shrinks first,
+            // G-16) or stacked when the view is too narrow for both (#308).
+            <RunnerConfigSplit
+              sequenceWidth={sequenceWidth}
+              divider={<ResizeDivider onDrag={handleSequenceResize} />}
+              sequence={
+                <RunnerSequence
+                  endpoints={endpoints}
+                  folderGroups={folderGroups}
+                  onToggle={toggleEndpoint}
+                  onSelectAll={selectAll}
+                  onDeselectAll={deselectAll}
+                  onReset={selectAll}
+                  onSetPhase={setEndpointPhase}
+                  onSetCritical={setEndpointCritical}
+                  onSetFolderPhase={setFolderPhase}
+                  onToggleFolder={toggleFolder}
+                  onReorder={
+                    suiteIdForRunner
+                      ? async (draggedId, insertBeforeId, anchorId) => {
+                          // Persist through the suite move IPC (single
+                          // transaction renumber). The shared event drives both
+                          // the sidebar reload and the runner's suite-items
+                          // effect — one signal, both surfaces stay in sync.
+                          // Into the folder of the row it was dropped on — see
+                          // lib/suite-reorder.ts (it used to go to the suite root).
+                          const target = suiteReorderTarget(
+                            folderGroups,
+                            draggedId,
+                            insertBeforeId,
+                            anchorId,
+                          )
+                          await window.api?.testSuiteItem?.move({
+                            id: draggedId,
+                            targetSuiteId: suiteIdForRunner,
+                            ...target,
+                          })
+                          window.dispatchEvent(new CustomEvent('tests:suite-item-changed'))
+                        }
+                      : undefined
+                  }
+                />
+              }
+              config={
+                <RunnerConfig
+                  delay={delay}
+                  setDelay={setDelay}
+                  iterationDelay={iterationDelay}
+                  setIterationDelay={setIterationDelay}
+                  iterations={iterations}
+                  setIterations={setIterations}
+                  environmentId={environmentId}
+                  setEnvironmentId={setEnvironmentId}
+                  stopOnError={stopOnError}
+                  setStopOnError={setStopOnError}
+                  persistResponses={persistResponses}
+                  setPersistResponses={setPersistResponses}
+                  keepVariableValues={keepVariableValues}
+                  setKeepVariableValues={setKeepVariableValues}
+                  iterationData={iterationData}
+                  setIterationData={setIterationData}
+                  runPreScript={runPreScript}
+                  setRunPreScript={setRunPreScript}
+                  runPostScript={runPostScript}
+                  setRunPostScript={setRunPostScript}
+                  runFailScript={runFailScript}
+                  setRunFailScript={setRunFailScript}
+                  onRun={handleRun}
+                  onSchedule={handleSchedule}
+                  isRunning={isRunning}
+                  selectedCount={selectedCount}
+                  initialRunMode={defaultRunMode}
+                  initialRunModeKey={configRunModeKey}
+                  // Scheduling lives on Test Suites. APIs / folder runs are
+                  // one-shots; hiding the Schedule radio prevents stranded
+                  // "Scheduled: ad-hoc" tasks that no one knows where to find.
+                  canSchedule={!!suiteIdForRunner}
+                  // Saving a run configuration also lives on Test Suites — an
+                  // APIs / folder run has no suite row to store it on (#100).
+                  onSaveConfig={suiteIdForRunner ? handleSaveConfig : undefined}
+                />
+              }
+            />
+          ) : (
+            <RunnerResults
+              results={results}
+              report={report}
+              isRunning={live?.running ?? false}
+              currentIndex={live?.currentIndex ?? 0}
+              totalCount={live?.totalCount ?? 0}
+              runStartedAt={runStartedAt}
+              sourceLabel={live?.sourceLabel ?? runSourceLabel}
+              runError={runError}
+              onStop={handleStop}
+              onStopDirect={handleStopDirect}
+              inTeardown={inTeardown}
+              stopRequested={live?.stopRequested ?? null}
+              onNewRun={handleNewRun}
+              onRunAgain={handleRun}
+              onViewAllRuns={handleViewAllRuns}
+              selectedResultId={selectedResultId}
+              onSelectResult={setSelectedResultId}
+              // Suite runs carry test-suite item ids → revealed in the Tests
+              // sidebar; APIs / Runner runs → the APIs tree (issue #115).
+              // Routed by the results' own origin — a past run opened from All
+              // Runs need not match the tab's scope (issue #302).
+              onReveal={(id) => void revealRunResult(resultsOrigin, id)}
+              revealIn={revealTargetFor(resultsOrigin)}
+              onOpenEndpoint={(itemId) => {
+                // Suite runs carry test_suite_items ids — those open as suite
+                // item tabs and the sidebar stays on Tests. APIs / Runner runs
+                // carry endpoint ids and route to the APIs workbench instead.
+                if (resultsOrigin === 'suite') {
+                  void openSuiteItemTab(itemId)
+                } else {
+                  useUIStore.getState().setActiveSidebarPage('apis')
+                  void openEndpointTab(itemId)
+                }
+              }}
+            />
+          )}
+        </div>
       </div>
 
       {/* Right: All Variables — collapsible (mirrors the API request screen's

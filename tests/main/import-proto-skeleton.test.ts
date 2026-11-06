@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -8,6 +8,11 @@ import {
   makeProtoTypeLookup,
   loadProto,
 } from '../../src/main/protocols/grpc.engine'
+
+vi.mock('electron', () => ({
+  app: { getPath: () => '/nonexistent-user-data' },
+  BrowserWindow: { fromId: () => null },
+}))
 
 // ─── Helpers ────────────────────────────────────────────────
 

@@ -139,20 +139,22 @@ uiTest.describe('Tur1 — Git advanced [MST-186..189]', () => {
     // Delete via IPC (the trash icon has no testid — hook request in docs/e2e/needs-hooks.md)
     await deleteBranchIpc(window, (await listBranches(window, projectId) as Array<{ id: string; name: string }>).find(b => b.name === branchName)!.id)
 
-    // Close and reopen dropdown to see the updated list
-    await window.keyboard.press('Escape')
+    // Close and reopen the dropdown to see the updated list. The dropdown has no
+    // Escape handler (BranchDropdown.tsx): the pill itself toggles it, and only
+    // opening it refetches the branches.
     await window.getByTestId('branch-pill').click()
-    await window.waitForTimeout(400)
+    await expect(window.getByTestId('branch-item')).toHaveCount(0)
+    await window.getByTestId('branch-pill').click()
 
-    // Branch should no longer appear
-    const stillVisible = await window
-      .locator(`[data-testid="branch-item"][data-branch-name="${branchName}"]`)
-      .first()
-      .isVisible()
-      .catch(() => false)
-    expect(stillVisible).toBe(false)
+    // The reopened dropdown must be on screen (otherwise "gone" proves nothing)
+    // and no longer list the deleted branch.
+    await expect(window.getByTestId('branch-item').first()).toBeVisible({ timeout: 8_000 })
+    await expect(
+      window.locator(`[data-testid="branch-item"][data-branch-name="${branchName}"]`),
+    ).toHaveCount(0)
 
-    await window.keyboard.press('Escape')
+    await window.getByTestId('branch-pill').click()
+    await expect(window.getByTestId('branch-item')).toHaveCount(0)
   })
 
   // ── MST-186: Branch create via UI ──────────────────────────────────────────

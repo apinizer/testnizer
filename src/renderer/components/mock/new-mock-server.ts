@@ -10,6 +10,7 @@
  */
 import { useMockStore } from '../../stores/mock.store'
 import { useMockMcpStore } from '../../stores/mock-mcp.store'
+import { mockImportProblem, type MockImportFile, type MockImportResult } from './mock-import-file'
 import {
   buildPresetInput,
   MOCK_MCP_PRESET_HINT_KEYS,
@@ -103,13 +104,24 @@ function optionsOf<Id extends string>(
   }))
 }
 
+/** The HTTP starting point that takes its endpoints from a file, not from a preset. */
+export const MOCK_IMPORT_PRESET_ID = 'import'
+
 const OPTIONS: Record<MockKind, MockPresetOption[]> = {
-  http: optionsOf(
-    MOCK_HTTP_PRESET_IDS,
-    MOCK_HTTP_PRESET_LABEL_KEYS,
-    MOCK_HTTP_PRESET_HINT_KEYS,
-    MOCK_HTTP_PRESET_NAMES,
-  ),
+  http: [
+    ...optionsOf(
+      MOCK_HTTP_PRESET_IDS,
+      MOCK_HTTP_PRESET_LABEL_KEYS,
+      MOCK_HTTP_PRESET_HINT_KEYS,
+      MOCK_HTTP_PRESET_NAMES,
+    ),
+    {
+      id: MOCK_IMPORT_PRESET_ID,
+      labelKey: 'mockNew.importLabel',
+      hintKey: 'mockNew.importHint',
+      defaultName: MOCK_HTTP_PRESET_NAMES.blank,
+    },
+  ],
   mcp: optionsOf(
     MOCK_MCP_PRESET_IDS,
     MOCK_MCP_PRESET_LABEL_KEYS,
@@ -186,4 +198,45 @@ export async function createMockServer(input: CreateMockInput): Promise<string |
   if (!r.server) return r.error
   openMockMcpServerTab(r.server)
   return null
+}
+
+export interface CreateMockFromFileInput {
+  projectId: string
+  name: string
+  port: number
+  file: MockImportFile
+}
+
+/**
+ * Create an HTTP mock and fill it from a file. An import that fails or brings
+ * nothing removes the server again: the dialog stays open on the error, so a
+ * retry must not meet an empty server already holding the name and the port.
+ */
+export async function createMockServerFromFile(
+  input: CreateMockFromFileInput,
+): Promise<{ result: MockImportResult } | { error: string }> {
+  const { projectId, name, port, file } = input
+  const created = await createFromHttpPreset(projectId, buildHttpPreset('blank'), name, port)
+  if (!created.server) return { error: created.error }
+  const { id } = created.server
+  const store = useMockStore.getState()
+  let error: string | null
+  let result: MockImportResult | null = null
+  try {
+    result =
+      file.format === 'openapi'
+        ? await store.importOpenApi(id, file.text)
+        : await store.importPostman(id, file.text)
+    error = mockImportProblem(result)
+  } catch (e) {
+    error = e instanceof Error ? e.message : String(e)
+  }
+  if (error !== null || !result) {
+    await window.api.mock.server.delete(id).catch(() => undefined)
+    await store.loadServers(projectId)
+    return { error: error ?? '' }
+  }
+  await store.loadServers(projectId)
+  openMockServerTab(created.server)
+  return { result }
 }

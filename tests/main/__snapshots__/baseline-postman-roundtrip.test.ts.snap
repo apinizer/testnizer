@@ -689,8 +689,12 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               ],
               "method": "GET",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
-                  "users?page=1&trace=x",
+                  "{{apiVersion}}",
+                  "users",
                 ],
                 "query": [
                   {
@@ -762,6 +766,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               ],
               "method": "POST",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
                   "users",
                 ],
@@ -794,6 +801,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
                   ],
                   "method": "POST",
                   "url": {
+                    "host": [
+                      "{{baseUrl}}",
+                    ],
                     "path": [
                       "posts",
                     ],
@@ -821,6 +831,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
                   ],
                   "method": "PUT",
                   "url": {
+                    "host": [
+                      "{{baseUrl}}",
+                    ],
                     "path": [
                       "posts",
                       "1",
@@ -861,6 +874,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               "header": [],
               "method": "POST",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
                   "login",
                 ],
@@ -895,6 +911,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               "header": [],
               "method": "POST",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
                   "upload",
                 ],
@@ -915,6 +934,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               "header": [],
               "method": "POST",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
                   "graphql",
                 ],
@@ -943,6 +965,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               "header": [],
               "method": "GET",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
                   "me",
                 ],
@@ -976,6 +1001,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               "header": [],
               "method": "GET",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
                   "data",
                 ],
@@ -1018,6 +1046,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
               "header": [],
               "method": "GET",
               "url": {
+                "host": [
+                  "{{baseUrl}}",
+                ],
                 "path": [
                   "oauth-protected",
                 ],
@@ -1034,6 +1065,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
           "header": [],
           "method": "GET",
           "url": {
+            "host": [
+              "{{baseUrl}}",
+            ],
             "path": [
               "ping",
             ],
@@ -1052,6 +1086,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > export:postman outpu
           ],
           "method": "DELETE",
           "url": {
+            "host": [
+              "{{baseUrl}}",
+            ],
             "path": [
               "users",
               "7",
@@ -1096,7 +1133,9 @@ exports[`baseline Postman v2.1 — import -> DB -> export > import:postman resul
       "baseUrl": "https://api.example.com",
       "clientSecret": "super-secret-value",
     },
-    "warnings": undefined,
+    "warnings": [
+      ""Forms / Upload (formdata)": the file path "/tmp/report.pdf" is absolute. It is read only if it is inside Project Settings → Working directory or Project Settings → Read files outside the working directory is on.",
+    ],
   },
   "error": undefined,
   "success": true,

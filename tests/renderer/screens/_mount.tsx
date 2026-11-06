@@ -15,6 +15,7 @@
  * leave an empty container and fail here too — a smoke test that silently
  * passes on an empty screen is worthless.
  */
+import { allowScriptTrustBridge } from '../../helpers/script-trust-bridge'
 import * as React from 'react'
 import { expect } from 'vitest'
 import { render, within } from '@testing-library/react'
@@ -98,6 +99,9 @@ export function mockWindowApi(overrides: Record<string, unknown> = {}): unknown 
         if (typeof prop !== 'string') return undefined
         if (prop === 'then') return undefined
         if (Object.prototype.hasOwnProperty.call(overrides, prop)) return overrides[prop]
+        // The generic namespace answers `data: null`, which the script gate reads as
+        // "not allowed": a screen under test is not a blocked project.
+        if (prop === 'projectTrust') return allowScriptTrustBridge
         return makeNamespace()
       },
     },

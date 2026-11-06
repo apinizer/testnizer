@@ -1,5 +1,6 @@
 import http from 'node:http'
 import { graphql, buildSchema } from 'graphql'
+import { startGqlWsFixture } from '../../helpers/graphql-ws-server'
 
 const schema = buildSchema(`
   type Query {
@@ -36,11 +37,13 @@ export async function startGraphqlServer(port: number): Promise<GraphqlServer> {
       const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
         query?: string
         variables?: Record<string, unknown>
+        operationName?: string
       }
       const result = await graphql({
         schema,
         source: body.query ?? '',
         variableValues: body.variables,
+        operationName: body.operationName,
         rootValue: root,
       })
       const payload = JSON.stringify(result)
@@ -59,6 +62,10 @@ export async function startGraphqlServer(port: number): Promise<GraphqlServer> {
     res.end()
   })
 
+  // Subscriptions on the same port and path: both GraphQL WebSocket protocols,
+  // one frame every 300 ms while an operation runs.
+  const subscriptions = await startGqlWsFixture({ server, path: '/graphql', streamEveryMs: 300 })
+
   await new Promise<void>((resolve, reject) => {
     server.listen(port, '127.0.0.1', () => resolve())
     server.on('error', reject)
@@ -67,9 +74,11 @@ export async function startGraphqlServer(port: number): Promise<GraphqlServer> {
   return {
     port,
     url: `http://127.0.0.1:${port}/graphql`,
-    close: () =>
-      new Promise((resolve, reject) => {
+    close: async () => {
+      await subscriptions.close()
+      await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()))
-      }),
+      })
+    },
   }
 }

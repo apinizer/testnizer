@@ -332,3 +332,70 @@ describe('issue #287 — a tab snapshot from an older build loads as inherit', (
     window.localStorage.removeItem(STORAGE_KEY)
   })
 })
+
+describe('GraphQL introspection keeps the descriptions the server sent', () => {
+  const node = (name: string): Record<string, unknown> => ({ name, kind: 'SCALAR', ofType: null })
+  const introspectionBody = (): string =>
+    JSON.stringify({
+      data: {
+        __schema: {
+          queryType: { name: 'Query' },
+          mutationType: null,
+          subscriptionType: null,
+          types: [
+            {
+              name: 'Query',
+              kind: 'OBJECT',
+              description: 'The root of every read.',
+              enumValues: null,
+              fields: [
+                {
+                  name: 'pet',
+                  type: node('Pet'),
+                  description: 'One pet by id.',
+                  args: [
+                    { name: 'id', type: node('ID'), description: 'The pet to look up.' },
+                    { name: 'flag', type: node('Boolean'), description: '' },
+                  ],
+                },
+                { name: 'bare', type: node('String'), description: '', args: [] },
+              ],
+            },
+            { name: 'Pet', kind: 'OBJECT', description: '', enumValues: null, fields: [] },
+          ],
+        },
+      },
+    })
+
+  it('type, field and argument descriptions arrive; an empty one is undefined', async () => {
+    reset({})
+    env.send.mockResolvedValueOnce({
+      success: true,
+      data: {
+        requestId: 'r',
+        protocol: 'http',
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        body: introspectionBody(),
+        bodySize: 1,
+        timing: { total: 1 },
+      },
+    })
+    useGraphQLStore.setState({ url: 'https://api.test/graphql', headers: [], schemaData: null })
+    await useGraphQLStore.getState().introspect()
+
+    const schema = useGraphQLStore.getState().schemaData
+    expect(useGraphQLStore.getState().introspectError).toBeNull()
+    const query = schema?.types.find((t) => t.name === 'Query')
+    expect(query?.description).toBe('The root of every read.')
+    const pet = query?.fields.find((f) => f.name === 'pet')
+    expect(pet?.description).toBe('One pet by id.')
+    expect(pet?.args.find((a) => a.name === 'id')?.description).toBe('The pet to look up.')
+
+    // Empty strings do not become empty labels.
+    expect(pet?.args.find((a) => a.name === 'flag')?.description).toBeUndefined()
+    expect(query?.fields.find((f) => f.name === 'bare')?.description).toBeUndefined()
+    expect(schema?.types.find((t) => t.name === 'Pet')?.description).toBeUndefined()
+  })
+})

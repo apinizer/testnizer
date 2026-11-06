@@ -236,6 +236,24 @@ describe('exportProjectAs — Postman v3 folder (issue #277)', () => {
     )
   })
 
+  it('another format names no format it is not: its notes get their own title', async () => {
+    window.api.importExport.exportPostman = vi.fn(async () => ({
+      success: true,
+      data: '{}',
+      skipped: [],
+      notes: ['"Feed": the subscription connection_init payload has no Postman v2.1 field.'],
+    })) as never
+    window.api.importExport.saveFile = vi.fn(async () => ({
+      success: true,
+      data: '/tmp/out.json',
+    })) as never
+    await exportProjectAs(PID, 'postman')
+    expect(toastMock.warning).toHaveBeenCalledWith(
+      '1 detail could not be carried into the exported file',
+      expect.objectContaining({ description: expect.stringContaining('connection_init') }),
+    )
+  })
+
   it('a failure is reported', async () => {
     exportPostmanV3Folder.mockResolvedValueOnce({ success: false, error: 'EACCES' })
     await expect(exportProjectAs(PID, 'postman-v3-folder')).resolves.toBe(false)

@@ -145,6 +145,7 @@ uiTest.describe('Tur1 — SSE mock servers [issue #221]', () => {
   uiTest.afterEach(async ({ window }) => {
     // 1. Leave no live SSE client behind (it would retry against a stopped port).
     const disconnect = window.getByTestId('sse-disconnect')
+    // optional: cleanup in afterEach: disconnect only a live SSE client
     if (await disconnect.isVisible().catch(() => false)) {
       await disconnect.click().catch(() => {})
     }
@@ -153,6 +154,7 @@ uiTest.describe('Tur1 — SSE mock servers [issue #221]', () => {
     for (const s of created) {
       const row = sseRow(window, s.name)
       try {
+        // optional: cleanup in afterEach: stop the server only if it is running; the delete and the count check follow
         if (await row.getByTestId('mock-sse-stop').isVisible()) {
           await row.getByTestId('mock-sse-stop').click()
           await expect(row.getByTestId('mock-sse-start')).toBeVisible({ timeout: 10_000 })

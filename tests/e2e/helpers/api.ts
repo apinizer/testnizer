@@ -14,6 +14,8 @@ import type { Page } from '@playwright/test'
 export interface RequestOptions {
   method: string
   url: string
+  /** Engine-level project: the file rule (`resolveBodyFilePaths`), the cookie jar. */
+  projectId?: string
   params?: KV[]
   headers?: KV[]
   body?: {

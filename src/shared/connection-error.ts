@@ -32,6 +32,7 @@ export const CONNECTION_ERROR_KINDS = [
   'closed',
   'aborted',
   'spawn-failed',
+  'proxy',
   'unknown',
 ] as const
 
@@ -136,6 +137,10 @@ export const CONNECTION_ERROR_TEXT_EN: Record<
   'spawn-failed': {
     what: 'Could not start the server command',
     hint: 'Check that the command is installed and on PATH',
+  },
+  proxy: {
+    what: 'Proxy connection failed',
+    hint: 'Check the proxy host, port, username and password in the project or app Settings',
   },
   unknown: { what: 'Connection failed' },
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Play, Search, ChevronDown, ChevronRight, Settings2 } from 'lucide-react'
+import { Play, Search, ChevronDown, ChevronRight, Settings2, Unplug } from 'lucide-react'
 import { useGraphQLStore } from '../../stores/graphql.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
@@ -9,6 +9,9 @@ import CredentialRowsHint from '../shared/CredentialRowsHint'
 import CredentialRestartHint from '../shared/CredentialRestartHint'
 import { scrubJsonCredentials } from '../../lib/credential-text'
 import GraphQLSettingsSection from './GraphQLSettingsSection'
+import GraphQLConnectionInitSection from './GraphQLConnectionInitSection'
+import GraphQLOperationSelect from './GraphQLOperationSelect'
+import { chooseGraphqlOperation } from '../../../shared/graphql-row'
 
 export default function GraphQLQueryPane() {
   const { t, locale } = useTranslation()
@@ -16,6 +19,7 @@ export default function GraphQLQueryPane() {
   const setUrl = useGraphQLStore((s) => s.setUrl)
   const query = useGraphQLStore((s) => s.query)
   const setQuery = useGraphQLStore((s) => s.setQuery)
+  const operationName = useGraphQLStore((s) => s.operationName)
   const variables = useGraphQLStore((s) => s.variables)
   const setVariables = useGraphQLStore((s) => s.setVariables)
   const headers = useGraphQLStore((s) => s.headers)
@@ -34,8 +38,11 @@ export default function GraphQLQueryPane() {
   const [variablesExpanded, setVariablesExpanded] = useState(true)
   const [headersExpanded, setHeadersExpanded] = useState(false)
 
-  const isSubscription = query.replace(/#.*$/gm, '').trim().startsWith('subscription')
   const isConnected = subscriptionState === 'connected'
+  const isSubscribing = isConnected || subscriptionState === 'connecting'
+  // A running subscription keeps its control even while the query is being edited.
+  const isSubscription =
+    chooseGraphqlOperation(query, operationName).isSubscription || isSubscribing
 
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim()).length
 
@@ -48,15 +55,16 @@ export default function GraphQLQueryPane() {
         </span>
         {isSubscription && (
           <span
-            className="rounded-full px-2 py-0.5 font-medium"
-            style={{
-              background: isConnected ? '#e8f9f1' : 'var(--accent-light)',
-              color: isConnected ? '#1a7a4a' : 'var(--accent-text)',
-            }}
+            className={`rounded-full px-2 py-0.5 font-medium ${
+              isConnected
+                ? 'bg-[var(--green-bg)] text-[var(--green)]'
+                : 'bg-[var(--accent-light)] text-[var(--accent-text)]'
+            }`}
           >
             {isConnected ? t('graphql.subscribed') : t('graphql.subscription')}
           </span>
         )}
+        <GraphQLOperationSelect />
       </div>
 
       {/* URL bar */}
@@ -69,7 +77,10 @@ export default function GraphQLQueryPane() {
           placeholder="https://api.example.com/graphql"
           className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') executeQuery()
+            if (e.key !== 'Enter') return
+            // A subscription is never POSTed; Enter does not end a running one.
+            if (!isSubscription) void executeQuery()
+            else if (!isSubscribing) void subscribe()
           }}
         />
 
@@ -77,12 +88,24 @@ export default function GraphQLQueryPane() {
         {isSubscription ? (
           <button
             type="button"
-            onClick={isConnected ? unsubscribe : subscribe}
-            className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: isConnected ? '#cc2200' : 'var(--accent)', border: 'none' }}
+            onClick={isSubscribing ? unsubscribe : subscribe}
+            disabled={!isSubscribing && !url.trim()}
+            data-testid="graphql-subscribe"
+            data-state={subscriptionState}
+            className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border-none px-3.5 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${
+              isSubscribing ? 'bg-[var(--red)]' : 'bg-[var(--accent)]'
+            }`}
           >
-            <Play size={13} />
-            {isConnected ? t('graphql.unsubscribe') : t('graphql.subscribe')}
+            {isSubscribing ? (
+              <Unplug size={13} aria-hidden="true" />
+            ) : (
+              <Play size={13} aria-hidden="true" />
+            )}
+            {isConnected
+              ? t('graphql.unsubscribe')
+              : isSubscribing
+                ? t('common.cancel')
+                : t('graphql.subscribe')}
           </button>
         ) : (
           <button
@@ -91,7 +114,7 @@ export default function GraphQLQueryPane() {
             disabled={!url.trim()}
             data-testid="graphql-run"
             className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-            style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}
+            style={{ background: isLoading ? 'var(--red)' : 'var(--accent)', border: 'none' }}
           >
             <Play size={13} />
             {isLoading ? t('common.cancel') : t('graphql.run')}
@@ -150,6 +173,8 @@ export default function GraphQLQueryPane() {
             </div>
           )}
         </div>
+
+        {isSubscription && <GraphQLConnectionInitSection />}
 
         {/* Headers (collapsible) */}
         <div className="shrink-0 border-t border-[var(--border)]">

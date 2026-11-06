@@ -17,6 +17,7 @@ import { applyPathVariables, type PathVariableLike } from '../../shared/path-var
 import {
   curlVariantId,
   findVariant,
+  graphqlParts,
   maskCredentialLiterals,
   normalizeRequest,
   renderSnippet,
@@ -27,7 +28,7 @@ import {
 /** A GraphQL tab's body: Send posts `{query, variables}` as JSON. */
 export interface GraphqlCodeBody {
   type: 'graphql'
-  graphql: { query: string; variables: string }
+  graphql: { query: string; variables: string; operationName?: string }
 }
 
 export interface CodeGenRequest {
@@ -93,7 +94,7 @@ function resolveBody(
 ): CodeGenRequest['body'] {
   if (!body) return body
   if (body.type === 'graphql') {
-    const g = (body as GraphqlCodeBody).graphql
+    const g = graphqlParts(body as CodegenInputBody)
     // Resolved BEFORE the JSON is built (Send's order), so a value with a
     // quote cannot break the JSON body.
     return {
@@ -101,6 +102,7 @@ function resolveBody(
       graphql: {
         query: resolveVariables(g.query, vars),
         variables: resolveVariables(g.variables, vars),
+        ...(g.operationName ? { operationName: g.operationName } : {}),
       },
     }
   }

@@ -38,6 +38,7 @@ import {
   stopMockServer,
 } from '../../helpers/ui/mock-flow'
 import { localHttpBin } from '../../helpers/test-servers'
+import { ensureConsolePanelOpen, expandActualRequest } from '../../helpers/ui/console-flow'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 
@@ -237,36 +238,21 @@ uiTest.describe('Tier 14 — Security & persist [MST-283..289]', () => {
   })
 
   uiTest('MST-286 URL credentials are stripped from actual request view', async ({ window }) => {
+    // The actual-request view lives in the footer Console (the response pane's
+    // "Actual" tab was removed), and it only exists once a response arrived —
+    // so aim at the live local server, with credentials in the URL authority.
+    const marker = `mst286-${Date.now()}`
     await openHttpRequestTab(window)
-    await fillUrl(window, 'http://user:secret@127.0.0.1:9/get')
+    await fillUrl(window, `${localHttpBin().replace('http://', 'http://user:secret@')}/get?${marker}=1`)
     await window.getByTestId('send-btn').click()
-    // Short timeout on purpose: this tab only exists once a response arrives,
-    // and the request above is aimed at a dead port. The default 30s would be
-    // spent entirely inside the catch, for nothing.
-    await window
-      .getByTestId('res-tab-actualRequest')
-      .click({ timeout: 3_000 })
-      .catch(() => {})
-    const actual = window.getByTestId('actual-request-panel')
-    if (await actual.isVisible().catch(() => false)) {
-      await expect(actual).not.toContainText('secret')
-      await expect(actual).not.toContainText('user:secret@')
-    }
+    await expect(window.getByTestId('response-status').or(window.getByText(/200|OK/i)).first()).toBeVisible({
+      timeout: 30_000,
+    })
 
-    // Settle the request before leaving. Port 9 is the discard port — nothing
-    // answers — so this send can outlive the test, and `isLoading` (with it the
-    // Send button, which flips to Cancel) lives in a GLOBAL store rather than
-    // per tab. A leftover in-flight request therefore hands the NEXT spec a
-    // Cancel button: F5 clicked "Send", silently cancelled THIS request instead
-    // of issuing its own, and then timed out for 30s waiting for a response
-    // pane that was never coming.
-    const send = window.getByTestId('send-btn')
-    const stillSending = await send
-      .textContent()
-      .then((t) => /Cancel|İptal/i.test(t ?? ''))
-      .catch(() => false)
-    if (stillSending) await send.click().catch(() => {})
-    await expect(send).not.toContainText(/Cancel|İptal/i, { timeout: 15_000 })
+    await ensureConsolePanelOpen(window)
+    const actual = await expandActualRequest(window, marker)
+    await expect(actual).not.toContainText('secret')
+    await expect(actual).not.toContainText('user:secret@')
   })
 })
 

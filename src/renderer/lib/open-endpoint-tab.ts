@@ -4,6 +4,7 @@ import type {
   KeyValuePair,
   RequestBody,
   AuthConfig,
+  Tab,
   TestAssertion,
 } from '../types'
 import {
@@ -25,6 +26,20 @@ import {
   type RequestSettings,
 } from '../../shared/request-settings'
 import { switchActiveTab } from './activate-tab'
+import { protocolMetadataOf } from '../../shared/grpc-import-meta'
+
+/** The open tab showing the row `id`, if any. */
+export function findOpenTabFor(id: string): Tab | undefined {
+  return useTabsStore
+    .getState()
+    .tabs.find(
+      (tab) =>
+        tab.id === `tab-${id}` ||
+        tab.endpointId === id ||
+        tab.savedRequestId === id ||
+        tab.testSuiteItemId === id,
+    )
+}
 
 /**
  * If `id` already has a tab open, focus it and report that nothing else is
@@ -43,15 +58,7 @@ import { switchActiveTab } from './activate-tab'
  * open path, which predates this helper.
  */
 export function focusOpenTabFor(id: string): boolean {
-  const existing = useTabsStore
-    .getState()
-    .tabs.find(
-      (tab) =>
-        tab.id === `tab-${id}` ||
-        tab.endpointId === id ||
-        tab.savedRequestId === id ||
-        tab.testSuiteItemId === id,
-    )
+  const existing = findOpenTabFor(id)
   if (!existing) return false
   switchActiveTab(existing.id)
   return true
@@ -195,7 +202,7 @@ export async function openEndpointTab(id: string): Promise<void> {
           assertions = schema.assertions ?? []
           if (schema.url) url = schema.url
           if (schema.method) method = schema.method
-          metadata = schema.metadata
+          metadata = protocolMetadataOf(schema)
         } catch {
           /* ignore */
         }
@@ -355,10 +362,8 @@ export async function openSuiteItemTab(id: string, opts?: { pinned?: boolean }):
     // that have no metadata field. (Imported the helper at the top of
     // this file.)
     try {
-      const schemaForMeta = JSON.parse(item.request_schema || '{}') as { metadata?: unknown }
-      if (schemaForMeta.metadata) {
-        restoreProtocolFromMetadata(protocol, schemaForMeta.metadata)
-      }
+      const suiteMeta = protocolMetadataOf(JSON.parse(item.request_schema || '{}'))
+      if (suiteMeta) restoreProtocolFromMetadata(protocol, suiteMeta)
     } catch {
       /* malformed schema — protocol-specific restore skipped */
     }

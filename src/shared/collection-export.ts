@@ -40,6 +40,8 @@ export interface CollectionExportResult {
   /** Items left out of `content` — unsupported protocols first (tree order),
    *  then OpenAPI path + method collisions. Empty when everything fitted. */
   skipped: ExportSkippedItem[]
+  /** Details of a request that stayed in the file but lost something on the way. */
+  notes: string[]
 }
 
 /** Protocols every collection format can carry as an HTTP request. */

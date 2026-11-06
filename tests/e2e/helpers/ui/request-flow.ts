@@ -20,6 +20,7 @@ export async function clickRequestTab(page: Page, tab: string): Promise<void> {
 export async function seedPostScriptExample(page: Page): Promise<void> {
   await clickRequestTab(page, 'tests')
   const insert = page.getByRole('button', { name: /Insert example/i })
+  // optional: the example button disappears once a script exists; the callers assert on the script
   if (await insert.isVisible().catch(() => false)) {
     await insert.click()
   }
@@ -103,6 +104,7 @@ export async function sendAndWaitResponse(page: Page, timeoutMs = 30_000): Promi
   const body = page.getByTestId('res-tab-body')
   const failed = page.getByTestId('response-error')
   await expect(body.or(failed)).toBeVisible({ timeout: timeoutMs })
+  // optional: turns a transport failure into its real message before the assertion below
   if (await failed.isVisible().catch(() => false)) {
     const detail = (await failed.innerText().catch(() => '')).replace(/\s+/g, ' ').trim()
     throw new Error(`Send failed at transport level (no status): ${detail}`)

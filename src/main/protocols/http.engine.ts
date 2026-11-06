@@ -1,4 +1,5 @@
 import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
+import { SOCKS_PROXY_UNSUPPORTED, isProxyBypassed, isSocksProxy } from '../../shared/proxy-bypass'
 import { NtlmClient } from 'axios-ntlm'
 import { CookieJar } from 'tough-cookie'
 import { randomUUID } from 'crypto'
@@ -79,6 +80,8 @@ interface ProxyConfig {
   mode: 'system' | 'none' | 'custom'
   host?: string
   port?: number
+  bypass?: string
+  proxyType?: 'http' | 'https' | 'socks'
   auth?: { username: string; password: string }
 }
 
@@ -988,6 +991,16 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     }
   }
 
+  // Before either transport, so Send, Run and the curl sidecar all refuse it.
+  if (isSocksProxy(options.proxy) && !isProxyBypassed(options.proxy?.bypass, options.url)) {
+    return {
+      requestId: randomUUID(),
+      protocol: 'http',
+      timing: { total: 0 },
+      error: SOCKS_PROXY_UNSUPPORTED,
+    }
+  }
+
   // Legacy-TLS sidecar route. Customers (banks, government API gateways)
   // still run TLS 1.0/1.1 backends that Electron's BoringSSL can't talk
   // to. When the user picks one of those protocol bounds we hand the whole
@@ -1239,7 +1252,14 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     config.httpAgent = httpAgent
 
     // Proxy configuration
-    if (options.proxy && options.proxy.mode === 'custom' && options.proxy.host) {
+    if (
+      options.proxy &&
+      options.proxy.mode === 'custom' &&
+      options.proxy.host &&
+      isProxyBypassed(options.proxy.bypass, options.url)
+    ) {
+      config.proxy = false
+    } else if (options.proxy && options.proxy.mode === 'custom' && options.proxy.host) {
       config.proxy = {
         host: options.proxy.host,
         port: options.proxy.port ?? 8080,

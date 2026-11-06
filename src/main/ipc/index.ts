@@ -1,6 +1,7 @@
 import { registerRequestHandlers } from './request.handler'
 import { registerWorkspaceHandlers } from './workspace.handler'
 import { registerProjectHandlers } from './project.handler'
+import { registerProjectTrustHandlers } from './project-trust.handler'
 import { registerEndpointHandlers } from './endpoint.handler'
 import { registerEnvironmentHandlers } from './environment.handler'
 import { registerHistoryHandlers } from './history.handler'
@@ -36,6 +37,7 @@ import { registerMcpOAuthHandlers } from './mcp-oauth.handler'
 import { registerMcpSecurityHandlers } from './mcp-security.handler'
 import { registerSocketIOHandlers } from './socketio.handler'
 import { registerMqttHandlers } from './mqtt.handler'
+import { registerGraphqlWsHandlers } from './graphql-ws.handler'
 import { registerMockHandlers } from './mock.handler'
 import { registerMockMcpHandlers } from './mock-mcp.handler'
 import { registerTlsHandlers } from './tls.handler'
@@ -46,6 +48,7 @@ export function registerAllHandlers(): void {
   registerRequestHandlers()
   registerWorkspaceHandlers()
   registerProjectHandlers()
+  registerProjectTrustHandlers()
   registerEndpointHandlers()
   registerEnvironmentHandlers()
   registerHistoryHandlers()
@@ -80,6 +83,7 @@ export function registerAllHandlers(): void {
   registerMcpSecurityHandlers()
   registerSocketIOHandlers()
   registerMqttHandlers()
+  registerGraphqlWsHandlers()
   registerMockHandlers()
   registerMockMcpHandlers()
   registerTlsHandlers()

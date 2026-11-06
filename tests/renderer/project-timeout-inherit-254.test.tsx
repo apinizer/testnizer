@@ -25,6 +25,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
+import { allowScriptTrustBridge } from '../helpers/script-trust-bridge'
+
 vi.mock('../../src/renderer/lib/toast', () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warning: vi.fn() },
 }))
@@ -89,6 +91,7 @@ function installApi(initialProject: Obj) {
   ])
   ;(window as unknown as { api: Record<string, unknown> }).api = {
     request: { send, cancel: vi.fn() },
+    projectTrust: allowScriptTrustBridge,
     settings: {
       get: vi.fn(async (key: string) => {
         if (key === PKEY) return ok({ ...projectStored })

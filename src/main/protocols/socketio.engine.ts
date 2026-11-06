@@ -1,5 +1,6 @@
 import { createSioClient, type SioClient } from './socketio-client'
 import { toConnectionError } from '../lib/error-classifier'
+import { ProxyTunnel, type ResolvedProxy } from '../lib/proxy-tunnel'
 import {
   DEFAULT_SIO_SETTINGS,
   bytesToBase64,
@@ -62,6 +63,7 @@ export const SIO_ACK_TIMEOUT_MS = 15_000
 interface Connection {
   socket: SioClient
   info: SocketIOConnectionInfo
+  tunnel: ProxyTunnel | null
   onEvent?: (event: SocketIOEvent) => void
   /**
    * Events that arrived before `onEvent` was set. Flushed in arrival order the
@@ -103,7 +105,10 @@ const connections = new Map<string, Connection>()
  * disconnected mid-handshake, so the promise (and its IPC call) would never
  * settle.
  */
-const pendingConnects = new Map<string, { socket: SioClient; cancel: () => void }>()
+const pendingConnects = new Map<
+  string,
+  { socket: SioClient; tunnel: ProxyTunnel | null; cancel: () => void }
+>()
 
 /** The rejection a cancelled handshake gets. */
 export const SIO_CANCELLED_MESSAGE = 'Connection cancelled'
@@ -199,12 +204,17 @@ export async function socketIOConnect(options: {
    * handshake. Cleared once the connection opens or fails.
    */
   pendingId?: string
+  /** Resolved by the handler; absent or `null` = direct. */
+  proxy?: ResolvedProxy | null
 }): Promise<SocketIOConnectionInfo> {
   const settings = readSioSettings({ ...DEFAULT_SIO_SETTINGS, ...(options.settings ?? {}) })
   return new Promise((resolve, reject) => {
     const connectionId = makeId()
     const ns = options.namespace || '/'
     const reconnect = settings.retryCount > 0
+    const tunnel = options.proxy
+      ? new ProxyTunnel(options.proxy, { rejectUnauthorized: settings.strictSSL })
+      : null
 
     const socket = createSioClient({
       url: options.url,
@@ -212,11 +222,13 @@ export async function socketIOConnect(options: {
       auth: options.auth,
       extraHeaders: options.extraHeaders,
       settings,
+      ...(tunnel ? { agent: tunnel.agent } : {}),
     })
 
     if (options.pendingId) {
       pendingConnects.set(options.pendingId, {
         socket,
+        tunnel,
         cancel: () => reject(new Error(SIO_CANCELLED_MESSAGE)),
       })
     }
@@ -234,6 +246,7 @@ export async function socketIOConnect(options: {
       const conn: Connection = {
         socket,
         info,
+        tunnel,
         pendingEvents: [],
         listen: {
           all: options.listen ? options.listen.all : true,
@@ -278,6 +291,7 @@ export async function socketIOConnect(options: {
         }
         close(reason)
         socket.disconnect()
+        tunnel?.abort()
       })
       socket.onReconnectAttempt((attempt) => {
         if (connections.get(connectionId) !== conn) return
@@ -300,6 +314,7 @@ export async function socketIOConnect(options: {
       socket.onReconnectFailed(() => {
         close('reconnect failed')
         socket.disconnect()
+        tunnel?.abort()
       })
 
       resolve(info)
@@ -308,9 +323,12 @@ export async function socketIOConnect(options: {
     socket.onceConnectError((err) => {
       if (opened) return
       if (options.pendingId) pendingConnects.delete(options.pendingId)
+      const ctx = { protocol: 'socketio' as const, url: options.url }
+      const failureCtx = tunnel?.errorContext(ctx) ?? ctx
       socket.disconnect()
+      tunnel?.abort()
       // Issue #253: what happened + host:port + next step (was "websocket error").
-      reject(toConnectionError(err, { protocol: 'socketio', url: options.url }))
+      reject(toConnectionError(err, failureCtx))
     })
   })
 }
@@ -329,6 +347,7 @@ export function socketIOCancelConnect(pendingId: string): boolean {
   } catch {
     // Best-effort.
   }
+  pending.tunnel?.abort()
   pending.cancel()
   return true
 }
@@ -341,6 +360,7 @@ export function socketIODisconnect(connectionId: string): void {
   connections.delete(connectionId)
   conn.pendingEvents.length = 0
   conn.socket.disconnect()
+  conn.tunnel?.abort()
 }
 
 function liveConnection(connectionId: string): Connection {

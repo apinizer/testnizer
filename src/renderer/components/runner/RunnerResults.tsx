@@ -9,10 +9,11 @@ import {
   Search,
   FolderTree,
 } from 'lucide-react'
+import EmptyState from '../shared/EmptyState'
 import { getMethodColors } from '../../styles/tokens'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import type { EndpointRunResult, RunnerReport } from '../../stores/runner.store'
-import { endpointDidPass, criticalStopOf } from '../../../shared/runner-verdict'
+import { endpointDidPass, criticalStopOf, isSkippedStep } from '../../../shared/runner-verdict'
 import { summarizeRun, statusBadge, SYNTHETIC_STATUS } from '../../../shared/runner-summary'
 import type { RunStopReason } from '../../../shared/runner-types'
 import { useTranslation } from '../../lib/i18n'
@@ -88,6 +89,8 @@ interface RunnerResultsProps {
   results: EndpointRunResult[]
   report: RunnerReport | null
   isRunning: boolean
+  /** Why the last run produced nothing, for the empty view. */
+  runError?: string | null
   currentIndex: number
   totalCount: number
   runStartedAt: number | null
@@ -135,6 +138,7 @@ export default function RunnerResults({
   results,
   report,
   isRunning,
+  runError,
   currentIndex,
   totalCount,
   runStartedAt,
@@ -692,6 +696,20 @@ export default function RunnerResults({
             flat list; multi-iteration runs get one collapsible group per
             iteration with pass/fail counts in the header. */}
         <div className="flex-1 overflow-auto" data-testid="runner-results-list">
+          {!isRunning && results.length === 0 && !report && (
+            <div data-testid="runner-results-nothing" className="flex h-full">
+              <EmptyState
+                title={t('runResults.nothingTitle')}
+                description={runError ?? t('runResults.nothingBody')}
+                action={{
+                  label: t('testsHome.newRun'),
+                  onClick: onNewRun,
+                  icon: Plus,
+                  testId: 'runner-results-new-run',
+                }}
+              />
+            </div>
+          )}
           {setupRows.length > 0 && (
             <PhaseSection title={t('runLifecycle.setupSection')} testId="runner-phase-setup">
               {setupRows.map((result, idx) => (
@@ -712,8 +730,9 @@ export default function RunnerResults({
           )}
           {iterationGroups.map(([iter, rows]) => {
             const collapsed = collapsedIterations.has(iter)
-            const passed = rows.filter(endpointDidPass).length
-            const failed = rows.length - passed
+            const scored = rows.filter((r) => !isSkippedStep(r))
+            const passed = scored.filter(endpointDidPass).length
+            const failed = scored.length - passed
             return (
               <div key={iter}>
                 {!isRunning && (

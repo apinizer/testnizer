@@ -132,6 +132,21 @@ describe('issue #276 part 2 — imported v3 requests open in their editor', () =
       expect(noIds(snap[k])).toEqual(noIds(imported[k]))
   })
 
+  it('gRPC with a schema URL keeps the imported method for Send to call', async () => {
+    const id = importRow('grpc-request', {
+      url: 'grpc.example.test:50051',
+      methodPath: 'demo.Greeter/SayHello',
+      schema: { source: 'url', url: 'https://protos.example.test/g.proto' },
+    })
+    await openEndpointTab(id)
+    const s = useGrpcStore.getState()
+    expect(s.protoSource).toBe('url')
+    expect(s.protoUrl).toBe('https://protos.example.test/g.proto')
+    expect(s.protoPath).toBeNull()
+    expect(s.selectedService).toBe('demo.Greeter')
+    expect(s.selectedMethod).toBe('SayHello')
+  })
+
   it('WebSocket', async () => {
     const id = importRow('websocket-request', {
       url: 'wss://ws.example.test/feed?room=a',

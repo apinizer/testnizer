@@ -21,6 +21,7 @@ import {
   seedWorkspace,
 } from './helpers'
 import { startMcpServer, type McpServer } from '../../e2e/servers/mcp-server'
+import { parseIterationData } from '../../../src/renderer/lib/iteration-data'
 import {
   freePort,
   startV1Server,
@@ -503,6 +504,30 @@ describe('Runner — MCP tool call (issue #161)', () => {
     expect(row.assertions).toEqual([{ name: 'sum', passed: true }])
   })
 
+  it('a JSON data file reaches an MCP row with its values as parsed', async () => {
+    const id = seedMcpEndpoint({
+      url: fixture.url,
+      preScript: "pm.variables.set('n', pm.iterationData.get('user').id)",
+      call: { capabilityTab: 'tools', selectedTool: 'add', toolArgs: '{"a": {{n}}, "b": 1}' },
+      postScript: "pm.test('sum', () => pm.expect(pm.response.text()).to.eql('8'))",
+    })
+    const iterationData = parseIterationData('[{"user":{"id":7}}]', 'data.json', (key) => key)
+    const row = (await run({ endpointIds: [id], iterationData })).data!.results[0]
+    expect(row.error).toBeUndefined()
+    expect(row.assertions).toEqual([{ name: 'sum', passed: true }])
+  })
+
+  it('a data column resolves in an MCP row without a script', async () => {
+    const id = seedMcpEndpoint({
+      url: fixture.url,
+      call: { capabilityTab: 'tools', selectedTool: 'add', toolArgs: '{"a": {{n}}, "b": 1}' },
+      postScript: "pm.test('sum', () => pm.expect(pm.response.text()).to.eql('8'))",
+    })
+    const row = (await run({ endpointIds: [id], iterationData: [{ n: 7 }] })).data!.results[0]
+    expect(row.error).toBeUndefined()
+    expect(row.assertions).toEqual([{ name: 'sum', passed: true }])
+  })
+
   // ─── (c) isError ───────────────────────────────────────────────
 
   it('a tool isError result FAILS without assertions (status 500)', async () => {
@@ -636,7 +661,7 @@ describe('Runner — MCP tool call (issue #161)', () => {
     expect(res.data!.failedEndpoints).toBe(0)
   })
 
-  it('review item 9: the row\'s request timeout bounds the MCP call (not a fixed 120 s)', async () => {
+  it("review item 9: the row's request timeout bounds the MCP call (not a fixed 120 s)", async () => {
     const id = seedMcpEndpoint({
       url: custom.url,
       timeout: 300,
@@ -648,7 +673,7 @@ describe('Runner — MCP tool call (issue #161)', () => {
     expect(row.error).toMatch(/timed out after 300 ms/)
   })
 
-  it('issue #185: a saved request\'s timeout (in metadata) bounds its MCP call on Run', async () => {
+  it("issue #185: a saved request's timeout (in metadata) bounds its MCP call on Run", async () => {
     const id = seedMcpSavedRequest({
       url: custom.url,
       timeout: 300,
@@ -660,7 +685,7 @@ describe('Runner — MCP tool call (issue #161)', () => {
     expect(row.error).toMatch(/MCP call timed out after 300 ms/)
   })
 
-  it('issue #185: a suite item\'s timeout bounds its MCP call on Run', async () => {
+  it("issue #185: a suite item's timeout bounds its MCP call on Run", async () => {
     const id = seedMcpSuiteItem({
       url: custom.url,
       timeout: 300,

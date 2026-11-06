@@ -1,12 +1,5 @@
 import { ipcMain } from 'electron'
-import {
-  existsSync,
-  mkdirSync,
-  writeFileSync,
-  readFileSync,
-  readdirSync as readDirSync,
-  unlinkSync,
-} from 'fs'
+import { existsSync, mkdirSync, writeFileSync, readdirSync as readDirSync, unlinkSync } from 'fs'
 import { isAbsolute, join } from 'path'
 import { getDb } from '../db/database'
 import { exportProjectData, importProjectDataFromJson, type ProjectExport } from './save.handler'
@@ -17,8 +10,14 @@ import { mergeProjectFiles } from '../lib/project-merge'
 import { applySelectedChanges, diffProjectDocs } from '../lib/project-changes'
 import { stripLocalSecrets } from '../lib/local-secrets'
 import { sameExport } from '../lib/same-export'
+import {
+  clearIrregularFile,
+  listCheckoutJsonFiles,
+  pickCheckoutProjectFile,
+  readCheckoutFile,
+} from '../import/safe-input'
 import { openSecret } from '../lib/secret-at-rest'
-import { readSharedProjectSettings } from '../lib/project-settings'
+import { projectNeedsFileConsent, readSharedProjectSettings } from '../lib/project-settings'
 import {
   GIT_MERGE_IN_PROGRESS_ERROR,
   GIT_NOTHING_COMMITTED_ERROR,
@@ -265,12 +264,8 @@ function readProjectFileFromDir(
   dir: string,
   projectId: string,
 ): { file: string; content: string } | null {
-  const jsonFiles = readDirSync(dir).filter(
-    (f: string) => f.endsWith('.json') && f !== 'package.json' && !f.startsWith('.'),
-  )
-  if (jsonFiles.length === 0) return null
-  const file = pickProjectFile(jsonFiles, projectNameOf(projectId))
-  return { file, content: readFileSync(join(dir, file), 'utf-8') }
+  const file = pickCheckoutProjectFile(dir, projectNameOf(projectId), ['package.json'])
+  return file ? { file, content: readCheckoutFile(join(dir, file)) } : null
 }
 
 /** Parsed project file, or null when absent / unparsable (no base to diff). */
@@ -371,7 +366,8 @@ async function writeProjectFile(
   const project = (data.project ?? {}) as Record<string, unknown>
   const fileName = `${projectFileSlug(project.name as string | undefined)}.json`
   const target = join(config.localPath, fileName)
-  if (existsSync(target) && sameExport(readFileSync(target, 'utf-8'), data)) {
+  clearIrregularFile(target)
+  if (existsSync(target) && sameExport(readCheckoutFile(target), data)) {
     // Byte-identical apart from `exportedAt` — rewriting would only churn
     // the timestamp into a commit on every switch / pull. But "same content
     // on disk" is not "committed": the file may be untracked (exported there
@@ -416,7 +412,7 @@ async function writeProjectFile(
 function retiredProjectFiles(dir: string, others: string[], projectId: string): string[] {
   const parsed = (f: string): Record<string, unknown> | null => {
     try {
-      const v = JSON.parse(readFileSync(join(dir, f), 'utf-8')) as unknown
+      const v = JSON.parse(readCheckoutFile(join(dir, f))) as unknown
       return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : null
     } catch {
       return null
@@ -571,6 +567,7 @@ async function autoResolveProjectConflicts(
     merged.push({ file, content })
   }
   for (const m of merged) {
+    clearIrregularFile(join(dir, m.file))
     writeFileSync(join(dir, m.file), m.content, 'utf-8')
     await git.add([m.file])
   }
@@ -805,7 +802,7 @@ function countEmptyLocalSecrets(projectId: string): number {
 /** True when `dir/file` is an export of `projectId` (safe to delete — the DB regenerates it). */
 function isOurExport(dir: string, file: string, projectId: string): boolean {
   try {
-    const doc = parseDoc(readFileSync(join(dir, file), 'utf-8'))
+    const doc = parseDoc(readCheckoutFile(join(dir, file)))
     return (doc?.project as { id?: unknown } | undefined)?.id === projectId
   } catch {
     return false
@@ -1476,6 +1473,10 @@ export function registerGitHandlers(): void {
           branch: currentBranch,
           fastForwarded,
           emptySecrets: countEmptyLocalSecrets(projectId),
+          absoluteFiles: await projectNeedsFileConsent(projectId),
+          skippedFiles: listCheckoutJsonFiles(config.localPath, ['package.json']).skipped.map(
+            (s) => s.file,
+          ),
         },
       }
     } catch (e) {

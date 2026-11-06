@@ -20,12 +20,14 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import FolderSettingsModal from '../modals/FolderSettingsModal'
 import CreateSuiteFromFolderModal from '../modals/CreateSuiteFromFolderModal'
 import { collectRequestIds } from '../../lib/folder-request-selection'
-import { isHttpMockableProtocol } from '../../../shared/request-protocols'
+import { createMockFromRequests, type MockFromFolderApi } from '../mock/mock-from-folder'
+import { toastMockImportResult } from '../mock/mock-import-file'
+import { protocolMetadataOf } from '../../../shared/grpc-import-meta'
 import { toast } from '../../lib/toast'
 import { t } from '../../lib/i18n'
 import { defaultRequestFor } from '../../lib/endpoint-name'
 import { openFolderRunner } from '../../lib/open-runner-tab'
-import { openEndpointTab, focusOpenTabFor } from '../../lib/open-endpoint-tab'
+import { openEndpointTab, findOpenTabFor, focusOpenTabFor } from '../../lib/open-endpoint-tab'
 import { exportProjectAs, type ProjectExportFormat } from '../../lib/project-export'
 import { openExampleTab } from '../../lib/open-example-tab'
 import { releaseTabsForDeletedRows, treeRowIds } from '../../lib/orphan-tab'
@@ -231,6 +233,7 @@ export default function TreeView() {
   const setActiveNode = useWorkspaceStore((s) => s.setActiveNode)
   const loadFromEndpoint = useRequestStore((s) => s.loadFromEndpoint)
   const openPreviewTab = useTabsStore((s) => s.openPreviewTab)
+  const pinTab = useTabsStore((s) => s.pinTab)
   const switchToTab = useRequestStore((s) => s.switchToTab)
   const clearResponse = useResponseStore((s) => s.clearResponse)
   const refreshTree = useWorkspaceStore((s) => s.refreshTree)
@@ -355,7 +358,7 @@ export default function TreeView() {
     return useTabsStore.getState().activeTabId || ''
   }
 
-  const handleSelect = useCallback(
+  const openNode = useCallback(
     async (node: TreeNode) => {
       setActiveNode(node.id)
 
@@ -517,7 +520,7 @@ export default function TreeView() {
                 postScript = schema.postScript ?? ''
                 endpointAssertions = schema.assertions ?? []
                 soapMeta = schema.soap
-                metadata = schema.metadata
+                metadata = protocolMetadataOf(schema)
                 if (schema.url) schemaUrl = schema.url
                 if (schema.method) schemaMethod = schema.method
               } catch {
@@ -611,6 +614,34 @@ export default function TreeView() {
       loadSoapFromEndpoint,
       switchSoapToTab,
     ],
+  )
+
+  /*
+   * Opens in flight, by row. Opening reads the row over IPC before the tab
+   * exists, so the second click of a double-click arrives mid-open: it joins
+   * that open instead of hydrating the tab twice, and the pin below can wait
+   * for the tab it needs (issue #314).
+   */
+  const opening = useRef(new Map<string, Promise<void>>())
+  const handleSelect = useCallback(
+    (node: TreeNode): Promise<void> => {
+      const running = opening.current.get(node.id)
+      if (running) return running
+      const open = openNode(node).finally(() => opening.current.delete(node.id))
+      opening.current.set(node.id, open)
+      return open
+    },
+    [openNode],
+  )
+
+  /** Double-click on a request row: open it pinned (issue #314). */
+  const handleOpenPinned = useCallback(
+    async (node: TreeNode) => {
+      await handleSelect(node)
+      const tab = findOpenTabFor(node.id)
+      if (tab?.isPreview) pinTab(tab.id)
+    },
+    [handleSelect, pinTab],
   )
 
   // Delete confirmation dialog state
@@ -1143,69 +1174,24 @@ export default function TreeView() {
   const handleCreateMockServer = useCallback(
     async (folderNode: TreeNode) => {
       if (!activeProjectId) return
-      // Only what an HTTP mock can stand in for: an MQTT / WebSocket / gRPC…
-      // request has no method + path to mirror (issue #284 audit).
-      const ids = collectRequestIds(folderNode, (n) => isHttpMockableProtocol(n.protocol))
+      // The flow skips what an HTTP mock cannot stand in for, and names it.
+      const ids = collectRequestIds(folderNode)
       if (ids.length === 0) return
       try {
-        // Pick the next free port above 8080 (project-scoped). Mock-server
-        // ports are bound to 127.0.0.1 so we don't need a global registry.
-        const listRes = await window.api?.mock?.server?.list(activeProjectId)
-        const usedPorts = new Set((listRes?.data ?? []).map((s) => s.port))
-        let port = 8080
-        while (usedPorts.has(port) && port < 65535) port++
-
-        const serverRes = await window.api?.mock?.server?.create({
+        const result = await createMockFromRequests(window.api as unknown as MockFromFolderApi, {
           projectId: activeProjectId,
           name: folderNode.label,
-          host: '127.0.0.1',
-          port,
+          ids,
         })
-        if (!serverRes?.success || !serverRes.data) return
-
-        // Pull each endpoint's method+path, then mirror as mock endpoints.
-        // We deliberately don't copy bodies — mock responses are configured
-        // separately and this flow just scaffolds the URL surface.
-        for (const id of ids) {
-          // saved requests and imported endpoints both live in the tree,
-          // walk both APIs to find them. Endpoint lookup is preferred since
-          // imported endpoints carry richer metadata.
-          let path = ''
-          let method = 'GET'
-          const ep = (await window.api?.endpoint?.get?.(id)) as {
-            success: boolean
-            data?: { path?: string; method?: string }
-          }
-          if (ep?.success && ep.data) {
-            path = ep.data.path || ''
-            method = ep.data.method || 'GET'
-          } else {
-            const sr = (await window.api?.savedRequest?.get?.(id)) as {
-              success: boolean
-              data?: { url?: string; method?: string }
-            }
-            if (sr?.success && sr.data) {
-              // Strip protocol/host so the mock binds the path portion only.
-              try {
-                const u = new URL(sr.data.url || '', 'http://placeholder')
-                path = u.pathname || sr.data.url || ''
-              } catch {
-                path = sr.data.url || ''
-              }
-              method = sr.data.method || 'GET'
-            }
-          }
-          if (!path) continue
-          await window.api?.mock?.endpoint?.create({
-            serverId: serverRes.data.id,
-            method,
-            path,
-          })
+        if (!result.ok) {
+          toast.error(t('mock.fromFolderFailed').replace('{error}', result.error ?? ''))
+          return
         }
-
+        toastMockImportResult(result)
         setActiveSidebarPage('mocks')
       } catch (err) {
-        console.error('createMockServer from folder failed:', err)
+        const error = err instanceof Error ? err.message : String(err)
+        toast.error(t('mock.fromFolderFailed').replace('{error}', error))
       }
     },
     [activeProjectId],
@@ -1247,6 +1233,7 @@ export default function TreeView() {
                   depth={depth}
                   activeId={activeNodeId}
                   onSelect={handleSelect}
+                  onOpenPinned={handleOpenPinned}
                   onToggle={handleToggle}
                   onDelete={handleDeleteRequest}
                   onRename={handleRename}

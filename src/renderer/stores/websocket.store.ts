@@ -1,10 +1,11 @@
 import { create } from 'zustand'
 import type { WsMessage, KeyValuePair } from '../types'
 import { useEnvironmentStore } from './environment.store'
+import { connectionProxy } from '../lib/network-settings'
 import { useWorkspaceStore } from './workspace.store'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { afterWithheldReloaded, reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { afterWithheldReloaded, reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { connectErrorText } from '../lib/connection-error'
 import {
@@ -33,6 +34,7 @@ import {
 } from '../../shared/realtime'
 import { wsMetaOf, type WsRequestFields } from '../lib/realtime-meta'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
+import { patchTabSlice, readTabSlice, updateTabSlice, withoutTab } from '../lib/tab-slice'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -264,7 +266,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
     connect: async () => {
       // Issue #244: a credential still withheld after a restart is reloaded first.
-      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+      if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
       const start = get()
       const { url, customHeaders } = start
       if (!url.trim()) return
@@ -310,17 +312,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
       // top-level state).
       const ownerTabId = get()._currentTabId
 
-      const patchOwner = (patch: (slice: TabWsState) => Partial<TabWsState>): void => {
-        const current = get()
-        if (current._currentTabId === ownerTabId) {
-          set(patch(current) as Partial<WebSocketStore>)
-        } else if (ownerTabId !== null) {
-          const map = new Map(current._tabStates)
-          const existing = map.get(ownerTabId) ?? emptyTabState()
-          map.set(ownerTabId, { ...existing, ...patch(existing) })
-          set({ _tabStates: map })
-        }
-      }
+      const ownerSlice = (): TabWsState | undefined =>
+        readTabSlice<TabWsState, WebSocketStore>(useWebSocketStore, ownerTabId)
+      const patchOwner = (patch: (slice: TabWsState) => Partial<TabWsState>): void =>
+        updateTabSlice<TabWsState, WebSocketStore>(useWebSocketStore, ownerTabId, patch)
       const appendRow = (row: WsMessage): void =>
         patchOwner((sl) => ({ messages: [...sl.messages, row] }))
 
@@ -418,7 +413,11 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
       try {
         const wsStore = useWorkspaceStore.getState()
+        const proxy = await connectionProxy(wsStore.activeProjectId)
+        // Given up while the settings loaded (Cancel, the tab closed, its project left).
+        if (ownerSlice()?._pendingConnectId !== pendingConnectId) return
         const result = await ws.connect({
+          ...proxy,
           url: resolvedUrl,
           headers: headerMap,
           settings: start.settings,
@@ -430,7 +429,16 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
           _configured: { url, meta: { websocket: wsMetaOf(start) } },
         })
 
-        if (result?.success && result.data) {
+        if (
+          result?.success &&
+          result.data &&
+          ownerSlice()?._pendingConnectId !== pendingConnectId
+        ) {
+          // The handshake finished just as it was given up (Cancel, the tab
+          // closed, its project left): close the connection nobody owns.
+          unsub()
+          void ws.disconnect(result.data.connectionId).catch(() => {})
+        } else if (result?.success && result.data) {
           // The `open` event from main may have already fired by the time the
           // promise resolves — keep `connected` state if it did, otherwise wait
           // for it. We always set the connectionId so the listener filter
@@ -462,7 +470,13 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
     },
 
     disconnect: async () => {
-      const { connectionId, _unsubscribe, _pendingConnectId, connectionState } = get()
+      const {
+        connectionId,
+        _unsubscribe,
+        _pendingConnectId,
+        connectionState,
+        _currentTabId: ownerTabId,
+      } = get()
       const ws = getWsApi()
 
       if (ws) {
@@ -487,7 +501,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
       }
       if (_unsubscribe) _unsubscribe()
 
-      set((s) => ({
+      updateTabSlice<TabWsState, WebSocketStore>(useWebSocketStore, ownerTabId, (s) => ({
         connectionState: 'disconnected',
         connectionId: null,
         errorMessage: null,
@@ -499,8 +513,14 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
     sendMessage: async () => {
       // Issue #284: a composer credential withheld after a restart is reloaded first.
-      if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
-      const { connectionId, composerContent, composerMode, connectionState } = get()
+      if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
+      const {
+        connectionId,
+        composerContent,
+        composerMode,
+        connectionState,
+        _currentTabId: ownerTabId,
+      } = get()
       if (connectionState !== 'connected' || !connectionId || !composerContent.trim()) return
       // Issue #195: a History mask left in a credential field is never sent.
       const maskedMessage = wsMaskedSendError({ composerContent })
@@ -534,10 +554,14 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
           isBinaryContentType(composerMode) ? { binary: composerMode } : undefined,
         )
         if (!result?.success && result?.error) {
-          set({ errorMessage: result.error })
+          patchTabSlice<TabWsState, WebSocketStore>(useWebSocketStore, ownerTabId, {
+            errorMessage: result.error,
+          })
         }
       } catch (e) {
-        set({ errorMessage: (e as Error).message })
+        patchTabSlice<TabWsState, WebSocketStore>(useWebSocketStore, ownerTabId, {
+          errorMessage: (e as Error).message,
+        })
       }
     },
 
@@ -651,8 +675,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
       const tabStates = new Map(state._tabStates)
 
       // Save current tab state under its own key
-      const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
-      tabStates.set(currentKey, extractState(state))
+      if (state._currentTabId) tabStates.set(state._currentTabId, extractState(state))
 
       // Load target tab (or empty for new tabs)
       const target = tabStates.get(tabId) || emptyTabState()
@@ -674,18 +697,17 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
       if (live && cached?._unsubscribe && cached._unsubscribe !== state._unsubscribe) {
         cached._unsubscribe()
       }
-      const tabStates = new Map(state._tabStates)
-      tabStates.delete(tabId)
+      const gone = withoutTab<TabWsState>(state, tabId)
       set(
         live
           ? {
-              _tabStates: tabStates,
+              ...gone,
               connectionId: null,
               connectionState: 'disconnected',
               _pendingConnectId: undefined,
               _unsubscribe: undefined,
             }
-          : { _tabStates: tabStates },
+          : gone,
       )
     },
 

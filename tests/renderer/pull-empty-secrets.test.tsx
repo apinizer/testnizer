@@ -60,6 +60,20 @@ async function pull(data: Record<string, unknown>): Promise<void> {
   await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('Pulled successfully'))
 }
 
+describe('pull → absolute file paths warning', () => {
+  it('says what the user has to turn on', async () => {
+    await pull({ absoluteFiles: true })
+    expect(toastWarning).toHaveBeenCalledWith(
+      expect.stringContaining('Read files outside the working directory'),
+    )
+  })
+
+  it('says nothing when the project has none', async () => {
+    await pull({ absoluteFiles: false })
+    expect(toastWarning).not.toHaveBeenCalled()
+  })
+})
+
 describe('pull → empty secrets warning', () => {
   it('warns with the count when secret values are still empty here', async () => {
     await pull({ emptySecrets: 3 })

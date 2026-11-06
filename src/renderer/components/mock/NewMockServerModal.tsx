@@ -2,6 +2,7 @@
  * "New mock server" dialog (issues #140, #221) — ONE creation flow for HTTP
  * and SSE mocks and Mock MCP servers: type switch, preset list, Name
  * (prefilled, unique) and Port (suggested, free across every kind), Create.
+ * An HTTP mock can also start from an OpenAPI or Postman file (issue #319).
  * Enter submits, Escape closes. Mount it only while open: every open starts from fresh state.
  */
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
@@ -14,11 +15,15 @@ import { useMockMcpStore } from '../../stores/mock-mcp.store'
 import { GhostButton, INPUT_CLS, PrimaryButton } from '../mock-mcp/ui'
 import NewMockServerPresetPicker from './NewMockServerPresetPicker'
 import NewMockServerPortField from './NewMockServerPortField'
+import NewMockServerImportField from './NewMockServerImportField'
+import { readMockImportFile, toastMockImportResult, type MockImportFile } from './mock-import-file'
 import { checkMockPort } from './mock-port'
 import { uniqueName } from './mock-create-helpers'
 import {
   createMockServer,
+  createMockServerFromFile,
   DEFAULT_PRESET,
+  MOCK_IMPORT_PRESET_ID,
   presetOption,
   suggestMockPort,
   type MockKind,
@@ -43,6 +48,9 @@ export default function NewMockServerModal({
   const [portDraft, setPortDraft] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [importFile, setImportFile] = useState<MockImportFile | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [reading, setReading] = useState(false)
   const nameRef = useRef<HTMLInputElement>(null)
 
   // Select the suggested name once the dialog has settled (the focus trap moves
@@ -68,7 +76,9 @@ export default function NewMockServerModal({
   }, [httpServers, mcpAll, mcpFor, projectId])
 
   const option = presetOption(kind, presetId)
-  const name = nameDraft ?? uniqueName(option.defaultName, taken.names)
+  const importing = option.id === MOCK_IMPORT_PRESET_ID
+  const baseName = (importing && importFile?.title) || option.defaultName
+  const name = nameDraft ?? uniqueName(baseName, taken.names)
   const port = portDraft ?? String(suggestMockPort(kind, taken.ports))
   // Checked as the user types (issue #257); a conflict stays a warning.
   const portCheck = checkMockPort(port)
@@ -80,17 +90,50 @@ export default function NewMockServerModal({
     setKind(next)
     setPresetId(DEFAULT_PRESET[next])
     setError(null)
+    setImportFile(null)
+    setImportError(null)
+  }
+
+  async function pickImportFile(file: File): Promise<void> {
+    setReading(true)
+    setImportError(null)
+    setError(null)
+    try {
+      const inspected = await readMockImportFile(file)
+      setImportFile(inspected.ok ? inspected.file : null)
+      setImportError(inspected.ok ? null : inspected.error)
+    } finally {
+      setReading(false)
+    }
   }
 
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault()
-    if (busy) return
+    if (busy || reading) return
     if (!projectId) return setError(t('mock.noActiveProject'))
     const trimmed = name.trim()
     if (!trimmed) return setError(t('mock.nameRequired'))
     if (!portCheck.ok) return setError(t('mock.invalidPort'))
+    if (importing && !importFile) return setError(t('mockNew.importRequired'))
     setBusy(true)
     setError(null)
+    if (importing && importFile) {
+      const created = await createMockServerFromFile({
+        projectId,
+        name: trimmed,
+        port: portNum,
+        file: importFile,
+      })
+      if ('error' in created) {
+        setBusy(false)
+        const reason = created.error ? `: ${created.error}` : ''
+        setError(`${t('mock.importFailed')}${reason}`)
+        return
+      }
+      toastMockImportResult(created.result)
+      onClose()
+      return
+    }
     const err = await createMockServer({ kind, presetId, projectId, name: trimmed, port: portNum })
     if (err) {
       setBusy(false)
@@ -139,6 +182,15 @@ export default function NewMockServerModal({
             onKind={chooseKind}
             onPreset={setPresetId}
           />
+          {importing && (
+            <NewMockServerImportField
+              file={importFile}
+              error={importError}
+              reading={reading}
+              disabled={busy}
+              onPick={(file) => void pickImportFile(file)}
+            />
+          )}
           <div className="grid grid-cols-[1fr_120px] gap-3">
             <label className="flex flex-col gap-1">
               <span className="text-[11px] font-medium text-[var(--muted)]">
@@ -179,7 +231,7 @@ export default function NewMockServerModal({
           <GhostButton disabled={busy} onClick={onClose} data-testid="mock-new-cancel">
             {t('mock.cancel')}
           </GhostButton>
-          <PrimaryButton type="submit" disabled={busy} data-testid="mock-new-create">
+          <PrimaryButton type="submit" disabled={busy || reading} data-testid="mock-new-create">
             {busy && <Loader2 size={12} className="animate-spin" />}
             {t('mock.create')}
           </PrimaryButton>

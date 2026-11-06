@@ -48,6 +48,7 @@ import {
 } from './save-active-request'
 import { readRequestSettings } from '../../shared/request-settings'
 import { readPathVariables } from '../../shared/path-variables'
+import { protocolMetadataOf } from '../../shared/grpc-import-meta'
 import type {
   AuthConfig,
   HttpMethod,
@@ -121,7 +122,8 @@ function fromSchema(rawSchema: unknown, url?: unknown): BoundRow | null {
   if (!schema) return null
   // A suite item keeps its URL in a column, not in `request_schema`.
   const request = typeof url === 'string' && schema.url === undefined ? { ...schema, url } : schema
-  return { request, meta: isRecord(schema.metadata) ? schema.metadata : {} }
+  const metadata = protocolMetadataOf(schema)
+  return { request, meta: isRecord(metadata) ? metadata : {} }
 }
 
 /**

@@ -85,8 +85,10 @@ uiTest.describe('Tur1 — Suite CRUD [MST-178]', () => {
     await clickSuiteContextMenuItem(window, /Delete/i)
     // Confirm dialog if present.
     const confirmBtn = window.getByTestId('delete-confirm-btn')
+    // optional: the delete may or may not ask for confirmation; the DB assertion after proves the suite is gone
     if (await confirmBtn.isVisible({ timeout: 3_000 }).catch(() => false)) {
       const confirmInput = window.getByTestId('delete-confirm-input')
+      // optional: only some deletes need the typed word; the DB assertion after proves the suite is gone
       if (await confirmInput.isVisible().catch(() => false)) await confirmInput.fill('delete')
       await confirmBtn.click()
     }

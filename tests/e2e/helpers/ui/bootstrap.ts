@@ -34,6 +34,7 @@ export async function waitForApiBridge(page: Page): Promise<void> {
 /** Accept EULA gate via UI (checkbox + Accept). */
 export async function acceptEula(page: Page): Promise<void> {
   const gate = page.getByTestId('eula-gate')
+  // optional: the EULA gate only exists on a first launch; the Accept steps below prove it when it is there
   const visible = await gate.isVisible().catch(() => false)
   if (!visible) return
 
@@ -53,6 +54,7 @@ export async function loginAsGuest(page: Page): Promise<void> {
   const guestBtn = page.getByTestId('login-continue-anonymous')
   const quickTest = page.getByRole('button', { name: /Quick Test/i })
 
+  // optional: the welcome screen is skipped when a session already exists, and older shells show Quick Test instead of the guest button; the wait below proves the app got past it either way
   if (await guestBtn.isVisible().catch(() => false)) {
     await guestBtn.click()
   } else if (await quickTest.isVisible().catch(() => false)) {
@@ -77,6 +79,7 @@ export async function loginAsGuest(page: Page): Promise<void> {
 export async function createAndOpenProject(page: Page, name = E2E_PROJECT_NAME): Promise<void> {
   const existing = page.getByTestId('project-card').filter({ hasText: name })
   if (
+    // optional: reuse the project card when it exists, create it otherwise; nav-apis must be visible either way
     await existing
       .first()
       .isVisible()
@@ -129,6 +132,7 @@ export async function ensureCanonicalProject(page: Page): Promise<void> {
     // Tab was closed by a previous test — reopen from Project Home. When no
     // project is active the app is ALREADY on Project Home (no Header / no
     // header-home is rendered), so only click header-home when it exists.
+    // optional: already on Project Home when no project is active; header-home is only clicked otherwise
     const onProjectHome = await page
       .getByTestId('project-home')
       .isVisible()
@@ -141,6 +145,7 @@ export async function ensureCanonicalProject(page: Page): Promise<void> {
   await expect(tab.first()).toHaveAttribute('data-active', 'true', { timeout: 10_000 })
   // Stale tree filter from a previous test hides nodes — clear when present.
   const treeSearch = page.getByTestId('tree-search')
+  // optional: clears a stale tree filter when the search box is on screen
   if (await treeSearch.isVisible().catch(() => false)) {
     await treeSearch.fill('')
   }
@@ -206,6 +211,7 @@ export async function closeAllTabs(page: Page): Promise<void> {
     await page.waitForTimeout(80)
 
     const discard = page.getByTestId('unsaved-discard-btn')
+    // optional: cleanup in closeAllTabs: the discard dialog only shows for dirty tabs
     if (await discard.isVisible().catch(() => false)) {
       await discard.click().catch(() => {})
       await page.waitForTimeout(80)

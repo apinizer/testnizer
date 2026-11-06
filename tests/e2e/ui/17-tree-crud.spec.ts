@@ -1,7 +1,12 @@
 import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
-import { dismissOverlays, E2E_PROJECT_NAME, navigateSidebar } from '../helpers/ui/bootstrap'
-import { treeSearch } from '../helpers/ui/tree'
+import {
+  dismissOverlays,
+  E2E_PROJECT_NAME,
+  ensureCanonicalProject,
+  navigateSidebar,
+} from '../helpers/ui/bootstrap'
+import { treeClearSearch, treeSearch } from '../helpers/ui/tree'
 
 uiTest.describe('Tree CRUD (deep)', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -18,11 +23,15 @@ uiTest.describe('Tree CRUD (deep)', () => {
   // confirms a name. The old flow persisted a folder called "New Folder" on the
   // menu click, so a mis-click left rubbish in the tree.
   uiTest('add folder via context menu prompts for a name before creating', async ({ window }) => {
-    const module = window.getByTestId('tree-node').filter({ hasText: /Default|module/i }).first()
-    if (!(await module.isVisible())) return
+    // The project root is a single module node labelled with the project name
+    // (same anchor 26-folder-settings uses). Absence must fail, not skip.
+    await ensureCanonicalProject(window)
+    await treeClearSearch(window)
+    const module = window.getByTestId('tree-node').filter({ hasText: E2E_PROJECT_NAME }).first()
+    await expect(module).toBeVisible({ timeout: 10_000 })
     await module.click({ button: 'right' })
     const menu = window.locator('[data-context-menu]')
-    if (!(await menu.isVisible())) return
+    await expect(menu).toBeVisible()
 
     await menu.getByRole('button', { name: /Add Folder/i }).click()
 

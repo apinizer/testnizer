@@ -41,6 +41,8 @@ interface TreeNodeProps {
   depth?: number
   activeId: string | null
   onSelect: (node: TreeNodeType) => void
+  /** Double-click on a request row (issue #314). Other rows only have their clicks. */
+  onOpenPinned?: (node: TreeNodeType) => void
   onToggle: (id: string) => void
   onDelete?: (node: TreeNodeType) => void
   onRename?: (node: TreeNodeType, newName: string) => void
@@ -486,6 +488,7 @@ export default function TreeNodeComponent({
   depth = 0,
   activeId,
   onSelect,
+  onOpenPinned,
   onToggle,
   onDelete,
   onRename,
@@ -554,6 +557,10 @@ export default function TreeNodeComponent({
     }
     if (hasChildren) onToggle(node.id)
   }, [hasChildren, isRequest, isExample, node, onToggle, onSelect, renaming])
+
+  const handleDoubleClick = useCallback(() => {
+    if (!renaming && isRequest) onOpenPinned?.(node)
+  }, [renaming, isRequest, node, onOpenPinned])
 
   const openContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -883,6 +890,7 @@ export default function TreeNodeComponent({
         onDragLeave={handleDragLeave}
         onDrop={handleDropOnNode}
         onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
         onContextMenu={
           canModify || isFolder || node.type === 'module' ? openContextMenu : undefined
         }
@@ -913,6 +921,7 @@ export default function TreeNodeComponent({
               e.stopPropagation()
               onToggle(node.id)
             }}
+            onDoubleClick={(e) => e.stopPropagation()}
             className="inline-flex w-2.5 shrink-0 items-center justify-center text-[0.7rem] leading-none text-[var(--hint)] transition-transform duration-150"
             style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}
           >
@@ -991,6 +1000,7 @@ export default function TreeNodeComponent({
               e.stopPropagation()
               openContextMenu(e)
             }}
+            onDoubleClick={(e) => e.stopPropagation()}
             className="shrink-0 rounded p-0.5"
             style={{
               background: 'transparent',
@@ -1042,6 +1052,7 @@ export default function TreeNodeComponent({
             depth={depth + 1}
             activeId={activeId}
             onSelect={onSelect}
+            onOpenPinned={onOpenPinned}
             onToggle={onToggle}
             onDelete={onDelete}
             onRename={onRename}

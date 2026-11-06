@@ -78,7 +78,8 @@ uiTest.describe('Tur1 — External fixtures smoke [MST-089]', () => {
   for (const fixture of SMOKE_FIXTURES) {
     uiTest(`MST-089 ${fixture} imports without crash`, async ({ window }) => {
       const fixturePath = path.join(EXTERNAL_INSOMNIA, fixture)
-      uiTest.skip(!fs.existsSync(fixturePath), `fixture missing: ${fixture}`)
+      // The fixtures are committed: a missing file is a broken checkout, not a skip.
+      expect(fs.existsSync(fixturePath), `fixture missing: ${fixture}`).toBe(true)
 
       const result = await importInsomniaSmoke(window, fixture)
 

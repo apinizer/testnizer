@@ -118,6 +118,7 @@ uiTest.describe('Tier 11 — Runner iterations, environment CRUD, scheduled task
     await selectEnvironmentInModal(window, envName)
     await window.getByTestId('env-delete').click()
     const confirmInput = window.getByTestId('delete-confirm-input')
+    // optional: the typed-confirmation input only exists for some deletes; the DB assertion after proves the delete happened
     if (await confirmInput.isVisible().catch(() => false)) {
       await confirmInput.fill('delete')
     }
@@ -144,6 +145,7 @@ uiTest.describe('Tier 11 — Runner iterations, environment CRUD, scheduled task
     await row.hover()
     await row.getByTestId('scheduled-task-delete').click()
     const confirmInput = window.getByTestId('delete-confirm-input')
+    // optional: the typed-confirmation input only exists for some deletes; the DB assertion after proves the delete happened
     if (await confirmInput.isVisible().catch(() => false)) {
       await confirmInput.fill('delete')
     }

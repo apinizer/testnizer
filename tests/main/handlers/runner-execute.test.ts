@@ -304,6 +304,42 @@ describe('executeCollection — data-driven', () => {
     const wireUrls = received.map((r) => r.url).sort()
     expect(wireUrls).toEqual(['/u?name=alice', '/u?name=bob'])
   })
+
+  it('a data column resolves in the URL, headers and body without a script', async () => {
+    const epId = seedEndpoint({
+      name: 'DataColumns',
+      method: 'POST',
+      url: `http://127.0.0.1:${port}/d/{{user}}?n={{n}}`,
+      headers: [{ key: 'X-User', value: '{{user}}', enabled: true }],
+      body: { type: 'json', content: '{"user":"{{user}}"}' },
+    })
+
+    const res = await run({
+      endpointIds: [epId],
+      iterationData: [
+        { user: 'alice', n: 7 },
+        { user: 'bob', n: 8 },
+      ],
+    })
+
+    expect(res.data?.results.map((row) => row.error)).toEqual([undefined, undefined])
+    expect(received.map((r) => r.url).sort()).toEqual(['/d/alice?n=7', '/d/bob?n=8'])
+    const alice = received.find((r) => r.url.startsWith('/d/alice'))
+    expect(alice?.headers['x-user']).toBe('alice')
+    expect(alice?.body).toBe('{"user":"alice"}')
+  })
+
+  it('a data column follows the variable order: local > data > environment', async () => {
+    const epId = seedEndpoint({
+      name: 'DataOrder',
+      url: `http://127.0.0.1:${port}/o?env={{both}}&local={{mine}}`,
+      preScript: `pm.environment.set('both', 'E'); pm.variables.set('mine', 'L')`,
+    })
+
+    await run({ endpointIds: [epId], iterationData: [{ both: 'D', mine: 'D' }] })
+
+    expect(received.map((r) => r.url)).toEqual(['/o?env=D&local=L'])
+  })
 })
 
 // ─── d. stopOnError ──────────────────────────────────────────────

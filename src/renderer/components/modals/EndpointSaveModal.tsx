@@ -111,9 +111,10 @@ export default function EndpointSaveModal() {
             /* fall through */
           }
         }
-        if (result.data.length > 0 && !selectedFolder) {
-          setSelectedFolder(result.data[0].id)
-        }
+        // An updater, not the `selectedFolder` of this closure: on open that still holds the
+        // value from before the reset above, so every second Save As landed in the project root.
+        const first = result.data[0]
+        if (first) setSelectedFolder((current) => current || first.id)
       }
       // A `{success:false}` envelope is how this bridge reports failure; it
       // resolves, so the catch below never sees it.
@@ -261,7 +262,9 @@ export default function EndpointSaveModal() {
       // orphaning the original DB row and turning the next Save into a
       // duplicate-creating "create" branch.
       if (savedId) {
-        const tabId = useTabsStore.getState().activeTabId
+        // The tab Save was pressed on — the user can move to another one during
+        // the awaits above, and that one must not get this row.
+        const tabId = activeTab?.id
         if (tabId) {
           // An unsaved AI tab's conversations follow it to the new row (issue
           // #199). A tab already backed by a row keeps its conversations there
@@ -475,6 +478,7 @@ export default function EndpointSaveModal() {
                         <div
                           data-testid="save-folder-row"
                           data-folder-name={f.name}
+                          data-selected={isSelected}
                           onClick={() => {
                             setSelectedFolder(f.id)
                             setCreatingFolder(false)

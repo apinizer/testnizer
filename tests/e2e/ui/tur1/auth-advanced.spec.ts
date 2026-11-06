@@ -41,6 +41,7 @@ async function coldStart(userDataDir: string) {
 async function bootstrapMinimal(win: import('@playwright/test').Page) {
   await acceptEula(win)
   const guestBtn = win.getByTestId('login-continue-anonymous')
+  // optional: the guest button only shows on a profile with no session; the wait below proves the app got past it
   if (await guestBtn.isVisible().catch(() => false)) {
     await guestBtn.click()
   }
@@ -129,8 +130,16 @@ test('MST-003 password change and disable', async () => {
     const { app: app3, win: win3 } = await coldStart(dir)
     try {
       await acceptEula(win3).catch(() => {})
-      const hasLogin = await win3.locator('input[type="password"]').isVisible().catch(() => false)
-      expect(hasLogin).toBe(false)
+      // Wait until the app has actually rendered a post-login screen (welcome
+      // with the guest button, or the shell). `isVisible()` alone answers
+      // "false" immediately, before anything has rendered.
+      await expect(
+        win3
+          .getByTestId('login-continue-anonymous')
+          .or(win3.getByTestId('project-home'))
+          .or(win3.getByTestId('nav-apis')),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(win3.locator('input[type="password"]')).toHaveCount(0)
     } finally {
       await app3.close()
     }
@@ -251,6 +260,7 @@ test('MST-007 EULA re-consent gate appears after legal content hash changes', as
     // Bootstrap normally (accepts EULA, marks consent hash in store).
     await acceptEula(win)
     const guestBtn = win.getByTestId('login-continue-anonymous')
+    // optional: the guest button only shows on a profile with no session; the wait below proves the app got past it
     if (await guestBtn.isVisible().catch(() => false)) await guestBtn.click()
     await win.waitForFunction(
       () => document.body.innerText.includes('New Project') || document.body.innerText.includes('APIs'),

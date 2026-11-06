@@ -209,6 +209,17 @@ const CASES: Array<{
     engine: 'request.send',
   },
   {
+    protocol: 'graphql',
+    label: 'graphql subscription connection_init',
+    setup: (app) => {
+      app.useGraphQLStore.getState().setUrl('wss://gql.test/graphql')
+      app.useGraphQLStore.getState().setQuery('subscription { tick }')
+      app.useGraphQLStore.getState().setConnectionInit(`{"token":"${SECRET}"}`)
+    },
+    send: (app) => app.useGraphQLStore.getState().subscribe(),
+    engine: 'graphqlWs.connect',
+  },
+  {
     protocol: 'grpc',
     setup: (app) => {
       app.useGrpcStore.getState().setAddress('grpc.test:443')

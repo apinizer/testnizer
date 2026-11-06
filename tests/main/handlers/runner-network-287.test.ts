@@ -212,11 +212,15 @@ describe('issue #287 — Run: SOAP and GraphQL rows honour the project SSL setti
       url: `${tlsBase}/svc`,
       body: { type: 'xml', content: '<Envelope><Body><Ping/></Body></Envelope>' },
     })
+  // The shape the GraphQL tab saves (`snapshotProtocol`).
   const graphql = () =>
     seedEndpoint('graphql', {
       method: 'POST',
       url: `${tlsBase}/graphql`,
-      body: { type: 'json', content: '{"query":"{ ping }"}' },
+      body: { type: 'graphql', content: '{ ping }' },
+      metadata: {
+        graphql: { url: `${tlsBase}/graphql`, query: '{ ping }', variables: '{}', headers: [] },
+      },
     })
 
   it('SOAP: project false -> 200; nothing configured -> certificate error', async () => {

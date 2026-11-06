@@ -1,6 +1,6 @@
 /**
  * Issue #283 follow-up — ONE lifetime rule for the realtime editors'
- * connections (WebSocket, Socket.IO, MQTT), `lib/realtime-connections.ts`:
+ * connections (WebSocket, Socket.IO, MQTT, SSE), `lib/realtime-connections.ts`:
  *
  *   1. closing a tab closes its connection / cancels its pending handshake;
  *   2. leaving a project closes every connection opened in it.
@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useWebSocketStore } from '../../src/renderer/stores/websocket.store'
 import { useSocketIOStore } from '../../src/renderer/stores/socketio.store'
 import { useMqttStore } from '../../src/renderer/stores/mqtt.store'
+import { useSseStore } from '../../src/renderer/stores/sse.store'
 import { useEnvironmentStore } from '../../src/renderer/stores/environment.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
@@ -51,7 +52,7 @@ function protocolApi(reply: (id: string) => unknown, hold = false): ProtocolApi 
   }
 }
 
-function installApi(hold = false): Record<'ws' | 'socketio' | 'mqtt', ProtocolApi> {
+function installApi(hold = false): Record<'ws' | 'socketio' | 'mqtt' | 'sse', ProtocolApi> {
   const subscribeNoop = () => () => {}
   const ws = protocolApi((id) => ({ connectionId: id }), hold)
   const socketio = protocolApi(
@@ -62,24 +63,26 @@ function installApi(hold = false): Record<'ws' | 'socketio' | 'mqtt', ProtocolAp
     (id) => ({ connectionId: id, clientId: 'c', url: 'mqtt://x', sessionPresent: false }),
     hold,
   )
+  const sse = protocolApi((id) => ({ connectionId: id }), hold)
   ;(window as unknown as { api: unknown }).api = {
+    sse: { ...sse, onEvent: subscribeNoop },
     ws: { ...ws, onEvent: subscribeNoop },
     socketio: { ...socketio, onEvent: subscribeNoop, onClosed: subscribeNoop },
     mqtt: { ...mqtt, onEvent: subscribeNoop, onClosed: subscribeNoop },
   }
-  return { ws, socketio, mqtt }
+  return { ws, socketio, mqtt, sse }
 }
 
 interface Case {
   name: string
-  api: 'ws' | 'socketio' | 'mqtt'
+  api: 'ws' | 'socketio' | 'mqtt' | 'sse'
   /** Switch the store to `tabId` and Connect it. */
   connect: (tabId: string) => Promise<void>
   removeTab: (tabId: string) => void
   /** The tab's slice, live or cached. */
   slice: (tabId: string) => { connectionId: string | null; connectionState: string }
-  /** The last timeline row's [event, detail]. */
-  lastRow: (tabId: string) => [string, unknown]
+  /** The last timeline row's [event, detail]. SSE's timeline holds only server events. */
+  lastRow?: (tabId: string) => [string, unknown]
 }
 
 function sliceOf<T>(
@@ -121,6 +124,17 @@ const CASES: Case[] = [
     },
   },
   {
+    name: 'SSE',
+    api: 'sse',
+    connect: async (tabId) => {
+      useSseStore.getState().switchToTab(tabId)
+      useSseStore.getState().setUrl('http://h.test/events')
+      await useSseStore.getState().connect()
+    },
+    removeTab: (tabId) => useSseStore.getState().removeTabState(tabId),
+    slice: (tabId) => sliceOf(useSseStore.getState(), tabId),
+  },
+  {
     name: 'MQTT',
     api: 'mqtt',
     connect: async (tabId) => {
@@ -146,6 +160,7 @@ beforeEach(() => {
   useWebSocketStore.setState({ _tabStates: new Map(), _currentTabId: null })
   useSocketIOStore.setState({ _tabStates: new Map(), _currentTabId: null })
   useMqttStore.setState({ _tabStates: new Map(), _currentTabId: null })
+  useSseStore.setState({ _tabStates: new Map(), _currentTabId: null })
 })
 
 describe.each(CASES)('$name', (c) => {
@@ -164,7 +179,7 @@ describe.each(CASES)('$name', (c) => {
     expect(api.disconnect).toHaveBeenCalledWith(b)
     for (const id of ['t-a', 't-b']) {
       expect(c.slice(id)).toMatchObject({ connectionId: null, connectionState: 'disconnected' })
-      expect(c.lastRow(id)).toEqual(['disconnected', 'project switched'])
+      if (c.lastRow) expect(c.lastRow(id)).toEqual(['disconnected', 'project switched'])
     }
   })
 

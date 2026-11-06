@@ -39,6 +39,7 @@ async function treeDelete(page: Page, label: string): Promise<void> {
   await treeSearch(page, label)
   await treeContextAction(page, label, /^Delete/i)
   const typed = page.getByTestId('delete-confirm-input')
+  // optional: folders ask for a typed confirmation, single requests do not; the delete itself is asserted by the callers
   if (await typed.isVisible().catch(() => false)) await typed.fill('delete')
   await page.getByTestId('delete-confirm-btn').click()
   await treeClearSearch(page)

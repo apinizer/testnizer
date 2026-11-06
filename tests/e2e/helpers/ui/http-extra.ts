@@ -36,22 +36,13 @@ export async function sendAndReadBody(
  * Assumes the SOAP editor is already open and the Headers sub-tab is visible.
  */
 export async function addSoapHeader(page: Page, key: string, value: string): Promise<void> {
-  const headersTab = page.getByRole('button', { name: /^Headers$/i })
-  if (await headersTab.isVisible().catch(() => false)) {
-    await headersTab.click()
-  }
-  const addBtn = page.getByTestId('kv-add-row').first()
-  if (await addBtn.isVisible().catch(() => false)) {
-    await addBtn.click()
-    const rows = page.locator('[data-testid^="kv-row-"]')
-    const count = await rows.count()
-    const last = rows.nth(count - 1)
-    const keyInput = last.getByTestId('kv-key').locator('input')
-    if (await keyInput.isVisible().catch(() => false)) {
-      await keyInput.fill(key)
-    }
-    await last.getByTestId('kv-value').locator('input').fill(value)
-  }
+  await page.getByTestId('soap-detail-tab-headers').click()
+  await page.getByTestId('kv-add-row').first().click()
+  const rows = page.locator('[data-testid^="kv-row-"]')
+  const count = await rows.count()
+  const last = rows.nth(count - 1)
+  await last.getByTestId('kv-key').locator('input').fill(key)
+  await last.getByTestId('kv-value').locator('input').fill(value)
 }
 
 /**
@@ -61,27 +52,14 @@ export async function addSoapHeader(page: Page, key: string, value: string): Pro
  * @param mode  'username-token' | 'sign' | 'encrypt' | 'timestamp'
  */
 export async function enableWssMode(page: Page, mode: string): Promise<void> {
-  // Expand WS-Security section if needed
-  const wsBtn = page.getByRole('button', { name: /WS-Security/i })
-  if (await wsBtn.isVisible().catch(() => false)) {
-    // Check if it's already expanded by looking for the "Enable WS-Security" checkbox
-    const enableCb = page.getByRole('checkbox', { name: /Enable WS-Security/i })
-    if (!(await enableCb.isVisible().catch(() => false))) {
-      await wsBtn.click()
-    }
-    if (!(await enableCb.isChecked().catch(() => false))) {
-      await enableCb.check()
-    }
+  // Expand the WS-Security section if its "Enable" checkbox is not on screen yet.
+  const enableCb = page.getByRole('checkbox', { name: /Enable WS-Security/i })
+  // optional: the section may already be expanded by an earlier step.
+  if (!(await enableCb.isVisible().catch(() => false))) {
+    await page.getByRole('button', { name: /WS-Security/i }).click()
   }
+  await enableCb.check()
 
-  // Tick the mode checkbox
-  const modeLabel = page.getByText(new RegExp(mode.replace('-', '.?'), 'i')).first()
-  if (await modeLabel.isVisible().catch(() => false)) {
-    const modeCb = modeLabel
-      .locator('xpath=preceding-sibling::input[@type="checkbox"]')
-      .or(modeLabel.locator('..').locator('input[type="checkbox"]'))
-    if (await modeCb.isVisible().catch(() => false) && !(await modeCb.isChecked())) {
-      await modeCb.check()
-    }
-  }
+  // Tick the mode checkbox (its label reads e.g. "username token", "sign").
+  await page.getByRole('checkbox', { name: new RegExp(`^${mode.replace('-', '[ -]?')}$`, 'i') }).check()
 }

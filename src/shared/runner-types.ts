@@ -122,9 +122,9 @@ export interface RunnerExecuteOptions {
   /**
    * Per-iteration data rows (Postman / Insomnia compatible). When set, the
    * runner executes one iteration per row and exposes the row to scripts via
-   * `pm.iterationData.get(key)`.
+   * `pm.iterationData.get(key)`. A JSON file's values stay as parsed, a CSV's are text.
    */
-  iterationData?: Record<string, string>[]
+  iterationData?: Record<string, unknown>[]
   stopOnError?: boolean
   /**
    * When true (default) each result carries the full responseBody +
@@ -202,6 +202,16 @@ export interface RunnerProgress {
   total: number
   endpointId: string
   result: EndpointRunResult
+  /** Whose run: main broadcasts, a tab keeps its own. A scheduled run has no tab. */
+  runTabId?: string
+  projectId?: string
+}
+
+/** A phase has begun (`runner:phase`), addressed like `RunnerProgress`. */
+export interface RunnerPhaseEvent {
+  phase: RunPhase
+  runTabId?: string
+  projectId?: string
 }
 
 /**

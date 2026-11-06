@@ -279,6 +279,20 @@ describe('option syntax', () => {
     ])
   })
 
+  it('a typo one letter past a real option is unknown, not that option', () => {
+    // `--headers` and `--outputs` are not abbreviations of anything: they are real option
+    // names with a stray letter, and have no `=`. They must not be read as `--header` / `--output`.
+    const cmd = "curl --headers 'A: 1' --outputs f https://x.test"
+    const p = parseCurl(cmd)
+    expect(p.warnings.filter((w) => w.code === 'unknown-flag').map((w) => w.arg)).toEqual([
+      '--headers',
+      '--outputs',
+    ])
+    expect(p.url).toBe('https://x.test')
+    expect(req(cmd).headers.map((h) => h.key)).not.toContain('headers')
+    expect(req(cmd).headers).toEqual([])
+  })
+
   it('an unknown flag with a value: the URL-looking word still wins', () => {
     const p = parseCurl('curl --new-thing value https://x.test')
     expect(p.url).toBe('https://x.test')

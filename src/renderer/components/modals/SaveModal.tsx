@@ -14,6 +14,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { toast } from '../../lib/toast'
+import { pullWarnings, skippedFilesMessage, type PullNotices } from '../../lib/pull-messages'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate } from '../../lib/format-datetime'
 import type { SaveMode, GitRepoFile } from '../../types'
@@ -284,7 +285,7 @@ export default function SaveModal() {
     try {
       const result = (await window.api?.save?.gitPull({ projectId: activeProjectId })) as {
         success: boolean
-        data?: { imported?: Record<string, number> }
+        data?: PullNotices & { imported?: Record<string, number> }
         error?: string
       }
       if (result?.success) {
@@ -293,6 +294,7 @@ export default function SaveModal() {
           ? `${t('toast.pulled')}: ${imp.endpoints || 0} endpoints, ${imp.savedRequests || 0} requests, ${imp.environments || 0} environments`
           : t('toast.pulled')
         toast.success(msg)
+        pullWarnings(t, result.data).forEach((m) => toast.warning(m))
         fetchSaveHistory(activeProjectId)
       } else {
         toast.error(result?.error || t('toast.pullFailed'))
@@ -315,11 +317,17 @@ export default function SaveModal() {
         branch: gitBranch,
         username: gitUsername,
         token: gitToken,
-      })) as { success: boolean; data?: { tmpDir: string; files: GitRepoFile[] }; error?: string }
+      })) as {
+        success: boolean
+        data?: { tmpDir: string; files: GitRepoFile[]; skipped?: Array<{ file: string }> }
+        error?: string
+      }
       if (result?.success && result.data) {
         setGitFiles(result.data.files)
         setGitTmpDir(result.data.tmpDir)
-        if (result.data.files.length === 0) toast.warning('No JSON files found in repository')
+        const skipped = result.data.skipped?.map((s) => s.file) ?? []
+        if (skipped.length > 0) toast.warning(skippedFilesMessage(t, skipped))
+        else if (result.data.files.length === 0) toast.warning('No JSON files found in repository')
       } else {
         toast.error(result?.error || 'Failed to list files')
       }

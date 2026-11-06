@@ -251,6 +251,14 @@ export default function ImportModal() {
   const canClipboardImport = CLIPBOARD_IMPORTABLE.includes(selectedFormat.id)
   const allFolders = collectFolders(treeData)
 
+  /**
+   * The user asking to close. An import in flight cannot be cancelled, and a
+   * closed dialog would let a second import start on top of it.
+   */
+  function requestClose() {
+    if (!importing) handleClose()
+  }
+
   function handleClose() {
     setShowImportModal(false)
     setStep(1)
@@ -752,6 +760,9 @@ export default function ImportModal() {
           await Promise.all([envStore.fetchEnvironments(), envStore.fetchGlobalVariables()])
         }
         toast.success(t('toast.imported'))
+        if ((importResult?.data as { absoluteFiles?: boolean } | undefined)?.absoluteFiles) {
+          toast.warning(t('toast.absoluteFiles'))
+        }
         // Anything skipped or degraded is listed before the modal closes
         // (issue #276) — a toast cannot hold the list.
         const warnings = importResult?.data?.warnings ?? []
@@ -797,7 +808,8 @@ export default function ImportModal() {
   return (
     <Modal
       open={showImportModal}
-      onOpenChange={(o) => !o && handleClose()}
+      onOpenChange={(o) => !o && requestClose()}
+      preventClose={importing}
       title={t('import.title')}
       testId="import-modal"
     >
@@ -830,8 +842,9 @@ export default function ImportModal() {
           <button
             type="button"
             aria-label={t('a11y.closeDialog')}
-            onClick={handleClose}
-            className="cursor-pointer p-1 text-[1.57rem] leading-none text-[var(--hint)] hover:text-[var(--text)]"
+            onClick={requestClose}
+            disabled={importing}
+            className="cursor-pointer p-1 text-[1.57rem] leading-none text-[var(--hint)] hover:text-[var(--text)] disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: 'transparent', border: 'none' }}
           >
             <X size={18} aria-hidden="true" />
@@ -1302,15 +1315,17 @@ export default function ImportModal() {
               <button
                 type="button"
                 onClick={handleBack}
-                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
+                disabled={importing}
+                className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {'\u2190'} Back
               </button>
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={handleClose}
-                  className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
+                  onClick={requestClose}
+                  disabled={importing}
+                  className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {t('import.cancel')}
                 </button>

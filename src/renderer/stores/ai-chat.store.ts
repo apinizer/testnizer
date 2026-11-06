@@ -17,6 +17,7 @@ import {
 } from '../lib/persist-helpers'
 import { makeId } from '../lib/utils'
 import { markActiveTabDirty } from '../lib/mark-dirty'
+import { withoutTab } from '../lib/tab-slice'
 import {
   aiKeyScope,
   canCarryAiKey,
@@ -739,6 +740,11 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
         return
       }
       const messageId = result.data.messageId
+      // The tab closed before main answered: its stream has nowhere to go.
+      if (!readAiTab(tabKey)) {
+        void window.api?.aiChat?.cancel?.(messageId)?.catch?.(() => {})
+        return
+      }
       patchAiTab(tabKey, () => ({ pendingMessageId: messageId }))
     } catch (e) {
       fail((e as Error).message)
@@ -817,8 +823,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     const state = get()
     const tabStates = new Map(state._tabStates)
 
-    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
-    tabStates.set(currentKey, extractState(state))
+    if (state._currentTabId) tabStates.set(state._currentTabId, extractState(state))
 
     // Backfill fields added after a snapshot was cached (e.g. customHeaders).
     const target = { ...emptyTabState(), ...(tabStates.get(tabId) ?? {}) }
@@ -842,10 +847,8 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
     if (pending) void window.api?.aiChat?.cancel?.(pending)?.catch?.(() => {})
     // An unsaved AI tab's conversations go with it (a saved request keeps its own).
     if (state._tabStates.has(tabId) || state._currentTabId === tabId) dropTabConversations(tabId)
-    const tabStates = new Map(state._tabStates)
-    tabStates.delete(tabId)
     tabLocalKeys.delete(tabId)
-    set({ _tabStates: tabStates })
+    set(withoutTab<TabAiChatState>(state, tabId))
   },
 }))
 

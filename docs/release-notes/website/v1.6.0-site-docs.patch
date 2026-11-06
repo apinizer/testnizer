@@ -138,7 +138,7 @@ index 894fb4f..6478361 100644
 +travel with exports and Git. Reference a secret variable (`{{secretVar}}`) instead
 +of typing the real value there.
 diff --git a/website/src/content/docs/faq.md b/website/src/content/docs/faq.md
-index 0c2d350..bfff52b 100644
+index 0c2d350..699c582 100644
 --- a/website/src/content/docs/faq.md
 +++ b/website/src/content/docs/faq.md
 @@ -8,14 +8,20 @@ section: Reference
@@ -202,9 +202,19 @@ index 0c2d350..bfff52b 100644
  
  The certificate files themselves are never copied into the application data
  directory — Testnizer reads them from the path you specify at the time each
-@@ -177,9 +184,9 @@ HTTP or SOCKS5 proxy address that applies to all requests made by Testnizer.
- Per-request proxy overrides are not currently supported; the proxy setting is
- global.
+@@ -172,18 +179,19 @@ For details on all CLI options, see [CLI and automation](/docs/cli-and-automatio
+ 
+ ## Does Testnizer support proxy servers?
+ 
+-Yes. Configure a proxy from **Settings → Network → Proxy**. You can set an
+-HTTP or SOCKS5 proxy address that applies to all requests made by Testnizer.
+-Per-request proxy overrides are not currently supported; the proxy setting is
+-global.
++Yes. Set an HTTP proxy in **Settings → Network → Proxy**, or for one project in its
++**Project Settings**. It applies to HTTP, SOAP, GraphQL (subscriptions included),
++WebSocket, Socket.IO, MQTT and SSE. Hosts in **Bypass for hosts** go out directly.
++SOCKS proxies are not supported yet, and a request set to use one fails with a message.
++gRPC, MCP and AI Chat do not use this setting.
  
 -Proxy authentication (username and password) is supported. The credentials are
 -stored in `electron-store` and are not written to collection or environment
@@ -213,8 +223,15 @@ index 0c2d350..bfff52b 100644
 +encrypted with the OS keychain (`safeStorage`) and is not written to collection or
 +environment files.
  
- The system proxy configured in macOS Network Preferences or Windows Internet
- Options is respected by default unless you set a custom proxy in Testnizer
+-The system proxy configured in macOS Network Preferences or Windows Internet
+-Options is respected by default unless you set a custom proxy in Testnizer
+-settings.
++With **Use system proxy**, HTTP requests read the `HTTP_PROXY`, `HTTPS_PROXY` and
++`NO_PROXY` environment variables, not the macOS or Windows network settings. WebSocket,
++Socket.IO, MQTT, SSE and GraphQL subscriptions use only a custom proxy.
+ 
+ ---
+ 
 diff --git a/website/src/content/docs/features.md b/website/src/content/docs/features.md
 index 94de665..cb075d5 100644
 --- a/website/src/content/docs/features.md
@@ -331,7 +348,7 @@ index 4b4e440..5b206a1 100644
 -and your collections come with it. (Encrypted secrets are tied to the OS
 -keychain, so those need re-entering on a new machine.)
 +- `testnizer.db` — workspaces, projects, environments, history, certificates (secret-type variable values, mock tokens and certificate passphrases are stored in it encrypted with the OS keychain)
-+- `settings.json` — UI preferences, keyboard shortcuts, theme (credential-named settings and AI Chat API keys are keychain-encrypted)
++- `settings.json` — UI preferences, keyboard shortcuts, theme (credential-named settings and AI Chat API keys are keychain-encrypted; where no keychain is available, those settings are stored without encryption and AI Chat API keys are not saved)
 +- `backups/` — copies of the database taken before an update (see below)
 +
 +The database is portable. Copy `testnizer.db` to another machine running
@@ -723,8 +740,55 @@ index 7242bc1..88899da 100644
 -  regardless of how many tabs are open.
 +- Reload, Force reload and Toggle DevTools come from the standard Electron
 +  **View** menu.
+diff --git a/website/src/content/docs/mock-server.md b/website/src/content/docs/mock-server.md
+index bb11d0b..96146d0 100644
+--- a/website/src/content/docs/mock-server.md
++++ b/website/src/content/docs/mock-server.md
+@@ -147,6 +147,8 @@ dynamic-value layer. Available bindings:
+ - Dynamic values: `{{$timestamp}}`, `{{$isoTimestamp}}`, `{{$randomUUID}}`,
+   `{{$randomInt}}`, `{{$randomInt(1,100)}}`, `{{$randomEmail}}`,
+   `{{$randomString}}`, `{{$randomString(16)}}`
++- Project variables: `{{name}}`. A secret variable stays as literal `{{name}}` text, so
++  a request to the mock cannot read it
+ 
+ Example body:
+ 
+@@ -382,14 +384,27 @@ it, then switch the proxy off and replay forever — no internet needed.
+ The Endpoints tab has two import buttons:
+ 
+ - **Import OpenAPI** — pick a JSON or YAML file. Testnizer dereferences
+-  `$ref`s and creates one endpoint per `paths.<path>.<method>`. Response
+-  bodies come from `examples` first, then `example`, then a sample
+-  generated from the schema.
+-- **Import Postman** — pick a Postman v2.x collection. Folders are walked
+-  recursively. Each saved example response becomes a mock response.
++  internal `$ref`s and creates one endpoint per `paths.<path>.<method>`.
++  Response bodies come from `examples` first, then `example`, then a sample
++  generated from the schema, including `allOf`, `oneOf` and `anyOf`.
++- **Import Postman** — pick a Postman v1, v2.x or v3 collection, in JSON or
++  YAML. Folders are walked recursively. Each saved example response becomes a
++  mock response.
++
++An endpoint binds the spec's server path too: with the server
++`https://api.example.com/v1`, `/pets` answers at `http://127.0.0.1:<port>/v1/pets`,
++so a client only changes its host. If the mock has its own base path, that part is
++not repeated.
+ 
+ `{{var}}` placeholders from Postman URLs are converted to `:var` path
+-params automatically.
++params automatically. A `{{baseUrl}}` at the start of a URL is left out with
++whatever path it holds, since its value belongs to an environment.
++
++Anything an import had to leave out is listed in the message it ends with.
++
++**Create mock server** on a folder in the APIs panel does the same from saved
++requests: each saved example becomes a response, and a request with none answers an
++empty `200`.
+ 
+ ## Live request log
+ 
 diff --git a/website/src/content/docs/protocols.md b/website/src/content/docs/protocols.md
-index e439eb2..74d0b7b 100644
+index e439eb2..5772309 100644
 --- a/website/src/content/docs/protocols.md
 +++ b/website/src/content/docs/protocols.md
 @@ -1,6 +1,6 @@
@@ -752,7 +816,7 @@ index e439eb2..74d0b7b 100644
  | AI Chat | full | provider-specific HTTP | 14 providers + custom URL, streaming |
  
  ## HTTP
-@@ -56,8 +57,10 @@ Encryption). [WS-Security guide →](/docs/ws-security)
+@@ -56,16 +57,18 @@ Encryption). [WS-Security guide →](/docs/ws-security)
  
  ## WebSocket
  
@@ -765,6 +829,17 @@ index e439eb2..74d0b7b 100644
  
  [Full reference →](/docs/protocols/websocket)
  
+ ## GraphQL
+ 
+-Query, mutation, and subscription support. Testnizer detects whether your
+-endpoint speaks HTTP-only or supports `graphql-ws` (subscription transport)
+-and routes accordingly.
++Query, mutation, and subscription support. Queries and mutations go over HTTP,
++subscriptions over a WebSocket connection (`graphql-transport-ws`, or the older
++`graphql-ws`).
+ 
+ Schema introspection runs on demand and populates a searchable type browser
+ on the right of the request editor.
 @@ -105,21 +108,36 @@ displays events.
  Workflow:
  
@@ -821,8 +896,65 @@ index e439eb2..74d0b7b 100644
  
  [Full reference →](/docs/protocols/mcp)
  
+diff --git a/website/src/content/docs/protocols/graphql.md b/website/src/content/docs/protocols/graphql.md
+index d9bde12..7691634 100644
+--- a/website/src/content/docs/protocols/graphql.md
++++ b/website/src/content/docs/protocols/graphql.md
+@@ -5,11 +5,10 @@ order: 4
+ section: Protocols
+ ---
+ 
+-Testnizer's GraphQL editor understands the difference between HTTP-only
+-endpoints and servers that support the `graphql-ws` subscription transport,
+-and routes each operation type accordingly.
++Testnizer's GraphQL editor sends queries and mutations over HTTP and opens a
++WebSocket connection for subscriptions.
+ 
+-> **Multi-tab:** URL, query, variables, headers, and response are stored per-tab. The introspected schema is **shared** across all tabs pointing at the same endpoint — introspect once, use everywhere.
++> **Multi-tab:** URL, query, variables, headers, response and the introspected schema are stored per tab. Introspect in each tab that needs the schema; restart clears it.
+ 
+ ## Creating a GraphQL request
+ 
+@@ -56,7 +55,7 @@ query GetUser($id: ID!) {
+ Hit **Send** (or `Ctrl+Enter`). Testnizer detects the operation type:
+ 
+ - `query` / `mutation` → sent as HTTP POST (standard JSON body)
+-- `subscription` → connection upgraded to `graphql-ws` WebSocket transport
++- `subscription` → opened over a WebSocket connection (see [Subscriptions](#subscriptions))
+ 
+ You can have multiple operations in the editor. Use the operation name dropdown
+ in the toolbar to pick which one runs.
+@@ -104,19 +103,18 @@ schema SDL file directly:
+ 
+ ## Subscriptions
+ 
+-Testnizer automatically upgrades to a WebSocket connection when the operation
+-is a `subscription`. The connection uses the `graphql-ws` protocol
+-(`Sec-WebSocket-Protocol: graphql-ws`).
++Testnizer opens a WebSocket connection when the operation is a `subscription`. It uses
++the `graphql-transport-ws` protocol and, when a server refuses that, tries the older
++`graphql-ws` once. **Connection init payload** sets what is sent when the connection
++opens, which is where many servers expect a token. Use a `{{variable}}` for it.
+ 
+-The subscription timeline behaves the same as the WebSocket editor — events
+-appear as they arrive, you can pause, filter, and inspect individual payloads.
++Events appear as they arrive. The log keeps the latest 1000 and shows how many it dropped.
+ 
+-A **Stop** button appears while the subscription is active. Clicking it sends a
+-`complete` message and closes the WebSocket. The connection also closes when you
+-close the tab.
++A **Stop** button appears while the subscription is active. It ends the subscription and
++closes the connection. The connection also closes when you close the tab or leave the
++project.
+ 
+-For servers that use the older `subscriptions-transport-ws` protocol, toggle
+-the **Legacy WS** option in the request settings (gear icon).
++A subscription uses the proxy setting, like the other requests. If a document holds several named operations, an **Operation** select appears and the chosen one runs.
+ 
+ ## HTTP details
+ 
 diff --git a/website/src/content/docs/protocols/http.md b/website/src/content/docs/protocols/http.md
-index c188906..908becf 100644
+index c188906..cb133f0 100644
 --- a/website/src/content/docs/protocols/http.md
 +++ b/website/src/content/docs/protocols/http.md
 @@ -33,6 +33,19 @@ Query parameters can be entered:
@@ -845,24 +977,27 @@ index c188906..908becf 100644
  ## Auth tab
  
  | Scheme | What Testnizer does |
-@@ -81,6 +94,16 @@ A Monaco editor with a content-type chooser in the toolbar:
+@@ -81,6 +94,19 @@ A Monaco editor with a content-type chooser in the toolbar:
  File rows open the native OS file picker; the file name and MIME type are
  sent in the part headers.
  
 +A file path that is **relative** (for example `data/upload.json`, as in an
 +imported Postman collection) is read from the project's **Working directory**:
 +set it in **Project Settings → General → Working directory** to an absolute
-+folder on this computer. An absolute path is used as it is. If a request has a
++folder on this computer. A file outside that folder, an absolute path included, is read
++only if you picked it yourself in the Body tab or turned on **Read files outside the
++working directory** in the same settings page, so an imported project cannot upload
++any file from your computer. If a request has a
 +relative path and no working directory is set, Send fails with a message that
 +names the setting. The working directory is a per-computer setting: it is not
 +saved with the project or pushed to Git, because a folder on one machine means
-+nothing on another. It applies to Send, the Collection Runner, Test Suites and
++nothing on another. The other setting stays on this computer too. Both apply to Send, the Collection Runner, Test Suites and
 +scheduled runs alike.
 +
  ### x-www-form-urlencoded
  
  URL-encoded key-value table. Values are percent-encoded before sending.
-@@ -89,7 +112,8 @@ URL-encoded key-value table. Values are percent-encoded before sending.
+@@ -89,7 +115,8 @@ URL-encoded key-value table. Values are percent-encoded before sending.
  
  The entire request body is a single file from disk. Testnizer sets
  `Content-Type` based on the file extension (override it in the Headers tab
@@ -872,7 +1007,7 @@ index c188906..908becf 100644
  
  ## Pre-request script
  
-@@ -140,7 +164,7 @@ are persisted to history.
+@@ -140,7 +167,7 @@ are persisted to history.
  
  | Tab | Contents |
  |---|---|
@@ -881,7 +1016,7 @@ index c188906..908becf 100644
  | **Headers** | Response header table with search |
  | **Cookies** | Cookies set by the response, with domain/path/flags |
  | **Console** | Raw request + raw response (useful when debugging redirects or unexpected headers) |
-@@ -174,18 +198,60 @@ own column and stay selectable for copying.
+@@ -174,18 +201,60 @@ own column and stay selectable for copying.
  
  ## Code snippet generation
  
@@ -1767,10 +1902,30 @@ index d63547c..08138ec 100644
 +The same rule applies to Socket.IO and MQTT tabs. Reconnect when you come back; the
 +composer, headers and saved messages are preserved.
 diff --git a/website/src/content/docs/scripts.md b/website/src/content/docs/scripts.md
-index 07e23b1..3340ad0 100644
+index 07e23b1..884649c 100644
 --- a/website/src/content/docs/scripts.md
 +++ b/website/src/content/docs/scripts.md
-@@ -67,9 +67,10 @@ const chai       = require('chai')               // the Chai assertion library
+@@ -23,8 +23,17 @@ Folders and the project can carry scripts too — see
+ 
+ ## The script runtime
+ 
+-Scripts run in a JavaScript sandbox. These globals are available **in both Send
+-and the Collection Runner** (they behave identically):
++Scripts are not sandboxed: a script can do what Testnizer itself can do on your
++computer, as a script in Postman or Bruno's Developer Mode can. So a project that
++came from outside (Clone from Git, a project file, or a collection whose import added
++scripts) runs no script until you allow it on this computer. You are asked the first
++time a script would run, and **Project Settings → General** shows the state. Scheduled
++runs never ask: their scripted steps fail with a message until you allow the project.
++Pulling later does not ask again, so allow a project only if you trust where it comes
++from.
++
++These globals are available **in both Send and the Collection Runner** (they behave
++identically):
+ 
+ | Global | What it is |
+ |---|---|
+@@ -67,9 +76,10 @@ const chai       = require('chai')               // the Chai assertion library
  ### pm scopes — environment / globals / collectionVariables / variables
  
  Each scope exposes the same setter/getter surface. `environment` is the active
@@ -1784,7 +1939,7 @@ index 07e23b1..3340ad0 100644
  
  ```js
  pm.environment.get('baseUrl')          // → string | undefined
-@@ -88,11 +89,15 @@ The same methods exist on `pm.globals`, `pm.collectionVariables`, and
+@@ -88,11 +98,15 @@ The same methods exist on `pm.globals`, `pm.collectionVariables`, and
  pm.globals.set('apiVersion', 'v2')
  pm.collectionVariables.set('nextPageToken', body.nextPage)
  
@@ -1801,7 +1956,7 @@ index 07e23b1..3340ad0 100644
  Writes from a **pre-request** script are visible to the request URL, headers,
  and body. Writes from a **test** script are **persisted** to the matching scope
  (Postman's "Keep variable values"), so a token captured in one request is
-@@ -149,6 +154,9 @@ pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token })
+@@ -149,6 +163,9 @@ pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token })
  
  ### pm.response (tests only)
  
@@ -1811,7 +1966,7 @@ index 07e23b1..3340ad0 100644
  The full Postman/Newman response surface:
  
  ```js
-@@ -205,6 +213,20 @@ pm.test('user has id and email', function () {
+@@ -205,6 +222,20 @@ pm.test('user has id and email', function () {
  })
  ```
  
@@ -1832,7 +1987,7 @@ index 07e23b1..3340ad0 100644
  The **complete Chai BDD API** ([chaijs.com/api/bdd](https://www.chaijs.com/api/bdd/))
  is available, including:
  
-@@ -323,6 +345,29 @@ Two scoping rules, identical on Send and Run:
+@@ -323,6 +354,29 @@ Two scoping rules, identical on Send and Run:
  - It attaches **no project client certificate** (mTLS) — see
    [Certificates](/docs/certificates).
  
@@ -1862,7 +2017,7 @@ index 07e23b1..3340ad0 100644
  ### pm.execution
  
  ```js
-@@ -373,15 +418,23 @@ wired into the same runtime.
+@@ -373,15 +427,23 @@ wired into the same runtime.
  
  - **`insomnia.response.status` is the NUMERIC status code** (e.g. `200`), not the
    reason text — the reverse of `pm.response.status`.
@@ -1890,7 +2045,7 @@ index 07e23b1..3340ad0 100644
  ### bru / req / res
  
  Bruno's API is **getter-based**, not a `pm` alias:
-@@ -444,6 +497,42 @@ manual Stop. In the results, script rows appear with a **SCRIPT** chip, and a
+@@ -444,6 +506,42 @@ manual Stop. In the results, script rows appear with a **SCRIPT** chip, and a
  script that threw is reported as an error. See
  [Setup, Flow and Teardown](/docs/cli-and-automation#setup-flow-and-teardown).
  
@@ -2074,7 +2229,7 @@ index 3a6c65c..7407d7a 100644
 +dışa aktarımlarla ve Git ile taşınır. Oraya gerçek değeri yazmak yerine bir sır
 +değişkene (`{{secretVar}}`) başvurun.
 diff --git a/website/src/content/docs/tr/faq.md b/website/src/content/docs/tr/faq.md
-index 7d9d302..0e7de56 100644
+index 7d9d302..4d3b135 100644
 --- a/website/src/content/docs/tr/faq.md
 +++ b/website/src/content/docs/tr/faq.md
 @@ -7,16 +7,22 @@ section: Referans
@@ -2142,9 +2297,19 @@ index 7d9d302..0e7de56 100644
  
  Sertifika dosyalarının kendisi asla uygulama veri dizinine kopyalanmaz —
  Testnizer onları her istek yapıldığında belirttiğiniz yoldan okur.
-@@ -174,8 +181,9 @@ tarafından yapılan tüm isteklere uygulanan HTTP veya SOCKS5 proxy adresi
- belirleyebilirsiniz. İstek başına proxy geçersiz kılmaları şu anda desteklenmez;
- proxy ayarı globaldir.
+@@ -169,17 +176,19 @@ Tüm CLI seçenekleri için [CLI ve otomasyon](/tr/docs/cli-and-automation) böl
+ 
+ ## Testnizer proxy sunucuları destekliyor mu?
+ 
+-Evet. **Ayarlar → Ağ → Proxy** bölümünden bir proxy yapılandırın. Testnizer
+-tarafından yapılan tüm isteklere uygulanan HTTP veya SOCKS5 proxy adresi
+-belirleyebilirsiniz. İstek başına proxy geçersiz kılmaları şu anda desteklenmez;
+-proxy ayarı globaldir.
++Evet. **Ayarlar → Ağ → Proxy** bölümünden ya da tek proje için **Proje Ayarları**'ndan bir
++HTTP proxy ayarlayın. HTTP, SOAP, GraphQL (abonelikler dahil), WebSocket, Socket.IO, MQTT ve
++SSE için geçerlidir. **Bu host'lar için bypass** listesindeki host'lar doğrudan çıkar. SOCKS
++proxy henüz desteklenmiyor; SOCKS ayarlı istek mesajla başarısız olur. gRPC, MCP ve AI Chat
++bu ayarı kullanmaz.
  
 -Proxy kimlik doğrulama (kullanıcı adı ve parola) desteklenir. Kimlik bilgileri
 -`electron-store`'da saklanır ve koleksiyon veya ortam dosyalarına yazılmaz.
@@ -2152,8 +2317,15 @@ index 7d9d302..0e7de56 100644
 +sistemi anahtarlığıyla (`safeStorage`) şifrelenir ve koleksiyon veya ortam
 +dosyalarına yazılmaz.
  
- macOS Ağ Tercihleri'nde veya Windows İnternet Seçenekleri'nde yapılandırılan
- sistem proxy'si, Testnizer ayarlarında özel bir proxy belirlemediğiniz sürece
+-macOS Ağ Tercihleri'nde veya Windows İnternet Seçenekleri'nde yapılandırılan
+-sistem proxy'si, Testnizer ayarlarında özel bir proxy belirlemediğiniz sürece
+-varsayılan olarak dikkate alınır.
++**Sistem proxy'sini kullan** seçiliyse HTTP istekleri macOS ya da Windows ağ ayarlarını değil
++`HTTP_PROXY`, `HTTPS_PROXY` ve `NO_PROXY` ortam değişkenlerini okur. WebSocket, Socket.IO, MQTT,
++SSE ve GraphQL abonelikleri yalnız özel proxy kullanır.
+ 
+ ---
+ 
 diff --git a/website/src/content/docs/tr/features.md b/website/src/content/docs/tr/features.md
 index cec208f..37b4cc0 100644
 --- a/website/src/content/docs/tr/features.md
@@ -2266,7 +2438,7 @@ index 043a49a..efd5581 100644
 -- `secrets/` — token'lar ve parola ifadeleri için işletim sistemi anahtarlığıyla şifrelenmiş bloblar
 -- `settings.json` — arayüz tercihleri, klavye kısayolları, tema
 +- `testnizer.db` — çalışma alanları, projeler, ortamlar, geçmiş, sertifikalar (gizli (secret) türündeki değişken değerleri, mock token'ları ve sertifika parolaları içinde, işletim sistemi anahtarlığıyla şifrelenmiş olarak saklanır)
-+- `settings.json` — arayüz tercihleri, klavye kısayolları, tema (kimlik bilgisi adı taşıyan ayarlar ve Yapay Zeka Sohbet API anahtarları anahtarlıkla şifrelenir)
++- `settings.json` — arayüz tercihleri, klavye kısayolları, tema (kimlik bilgisi adı taşıyan ayarlar ve Yapay Zeka Sohbet API anahtarları anahtarlıkla şifrelenir; anahtarlık yoksa bu ayarlar şifrelenmeden saklanır, Yapay Zeka Sohbet API anahtarları ise kaydedilmez)
 +- `backups/` — güncellemeden önce alınan veritabanı kopyaları (aşağıya bakın)
  
 -Veritabanı taşınabilirdir. `data.db`'yi Testnizer çalışan başka bir makineye kopyalayın
@@ -2664,8 +2836,54 @@ index d707bc1..72eb3c3 100644
 -  her zaman son sekmeyi etkinleştirir.
 +- Yeniden yükle, Zorla yeniden yükle ve DevTools'u aç/kapat standart Electron
 +  **View** menüsünden gelir.
+diff --git a/website/src/content/docs/tr/mock-server.md b/website/src/content/docs/tr/mock-server.md
+index 98f1571..a834366 100644
+--- a/website/src/content/docs/tr/mock-server.md
++++ b/website/src/content/docs/tr/mock-server.md
+@@ -147,6 +147,8 @@ katmanından geçer. Mevcut bağlamlar:
+ - Dinamik değerler: `{{$timestamp}}`, `{{$isoTimestamp}}`,
+   `{{$randomUUID}}`, `{{$randomInt}}`, `{{$randomInt(1,100)}}`,
+   `{{$randomEmail}}`, `{{$randomString}}`, `{{$randomString(16)}}`
++- Proje değişkenleri: `{{ad}}`. Secret değişken düz `{{ad}}` metni olarak kalır, yani mock'a
++  gelen bir istek onu okuyamaz
+ 
+ Örnek body:
+ 
+@@ -382,15 +384,27 @@ sonra proxy'yi kapatıp sonsuz tekrar oynatın — internete ihtiyaç yok.
+ 
+ Endpoints sekmesinde iki içe aktarma butonu vardır:
+ 
+-- **Import OpenAPI** — JSON veya YAML dosya seçin. Testnizer `$ref`'leri
++- **Import OpenAPI** — JSON veya YAML dosya seçin. Testnizer iç `$ref`'leri
+   dereference eder ve `paths.<path>.<method>` başına bir endpoint oluşturur.
+   Yanıt gövdeleri önce `examples`'tan, sonra `example`'dan, son olarak
+-  schema'dan üretilen örnekten gelir.
+-- **Import Postman** — Postman v2.x koleksiyon dosyası seçin. Folder'lar
+-  recursive yürünür. Her saved example response bir mock response olur.
++  schema'dan üretilen örnekten gelir; `allOf`, `oneOf` ve `anyOf` da okunur.
++- **Import Postman** — JSON veya YAML biçiminde Postman v1, v2.x ya da v3
++  koleksiyon dosyası seçin. Folder'lar recursive yürünür. Her saved example
++  response bir mock response olur.
++
++Endpoint, belgedeki sunucunun yolunu da bağlar: sunucu
++`https://api.example.com/v1` ise `/pets` şu adreste yanıt verir:
++`http://127.0.0.1:<port>/v1/pets`. Böylece istemcide yalnız host değişir. Mock'un
++kendi base path'i varsa o kısım tekrarlanmaz.
+ 
+ Postman URL'lerindeki `{{var}}` placeholder'ları otomatik olarak `:var`
+-path param'lerine dönüştürülür.
++path param'lerine dönüştürülür. URL'nin başındaki `{{baseUrl}}`, içerdiği yolla
++birlikte dışarıda kalır; çünkü değeri bir ortama aittir.
++
++İçe aktarmanın dışarıda bıraktığı her şey, bitiş mesajında listelenir.
++
++APIs panelindeki bir klasörde **Create mock server** aynısını kayıtlı isteklerden
++yapar: her kayıtlı örnek bir yanıt olur, örneği olmayan istek boş `200` döner.
+ 
+ ## Canlı istek log'u
+ 
 diff --git a/website/src/content/docs/tr/protocols.md b/website/src/content/docs/tr/protocols.md
-index ce19098..edcda9d 100644
+index ce19098..9fa78e9 100644
 --- a/website/src/content/docs/tr/protocols.md
 +++ b/website/src/content/docs/tr/protocols.md
 @@ -1,6 +1,6 @@
@@ -2693,7 +2911,7 @@ index ce19098..edcda9d 100644
  | AI Chat | tam | sağlayıcıya özgü HTTP | 14 sağlayıcı + özel URL, streaming |
  
  ## HTTP
-@@ -55,8 +56,11 @@ WS-Security yerleşik olarak gelir (UsernameToken, Timestamp, XML İmzası, XML
+@@ -55,16 +56,18 @@ WS-Security yerleşik olarak gelir (UsernameToken, Timestamp, XML İmzası, XML
  
  ## WebSocket
  
@@ -2707,7 +2925,17 @@ index ce19098..edcda9d 100644
  
  [Tam referans →](/tr/docs/protocols/websocket)
  
-@@ -103,21 +107,37 @@ HTTP long-polling fallback ile müzakere eder, renderer yalnızca event'leri gö
+ ## GraphQL
+ 
+-Sorgu, mutasyon ve abonelik desteği. Testnizer, uç noktanızın yalnızca HTTP mi
+-yoksa `graphql-ws` (abonelik transport) destekleyip desteklemediğini algılar
+-ve buna göre yönlendirir.
++Query, mutation ve subscription desteği. Sorgu ve mutasyonlar HTTP ile, abonelikler
++WebSocket bağlantısıyla (`graphql-transport-ws` ya da eski `graphql-ws`) gider.
+ 
+ Şema içgözlemi isteğe bağlı olarak çalıştırılır ve istek editörünün sağ tarafında
+ aranabilir bir tür tarayıcısını doldurur.
+@@ -103,21 +106,37 @@ HTTP long-polling fallback ile müzakere eder, renderer yalnızca event'leri gö
  Akış:
  
  - URL'yi (örn. `http://localhost:3000`), namespace'i (`/` veya `/admin`) ve
@@ -2752,7 +2980,7 @@ index ce19098..edcda9d 100644
  
  Üç transport:
  
-@@ -127,9 +147,11 @@ rolün aynısı. Resmi `@modelcontextprotocol/sdk` üzerine kuruludur.
+@@ -127,9 +146,11 @@ rolün aynısı. Resmi `@modelcontextprotocol/sdk` üzerine kuruludur.
  - **stdio** — Testnizer sunucuyu yerel bir alt süreç olarak başlatır. Tam komutu
    girin (örn. `npx @modelcontextprotocol/server-everything`)
  
@@ -2767,8 +2995,63 @@ index ce19098..edcda9d 100644
  
  [Tam referans →](/tr/docs/protocols/mcp)
  
+diff --git a/website/src/content/docs/tr/protocols/graphql.md b/website/src/content/docs/tr/protocols/graphql.md
+index 94df85a..bd5f1f8 100644
+--- a/website/src/content/docs/tr/protocols/graphql.md
++++ b/website/src/content/docs/tr/protocols/graphql.md
+@@ -5,11 +5,10 @@ order: 4
+ section: Protokoller
+ ---
+ 
+-Testnizer'ın GraphQL editörü, yalnızca HTTP olan uç noktalar ile `graphql-ws`
+-abonelik transportunu destekleyen sunucular arasındaki farkı anlar ve her
+-operasyon türünü buna göre yönlendirir.
++Testnizer'ın GraphQL editörü sorgu ve mutasyonları HTTP ile gönderir, abonelikler için
++WebSocket bağlantısı açar.
+ 
+-> **Çoklu sekme:** URL, sorgu, değişkenler, header'lar ve yanıt sekme bazında saklanır. İçgözlenen şema, aynı uç noktayı işaret eden tüm sekmeler arasında **paylaşılır** — bir kez içgözleyin, her yerde kullanın.
++> **Çoklu sekme:** URL, sorgu, değişkenler, header'lar, yanıt ve içgözlenen şema sekme bazında saklanır. Şemaya ihtiyaç duyan her sekmede içgözlem yapın; yeniden başlatınca şema temizlenir.
+ 
+ ## GraphQL isteği oluşturma
+ 
+@@ -56,7 +55,7 @@ query GetUser($id: ID!) {
+ **Gönder**'e tıklayın (veya `Ctrl+Enter`). Testnizer operasyon türünü algılar:
+ 
+ - `query` / `mutation` → HTTP POST olarak gönderilir (standart JSON gövdesi)
+-- `subscription` → bağlantı `graphql-ws` WebSocket transportuna yükseltilir
++- `subscription` → WebSocket bağlantısı üzerinden açılır (bkz. [Abonelikler](#abonelikler))
+ 
+ Editörde birden fazla operasyon olabilir. Hangisinin çalışacağını seçmek için
+ araç çubuğundaki operasyon adı açılır menüsünü kullanın.
+@@ -105,18 +104,17 @@ doğrudan yapıştırabilirsiniz:
+ 
+ ## Abonelikler
+ 
+-Operasyon `subscription` olduğunda Testnizer otomatik olarak bir WebSocket
+-bağlantısına yükseltir. Bağlantı `graphql-ws` protokolünü kullanır
+-(`Sec-WebSocket-Protocol: graphql-ws`).
++Operasyon `subscription` olduğunda Testnizer bir WebSocket bağlantısı açar.
++`graphql-transport-ws` protokolünü kullanır, sunucu bunu reddederse eski `graphql-ws`'i bir
++kez dener. **Bağlantı başlatma içeriği**, bağlantı açılırken gönderilen veridir; birçok
++sunucu token'ı burada bekler. Token için `{{değişken}}` kullanın.
+ 
+-Abonelik zaman çizelgesi WebSocket editörüyle aynı şekilde davranır — olaylar
+-geldikçe görünür, duraklatabilir, filtreleyebilir ve bireysel yükleri inceleyebilirsiniz.
++Olaylar geldikçe görünür. Günlük son 1000 olayı tutar ve kaçının düştüğünü gösterir.
+ 
+-Abonelik etkinken bir **Durdur** düğmesi görünür. Tıklamak bir `complete` mesajı
+-gönderir ve WebSocket'i kapatır. Sekmeyi kapattığınızda da bağlantı kapanır.
++Abonelik etkinken bir **Durdur** düğmesi görünür. Aboneliği bitirir ve bağlantıyı kapatır.
++Sekmeyi kapattığınızda ya da projeden çıktığınızda da bağlantı kapanır.
+ 
+-Eski `subscriptions-transport-ws` protokolünü kullanan sunucular için istek
+-ayarlarındaki (dişli simgesi) **Legacy WS** seçeneğini etkinleştirin.
++Abonelik de diğer istekler gibi proxy ayarını kullanır. Belgede birden çok adlandırılmış işlem varsa **İşlem** seçimi görünür ve seçilen işlem çalışır.
+ 
+ ## HTTP ayrıntıları
+ 
 diff --git a/website/src/content/docs/tr/protocols/http.md b/website/src/content/docs/tr/protocols/http.md
-index c765042..0ef46b6 100644
+index c765042..f9b3d83 100644
 --- a/website/src/content/docs/tr/protocols/http.md
 +++ b/website/src/content/docs/tr/protocols/http.md
 @@ -32,6 +32,20 @@ Sorgu parametreleri şu şekillerde girilebilir:
@@ -2792,23 +3075,27 @@ index c765042..0ef46b6 100644
  ## Auth sekmesi
  
  | Şema | Testnizer'ın yaptığı |
-@@ -80,6 +94,15 @@ Araç çubuğunda content-type seçici bulunan Monaco editörü:
+@@ -80,6 +94,19 @@ Araç çubuğunda content-type seçici bulunan Monaco editörü:
  Dosya satırları yerel işletim sistemi dosya seçiciyi açar; dosya adı ve MIME türü
  parça header'larında gönderilir.
  
 +**Göreli** bir dosya yolu (örneğin içe aktarılmış bir Postman koleksiyonundaki
 +`data/upload.json`) projenin **Çalışma dizini**nden okunur: bunu **Proje Ayarları →
 +Genel → Çalışma dizini** altında bu bilgisayardaki mutlak bir klasöre ayarlayın.
-+Mutlak yol olduğu gibi kullanılır. İstekte göreli bir yol varsa ve çalışma dizini
++Bu klasörün dışındaki bir dosya (mutlak yol dahil) yalnız onu Body sekmesinde kendiniz
++seçtiyseniz ya da aynı sayfada **Çalışma dizini dışındaki dosyaları oku** açıksa okunur;
++böylece import edilen bir proje bilgisayarınızdaki herhangi bir dosyayı yükleyemez.
++İstekte göreli bir yol varsa ve çalışma dizini
 +ayarlı değilse Gönder, ayarın adını veren bir mesajla başarısız olur. Çalışma
 +dizini bilgisayara özgü bir ayardır: projeyle birlikte kaydedilmez ve Git'e
-+gönderilmez, çünkü bir makinedeki klasör başka bir makinede anlam taşımaz. Gönder,
-+Collection Runner, Test Suite'ler ve zamanlanmış çalıştırmaların hepsi için geçerlidir.
++gönderilmez, çünkü bir makinedeki klasör başka bir makinede anlam taşımaz. Diğer ayar da
++bu bilgisayarda kalır. İkisi de Gönder, Collection Runner, Test Suite'ler ve zamanlanmış
++çalıştırmaların hepsi için geçerlidir.
 +
  ### x-www-form-urlencoded
  
  URL-encoded anahtar-değer tablosu. Değerler gönderilmeden önce yüzde olarak kodlanır.
-@@ -87,7 +110,8 @@ URL-encoded anahtar-değer tablosu. Değerler gönderilmeden önce yüzde olarak
+@@ -87,7 +114,8 @@ URL-encoded anahtar-değer tablosu. Değerler gönderilmeden önce yüzde olarak
  ### binary
  
  Tüm istek gövdesi diskten tek bir dosyadır. Testnizer, dosya uzantısına göre
@@ -2818,7 +3105,7 @@ index c765042..0ef46b6 100644
  
  ## Ön istek scripti
  
-@@ -137,7 +161,7 @@ geçmişe kaydedilir.
+@@ -137,7 +165,7 @@ geçmişe kaydedilir.
  
  | Sekme | İçerik |
  |---|---|
@@ -2827,7 +3114,7 @@ index c765042..0ef46b6 100644
  | **Headers** | Arama özellikli yanıt header tablosu |
  | **Cookies** | Yanıt tarafından ayarlanan cookie'ler, domain/path/bayraklarıyla birlikte |
  | **Console** | Ham istek + ham yanıt (yönlendirmeleri veya beklenmeyen header'ları hata ayıklarken kullanışlı) |
-@@ -171,17 +195,61 @@ token'lar) kendi sütunlarında sarılır ve kopyalamak için seçilebilir kalı
+@@ -171,17 +199,61 @@ token'lar) kendi sütunlarında sarılır ve kopyalamak için seçilebilir kalı
  
  ## Kod snippet oluşturma
  
@@ -3788,10 +4075,29 @@ index b39a29c..c9c5089 100644
 +kural Socket.IO ve MQTT sekmeleri için de geçerlidir. Geri döndüğünüzde yeniden
 +bağlanın; oluşturucu, header'lar ve kayıtlı mesajlar korunur.
 diff --git a/website/src/content/docs/tr/scripts.md b/website/src/content/docs/tr/scripts.md
-index 9d32274..8d234da 100644
+index 9d32274..2ce3871 100644
 --- a/website/src/content/docs/tr/scripts.md
 +++ b/website/src/content/docs/tr/scripts.md
-@@ -68,9 +68,10 @@ const chai       = require('chai')               // Chai onay kütüphanesi
+@@ -23,8 +23,16 @@ Klasörler ve proje de betik taşıyabilir — aşağıdaki
+ 
+ ## Betik çalışma zamanı
+ 
+-Betikler bir JavaScript korumalı alanında (sandbox) çalışır. Bu globaller **hem
+-Send hem de Collection Runner'da** kullanılabilir (aynı şekilde davranırlar):
++Betikler sandbox'lı değildir: bir betik, Postman'deki ya da Bruno Developer Mode'daki
++gibi, Testnizer'ın bilgisayarınızda yapabildiği her şeyi yapabilir. Bu yüzden dışarıdan
++gelen bir proje (Git'ten klonlama, proje dosyası ya da import'u betik ekleyen bir
++koleksiyon), siz bu bilgisayarda izin verene kadar betik çalıştırmaz. Bir betik ilk kez
++çalışacağı zaman sorulur, durumu **Proje Ayarları → Genel** gösterir. Zamanlanmış
++çalıştırmalar sormaz: izin verene kadar betikli adımları mesajla başarısız olur. Sonraki
++Pull'lar yeniden sormaz, bu yüzden yalnız kaynağına güvendiğiniz projeye izin verin.
++
++Bu globaller **hem Send hem de Collection Runner'da** kullanılabilir (aynı şekilde
++davranırlar):
+ 
+ | Global | Nedir |
+ |---|---|
+@@ -68,9 +76,10 @@ const chai       = require('chai')               // Chai onay kütüphanesi
  ### pm kapsamları — environment / globals / collectionVariables / variables
  
  Her kapsam aynı setter/getter yüzeyini sunar. `environment` aktif ortamdır,
@@ -3805,7 +4111,7 @@ index 9d32274..8d234da 100644
  
  ```js
  pm.environment.get('baseUrl')          // → string | undefined
-@@ -89,11 +90,15 @@ bulunur:
+@@ -89,11 +98,15 @@ bulunur:
  pm.globals.set('apiVersion', 'v2')
  pm.collectionVariables.set('nextPageToken', body.nextPage)
  
@@ -3822,7 +4128,7 @@ index 9d32274..8d234da 100644
  **Ön istek** betiğinde yapılan yazmalar; istek URL'si, başlıkları ve gövdesinde
  görünür. **Test** betiğinde yapılan yazmalar ilgili kapsama **kalıcı** olur
  (Postman'in "Keep variable values" davranışı), böylece bir istekte yakalanan bir
-@@ -148,6 +153,10 @@ pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token })
+@@ -148,6 +161,10 @@ pm.request.headers.upsert({ key: 'Authorization', value: 'Bearer ' + token })
  
  ### pm.response (yalnızca test betiği)
  
@@ -3833,7 +4139,7 @@ index 9d32274..8d234da 100644
  Tam Postman/Newman yanıt yüzeyi:
  
  ```js
-@@ -204,6 +213,20 @@ pm.test('kullanıcının id ve e-postası var', function () {
+@@ -204,6 +221,20 @@ pm.test('kullanıcının id ve e-postası var', function () {
  })
  ```
  
@@ -3854,7 +4160,7 @@ index 9d32274..8d234da 100644
  **Eksiksiz Chai BDD API'si** ([chaijs.com/api/bdd](https://www.chaijs.com/api/bdd/))
  kullanılabilir; buna şunlar dahildir:
  
-@@ -322,6 +345,29 @@ Send ve Run'da birebir aynı olan iki kapsam kuralı:
+@@ -322,6 +353,29 @@ Send ve Run'da birebir aynı olan iki kapsam kuralı:
  - **Proje istemci sertifikası** (mTLS) eklemez — bkz.
    [Sertifikalar](/tr/docs/certificates).
  
@@ -3884,7 +4190,7 @@ index 9d32274..8d234da 100644
  ### pm.execution
  
  ```js
-@@ -365,7 +411,7 @@ data['userId']                             // geçerli yineleme veri satırı
+@@ -365,7 +419,7 @@ data['userId']                             // geçerli yineleme veri satırı
  ## Insomnia & Bruno
  
  **Insomnia** ve **Bruno**'dan dışa aktarılan betikler değişiklik gerektirmeden
@@ -3893,7 +4199,7 @@ index 9d32274..8d234da 100644
  
  ### insomnia.\*
  
-@@ -373,15 +419,23 @@ data['userId']                             // geçerli yineleme veri satırı
+@@ -373,15 +427,23 @@ data['userId']                             // geçerli yineleme veri satırı
  
  - **`insomnia.response.status` SAYISAL durum kodudur** (örn. `200`), sebep metni
    değil — `pm.response.status`'un tersi.
@@ -3921,7 +4227,7 @@ index 9d32274..8d234da 100644
  ### bru / req / res
  
  Bruno'nun API'si `pm` takma adı değil, **getter tabanlıdır**:
-@@ -445,6 +499,43 @@ da çalışır. Sonuçlarda betik satırları **SCRIPT** rozetiyle görünür ve
+@@ -445,6 +507,43 @@ da çalışır. Sonuçlarda betik satırları **SCRIPT** rozetiyle görünür ve
  fırlatan bir betik hata olarak raporlanır. Bkz.
  [Setup, Flow ve Teardown](/tr/docs/cli-and-automation#setup-flow-ve-teardown).
  
@@ -4481,7 +4787,7 @@ index 414387f..e340015 100644
  | WS-Security sign / encrypt | Online tools, or a separate desktop app | Built-in main process with xml-crypto + Node crypto |
  | Telemetry | On by default | None — and no opt-in either |
 diff --git a/website/src/pages/privacy.astro b/website/src/pages/privacy.astro
-index 71966c1..0ba8904 100644
+index 71966c1..03ef394 100644
 --- a/website/src/pages/privacy.astro
 +++ b/website/src/pages/privacy.astro
 @@ -14,7 +14,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
@@ -4505,6 +4811,15 @@ index 71966c1..0ba8904 100644
                  <li>Optional crash telemetry, <strong class="text-text">only</strong> if you supply a <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> environment variable (off by default). See Section 5.</li>
                </ol>
              </li>
+@@ -105,7 +105,7 @@ import BaseLayout from '../layouts/BaseLayout.astro'
+             <li>The auto-update version check (Section 4) — destination: GitHub.</li>
+             <li>Optional crash telemetry (Section 5) — destination: a Sentry instance <strong class="text-text">you</strong> configured.</li>
+           </ul>
+-          <p class="mt-2">That is the complete list. There is no other path.</p>
++          <p class="mt-2">That is the complete list. There is no other path. The <strong class="text-text">Report an issue or request a feature</strong> link only opens a GitHub page in your browser with the app version and operating system filled in. Nothing reaches GitHub unless you submit it.</p>
+         </div>
+ 
+         <!-- 3 -->
 @@ -124,10 +124,16 @@ import BaseLayout from '../layouts/BaseLayout.astro'
                </thead>
                <tbody class="divide-y divide-border">
@@ -4628,7 +4943,7 @@ index 924e163..c071552 100644
        </div>
      </div>
 diff --git a/website/src/pages/tr/privacy.astro b/website/src/pages/tr/privacy.astro
-index 3318bd1..0f4c8ae 100644
+index 3318bd1..b3eb4fa 100644
 --- a/website/src/pages/tr/privacy.astro
 +++ b/website/src/pages/tr/privacy.astro
 @@ -15,7 +15,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
@@ -4652,6 +4967,15 @@ index 3318bd1..0f4c8ae 100644
                  <li>İsteğe bağlı çökme telemetrisi, <strong class="text-text">yalnızca</strong> <code class="text-xs bg-bg-muted px-1 py-0.5 rounded">SENTRY_DSN</code> ortam değişkeni sağlarsanız (varsayılan olarak kapalı). Bkz. Bölüm 5.</li>
                </ol>
              </li>
+@@ -109,7 +109,7 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
+             <li>Otomatik güncelleme sürüm kontrolü (Bölüm 4) — hedef: GitHub.</li>
+             <li>İsteğe bağlı çökme telemetrisi (Bölüm 5) — hedef: <strong class="text-text">sizin</strong> yapılandırdığınız bir Sentry örneği.</li>
+           </ul>
+-          <p class="mt-2">Liste bundan ibarettir. Başka bir yol yoktur.</p>
++          <p class="mt-2">Liste bundan ibarettir. Başka bir yol yoktur. <strong class="text-text">Sorun bildir veya özellik iste</strong> bağlantısı yalnız tarayıcınızda sürüm ve işletim sistemi dolu bir GitHub sayfası açar. Siz göndermedikçe GitHub'a bir şey ulaşmaz.</p>
+         </div>
+ 
+         <!-- 3 -->
 @@ -128,10 +128,16 @@ import BaseLayout from '../../layouts/BaseLayout.astro'
                </thead>
                <tbody class="divide-y divide-border">

@@ -78,6 +78,7 @@ export async function readCollectionRunSummary(
 ): Promise<{ passed: number; failed: number }> {
   const surface = runnerSurface(page)
   const passedBtn = surface.getByTestId('runner-filter-passed')
+  // optional: two summary renderings (filter chips / plain text); both are asserted by the callers
   if (await passedBtn.isVisible().catch(() => false)) {
     const passedText = (await passedBtn.textContent()) ?? ''
     const failedText = (await surface.getByTestId('runner-filter-failed').textContent()) ?? ''

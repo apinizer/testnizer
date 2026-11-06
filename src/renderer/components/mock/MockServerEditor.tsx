@@ -38,6 +38,7 @@ import MockEditorHeader, { MockStartStopButton, MockUrlLine } from './MockEditor
 import { MockEditorTabButton } from '../mock-mcp/MockMcpEditorTabs'
 import { mockSdkBaseUrl, mockServerUrl } from './mock-http-tabs'
 import { bodyTypeLabel, bodyTypeOptions, showsHttpEndpointTools } from './mock-kind-ui'
+import { toastMockImportResult } from './mock-import-file'
 import { MockEndpointOpenInSse, MockSseHeaderButton } from './MockOpenInSse'
 import { MockEndpointOpenInHttp } from './MockOpenInHttp'
 import MockSseOptions, { MockSseBodyNotes } from './MockSseOptions'
@@ -307,39 +308,18 @@ function EndpointsTab({ serverId, kind }: { serverId: string; kind: MockServerKi
       const f = input.files?.[0]
       if (!f) return
       setImportStatus(t('mock.importing'))
-      const text = await f.text()
-      const result =
-        kind === 'openapi'
-          ? await importOpenApi(serverId, text)
-          : await importPostman(serverId, text)
-      setImportStatus(null)
-      if (!result) {
-        toast.error(t('mock.importFailed'))
-        return
+      try {
+        const text = await f.text()
+        toastMockImportResult(
+          kind === 'openapi'
+            ? await importOpenApi(serverId, text)
+            : await importPostman(serverId, text),
+        )
+      } catch (e) {
+        toast.error(`${t('mock.importFailed')}: ${e instanceof Error ? e.message : String(e)}`)
+      } finally {
+        setImportStatus(null)
       }
-      if (!result.ok && result.error) {
-        toast.error(`${t('mock.importFailed')}: ${result.error}`)
-        return
-      }
-      const n = result.warnings.length
-      const warn =
-        n > 0 ? ` (${formatCount(n, t('mock.warningCountOne'), t('mock.warningCount'))})` : ''
-      const endpoints = formatCount(
-        result.endpointsCreated,
-        t('mock.importEndpointCountOne'),
-        t('mock.importEndpointCount'),
-      )
-      const responses = formatCount(
-        result.responsesCreated,
-        t('mock.importResponseCountOne'),
-        t('mock.importResponseCount'),
-      )
-      toast.success(
-        t('mock.importDone')
-          .replace('{endpoints}', endpoints)
-          .replace('{responses}', responses)
-          .replace('{warnings}', warn),
-      )
     }
     input.click()
   }

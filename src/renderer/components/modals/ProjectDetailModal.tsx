@@ -87,6 +87,7 @@ const DEFAULT_SETTINGS: ProjectSettings = {
   sendPostmanToken: true,
   retainHeaders: false,
   workingDirectory: '',
+  readFilesOutsideWorkingDirectory: false,
   // Update
   autoCheckUpdates: true,
   autoDownloadUpdates: true,
@@ -575,6 +576,7 @@ export default function ProjectDetailModal() {
 
               {tab === 'general' && (
                 <GeneralPane
+                  projectId={activeProject.id}
                   settings={projSettings}
                   onChange={updateProjSettings}
                   appDefaults={appNet}

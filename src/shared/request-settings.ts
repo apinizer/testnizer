@@ -94,6 +94,27 @@ export function readRequestSettings(src: unknown): RequestSettings {
   return out
 }
 
+/**
+ * A settings-bearing JSON column with `critical` set or removed, every other
+ * key kept (issue #315). Off removes the key: it is written only when true.
+ * A column that is not a JSON object throws — a row is never overwritten with
+ * just the flag. The message leaves the column out: it can hold credentials,
+ * and `JSON.parse` quotes its input.
+ */
+export function withCriticalFlag(json: string | null | undefined, critical: boolean): string {
+  let parsed: unknown = {}
+  try {
+    if (json) parsed = JSON.parse(json)
+  } catch {
+    parsed = null
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error("The request's saved settings could not be read")
+  }
+  const { critical: _old, ...rest } = parsed as Record<string, unknown>
+  return JSON.stringify(critical ? { ...rest, critical: true } : rest)
+}
+
 /** Parse a JSON column (saved_requests.metadata) and read its settings; malformed → `{}`. */
 export function readRequestSettingsJson(json: string | null | undefined): RequestSettings {
   if (!json) return {}
@@ -176,6 +197,7 @@ export interface ProxySetting {
   host?: string
   port?: number
   bypass?: string
+  proxyType?: 'http' | 'https' | 'socks'
   auth?: { username: string; password: string }
 }
 
@@ -245,3 +267,9 @@ export const MCP_DEFAULT_TIMEOUT_MS = 120_000
 export function resolveMcpTimeout(perRequest: unknown): number {
   return nonNegative(perRequest) ?? MCP_DEFAULT_TIMEOUT_MS
 }
+
+/**
+ * Where a request with no project (Quick Test) keeps its machine-local file read
+ * setting: the app's file picker turns it on, as it does for a project.
+ */
+export const NO_PROJECT_SETTINGS_SCOPE = '__no-project__'

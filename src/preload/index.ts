@@ -43,6 +43,7 @@ const api = {
   app: {
     version: (): Promise<unknown> => ipcRenderer.invoke('app:version'),
     openExternal: (url: string): Promise<unknown> => ipcRenderer.invoke('app:openExternal', url),
+    reportIssue: (): Promise<unknown> => ipcRenderer.invoke('app:reportIssue'),
     // Fires when the native application menu's "About Testnizer" item is
     // selected. Renderer hooks this into the in-app AboutModal so the
     // user sees our branded About instead of Electron's default panel.
@@ -97,6 +98,7 @@ const api = {
       title?: string
       filters?: Array<{ name: string; extensions: string[] }>
       multiSelections?: boolean
+      requestBodyProjectId?: string
     }): Promise<unknown> => ipcRenderer.invoke('dialog:openFile', options ?? {}),
   },
 
@@ -123,6 +125,14 @@ const api = {
   },
 
   // ─── Project ─────────────────────────────────────────────
+  projectTrust: {
+    ensure: (projectId: string, options?: { hasScript?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('projectTrust:ensure', projectId, options),
+    status: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('projectTrust:status', projectId),
+    block: (projectId: string): Promise<unknown> =>
+      ipcRenderer.invoke('projectTrust:block', projectId),
+  },
   project: {
     list: (workspaceId: string): Promise<unknown> =>
       ipcRenderer.invoke('project:list', workspaceId),
@@ -382,9 +392,15 @@ const api = {
   // ─── Collection Runner ──────────────────────────────────────
   runner: {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:execute', options),
-    stop: (opts?: { mode?: 'graceful' | 'direct'; skipTeardown?: boolean }): Promise<unknown> =>
-      ipcRenderer.invoke('runner:stop', opts),
+    stop: (opts?: {
+      mode?: 'graceful' | 'direct'
+      skipTeardown?: boolean
+      runTabId?: string
+      projectId?: string
+    }): Promise<unknown> => ipcRenderer.invoke('runner:stop', opts),
     export: (options: unknown): Promise<unknown> => ipcRenderer.invoke('runner:export', options),
+    setRequestCritical: (id: string, critical: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('runner:setRequestCritical', id, critical),
     onProgress: (callback: (progress: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
@@ -684,17 +700,23 @@ const api = {
     execute: (options: unknown): Promise<unknown> => ipcRenderer.invoke('graphql:execute', options),
     introspect: (url: string, headers?: unknown): Promise<unknown> =>
       ipcRenderer.invoke('graphql:introspect', { url, headers }),
-    subscribe: (options: unknown): Promise<unknown> =>
-      ipcRenderer.invoke('graphql:subscribe', options),
-    unsubscribe: (subscriptionId: string): Promise<unknown> =>
-      ipcRenderer.invoke('graphql:unsubscribe', subscriptionId),
-    onSubscriptionEvent: (callback: (event: unknown) => void): (() => void) => {
+  },
+
+  // ─── GraphQL subscriptions (WebSocket) ──────────────────────
+  graphqlWs: {
+    connect: (options: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('graphqlWs:connect', options),
+    cancelConnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('graphqlWs:cancelConnect', connectionId),
+    disconnect: (connectionId: string): Promise<unknown> =>
+      ipcRenderer.invoke('graphqlWs:disconnect', connectionId),
+    onEvent: (callback: (event: unknown) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => {
         callback(data)
       }
-      ipcRenderer.on('graphql:subscriptionEvent', handler)
+      ipcRenderer.on('graphqlWs:event', handler)
       return () => {
-        ipcRenderer.removeListener('graphql:subscriptionEvent', handler)
+        ipcRenderer.removeListener('graphqlWs:event', handler)
       }
     },
   },

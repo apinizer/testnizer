@@ -208,10 +208,10 @@ describe('password-generator — passphrase mode', () => {
   it('applies title case', () => {
     const r = generatePasswords({
       mode: 'passphrase',
-      passphrase: phrase({ wordCount: 5, separator: '-', wordCase: 'title' }),
+      passphrase: phrase({ wordCount: 5, separator: ' ', wordCase: 'title' }),
     })
     if (!r.ok) throw new Error(r.error)
-    for (const w of r.passwords[0].split('-')) expect(w[0]).toMatch(/[A-Z0-9]/)
+    for (const w of r.passwords[0].split(' ')) expect(w[0]).toMatch(/[A-Z0-9]/)
   })
 
   it('appends a digit when includeNumber is on', () => {

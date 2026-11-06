@@ -248,6 +248,7 @@ uiTest.describe('tester findings, 7 August', () => {
         .click()
         .catch(() => {})
       const confirmInput = window.getByTestId('delete-confirm-input')
+      // optional: cleanup in finally: the typed-confirmation input only exists for some deletes
       if (await confirmInput.isVisible().catch(() => false)) {
         await confirmInput.fill('delete')
       }

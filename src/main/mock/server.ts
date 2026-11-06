@@ -12,14 +12,17 @@ import http from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { URL } from 'node:url'
 import { EventEmitter } from 'node:events'
+import { importedMockText } from '../../shared/mock-imported-text'
 import { matchEndpoint, type MatchableEndpoint } from './matcher'
 import { evaluateCondition } from './condition'
 import { llmRequestShortcuts, renderTemplate, type TemplateContext } from './template'
-import { loadEnvVars } from '../lib/env-vars'
+import { loadMockTemplateVars, type MockTemplateVars } from '../lib/env-vars'
 import { cachedSecretInventory } from '../lib/secret-inventory-cache'
 import { getDb } from '../db/database'
 import { getState, clearState } from './state'
 import { runScript, type ScriptResponse } from './script'
+import { scriptHasCode } from '../../shared/script/has-code'
+import { isProjectScriptsBlocked, MOCK_SCRIPT_BLOCKED_MESSAGE } from '../lib/project-script-trust'
 import { checkAuth, resolveAuthConfig } from './auth'
 import { rollFailure } from './failure'
 import { checkRateLimit, clearLimiter } from './rateLimit'
@@ -658,10 +661,10 @@ class MockServerManager extends EventEmitter {
     // Render templates against the request context. Env vars resolved
     // per-request so projects that change their active environment mid-run
     // pick up the new values without restarting the mock server.
-    let envVars: Record<string, string> | undefined
+    let templateVars: MockTemplateVars = {}
     if (s.def.projectId) {
       try {
-        envVars = loadEnvVars({ projectId: s.def.projectId })
+        templateVars = loadMockTemplateVars({ projectId: s.def.projectId })
       } catch {
         /* fall through with no env — mock still responds */
       }
@@ -677,7 +680,7 @@ class MockServerManager extends EventEmitter {
         bodyText,
       },
       state: getState(s.def.id),
-      envVars,
+      ...templateVars,
       // `{{lastUserMessage}}` / `{{lastToolResult}}` / `{{model}}` (issue #221)
       // — every body type; empty for a body without that shape.
       ...llmRequestShortcuts(body),
@@ -704,7 +707,17 @@ class MockServerManager extends EventEmitter {
     let finalBody = initial.body
     let scriptError: string | null = null
     let scriptLog: string[] = []
-    if (picked.script && picked.script.trim()) {
+    // Read per request: an Allow takes effect without restarting the server.
+    if (
+      scriptHasCode(picked.script) &&
+      s.def.projectId &&
+      (await isProjectScriptsBlocked(s.def.projectId))
+    ) {
+      scriptError = MOCK_SCRIPT_BLOCKED_MESSAGE
+      finalStatus = 500
+      finalHeaders = { 'content-type': 'application/json; charset=utf-8' }
+      finalBody = JSON.stringify({ error: 'Script error', message: MOCK_SCRIPT_BLOCKED_MESSAGE })
+    } else if (picked.script && picked.script.trim()) {
       const r = runScript(
         picked.script,
         initial,
@@ -1584,9 +1597,13 @@ function recordProxiedResponse(
     endpointId: ep.id,
     name: 'Recorded',
     statusCode: upstream.status,
-    headers: Object.entries(upstream.headers).map(([name, value]) => ({ name, value })),
+    // Same class as an imported file: somebody else's text, kept as it arrived.
+    headers: Object.entries(upstream.headers).map(([name, value]) => ({
+      name,
+      value: importedMockText(value),
+    })),
     bodyType,
-    body: upstream.body,
+    body: importedMockText(upstream.body),
     delayMs: 0,
     condition: { type: 'always' },
     order: 0,

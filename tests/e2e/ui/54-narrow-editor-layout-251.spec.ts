@@ -71,6 +71,7 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
       async ({ app, window }) => {
         const original = await setContentSize(app, window, 1400, 900)
         const font = await emulateFontSize(window, 16)
+        // optional: records the starting panel state so the finally block can restore it
         const wasOpen = await window
           .getByTestId('right-panel')
           .isVisible()
@@ -141,17 +142,16 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
           // cell. The toggle ("Toplu Düzenle" in TR) lies inside the header and
           // its cell does not overflow.
           const toggle = header.getByTestId('kv-bulk-toggle')
-          if (await toggle.isVisible()) {
-            const tb = (await toggle.boundingBox())!
-            expect(tb.x + tb.width, 'Bulk Edit past the header').toBeLessThanOrEqual(
-              hb.x + hb.width + 1,
-            )
-            const cellSpill = await toggle.evaluate((el) => {
-              const cell = el.parentElement as HTMLElement
-              return cell.scrollWidth - cell.clientWidth
-            })
-            expect(cellSpill, 'Description / Bulk Edit cell overflows').toBeLessThanOrEqual(1)
-          }
+          await expect(toggle, 'Params table has a Bulk Edit toggle').toBeVisible()
+          const tb = (await toggle.boundingBox())!
+          expect(tb.x + tb.width, 'Bulk Edit past the header').toBeLessThanOrEqual(
+            hb.x + hb.width + 1,
+          )
+          const cellSpill = await toggle.evaluate((el) => {
+            const cell = el.parentElement as HTMLElement
+            return cell.scrollWidth - cell.clientWidth
+          })
+          expect(cellSpill, 'Description / Bulk Edit cell overflows').toBeLessThanOrEqual(1)
         } finally {
           await setContentSize(app, window, original.width, original.height)
           await restoreEnglishLocale(window)
@@ -192,6 +192,7 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
     'a wide window keeps the panel the user opened and the inline Save button',
     async ({ app, window }) => {
       const original = await setContentSize(app, window, 1400, 900)
+      // optional: records the starting panel state so the finally block can restore it
       const wasOpen = await window
         .getByTestId('right-panel')
         .isVisible()
@@ -216,6 +217,7 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
     'narrow: the user can still open the panel by hand, and it persists as a choice',
     async ({ app, window }) => {
       const original = await setContentSize(app, window, 1400, 900)
+      // optional: records the starting panel state so the finally block can restore it
       const wasOpen = await window
         .getByTestId('right-panel')
         .isVisible()
@@ -263,8 +265,12 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
         expect(send.x + send.width, 'Send pushed out of the URL bar').toBeLessThanOrEqual(
           bar.x + bar.width + 1,
         )
+        // The overflow button replaces the inline Save exactly when the URL bar
+        // reports itself compact — decide from that, not from "is it there".
         const more = window.getByTestId('url-more-btn')
-        if (await more.isVisible()) {
+        const compact = (await window.getByTestId('url-bar').getAttribute('data-compact')) === 'true'
+        await expect(more).toHaveCount(compact ? 1 : 0)
+        if (compact) {
           const mb = await boxOf(window, 'url-more-btn')
           expect(mb.x + mb.width, 'overflow button pushed out of the URL bar').toBeLessThanOrEqual(
             bar.x + bar.width + 1,
@@ -286,6 +292,7 @@ uiTest.describe('Issue #251 — narrow request editor', () => {
     '900x700, panel opened by hand: overlay drawer, nothing of the editor cut on the left',
     async ({ app, window }) => {
       const original = await setContentSize(app, window, 1400, 900)
+      // optional: records the starting panel state so the finally block can restore it
       const wasOpen = await window
         .getByTestId('right-panel')
         .isVisible()

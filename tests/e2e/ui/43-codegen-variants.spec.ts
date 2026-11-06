@@ -65,6 +65,7 @@ uiTest.describe('Issue #280 — Generate Code languages, variants and options', 
   // tier5 F16) open Generate Code on cURL, Python on Requests, JS on Fetch.
   uiTest.afterEach(async ({ window }) => {
     const close = window.getByTestId('code-generator-close')
+    // optional: cleanup: restore the code-generator defaults only if the modal was left open
     if (await close.isVisible().catch(() => false)) {
       const restore: Array<[string, string]> = [
         ['python', 'python-requests'],

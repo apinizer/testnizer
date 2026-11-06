@@ -79,6 +79,7 @@ uiTest.describe('Tur1 — AI Chat secrets [MST-155]', () => {
         .poll(
           async () => {
             const stored = await readStoredKeys(window)
+            // optional: two valid outcomes by platform (encrypted store vs in-memory note); both are asserted right below
             return typeof stored.openai === 'string' || (await memoryNote.isVisible())
           },
           { timeout: 10_000 },

@@ -99,6 +99,7 @@ describe('shared kind catalogue', () => {
         'closed',
         'aborted',
         'spawn-failed',
+        'proxy',
         'unknown',
       ].sort(),
     )

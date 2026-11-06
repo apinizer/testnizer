@@ -50,6 +50,7 @@ vi.mock('../../src/main/protocols/grpc.engine', () => ({
 
 // Import after mocks so the module captures the mocked electron + db.
 import { registerImportExportHandlers } from '../../src/main/ipc/import-export.handler'
+import { requestUrlToMockPath } from '../../src/shared/mock-path'
 
 interface ImportResult {
   success: boolean
@@ -390,8 +391,22 @@ describe('OpenAPI 3.0.3 import — Petstore', () => {
     const methods = rows.map((r) => `${r.method} ${r.path}`)
     expect(methods).toContain('GET https://petstore.example.com/api/v1/pets')
     expect(methods).toContain('POST https://petstore.example.com/api/v1/pets')
-    expect(methods).toContain('GET https://petstore.example.com/api/v1/pets/{petId}')
-    expect(methods).toContain('DELETE https://petstore.example.com/api/v1/pets/{petId}')
+    expect(methods).toContain('GET https://petstore.example.com/api/v1/pets/:petId')
+    expect(methods).toContain('DELETE https://petstore.example.com/api/v1/pets/:petId')
+  })
+
+  it('a mock made from these rows binds the path — `endpoints.path` is the full URL', async () => {
+    const projectId = randomUUID()
+    seedProject(projectId)
+    await importOpenApi(projectId, JSON.stringify(petstoreSpec))
+
+    const rows = memDb
+      .prepare('SELECT path FROM endpoints WHERE project_id = ?')
+      .all(projectId) as Array<{ path: string }>
+    const bound = rows.map((r) => requestUrlToMockPath(r.path))
+
+    expect(bound).toContainEqual({ path: '/api/v1/pets', mode: 'exact' })
+    expect(bound).toContainEqual({ path: '/api/v1/pets/:petId', mode: 'param' })
   })
 
   it('extracts baseUrl into suggestedEnvVars', async () => {
@@ -413,7 +428,7 @@ describe('OpenAPI 3.0.3 import — Petstore', () => {
     expect(names).toEqual(['pets', 'store'])
   })
 
-  it('maps query and header parameters; path params remain in URL', async () => {
+  it('maps query and header parameters; path params become :name in the URL', async () => {
     const projectId = randomUUID()
     seedProject(projectId)
     await importOpenApi(projectId, JSON.stringify(petstoreSpec))
@@ -511,7 +526,7 @@ describe('Swagger 2.0 import', () => {
       .all(projectId) as Array<{ method: string; path: string }>
     expect(rows).toHaveLength(3)
     expect(rows.map((r) => r.method).sort()).toEqual(['GET', 'GET', 'POST'])
-    expect(rows.find((r) => r.path.endsWith('/orders/{orderId}'))).toBeDefined()
+    expect(rows.find((r) => r.path.endsWith('/orders/:orderId'))).toBeDefined()
   })
 })
 

@@ -1,9 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
 import { createServer, type Server } from 'http'
 import { writeFileSync, unlinkSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { executeHttpRequest } from '../../src/main/protocols/http.engine'
+
+// These tests are about the transport; the file-read gate has its own
+// (`working-directory-outside.test.ts`). This project allows it.
+vi.mock('../../src/main/lib/project-settings', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/main/lib/project-settings')>()),
+  loadProjectSettings: async () => ({ readFilesOutsideWorkingDirectory: true }),
+}))
 
 /**
  * These tests validate that the multipart/form-data branch of the HTTP engine
@@ -58,6 +65,7 @@ describe('http.engine — multipart/form-data file upload', () => {
 
     try {
       const result = await executeHttpRequest({
+        projectId: 'p',
         method: 'POST',
         url: `http://127.0.0.1:${port}/upload`,
         body: {
@@ -101,6 +109,7 @@ describe('http.engine — multipart/form-data file upload', () => {
   it('surfaces a clear error (not a silent drop) when the file path does not exist (issue #46)', async () => {
     captured = null
     const result = await executeHttpRequest({
+      projectId: 'p',
       method: 'POST',
       url: `http://127.0.0.1:${port}/upload`,
       body: {
@@ -151,6 +160,7 @@ describe('http.engine — multipart/form-data file upload', () => {
     captured = null
     try {
       const result = await executeHttpRequest({
+        projectId: 'p',
         method: 'PUT',
         url: `http://127.0.0.1:${port}/upload`,
         headers: [{ id: '1', key: 'Content-Type', value: 'multipart/form-data', enabled: true }],
@@ -217,6 +227,7 @@ describe('http.engine — multipart/form-data file upload', () => {
     writeFileSync(tmpFile, 'x')
     try {
       const result = await executeHttpRequest({
+        projectId: 'p',
         method: 'POST',
         url: `http://127.0.0.1:${port}/upload`,
         body: {

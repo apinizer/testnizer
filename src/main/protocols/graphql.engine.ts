@@ -3,9 +3,6 @@ import { randomUUID } from 'crypto'
 import { performance } from 'perf_hooks'
 import https from 'https'
 import http from 'http'
-import { createClient, Client } from 'graphql-ws'
-import WebSocket from 'ws'
-import { BrowserWindow } from 'electron'
 import {
   classifyTransportError,
   formatConnectionError,
@@ -92,42 +89,6 @@ export interface GraphqlFieldInfo {
       name: string | null
       kind: string
     } | null
-  }
-}
-
-export interface GraphqlSubscribeOptions {
-  url: string
-  wsUrl?: string
-  query: string
-  variables?: string
-  operationName?: string
-  headers?: Record<string, string>
-  sslVerification?: boolean
-}
-
-export interface GraphqlSubscriptionEvent {
-  subscriptionId: string
-  type: 'data' | 'error' | 'complete'
-  data?: string
-  error?: string
-  timestamp: number
-}
-
-// ─── Subscription manager ───────────────────────────────────
-
-interface ManagedSubscription {
-  subscriptionId: string
-  client: Client
-  unsubscribe: () => void
-  windowId: number
-}
-
-const subscriptions = new Map<string, ManagedSubscription>()
-
-function sendSubscriptionEvent(windowId: number, event: GraphqlSubscriptionEvent): void {
-  const win = BrowserWindow.fromId(windowId)
-  if (win && !win.isDestroyed()) {
-    win.webContents.send('graphql:subscriptionEvent', event)
   }
 }
 
@@ -386,124 +347,4 @@ export async function introspect(
     mutationType: schema.mutationType?.name ?? null,
     subscriptionType: schema.subscriptionType?.name ?? null,
   }
-}
-
-export function subscribe(options: GraphqlSubscribeOptions, windowId: number): string {
-  const subscriptionId = randomUUID()
-
-  // Determine WS URL: replace http(s) with ws(s)
-  const wsUrl = options.wsUrl ?? options.url.replace(/^http/, 'ws')
-
-  let variables: Record<string, unknown> | undefined
-  if (options.variables) {
-    try {
-      variables = JSON.parse(options.variables) as Record<string, unknown>
-    } catch {
-      sendSubscriptionEvent(windowId, {
-        subscriptionId,
-        type: 'error',
-        error: 'Invalid JSON in variables field',
-        timestamp: Date.now(),
-      })
-      return subscriptionId
-    }
-  }
-
-  const client = createClient({
-    url: wsUrl,
-    webSocketImpl: WebSocket,
-    connectionParams: options.headers ?? {},
-    on: {
-      error: (err) => {
-        const errorMsg =
-          err instanceof Error
-            ? err.message
-            : ((err as CloseEvent)?.reason ?? 'Unknown subscription error')
-        sendSubscriptionEvent(windowId, {
-          subscriptionId,
-          type: 'error',
-          error: errorMsg,
-          timestamp: Date.now(),
-        })
-      },
-    },
-  })
-
-  const payload: { query: string; variables?: Record<string, unknown>; operationName?: string } = {
-    query: options.query,
-  }
-  if (variables) {
-    payload.variables = variables
-  }
-  if (options.operationName) {
-    payload.operationName = options.operationName
-  }
-
-  const unsubscribe = client.subscribe(payload, {
-    next: (value) => {
-      sendSubscriptionEvent(windowId, {
-        subscriptionId,
-        type: 'data',
-        data: JSON.stringify(value),
-        timestamp: Date.now(),
-      })
-    },
-    error: (err) => {
-      const errorMsg =
-        err instanceof Error
-          ? err.message
-          : Array.isArray(err)
-            ? err.map((e) => (e as Error).message).join(', ')
-            : 'Subscription error'
-      sendSubscriptionEvent(windowId, {
-        subscriptionId,
-        type: 'error',
-        error: errorMsg,
-        timestamp: Date.now(),
-      })
-      subscriptions.delete(subscriptionId)
-    },
-    complete: () => {
-      sendSubscriptionEvent(windowId, {
-        subscriptionId,
-        type: 'complete',
-        timestamp: Date.now(),
-      })
-      subscriptions.delete(subscriptionId)
-    },
-  })
-
-  subscriptions.set(subscriptionId, {
-    subscriptionId,
-    client,
-    unsubscribe,
-    windowId,
-  })
-
-  return subscriptionId
-}
-
-export function unsubscribe(subscriptionId: string): boolean {
-  const managed = subscriptions.get(subscriptionId)
-  if (!managed) {
-    return false
-  }
-
-  managed.unsubscribe()
-  managed.client.dispose()
-  subscriptions.delete(subscriptionId)
-  return true
-}
-
-export function unsubscribeAll(): void {
-  for (const [id] of subscriptions) {
-    unsubscribe(id)
-  }
-}
-
-// CloseEvent type for ws error handler
-interface CloseEvent {
-  code: number
-  reason: string
-  wasClean: boolean
 }

@@ -32,6 +32,7 @@ export async function restoreEnglishLocale(page: Page): Promise<void> {
   const palette = page.getByTestId('command-palette')
   const current = await persistedLocale(page)
   if (current !== undefined && current !== null && current !== 'en') {
+    // optional: opens the palette only when it is not open yet; the option click below needs it
     if (!(await palette.isVisible())) await openCommandPalette(page)
     await fillCommandPalette(page, 'English')
     // Both locales' labels contain "English" ("Change language: English" / "Dil: English").

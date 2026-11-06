@@ -139,6 +139,19 @@ describe('Generate Code — inherited SSL / redirects reach SOAP and GraphQL lik
     expect(code()).not.toMatch(FOLLOW)
   })
 
+  it('GraphQL subscription: not available, rather than a POST it never sends', async () => {
+    installApi({})
+    openTab('graphql')
+    useGraphQLStore.setState({ query: '# feed\nsubscription { tick }' })
+    const { result } = renderHook(() => useCodegenSource())
+    expect(result.current).toEqual({ kind: 'unavailable', protocol: 'graphql-subscription' })
+
+    render(<CodeGeneratorModal />)
+    const empty = screen.getByTestId('codegen-unavailable')
+    expect(empty.textContent).toContain('GraphQL subscriptions')
+    expect(screen.queryByText(/curl/)).toBeNull()
+  })
+
   for (const protocol of ['http', 'soap', 'graphql'] as const) {
     it(`${protocol}: the source request carries the resolved settings (SSL + redirects), app tier too`, async () => {
       // Project silent, app Settings says off for both.

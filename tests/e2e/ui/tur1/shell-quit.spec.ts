@@ -64,25 +64,15 @@ test.describe('Tur1 — Graceful quit [MST-222]', () => {
       app = launched.app
       const window = launched.window
 
-      // Open a new HTTP request tab (unsaved by nature)
+      // Open a new HTTP request tab and make it dirty by typing a URL.
       await openHttpRequestTab(window)
+      const activeTab = window.locator('[data-testid="endpoint-tab"][data-active="true"]')
+      await expect(activeTab).toHaveAttribute('data-dirty', 'false')
+      await window.getByTestId('url-input').fill('http://example.com/test')
 
-      // Type something into URL to make the tab dirty
-      const urlInput = window.getByTestId('url-input')
-      if (await urlInput.isVisible().catch(() => false)) {
-        await urlInput.fill('http://example.com/test')
-        await window.waitForTimeout(300)
-      }
-
-      // Check for dirty indicator: either a dot on the tab or "unsaved" text
-      // The data-testid for the active tab
-      const activeTab = window.locator('[data-testid="workbench-tab"][data-active="true"]').first()
-      const tabVisible = await activeTab.isVisible().catch(() => false)
-      if (tabVisible) {
-        // Tab should be active — the dirty dot is a visual indicator
-        // We assert the tab is present and the close-without-save flow won't crash
-        await expect(activeTab).toBeVisible()
-      }
+      // The tab must carry the unsaved indicator (dirty dot) the user sees.
+      await expect(activeTab).toHaveAttribute('data-dirty', 'true', { timeout: 8_000 })
+      await expect(activeTab.getByTestId('tab-dirty')).toBeVisible()
 
       // Closing with open tabs should not throw
       await app.close()
@@ -105,25 +95,41 @@ test.describe('Tur1 — Graceful quit [MST-222]', () => {
       app = launched.app
       const window = launched.window
 
-      // Open a new HTTP request tab
-      await openHttpRequestTab(window)
-      await window.waitForTimeout(400)
-
-      // Close via keyboard (Cmd+W on mac, Ctrl+W on others)
+      const tabs = window.getByTestId('endpoint-tab')
       const mod = process.platform === 'darwin' ? 'Meta' : 'Control'
+
+      // Clean tab: Cmd/Ctrl+W closes it right away, no unsaved-changes dialog.
+      await openHttpRequestTab(window)
+      const before = await tabs.count()
+      expect(before).toBeGreaterThan(0)
       await window.keyboard.press(`${mod}+KeyW`)
-      await window.waitForTimeout(600)
+      await expect(tabs).toHaveCount(before - 1, { timeout: 8_000 })
+      await expect(window.getByTestId('unsaved-discard-btn')).toHaveCount(0)
 
-      // If a "you have unsaved changes" dialog appeared in renderer, dismiss it
-      // Look for common close-without-save confirm buttons
-      const confirmBtn = window.getByRole('button', { name: /close|discard|don.t save/i }).first()
-      if (await confirmBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-        await confirmBtn.click()
-        await window.waitForTimeout(300)
-      }
+      // Dirty tab: Cmd/Ctrl+W asks first. The Workbench Ctrl+W path (and
+      // closeTabSafely) deliberately uses a native window.confirm, not the
+      // Unsaved-changes modal (cleanup-tab-state.ts). Cancel keeps the tab,
+      // OK closes it.
+      await openHttpRequestTab(window)
+      await window.getByTestId('url-input').fill('http://example.com/dirty')
+      await expect(tabs.filter({ has: window.getByTestId('tab-dirty') })).toHaveCount(1, { timeout: 8_000 })
+      const withDirty = await tabs.count()
 
-      // App should still be alive after close attempt
-      expect(app.windows().length).toBeGreaterThanOrEqual(0)
+      const dialogTexts: string[] = []
+      window.once('dialog', async (d) => {
+        dialogTexts.push(`${d.type()}: ${d.message()}`)
+        await d.dismiss()
+      })
+      await window.keyboard.press(`${mod}+KeyW`)
+      await expect.poll(() => dialogTexts.length, { timeout: 8_000 }).toBe(1)
+      expect(dialogTexts[0]).toMatch(/^confirm: .*unsaved changes/i)
+      await expect(tabs).toHaveCount(withDirty)
+
+      window.once('dialog', async (d) => {
+        await d.accept()
+      })
+      await window.keyboard.press(`${mod}+KeyW`)
+      await expect(tabs).toHaveCount(withDirty - 1, { timeout: 8_000 })
 
       await app.close()
       app = undefined

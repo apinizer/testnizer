@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<wsdl:definitions xmlns:wsdl="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="http://example.test/calc"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="http://example.test/calc"
+  name="Calc">
+  <wsdl:types>
+    <xsd:schema targetNamespace="http://example.test/calc" elementFormDefault="qualified">
+      <xsd:element name="Add"><xsd:complexType><xsd:sequence><xsd:element name="a" type="xsd:int"/></xsd:sequence></xsd:complexType></xsd:element>
+      <xsd:element name="Sub"><xsd:complexType><xsd:sequence><xsd:element name="a" type="xsd:int"/></xsd:sequence></xsd:complexType></xsd:element>
+    </xsd:schema>
+  </wsdl:types>
+  <wsdl:message name="AddIn"><wsdl:part name="parameters" element="tns:Add"/></wsdl:message>
+  <wsdl:message name="SubIn"><wsdl:part name="parameters" element="tns:Sub"/></wsdl:message>
+  <wsdl:portType name="CalcPort">
+    <wsdl:operation name="Add"><wsdl:input message="tns:AddIn"/></wsdl:operation>
+    <wsdl:operation name="Sub"><wsdl:input message="tns:SubIn"/></wsdl:operation>
+  </wsdl:portType>
+  <wsdl:binding name="CalcBinding" type="tns:CalcPort">
+    <soap:binding transport="http://schemas.xmlsoap.org/soap/http" style="document"/>
+    <wsdl:operation name="Add"><soap:operation soapAction="http://example.test/calc/Add"/><wsdl:input><soap:body use="literal"/></wsdl:input></wsdl:operation>
+    <wsdl:operation name="Sub"><soap:operation soapAction="http://example.test/calc/Sub"/><wsdl:input><soap:body use="literal"/></wsdl:input></wsdl:operation>
+  </wsdl:binding>
+  <wsdl:service name="Calc">
+    <wsdl:port name="CalcPort" binding="tns:CalcBinding"><soap:address location="__BASE__/svc"/></wsdl:port>
+  </wsdl:service>
+</wsdl:definitions>

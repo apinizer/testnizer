@@ -8,8 +8,20 @@ import type {
 } from '../types'
 import type { MockServerKind } from '../../shared/mock-kind'
 import { collapseStreamLogs, mergeStreamLog } from '../lib/mock-log-streams'
+import { ensureScriptsAllowed } from '../lib/script-trust-gate'
 
 const api = window.api.mock
+
+/** A failed IPC call as an import result, so its reason reaches the user. */
+function importFailure(error: string | undefined) {
+  return {
+    ok: false,
+    endpointsCreated: 0,
+    responsesCreated: 0,
+    warnings: [] as string[],
+    ...(error ? { error } : {}),
+  }
+}
 
 export interface MockState {
   servers: MockServer[]
@@ -75,7 +87,7 @@ export interface MockState {
     responsesCreated: number
     warnings: string[]
     error?: string
-  } | null>
+  }>
   importPostman: (
     serverId: string,
     source: string,
@@ -85,7 +97,7 @@ export interface MockState {
     responsesCreated: number
     warnings: string[]
     error?: string
-  } | null>
+  }>
 }
 
 /**
@@ -97,7 +109,7 @@ export interface MockState {
  */
 let loadSeq = 0
 
-export const useMockStore = create<MockState>((set) => ({
+export const useMockStore = create<MockState>((set, get) => ({
   servers: [],
   projectId: null,
   endpointsByServer: {},
@@ -147,7 +159,12 @@ export const useMockStore = create<MockState>((set) => ({
   },
 
   startServer: async (id) => {
+    // Asked once here so Allow does not wait for the first request. The answer
+    // does not stop the server: with "Not now" a scripted response answers with
+    // the reason, and the mock server reads the state on every request.
+    const owner = get().servers.find((srv) => srv.id === id)?.projectId ?? get().projectId
     set((s) => ({ statusByServer: { ...s.statusByServer, [id]: 'starting' } }))
+    await ensureScriptsAllowed(owner)
     const r = await api.server.start(id)
     if (!r.success) {
       set((s) => ({
@@ -283,7 +300,7 @@ export const useMockStore = create<MockState>((set) => ({
 
   importOpenApi: async (serverId, source) => {
     const r = await api.importOpenApi(serverId, source)
-    if (!r.success || !r.data) return null
+    if (!r.success || !r.data) return importFailure(r.error)
     // Refresh endpoints list after import
     const ep = await api.endpoint.list(serverId)
     if (ep.success && ep.data) {
@@ -294,7 +311,7 @@ export const useMockStore = create<MockState>((set) => ({
 
   importPostman: async (serverId, source) => {
     const r = await api.importPostman(serverId, source)
-    if (!r.success || !r.data) return null
+    if (!r.success || !r.data) return importFailure(r.error)
     const ep = await api.endpoint.list(serverId)
     if (ep.success && ep.data) {
       set((s) => ({ endpointsByServer: { ...s.endpointsByServer, [serverId]: ep.data! } }))

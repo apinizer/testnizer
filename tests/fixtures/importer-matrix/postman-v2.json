@@ -1,0 +1,20 @@
+{
+  "info": {
+    "name": "Pets",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    { "name": "List pets", "request": { "method": "GET", "url": "__BASE__/pets" } },
+    { "name": "Get pet", "request": { "method": "GET", "url": "__BASE__/pets/{{petId}}" } },
+    {
+      "name": "Get pet by colon",
+      "request": {
+        "method": "PUT",
+        "url": {
+          "raw": "__BASE__/pets/:petId",
+          "variable": [{ "key": "petId", "value": "42" }]
+        }
+      }
+    }
+  ]
+}

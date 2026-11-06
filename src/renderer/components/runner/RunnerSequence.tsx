@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react'
 import RequestBadge from '../shared/RequestBadge'
 import CriticalBadge from './CriticalBadge'
+import CriticalToggle from './CriticalToggle'
+import { isRunnableProtocol } from '../../../shared/request-protocols'
 import { ChevronRight, ChevronDown, FolderClosed, FolderOpen } from 'lucide-react'
 import type { RunPhase } from '../../../shared/runner-verdict'
 import { useTranslation } from '../../lib/i18n'
@@ -19,6 +21,8 @@ interface RunnerSequenceProps {
    * issue #72. Omitted on paths that can't configure a run (auto-run).
    */
   onSetPhase?: (id: string, phase: RunPhase) => void
+  /** Absent = the Critical badge shows but cannot be changed here (issue #315). */
+  onSetCritical?: (id: string, critical: boolean) => void
   /**
    * Assign a role to a whole folder, subfolders included (issue #90). Tagging
    * every request by hand is the part users asked to stop doing.
@@ -111,6 +115,7 @@ export default function RunnerSequence({
   onReset,
   onReorder,
   onSetPhase,
+  onSetCritical,
   onSetFolderPhase,
   onToggleFolder,
 }: RunnerSequenceProps) {
@@ -140,8 +145,9 @@ export default function RunnerSequence({
     const ids: string[] = []
     const walk = (nodes: FolderNode[]): void => {
       for (const n of nodes) {
+        if (n.group.foldersFirst) walk(n.children)
         for (const ep of n.group.endpoints) ids.push(ep.id)
-        walk(n.children)
+        if (!n.group.foldersFirst) walk(n.children)
       }
     }
     ids.push(...tree.loose.map((ep) => ep.id))
@@ -173,6 +179,8 @@ export default function RunnerSequence({
         />
         {!isCollapsed && (
           <>
+            {node.group.foldersFirst &&
+              node.children.map((child) => renderFolder(child, depth + 1))}
             {node.group.endpoints.map((ep) => (
               <EndpointRow
                 key={ep.id}
@@ -183,10 +191,12 @@ export default function RunnerSequence({
                 onReorder={onReorder}
                 nextEndpointId={nextIdAfter(ep.id)}
                 onSetPhase={onSetPhase}
+                onSetCritical={onSetCritical}
                 t={t}
               />
             ))}
-            {node.children.map((child) => renderFolder(child, depth + 1))}
+            {!node.group.foldersFirst &&
+              node.children.map((child) => renderFolder(child, depth + 1))}
           </>
         )}
       </div>
@@ -242,6 +252,7 @@ export default function RunnerSequence({
             onReorder={onReorder}
             nextEndpointId={nextIdAfter(ep.id)}
             onSetPhase={onSetPhase}
+            onSetCritical={onSetCritical}
             t={t}
           />
         ))}
@@ -394,6 +405,7 @@ function EndpointRow({
   onReorder,
   nextEndpointId,
   onSetPhase,
+  onSetCritical,
   t,
 }: {
   index: number
@@ -404,11 +416,14 @@ function EndpointRow({
   onReorder?: (draggedId: string, insertBeforeId: string | null, anchorId?: string) => void
   nextEndpointId: string | null
   onSetPhase?: (id: string, phase: RunPhase) => void
+  onSetCritical?: (id: string, critical: boolean) => void
   t: (key: string) => string
 }) {
   const [hovered, setHovered] = useState(false)
   const [dropPos, setDropPos] = useState<'before' | 'after' | null>(null)
   const draggable = !!onReorder
+  // Flow rows only: setup already stops the flow on any failure, teardown never stops.
+  const isFlow = (endpoint.phase ?? 'main') === 'main'
 
   const handleDragStart = (e: React.DragEvent) => {
     if (!draggable) return
@@ -507,13 +522,25 @@ function EndpointRow({
       <RequestBadge protocol={endpoint.protocol} method={endpoint.method} />
 
       {/* Name */}
-      <span draggable={false} className="flex-1 truncate" style={{ color: 'var(--text)' }}>
+      <span
+        draggable={false}
+        title={endpoint.name}
+        className="flex-1 truncate"
+        style={{ color: 'var(--text)' }}
+      >
         {endpoint.name}
       </span>
 
-      {/* Marked Critical in its Settings tab (issue #304). Flow rows only:
-          setup already stops the flow on any failure, teardown never stops. */}
-      {endpoint.critical && (endpoint.phase ?? 'main') === 'main' && <CriticalBadge />}
+      {/* Marked Critical (issue #304), here or in its Settings tab (issue #315).
+          A protocol the Runner cannot run has no flag to set. */}
+      {endpoint.critical && isFlow && <CriticalBadge />}
+      {onSetCritical && isFlow && isRunnableProtocol(endpoint.protocol ?? 'http') && (
+        <CriticalToggle
+          name={endpoint.name}
+          critical={endpoint.critical === true}
+          onChange={(critical) => onSetCritical(endpoint.id, critical)}
+        />
+      )}
 
       {/* Phase picker — designates this request as run setup or teardown. */}
       {onSetPhase && (

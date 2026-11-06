@@ -43,7 +43,7 @@ vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
 import { mockWindowApi } from './screens/_mount'
 import Workbench from '../../src/renderer/components/layout/Workbench'
 import { openFolderRunner, openOrReuseRunnerTab } from '../../src/renderer/lib/open-runner-tab'
-import { setRunnerBusy, resetRunnerActivity } from '../../src/renderer/lib/runner-activity'
+import { useRunnerLiveStore, liveRunKey, type LiveRun } from '../../src/renderer/stores/runner-live.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
@@ -144,6 +144,13 @@ afterEach(() => {
   cleanup()
   sessionStorage.clear()
 })
+
+/** The real run lifecycle is walked in runner-live-run-tab-switch.test.tsx. */
+function setBusy(tabId: string, running: boolean): void {
+  useRunnerLiveStore.setState({
+    runs: running ? { [liveRunKey(tabId)]: { running: true } as LiveRun } : {},
+  })
+}
 
 describe('Runner tab reuse (#66)', () => {
   it('running a second folder shows that folder’s Start-run screen, not the previous results', () => {
@@ -272,7 +279,7 @@ describe('Command Palette → runner tab lands on the run config', () => {
 
 describe('#66: a Run aimed at a busy runner tab focuses it instead of re-arming', () => {
   beforeEach(() => {
-    resetRunnerActivity()
+    useRunnerLiveStore.setState({ runs: {} })
     useTabsStore.setState({ tabs: [], activeTabId: null })
   })
 
@@ -289,7 +296,7 @@ describe('#66: a Run aimed at a busy runner tab focuses it instead of re-arming'
     openFolderRunner('f1', 'Payments')
     const during = useTabsStore.getState().tabs.find((t) => t.id === 'runner-f1')?.sessionKey
 
-    setRunnerBusy('runner-f1', true)
+    setBusy('runner-f1', true)
     openFolderRunner('f1', 'Payments')
 
     const after = useTabsStore.getState().tabs.find((t) => t.id === 'runner-f1')
@@ -299,11 +306,11 @@ describe('#66: a Run aimed at a busy runner tab focuses it instead of re-arming'
 
   it('re-arms again once the run finishes', () => {
     openFolderRunner('f1', 'Payments')
-    setRunnerBusy('runner-f1', true)
+    setBusy('runner-f1', true)
     openFolderRunner('f1', 'Payments')
     const parked = useTabsStore.getState().tabs.find((t) => t.id === 'runner-f1')?.sessionKey
 
-    setRunnerBusy('runner-f1', false)
+    setBusy('runner-f1', false)
     openFolderRunner('f1', 'Payments')
 
     expect(useTabsStore.getState().tabs.find((t) => t.id === 'runner-f1')?.sessionKey).not.toBe(

@@ -317,6 +317,7 @@ function expectCountsKept(before: DbSnapshot, after: DbSnapshot, where: string):
 async function passGates(page: Page): Promise<void> {
   await acceptEula(page)
   const guest = page.getByTestId('login-continue-anonymous')
+  // optional: the guest button only shows when the profile has no session yet; the wait below proves the gates passed
   if (await guest.isVisible().catch(() => false)) await guest.click()
   await expect(
     page
@@ -357,6 +358,7 @@ async function secureStorageStatus(page: Page): Promise<SecureStorageStatus> {
  */
 async function expectSecureStorageNote(page: Page, encrypted: boolean): Promise<void> {
   if (
+    // optional: the app may already be inside a project; otherwise Project Home is on screen and the first card is opened
     !(await page
       .getByTestId('nav-apis')
       .isVisible()
@@ -532,10 +534,11 @@ test.describe('Electron upgrade keeps user data (issue #291)', () => {
 
   test('a 1.5.4 profile opens on this build with every row, secret and setting intact', async () => {
     test.skip(!DatabaseSync, 'node:sqlite needs Node >= 22.5 (this Node is older)')
-    test.skip(
-      !fs.existsSync(FIXTURE.sql),
+    // The fixture is committed: a missing file is a broken checkout, not a reason to skip.
+    expect(
+      fs.existsSync(FIXTURE.sql),
       'fixture missing: run the opt-in test with TESTNIZER_WRITE_FIXTURE=1',
-    )
+    ).toBe(true)
     test.setTimeout(180_000)
     const httpBase = getTestServerUrls().http
     const userData = tmpProfile('v154')
@@ -714,6 +717,7 @@ test.describe('Electron upgrade keeps user data (issue #291)', () => {
           // Same as on the old build: a restart lands on Project Home unless a
           // project was left open; opening the project restores its tabs.
           if (
+            // optional: a restart lands on Project Home unless a project was left open; the card click and nav-apis wait cover both
             !(await page
               .getByTestId('nav-apis')
               .isVisible()

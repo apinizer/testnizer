@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<con:soapui-project id="matrix" name="Calc" soapui-version="5.7.0" xmlns:con="http://eviware.com/soapui/config">
+  <con:settings/>
+  <con:interface xsi:type="con:WsdlInterface" id="iface" name="CalcPort" type="wsdl" definition="http://example.test/calc.wsdl" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <con:settings/>
+    <con:endpoints><con:endpoint>__BASE__/svc</con:endpoint></con:endpoints>
+    <con:operation xsi:type="con:WsdlOperation" id="op1" name="Add" isOneWay="false" action="http://example.test/Add" bindingOperationName="Add" type="Request-Response">
+      <con:settings/>
+      <con:call id="c1" name="Request 1">
+        <con:settings/>
+        <con:endpoint>__BASE__/svc</con:endpoint>
+        <con:request><![CDATA[<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Add/></soapenv:Body></soapenv:Envelope>]]></con:request>
+      </con:call>
+    </con:operation>
+  </con:interface>
+</con:soapui-project>

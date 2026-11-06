@@ -18,7 +18,11 @@ export function resolveVariables(
   globalVars: Record<string, string> = {},
 ): string {
   return resolveTemplate(template, (name) =>
-    name in envVars ? envVars[name] : name in globalVars ? globalVars[name] : undefined,
+    Object.hasOwn(envVars, name)
+      ? envVars[name]
+      : Object.hasOwn(globalVars, name)
+        ? globalVars[name]
+        : undefined,
   )
 }
 

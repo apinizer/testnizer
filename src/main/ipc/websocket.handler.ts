@@ -8,6 +8,9 @@ import {
 } from '../protocols/websocket.engine'
 import { logEvent } from '../lib/console-logger'
 import { connectFailure } from '../lib/error-classifier'
+import { resolveConnectionProxy } from '../lib/proxy-tunnel'
+import { proxySecretValues } from '../lib/sensitive-scrub'
+import type { ProxySetting } from '../../shared/request-settings'
 import * as historyRepo from '../db/history.repo'
 import type { HistoryConfigured } from '../../shared/history-snapshot'
 import {
@@ -24,6 +27,8 @@ interface WsConnectPayload {
   rejectUnauthorized?: boolean
   /** Settings tab (issue #282); `strictSSL` wins over `rejectUnauthorized`. */
   settings?: Partial<WsSettings>
+  /** The project → app proxy (`effectiveProxy`); absent = the environment's. */
+  proxy?: ProxySetting
   _tabId?: string
   _workspaceId?: string
   _projectId?: string
@@ -40,7 +45,10 @@ interface WsConnectPayload {
 // Map connectionId -> { url, tabId, connectedAt } so disconnect / send events
 // can carry the originating-tab info for ConsolePanel filtering AND so we can
 // compute total connection lifetime + per-event timing deltas.
-const wsContext = new Map<string, { url: string; tabId?: string; connectedAt: number }>()
+const wsContext = new Map<
+  string,
+  { url: string; tabId?: string; connectedAt: number; secrets: string[] }
+>()
 
 export function registerWebSocketHandlers(): void {
   // ─── Connect to WebSocket ─────────────────────────────────
@@ -54,6 +62,8 @@ export function registerWebSocketHandlers(): void {
       // Missing settings keep the pre-#282 behaviour (verify TLS, 15 s
       // handshake, `ws`'s 100 MiB cap, no reconnection).
       const settings = payload.settings ? readWsSettings(payload.settings) : null
+      const proxy = resolveConnectionProxy(payload.proxy, payload.url)
+      const secrets = proxySecretValues(proxy)
       const options: WsConnectOptions = {
         url: payload.url,
         headers: payload.headers,
@@ -68,6 +78,7 @@ export function registerWebSocketHandlers(): void {
             }
           : {}),
         pendingId: payload._pendingId,
+        proxy,
       }
 
       const connectStart = Date.now()
@@ -78,6 +89,7 @@ export function registerWebSocketHandlers(): void {
         url: payload.url,
         tabId: payload._tabId,
         meta: { protocols: (payload.protocols ?? []).join(',') },
+        secrets,
       })
 
       try {
@@ -87,6 +99,7 @@ export function registerWebSocketHandlers(): void {
           url: payload.url,
           tabId: payload._tabId,
           connectedAt,
+          secrets,
         })
         logEvent({
           protocol: 'websocket',
@@ -98,6 +111,7 @@ export function registerWebSocketHandlers(): void {
           status: 101,
           statusText: 'Switching Protocols',
           durationMs: connectedAt - connectStart,
+          secrets,
         })
         try {
           historyRepo.addHistory({
@@ -117,6 +131,7 @@ export function registerWebSocketHandlers(): void {
               ...(settings ? { settings } : {}),
               ...(payload._configured ? { configured: payload._configured } : {}),
             }),
+            extra_secrets: secrets,
             response_snapshot: JSON.stringify({
               status: 101,
               statusText: 'Switching Protocols',
@@ -139,6 +154,7 @@ export function registerWebSocketHandlers(): void {
           tabId: payload._tabId,
           durationMs: failedAt - connectStart,
           error: { message: (err as Error).message },
+          secrets,
         })
         try {
           historyRepo.addHistory({
@@ -156,6 +172,7 @@ export function registerWebSocketHandlers(): void {
               protocols: payload.protocols,
               ...(payload._configured ? { configured: payload._configured } : {}),
             }),
+            extra_secrets: secrets,
             response_snapshot: JSON.stringify({ error: (err as Error).message }),
           })
         } catch {
@@ -194,6 +211,7 @@ export function registerWebSocketHandlers(): void {
         url: ctx?.url,
         tabId: ctx?.tabId,
         durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
+        secrets: ctx?.secrets,
       })
       wsContext.delete(connectionId)
       return { success: true, data: result }
@@ -226,6 +244,7 @@ export function registerWebSocketHandlers(): void {
           sizeBytes: bytes,
           durationMs: ctx ? Date.now() - ctx.connectedAt : undefined,
           ...(binary ? { meta: { binary } } : {}),
+          secrets: ctx?.secrets,
         })
         return { success: true, data: result }
       } catch (e) {

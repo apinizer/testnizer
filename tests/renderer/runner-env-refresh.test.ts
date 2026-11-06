@@ -18,7 +18,7 @@ vi.mock('../../src/renderer/stores/environment.store', () => ({
 
 // RunnerTab pulls in many stores/components; we only exercise the exported
 // helper, but the module must import cleanly under jsdom.
-import { refreshEnvAfterRun } from '../../src/renderer/components/runner/RunnerTab'
+import { refreshEnvAfterRun } from '../../src/renderer/stores/runner-live.store'
 import type { RunnerReport } from '../../src/renderer/stores/runner.store'
 
 const baseReport = (over: Partial<RunnerReport>): RunnerReport =>

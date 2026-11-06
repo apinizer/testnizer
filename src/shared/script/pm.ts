@@ -144,8 +144,8 @@ export interface CreatePmOptions {
     /** Secret project variables (`pm.vault`). Omitted → `pm.vault` rejects. */
     vault?: PmVaultBacking
     locals: PmScopeBacking
-    /** The iteration data row (Run); empty on Send. */
-    data?: Record<string, string>
+    /** The iteration data row (Run), values as parsed; empty on Send. */
+    data?: Record<string, unknown>
   }
   request: {
     method: string
@@ -287,18 +287,18 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
   // variables. This used to fall back to the environment store.
   const collectionVariables = globals
   const locals = makeScope(scopes.locals)
-  const data: Record<string, string> = { ...(scopes.data ?? {}) }
+  const data: Record<string, unknown> = { ...(scopes.data ?? {}) }
   const hasData = (k: string): boolean => Object.prototype.hasOwnProperty.call(data, k)
 
   /** Narrowest scope wins: local > data > environment > collection / global. */
-  const lookup = (k: string): string | undefined => {
+  const lookup = (k: string): unknown => {
     if (scopes.locals.values.has(k)) return scopes.locals.values.get(k)
     if (hasData(k)) return data[k]
     if (scopes.environment.values.has(k)) return scopes.environment.values.get(k)
     if (scopes.globals.values.has(k)) return scopes.globals.values.get(k)
     return undefined
   }
-  const variables: PmScope = {
+  const variables: PmLike['variables'] = {
     get: lookup,
     has: (k) => lookup(k) !== undefined,
     set: locals.set,
@@ -310,14 +310,21 @@ export function createPm(opts: CreatePmOptions): PmRuntime {
       ...data,
       ...locals.toObject(),
     }),
-    replaceIn: (t) => replaceInValue(t, lookup) as string,
+    // `{{var}}` is text, whatever the value: a data row's object or array as JSON.
+    replaceIn: (t) =>
+      replaceInValue(t, (k) => {
+        const v = lookup(k)
+        if (v === undefined) return undefined
+        return v !== null && typeof v === 'object' ? JSON.stringify(v) : toVarString(v)
+      }) as string,
   }
 
+  // Postman keeps a JSON data file's values as parsed: `.get('user').id` works.
   const iterationData = {
-    get: (k: string): string | undefined => (hasData(k) ? data[k] : undefined),
+    get: (k: string): unknown => (hasData(k) ? data[k] : undefined),
     has: (k: string): boolean => hasData(k),
-    toObject: (): Record<string, string> => ({ ...data }),
-    toJSON: (): Record<string, string> => ({ ...data }),
+    toObject: (): Record<string, unknown> => ({ ...data }),
+    toJSON: (): Record<string, unknown> => ({ ...data }),
     unset: (k: string): void => {
       delete data[k]
     },

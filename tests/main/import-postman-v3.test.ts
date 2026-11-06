@@ -446,7 +446,8 @@ describe('issue #276 part 2 — Postman v3 workspace folder', () => {
     expect(e.schema.auth).toEqual({ type: 'inherit' })
     expect(e.schema.preScript).toBe("pm.variables.set('q', 1);")
     expect(e.schema.postScript).toContain("pm.test('ok'")
-    expect(res.warnings!.join('\n')).toMatch(/operation name "Catalog"/)
+    // The name of the document's only operation adds nothing on the wire: nothing lost.
+    expect(res.warnings!.join('\n')).not.toMatch(/operation name "Catalog"/)
   })
 
   it('MCP (HTTP): tool call with a bare {{var}} argument, bearer auth, protocol pin, timeout', () => {

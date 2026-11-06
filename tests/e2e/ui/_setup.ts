@@ -12,6 +12,11 @@ import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { bootstrapWorkbench, closeAllTabs } from '../helpers/ui/bootstrap'
 import { electronLaunchOptions, firstAppWindow } from '../helpers/electron-env'
+import {
+  allowEveryProjectScripts,
+  resetScriptTrustDialog,
+  stubScriptTrustDialog,
+} from '../helpers/ui/script-trust'
 
 export interface UiFixtures {
   app: ElectronApplication
@@ -54,7 +59,10 @@ const KNOWN_BENIGN_CONSOLE_ERRORS: RegExp[] = [
  * Worker-scoped Electron fixture for UI E2E.
  * Bootstraps once per worker: EULA → guest login → test project.
  */
-export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, UiFixtures>({
+export const uiTest = test.extend<
+  { errorGuard: void; treeFilterReset: void; scriptTrustReset: void },
+  UiFixtures
+>({
   app: [
     async ({}, use) => {
       const mainPath = path.resolve(__dirname, '../../../out/main/index.js')
@@ -63,6 +71,8 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
       }
       const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'testnizer-ui-e2e-'))
       const app = await electron.launch(electronLaunchOptions(mainPath, userDataDir))
+      // Native, so unanswered it would hang this shared instance (helper's header).
+      await stubScriptTrustDialog(app, 'allow')
       await use(app)
 
       // Teardown timing. Three rounds of "fix the expensive-looking thing and
@@ -192,6 +202,7 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
   treeFilterReset: [
     async ({ window }, use) => {
       const search = window.getByTestId('tree-search')
+      // optional: setup hygiene: clears a leftover tree filter from the previous spec
       if (await search.isVisible().catch(() => false)) {
         await search.fill('').catch(() => {})
       }
@@ -230,6 +241,21 @@ export const uiTest = test.extend<{ errorGuard: void; treeFilterReset: void }, U
    * re-throws out of `use()` before the `expect`), so this never masks the real
    * failure — it purely upgrades otherwise-green tests into throw detectors.
    */
+  /**
+   * A test that imports a scripted collection leaves the project blocked. In this
+   * shared instance that would fail the next test's Run or mock driven over IPC,
+   * where nothing asks. Each test starts allowed, with the dialog answering Allow.
+   */
+  scriptTrustReset: [
+    async ({ app, window }, use) => {
+      await resetScriptTrustDialog(app) // answers Allow, and closes a dialog left held
+      await allowEveryProjectScripts(window).catch(() => {}) // nothing to read yet
+      await resetScriptTrustDialog(app) // those clears are not this test's prompts
+      await use()
+    },
+    { auto: true },
+  ],
+
   errorGuard: [
     async ({ window }, use, testInfo) => {
       const errors: string[] = []

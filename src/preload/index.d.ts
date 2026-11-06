@@ -9,6 +9,8 @@ import type {
   IpcResult,
   Workspace,
   Project,
+  ProjectTrustEnsure,
+  ProjectTrustStatus,
   Folder,
   Endpoint,
   EndpointCase,
@@ -170,6 +172,20 @@ interface ProjectApi {
     workspaceId: string
     name?: string
   }): Promise<IpcResult<{ projectId: string }>>
+}
+
+/**
+ * Whether a project's scripts may run on this computer. Main owns the answer:
+ * `ensure` shows a native prompt and only the click there can allow.
+ */
+interface ProjectTrustApi {
+  /** `hasScript`: about to run a script that may not be saved; can only make the prompt appear. */
+  ensure(
+    projectId: string,
+    options?: { hasScript?: boolean },
+  ): Promise<IpcResult<ProjectTrustEnsure>>
+  status(projectId: string): Promise<IpcResult<ProjectTrustStatus>>
+  block(projectId: string): Promise<IpcResult<boolean>>
 }
 
 interface FolderApi {
@@ -577,7 +593,10 @@ import type {
   GitDiscardOutcome,
   GitPushOpts,
 } from '../shared/git-changes'
-type CollectionExportIpcResult = IpcResult<string> & { skipped?: ExportSkippedItem[] }
+type CollectionExportIpcResult = IpcResult<string> & {
+  skipped?: ExportSkippedItem[]
+  notes?: string[]
+}
 
 /** A picked Postman v3 folder, as the Import modal shows it. */
 interface PostmanFolderPick {
@@ -628,7 +647,7 @@ interface ImportExportApi {
    * = cancelled). The handle is single-use.
    */
   /** Postman v3 (issue #277): the single v3 JSON file's text + what it left out / could not carry. */
-  exportPostmanV3Json(projectId: string): Promise<CollectionExportIpcResult & { notes?: string[] }>
+  exportPostmanV3Json(projectId: string): Promise<CollectionExportIpcResult>
   /** Postman v3 folder: main asks where, writes it and returns the created folder (null = cancelled). */
   exportPostmanV3Folder(
     projectId: string,
@@ -810,6 +829,7 @@ interface WsApi {
 import type {
   RunnerExecuteOptions,
   RunnerExportOptions,
+  RunnerPhaseEvent,
   RunnerProgress,
   RunnerReport,
   RunStopMode,
@@ -855,6 +875,8 @@ interface RunnerHistoryStats {
 
 interface RunnerApi {
   execute(options: RunnerExecuteOptions): Promise<IpcResult<RunnerReport>>
+  /** Set the Critical flag of an endpoint, saved request or suite item (issue #315). */
+  setRequestCritical(id: string, critical: boolean): Promise<IpcResult<void>>
   /**
    * End the run (issue #91).
    *
@@ -872,7 +894,13 @@ interface RunnerApi {
    * `skipTeardown: true` is the pre-#91 spelling of `mode: 'direct'`, still
    * honoured so an older renderer cannot silently get a graceful stop.
    */
-  stop(opts?: { mode?: RunStopMode; skipTeardown?: boolean }): Promise<IpcResult<boolean>>
+  stop(opts?: {
+    mode?: RunStopMode
+    skipTeardown?: boolean
+    /** The run to stop. Without `projectId` the call is unaddressed: every run stops. */
+    runTabId?: string
+    projectId?: string
+  }): Promise<IpcResult<boolean>>
   export(options: RunnerExportOptions): Promise<IpcResult<string>>
   onProgress(callback: (progress: RunnerProgress) => void): () => void
   /**
@@ -884,7 +912,7 @@ interface RunnerApi {
    * most for a cleanup endpoint that never answers, which produces no result
    * at all.
    */
-  onPhase(callback: (phase: RunPhase) => void): () => void
+  onPhase(callback: (event: RunnerPhaseEvent) => void): () => void
   /**
    * String argument → returns a flat `RunnerHistoryEntry[]` (legacy shape).
    * Object argument → returns `{ rows, total }` for paginated views.
@@ -905,6 +933,8 @@ interface RunnerApi {
 type SchedulerScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
 
 interface ScheduledTaskRow {
+  /** A run is in flight right now. */
+  running?: boolean
   id: string
   project_id: string
   name: string
@@ -964,7 +994,8 @@ interface SchedulerUpdatePayload extends SchedulerCreatePayload {
 interface SchedulerRunCompletedEvent {
   taskId: string
   taskName: string
-  report: RunnerReport
+  /** Absent when the run failed to complete or the task had nothing to run. */
+  report?: RunnerReport
 }
 
 interface SchedulerHistoryRow {
@@ -1009,7 +1040,8 @@ interface SchedulerApi {
       source: 'suite' | 'apis' | 'empty'
     }>
   >
-  runNow(taskId: string): Promise<IpcResult<boolean>>
+  /** `started: false`: the task was already running, and no second run began. */
+  runNow(taskId: string): Promise<IpcResult<{ started: boolean }>>
   validateCron(expr: string): Promise<IpcResult<{ valid: boolean }>>
   onRunCompleted(callback: (event: SchedulerRunCompletedEvent) => void): () => void
 }
@@ -1082,33 +1114,57 @@ interface GraphqlIntrospectionResult {
   subscriptionType: string | null
 }
 
-interface GraphqlSubscribePayload {
-  url: string
-  wsUrl?: string
-  query: string
-  variables?: string
-  operationName?: string
-  headers?: Record<string, string>
-  sslVerification?: boolean
-}
-
-interface GraphqlSubscriptionEvent {
-  subscriptionId: string
-  type: 'data' | 'error' | 'complete'
-  data?: string
-  error?: string
-  timestamp: number
-}
-
 interface GraphqlApi {
   execute(options: GraphqlExecutePayload): Promise<IpcResult<GraphqlApiResponse>>
   introspect(
     url: string,
     headers?: Record<string, string>,
   ): Promise<IpcResult<GraphqlIntrospectionResult>>
-  subscribe(options: GraphqlSubscribePayload): Promise<IpcResult<{ subscriptionId: string }>>
-  unsubscribe(subscriptionId: string): Promise<IpcResult<boolean>>
-  onSubscriptionEvent(callback: (event: GraphqlSubscriptionEvent) => void): () => void
+}
+
+// ─── GraphQL subscriptions (WebSocket) ───────────────────────────
+
+interface GraphqlWsConnectPayload {
+  /** Chosen by the renderer: events carry it from the first frame. */
+  connectionId: string
+  url: string
+  headers?: Record<string, string>
+  query: string
+  /** The Variables field as typed, `{{var}}` resolved. */
+  variables?: string
+  /** The connection_init field as typed, `{{var}}` resolved. */
+  connectionInit?: string
+  /** Which operation of the document runs; only for a document with several. */
+  operationName?: string
+  sslVerification?: boolean
+  tls?: {
+    minVersion?: string
+    maxVersion?: string
+    cipherPreset?: 'modern' | 'intermediate' | 'legacy' | 'custom'
+    ciphersCustom?: string
+  }
+  _tabId?: string
+  _workspaceId?: string
+  _projectId?: string
+  _endpointId?: string
+  _configured?: { url: string; meta?: Record<string, unknown> }
+}
+
+type GraphqlWsConnectResult = IpcResult<{
+  connectionId: string
+  url: string
+  protocol: import('../shared/graphql-ws').GraphqlWsProtocol
+  connectedAt: number
+}> & {
+  errorInfo?: import('../shared/connection-error').ConnectionErrorInfo
+  failure?: import('../shared/graphql-ws').GqlWsFailure
+}
+
+interface GraphqlWsApi {
+  connect(options: GraphqlWsConnectPayload): Promise<GraphqlWsConnectResult>
+  cancelConnect(connectionId: string): Promise<IpcResult<{ canceled: boolean }>>
+  disconnect(connectionId: string): Promise<IpcResult<boolean>>
+  onEvent(callback: (event: import('../shared/graphql-ws').GqlWsEvent) => void): () => void
 }
 
 // ─── gRPC ────────────────────────────────────────────────────────
@@ -1116,6 +1172,7 @@ interface GraphqlApi {
 interface GrpcServiceDescription {
   protoPath: string
   packageName: string
+  fromCache?: boolean
   services: Array<{
     name: string
     fullName: string
@@ -2136,6 +2193,7 @@ interface AppApi {
    */
   version(): Promise<IpcResult<{ version: string; name: string; buildId?: string }>>
   openExternal(url: string): Promise<IpcResult<null>>
+  reportIssue(): Promise<IpcResult<null>>
   onOpenAbout(callback: () => void): () => void
   onMenuCommand(callback: (command: string) => void): () => void
 }
@@ -2408,12 +2466,12 @@ interface SaveApi {
   importProject(payload: {
     workspaceId: string
     name?: string
-  }): Promise<IpcResult<{ projectId: string }>>
+  }): Promise<IpcResult<{ projectId: string; absoluteFiles?: boolean }>>
   importProjectFromContent(payload: {
     workspaceId: string
     content: string
     name?: string
-  }): Promise<IpcResult<{ projectId: string }>>
+  }): Promise<IpcResult<{ projectId: string; absoluteFiles?: boolean }>>
   importFolder(payload: {
     projectId: string
     parentFolderId?: string | null
@@ -2850,6 +2908,7 @@ interface DialogApi {
     title?: string
     filters?: Array<{ name: string; extensions: string[] }>
     multiSelections?: boolean
+    requestBodyProjectId?: string
   }): Promise<IpcResult<DialogFileResult | DialogFileResult[]>>
 }
 
@@ -3526,6 +3585,7 @@ interface ApiBridge {
   console: ConsoleApi
   workspace: WorkspaceApi
   project: ProjectApi
+  projectTrust: ProjectTrustApi
   folder: FolderApi
   endpoint: EndpointApi
   endpointCase: EndpointCaseApi
@@ -3546,6 +3606,7 @@ interface ApiBridge {
   runner: RunnerApi
   scheduler: SchedulerApi
   graphql: GraphqlApi
+  graphqlWs: GraphqlWsApi
   grpc: GrpcApi
   sse: SseApi
   aiChat: AiChatApi

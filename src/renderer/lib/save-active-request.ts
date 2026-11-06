@@ -18,8 +18,8 @@ import { useWebSocketStore } from '../stores/websocket.store'
 import { useSseStore } from '../stores/sse.store'
 import { useSocketIOStore } from '../stores/socketio.store'
 import { useMqttStore } from '../stores/mqtt.store'
-import { useGrpcStore } from '../stores/grpc.store'
-import { useGraphQLStore } from '../stores/graphql.store'
+import { useGrpcStore, type GrpcService } from '../stores/grpc.store'
+import { gqlMetaOf, useGraphQLStore } from '../stores/graphql.store'
 import { restoreMcpCall, useMcpStore, type McpTransport } from '../stores/mcp.store'
 import { restoreAiConfig, savedAiConfigOf, useAiChatStore } from '../stores/ai-chat.store'
 import { readSavedMcpCall, savedCallOf } from '../stores/mcp-call.slice'
@@ -214,6 +214,7 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
           protoPath: grpc.protoPath,
           selectedService: grpc.selectedService,
           selectedMethod: grpc.selectedMethod,
+          services: grpc.services,
           requestBody: grpc.requestBody,
           metadata: grpc.metadata,
         },
@@ -229,14 +230,7 @@ export function snapshotProtocol(tab: Tab): ProtocolSnapshot {
       effectiveUrl: gql.url || url,
       effectiveMethod: 'POST',
       effectiveBody: { type: 'graphql', content: gql.query },
-      protocolMeta: {
-        graphql: {
-          url: gql.url,
-          query: gql.query,
-          variables: gql.variables,
-          headers: gql.headers,
-        },
-      },
+      protocolMeta: { graphql: gqlMetaOf(gql) },
     }
   }
   if (protocol === 'mcp') {
@@ -628,11 +622,35 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     // Metadata was snapshotted but never restored, so reopened gRPC tabs lost
     // their auth / tracing metadata (found with issue #182).
     if (Array.isArray(g.metadata)) useGrpcStore.setState({ metadata: g.metadata as KeyValuePair[] })
-    // `services` and `selectedService/Method` aren't restored here —
-    // services need to be re-parsed by reloading the proto, otherwise
-    // we'd be writing dropdown selections that the editor can't render.
-    // The user clicks "Load Proto" once and selection state comes back
-    // via per-tab cache. Tracked as a known limitation.
+    // A URL row's `protoPath` is a cache file under the saving machine's userData:
+    // Send downloads the proto again (`loadSavedUrlProto` in grpc.store).
+    const fromUrl = g.protoSource === 'url'
+    if (!fromUrl && typeof g.protoPath === 'string' && g.protoPath) {
+      useGrpcStore.setState({ protoPath: g.protoPath })
+    }
+    // The selection needs its `services`: the dropdowns list them and Send reads
+    // the streaming type from them. A row saved before `services` was written
+    // comes back through "Load Proto" and the per-tab cache. A URL row gets them
+    // from that download, so its method stays selected without them.
+    if (
+      fromUrl &&
+      !(Array.isArray(g.services) && g.services.length > 0) &&
+      typeof g.selectedService === 'string' &&
+      typeof g.selectedMethod === 'string'
+    ) {
+      useGrpcStore.setState({
+        selectedService: g.selectedService,
+        selectedMethod: g.selectedMethod,
+      })
+    }
+    if (Array.isArray(g.services) && g.services.length > 0) {
+      useGrpcStore.setState({
+        services: g.services as GrpcService[],
+        protoLoaded: true,
+        selectedService: typeof g.selectedService === 'string' ? g.selectedService : null,
+        selectedMethod: typeof g.selectedMethod === 'string' ? g.selectedMethod : null,
+      })
+    }
     return
   }
 
@@ -643,6 +661,10 @@ function applyProtocolMetadata(protocol: string, metadata: unknown): void {
     if (typeof g.query === 'string') gql.setQuery(g.query)
     if (typeof g.variables === 'string') gql.setVariables(g.variables)
     if (Array.isArray(g.headers)) gql.setHeaders(g.headers as KeyValuePair[])
+    useGraphQLStore.setState({
+      connectionInit: typeof g.connectionInit === 'string' ? g.connectionInit : '',
+      operationName: typeof g.operationName === 'string' ? g.operationName : '',
+    })
     return
   }
 

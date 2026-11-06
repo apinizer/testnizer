@@ -5,15 +5,16 @@
  *  - The log masks the values of variables marked SECRET, like History and
  *    the Console do (`secret-inventory-cache.ts`). Before: `pushLog` built its
  *    scrubber from the request's credential-named headers + query only, so a
- *    secret env value sent in a NEUTRAL header (`x-trace: {{token}}`) or
- *    rendered by the mock itself (`{"v":"{{mockOnlySecret}}"}`) sat in the
- *    Logs tab in clear text.
+ *    secret env value sent in a NEUTRAL header (`x-trace: {{token}}`) sat in
+ *    the Logs tab in clear text. A mock no longer renders secrets at all
+ *    (`mock-secret-variables.test.ts`): `{{mockOnlySecret}}` stays literal, so
+ *    the value a client sends is what is left to mask.
  *  - The log value-scrubs credential-named BODY fields too (`client_secret`
  *    echoed back under a neutral name).
  *  - An SSE frame template renders a project environment variable, including
  *    the `initial_value` fallback (audit gap).
  *
- * Only the LOG is masked — the live reply still carries every value.
+ * Only the LOG is masked — the reply still echoes what the client itself sent.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTestDb, seedProject, seedWorkspace } from './handlers/helpers'
@@ -86,25 +87,27 @@ describe('mock log masks the secret-variable inventory', () => {
     expect(JSON.stringify(entry)).not.toContain(TRACE)
   })
 
-  it('a mock body rendering {{secretVar}} is masked in the log response body', async () => {
+  it('a mock body with {{secretVar}} sends and logs the tag, never the value', async () => {
     const port = await start([
       { path: '/json', response: { bodyType: 'json', body: '{"v":"{{mockOnlySecret}}"}' } },
     ])
     const r = await rawRead(port, '/json')
-    expect(JSON.parse(r.text)).toEqual({ v: MOCK_ONLY })
+    expect(JSON.parse(r.text)).toEqual({ v: '{{mockOnlySecret}}' })
     const [entry] = mockServerManager.getLogs(ID)
-    expect(entry.response.body).toBe(`{"v":"${HISTORY_MASK}"}`)
+    expect(entry.response.body).toBe('{"v":"{{mockOnlySecret}}"}')
     expect(JSON.stringify(entry)).not.toContain(MOCK_ONLY)
   })
 
-  it('an SSE stream rendering {{secretVar}}: the closed entry preview is masked', async () => {
+  it('an SSE stream echoing a secret the client sent: the closed entry preview is masked', async () => {
     const port = await start([
       {
         path: '/sse',
-        response: sseResponse('data: {{mockOnlySecret}}\n\ndata: done', { intervalMs: 0 }),
+        response: sseResponse('data: {{request.headers.x-trace}}\n\ndata: done', {
+          intervalMs: 0,
+        }),
       },
     ])
-    const r = await rawRead(port, '/sse')
+    const r = await rawRead(port, '/sse', { headers: { 'x-trace': MOCK_ONLY } })
     expect(r.text).toBe(`data: ${MOCK_ONLY}\n\ndata: done\n\n`)
     expect(await waitFor(() => mockServerManager.getLogs(ID).length === 2)).toBe(true)
     const logs = mockServerManager.getLogs(ID)

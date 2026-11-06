@@ -5,8 +5,10 @@
 
 import { useTabsStore } from '../stores/tabs.store'
 import { useUIStore } from '../stores/ui.store'
+import { t } from './i18n'
 import { isRunnerBusy } from './runner-activity'
 import { runnerKey } from './runner-storage'
+import { toast } from './toast'
 
 const RUNNER_TAB_ID = 'runner-main'
 
@@ -28,6 +30,23 @@ export function openOrReuseRunnerTab(
   const tabsApi = useTabsStore.getState()
   const existing = tabsApi.tabs.find((tab) => tab.protocol === 'runner')
   const tabId = existing ? existing.id : RUNNER_TAB_ID
+
+  // A run or a new run config aimed at a tab with a run in flight focuses that
+  // run: replaying a payload would take the live view away (same rule as
+  // openFolderRunner). Overview / All Runs / a past report are only looks, and
+  // RunnerTab keeps a way back to the live run.
+  const lookOnly =
+    sessionData &&
+    (sessionData.viewHome ||
+      sessionData.viewAllRuns ||
+      sessionData.viewScheduledTasks ||
+      Array.isArray(sessionData.results))
+  if (existing && isRunnerBusy(existing.id) && !lookOnly) {
+    tabsApi.setActiveTab(existing.id)
+    toast.info(t('runResults.alreadyRunning'))
+    return
+  }
+
   const sessionKey = nextSessionKey()
 
   if (sessionData) {
@@ -101,6 +120,7 @@ export function openFolderRunner(folderId: string, folderName?: string): void {
     tabsApi.openTab({ id: tabId, name: folderName || 'Runner', protocol: 'runner', folderId })
     tabsApi.setActiveTab(tabId)
     useUIStore.getState().setActiveSidebarPage('tests')
+    toast.info(t('runResults.alreadyRunning'))
     return
   }
   // A fresh session token on every Run. When the tab is already open (and even

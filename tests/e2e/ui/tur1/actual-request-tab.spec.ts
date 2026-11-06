@@ -18,7 +18,7 @@
  * `options.url` when the engine throws. So MST-305 embeds credentials in a
  * VALID local URL that returns 200 — exercising the masking code path.
  */
-import { expect, type Page } from '@playwright/test'
+import { expect } from '@playwright/test'
 import { uiTest } from './_setup'
 import {
   dismissOverlays,
@@ -35,44 +35,9 @@ import {
   createEnvironment,
 } from '../../helpers/ui/env'
 import { localHttpBin } from '../../helpers/test-servers'
+import { ensureConsolePanelOpen, expandActualRequest } from '../../helpers/ui/console-flow'
 
 const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
-
-/** Open the footer Console panel (idempotent — toggles, so guard on visibility). */
-async function openConsolePanel(page: Page): Promise<void> {
-  const panel = page.getByTestId('console-panel')
-  if (!(await panel.isVisible().catch(() => false))) {
-    await page.getByTestId('footer-console').click()
-  }
-  await expect(panel).toBeVisible({ timeout: 8_000 })
-}
-
-/**
- * Expand the console row whose visible text contains `needle` (a unique marker
- * baked into the request URL) and return its expanded `actual-request-panel`.
- * The console list is virtualized + worker-shared, so we scope to a unique
- * marker and click the matching row to expand it.
- */
-async function expandActualRequest(page: Page, needle: string) {
-  const list = page.getByTestId('console-list')
-  // The collapsible header is the inner `cursor-pointer` flex row; scope to the
-  // one whose visible text carries our unique marker (collapsed row shows the
-  // entry URL, which includes the marker query param).
-  const row = list.locator('div.cursor-pointer', { hasText: needle }).first()
-  await expect(row).toBeVisible({ timeout: 15_000 })
-  await row.click()
-  // The expanded detail is the row header's SIBLING inside the same entry
-  // container — locate it structurally (filtering the panel by the marker text
-  // would fail: the URL lives in the "Network" section, which starts COLLAPSED,
-  // so the marker is not in the panel's DOM yet).
-  const panel = row.locator('xpath=..').getByTestId('actual-request-panel')
-  await expect(panel).toBeVisible({ timeout: 8_000 })
-  // Open the collapsed "Network" section so the URL/method KV rows render.
-  const networkHeader = panel.locator('div.cursor-pointer', { hasText: /^Network$/ }).first()
-  await networkHeader.click()
-  await expect(panel.getByText('URL:', { exact: true })).toBeVisible({ timeout: 5_000 })
-  return panel
-}
 
 uiTest.describe('Tur1 — Actual request panel [MST-304, MST-305]', () => {
   uiTest.beforeEach(async ({ window }) => {
@@ -114,7 +79,7 @@ uiTest.describe('Tur1 — Actual request panel [MST-304, MST-305]', () => {
     await expect(window.getByText(/200|OK/i).first()).toBeVisible({ timeout: 30_000 })
 
     // HARD assertions — no catch / no if-visible guard.
-    await openConsolePanel(window)
+    await ensureConsolePanelOpen(window)
     const panel = await expandActualRequest(window, marker)
 
     // Resolved URL must be present and templates must be gone.
@@ -143,7 +108,7 @@ uiTest.describe('Tur1 — Actual request panel [MST-304, MST-305]', () => {
     await window.getByTestId('send-btn').click()
     await expect(window.getByText(/200|OK/i).first()).toBeVisible({ timeout: 30_000 })
 
-    await openConsolePanel(window)
+    await ensureConsolePanelOpen(window)
     const panel = await expandActualRequest(window, marker)
 
     // HARD assertions — credentials must not appear anywhere in the panel.

@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { resolveInheritance } from '../../lib/auth-inheritance'
 import { withSoapTransportHeaders } from '../../../shared/soap-transport'
 import { isWsSecurityEnabled } from '../../../shared/soap-wsse'
+import { chooseGraphqlOperation } from '../../../shared/graphql-row'
 import { resolveFollowRedirects, resolveSslVerification } from '../../../shared/request-settings'
 import { useInheritedNetwork } from '../../lib/use-inherited-network'
 import type { CodeGenRequest } from '../../lib/code-generator'
@@ -21,6 +22,9 @@ import type { AuthConfig } from '../../types'
 export type CodegenSource =
   | { kind: 'request'; req: CodeGenRequest; wsSecurityNote?: boolean }
   | { kind: 'unavailable'; protocol: string }
+
+/** `unavailable` for a GraphQL tab whose query is a subscription. */
+export const CODEGEN_GRAPHQL_SUBSCRIPTION = 'graphql-subscription'
 
 /** Protocols whose request is plain HTTP on the wire (issue #280). */
 const HTTP_LIKE = new Set(['http', 'graphql', 'soap'])
@@ -129,12 +133,15 @@ function useHttpRequest(auth: AuthConfig | undefined): CodeGenRequest {
   )
 }
 
-/** A GraphQL tab: Send posts `{query, variables}` as JSON (`graphql.store.executeQuery`). */
+/** A GraphQL tab: Send posts `{query, operationName?, variables}` as JSON (`graphql.store.executeQuery`). */
 function useGraphqlRequest(): CodeGenRequest {
   const url = useGraphQLStore((s) => s.url)
   const query = useGraphQLStore((s) => s.query)
   const variables = useGraphQLStore((s) => s.variables)
   const headers = useGraphQLStore((s) => s.headers)
+  const operationName = useGraphQLStore(
+    (s) => chooseGraphqlOperation(s.query, s.operationName).operationName,
+  )
   const { sslVerification, followRedirects } = useNetworkSettings()
   return useMemo(
     () => ({
@@ -142,10 +149,13 @@ function useGraphqlRequest(): CodeGenRequest {
       url,
       params: [],
       headers,
-      body: { type: 'graphql', graphql: { query, variables } },
+      body: {
+        type: 'graphql',
+        graphql: { query, variables, ...(operationName ? { operationName } : {}) },
+      },
       settings: { sslVerification, followRedirects },
     }),
-    [url, query, variables, headers, sslVerification, followRedirects],
+    [url, query, variables, operationName, headers, sslVerification, followRedirects],
   )
 }
 
@@ -233,8 +243,15 @@ export function useCodegenSource(): CodegenSource {
   const soap = useSoapRequest(auth)
   // The same predicate `sendSoap` uses to hand WS-Security to main.
   const wsSecurityOn = useSoapStore((s) => isWsSecurityEnabled(s.wsSecurity))
+  const subscription = useGraphQLStore(
+    (s) => chooseGraphqlOperation(s.query, s.operationName).isSubscription,
+  )
   const p = protocol ?? 'http'
   if (!HTTP_LIKE.has(p)) return { kind: 'unavailable', protocol: p }
+  // A subscription runs over a WebSocket: an HTTP snippet would be a POST it never sends.
+  if (p === 'graphql' && subscription) {
+    return { kind: 'unavailable', protocol: CODEGEN_GRAPHQL_SUBSCRIPTION }
+  }
   if (p === 'soap') return { kind: 'request', req: soap, wsSecurityNote: wsSecurityOn }
   return { kind: 'request', req: p === 'graphql' ? graphql : http }
 }

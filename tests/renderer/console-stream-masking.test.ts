@@ -43,7 +43,6 @@ function installApi(): ReturnType<typeof vi.fn> {
     ws: { onEvent: on('ws') },
     sse: { onEvent: on('sse') },
     grpc: { onStreamEvent: on('grpc') },
-    graphql: { onSubscriptionEvent: on('graphql') },
     socketio: { onEvent: on('socketio') },
   }
   return maskEntry
@@ -62,16 +61,15 @@ beforeEach(() => {
 })
 
 describe('mirrored stream entries are masked (issue #196)', () => {
-  it('WS, SSE, gRPC, GraphQL and Socket.IO data carrying a secret reach the Console masked', async () => {
+  it('WS, SSE, gRPC and Socket.IO data carrying a secret reach the Console masked', async () => {
     const maskEntry = installApi()
     const stop = initConsoleListeners()
     listeners.ws({ type: 'message', data: `{"token":"${SECRET}"}` })
     listeners.sse({ type: 'event', eventType: 'msg', data: `auth ${SECRET}` })
     listeners.grpc({ type: 'data', data: `{"t":"${SECRET}"}` })
-    listeners.graphql({ type: 'data', data: `{"t":"${SECRET}"}` })
     listeners.socketio({ direction: 'in', event: 'hello', data: { t: SECRET } })
-    await settle(5)
-    expect(maskEntry).toHaveBeenCalledTimes(5)
+    await settle(4)
+    expect(maskEntry).toHaveBeenCalledTimes(4)
     expect(entriesText()).not.toContain(SECRET)
     expect(entriesText()).toContain(HISTORY_MASK)
     stop()
@@ -109,8 +107,7 @@ describe('preview truncation happens on the MASKED text (issue #196 review)', ()
     const data = `{"p":"${'a'.repeat(60)}","x":"${SECRET}"}`
     listeners.ws({ type: 'message', data })
     listeners.grpc({ type: 'data', data })
-    listeners.graphql({ type: 'data', data })
-    await settle(3)
+    await settle(2)
     for (const e of useConsoleStore.getState().entries) {
       expect(e.message).not.toContain(SECRET.slice(0, 6))
       expect(e.message?.length).toBeLessThanOrEqual(100)

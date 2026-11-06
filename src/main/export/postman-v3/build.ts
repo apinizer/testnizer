@@ -34,6 +34,7 @@ import {
   type MqttWillProperties,
 } from '../../../shared/mqtt'
 import { parseJsonWithVars } from '../../../shared/json-with-vars'
+import { chooseGraphqlOperation } from '../../../shared/graphql-row'
 import {
   soapTransportFromMeta,
   withSoapTransportHeaders,
@@ -98,13 +99,20 @@ function body(b: unknown): Json | undefined {
     // A GraphQL-over-HTTP body imported from Postman is stored as JSON
     // `{query, variables}` — give it back as the graphql body type.
     try {
-      const parsed = JSON.parse(b.content) as { query?: unknown; variables?: unknown }
+      const parsed = JSON.parse(b.content) as {
+        query?: unknown
+        variables?: unknown
+        operationName?: unknown
+      }
       if (parsed && typeof parsed.query === 'string') {
         return {
           type: 'graphql',
           content: {
             query: parsed.query,
             variables: parsed.variables !== undefined ? JSON.stringify(parsed.variables) : '{}',
+            ...(typeof parsed.operationName === 'string'
+              ? { operationName: parsed.operationName }
+              : {}),
           },
         }
       }
@@ -366,25 +374,39 @@ class Builder {
         : g.variables !== undefined
           ? JSON.stringify(g.variables)
           : ''
+    let selected = str(g.operationName)
     if (!query && isRecord(s.body)) {
       // A row without the GraphQL block: the body holds the query (or `{query, variables}` JSON).
       const content = str(s.body.content)
       if (s.body.type === 'graphql') query = content
       else {
         try {
-          const p = JSON.parse(content) as { query?: unknown; variables?: unknown }
+          const p = JSON.parse(content) as {
+            query?: unknown
+            variables?: unknown
+            operationName?: unknown
+          }
           if (typeof p.query === 'string') {
             query = p.query
             if (p.variables !== undefined) variables = JSON.stringify(p.variables)
+            selected = str(p.operationName)
           }
         } catch {
           /* not GraphQL */
         }
       }
     }
+    if (str(g.connectionInit).trim()) {
+      this.note(
+        req.name,
+        'the subscription connection_init payload has no Postman v3 field and was not exported.',
+      )
+    }
     doc.url = str(g.url) || str(s.url)
     doc.query = query
     if (variables) doc.variables = variables
+    const operationName = chooseGraphqlOperation(query, selected).operationName
+    if (operationName) doc.operationName = operationName
     const h = rows(Array.isArray(g.headers) ? g.headers : s.headers)
     if (h.length > 0) doc.headers = h
     const a = this.auth(s.auth, HTTP_AUTH, req.name)

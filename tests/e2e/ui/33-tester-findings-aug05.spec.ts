@@ -45,6 +45,7 @@ import { localHttpBin } from '../helpers/test-servers'
 
 /** Close the console drawer if it is open, so later specs start clean. */
 async function closeConsolePanel(page: Parameters<typeof openConsolePanel>[0]): Promise<void> {
+  // optional: cleanup: close the console drawer only if it is open
   if (await page.getByTestId('console-panel').isVisible().catch(() => false)) {
     await page.getByTestId('footer-console').click().catch(() => {})
   }

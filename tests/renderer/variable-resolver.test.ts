@@ -1,8 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  resolveVariables,
-  resolveKeyValuePairs,
-} from '../../src/renderer/lib/variable-resolver'
+import { resolveVariables, resolveKeyValuePairs } from '../../src/renderer/lib/variable-resolver'
 
 describe('resolveVariables', () => {
   it('returns empty/null templates as-is', () => {
@@ -18,21 +15,21 @@ describe('resolveVariables', () => {
   })
 
   it('substitutes multiple variables in one template', () => {
-    expect(
-      resolveVariables('{{greeting}} {{name}}!', { greeting: 'Hi', name: 'Ada' }),
-    ).toBe('Hi Ada!')
+    expect(resolveVariables('{{greeting}} {{name}}!', { greeting: 'Hi', name: 'Ada' })).toBe(
+      'Hi Ada!',
+    )
   })
 
   it('falls back to globals when env var is missing', () => {
-    expect(
-      resolveVariables('{{baseUrl}}/users', {}, { baseUrl: 'https://api.example.com' }),
-    ).toBe('https://api.example.com/users')
+    expect(resolveVariables('{{baseUrl}}/users', {}, { baseUrl: 'https://api.example.com' })).toBe(
+      'https://api.example.com/users',
+    )
   })
 
   it('prefers env over global when both define same key', () => {
-    expect(
-      resolveVariables('{{token}}', { token: 'env-token' }, { token: 'global-token' }),
-    ).toBe('env-token')
+    expect(resolveVariables('{{token}}', { token: 'env-token' }, { token: 'global-token' })).toBe(
+      'env-token',
+    )
   })
 
   it('leaves unknown placeholders untouched', () => {
@@ -83,5 +80,20 @@ describe('resolveKeyValuePairs', () => {
 
   it('returns empty array for empty input', () => {
     expect(resolveKeyValuePairs([], {})).toEqual([])
+  })
+})
+
+describe('a name like an inherited object property is not a variable', () => {
+  it.each(['toString', 'constructor', 'valueOf', 'hasOwnProperty', '__proto__'])(
+    '{{%s}} stays as written',
+    (name) => {
+      expect(resolveVariables(`v={{${name}}}`, {}, {})).toBe(`v={{${name}}}`)
+    },
+  )
+
+  it('the same name set as a variable resolves', () => {
+    expect(resolveVariables('v={{toString}}', { toString: 'mine' } as Record<string, string>)).toBe(
+      'v=mine',
+    )
   })
 })

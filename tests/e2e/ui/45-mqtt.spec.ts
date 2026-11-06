@@ -65,6 +65,11 @@ const systemRow = (window: Page, text: RegExp) =>
 uiTest.describe('MQTT (#284)', () => {
   uiTest.beforeEach(async ({ window }) => {
     // The supervisor leaves the broker out when it cannot start (mqtt-server.ts).
+    // Locally that is a reason to skip; on CI a broker that never started would
+    // turn this whole spec into a silent green, so there it is a failure.
+    if (!getTestServerUrls().mqtt && process.env.CI) {
+      throw new Error('MQTT test broker did not start on CI (see "[e2e-servers] MQTT broker" in the log)')
+    }
     uiTest.skip(!getTestServerUrls().mqtt, 'MQTT test broker is not running')
     await dismissOverlays(window)
     await navigateSidebar(window, 'apis')

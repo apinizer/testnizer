@@ -177,6 +177,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'userMenu.managePassword': 'Manage password…',
     'userMenu.lock': 'Lock',
     'userMenu.setPassword': 'Set a password…',
+    'userMenu.reportIssue': 'Report an issue or request a feature',
+    'userMenu.reportIssueFailed': 'Could not open the browser: {error}',
     'userMenu.about': 'About Testnizer',
     'env.importing': 'Importing…',
     'env.importSuccess': 'Environment imported',
@@ -311,6 +313,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'scheduledTasks.lastRun': 'Last run: {date}',
     'scheduledTasks.environmentDeleted': 'Deleted environment',
     'scheduledTasks.runNow': 'Run now',
+    'scheduledTasks.running': 'Running…',
     'scheduledTasks.pause': 'Pause',
     'scheduledTasks.resume': 'Resume',
     'scheduledTasks.delete': 'Delete',
@@ -438,6 +441,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'codeGen.unavailableTitle': 'Code generation is not available for {protocol} requests',
     'codeGen.unavailableHint': 'Generate Code covers HTTP, GraphQL and SOAP requests.',
     'codeGen.unavailableTab': 'Code generation is not available for this tab',
+    'codeGen.unavailableSubscription': 'Code generation is not available for GraphQL subscriptions',
+    'codeGen.unavailableSubscriptionHint':
+      'A subscription runs over a WebSocket. Generate Code covers HTTP, GraphQL queries and mutations, and SOAP.',
     'curlPaste.applied': 'Request filled from a {dialect} cURL command',
     'curlPaste.dialect.bash': 'bash',
     'curlPaste.dialect.cmd': 'Windows CMD',
@@ -452,6 +458,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'curlPaste.warning.unknown-flag': 'Unknown option {arg} was ignored',
     'curlPaste.warning.unsupported-flag': '{arg} has no equivalent here and was ignored',
     'curlPaste.warning.file-reference': 'File {arg} is not read — check the body',
+    'curlPaste.warning.absolute-file':
+      'File {arg} has an absolute path: Send reads it only if it is inside Project Settings → Working directory or Read files outside the working directory is on',
     'curlPaste.warning.missing-value': '{arg} has no value',
     'curlPaste.warning.extra-url': 'Only the first URL is used; {arg} was ignored',
     'curlPaste.warning.ignored-arg': '"{arg}" was not understood and was ignored',
@@ -698,6 +706,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'A typed bearer token is not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep it in the environment instead.',
     'credentials.restartHint':
       'Typed passwords, tokens and keys are not kept after a restart unless the request is saved. Use a {{variable}} (a secret one) to keep them in the environment instead.',
+    'credentials.sendDroppedTabChanged':
+      'The request was not sent because you switched tabs. Send it again from that tab.',
     'credentials.reloadFailedSend':
       'The saved credentials could not be reloaded, so this request is sent with the empty fields. Reopen the request from the tree and try again.',
     'socketio.tokenPlaceholder': 'Bearer token (optional)',
@@ -1216,7 +1226,23 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.workingDirectory': 'Working directory',
     'general.workingDirectoryPlaceholder': '/path/to/request-files',
     'general.workingDirectoryHint':
-      'Absolute folder path on this computer. Relative form-data and binary file paths (e.g. from a Postman import) are read from here; absolute paths are used as they are.',
+      'Absolute folder path on this computer. Relative form-data and binary file paths (e.g. from a Postman import) are read from here. An absolute path must be inside this folder unless the option below is on.',
+    'general.readFilesOutsideWorkingDirectory': 'Read files outside the working directory',
+    'general.readFilesOutsideWorkingDirectoryHint':
+      'Lets collections and projects you did not write read any file on this computer and send it. Turn it on only if you trust them. Choosing a file outside the folder for a request turns it on. Applies to this computer only.',
+    'general.scriptTrust': 'Scripts from this project',
+    'general.scriptTrustAllowed':
+      'Allowed on this computer. Scripts are not sandboxed: they can reach anything your user account can.',
+    'general.scriptTrustBlocked':
+      'Blocked on this computer: nothing runs them, and requests that have a script are not sent. This project holds {count} scripts.',
+    'general.scriptTrustBlockedOne':
+      'Blocked on this computer: nothing runs it, and requests that have a script are not sent. This project holds {count} script.',
+    'general.scriptTrustAllow': 'Allow',
+    'general.scriptTrustBlock': 'Block',
+    'scriptTrust.sendRefused':
+      'Scripts from this project are not allowed on this computer, so the request was not sent. Send again and choose Allow, or allow them in Project Settings.',
+    'scriptTrust.runRefused':
+      'The run did not start: scripts from this project are not allowed on this computer.',
     'general.headers': 'Headers',
     'general.requestBehavior': 'Request behavior',
     'general.editor': 'Editor',
@@ -1365,6 +1391,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'proxy.noProxy': 'No proxy',
     'proxy.custom': 'Custom proxy',
     'proxy.proxyType': 'Proxy type',
+    'proxy.socksUnsupported': 'SOCKS (not supported yet)',
     'proxy.host': 'Host',
     'proxy.port': 'Port',
     'proxy.bypass': 'Bypass for hosts',
@@ -1582,6 +1609,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.bothSave': 'Local + Git backup',
 
     // Update Modal
+    'update.unavailable': 'Updates are not available in this build.',
     'update.checking': 'Checking for updates...',
     'update.available': 'Update available',
     'update.download': 'Download',
@@ -1768,6 +1796,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerConfig.dataRowNotObject': 'Row {index} is not an object',
     'runnerConfig.csvTooShort': 'CSV must have a header row and at least one data row',
     'runnerConfig.dataUnsupported': 'Unsupported file format — use .json or .csv',
+    'runnerConfig.dataEmpty': 'The JSON array has no rows, so there is nothing to iterate over',
+    'runnerConfig.dataNotText': 'This is not a text file — save it as UTF-8 CSV or JSON',
+    'runnerConfig.dataTooLarge': 'The file is larger than the {max} MB limit',
+    'runnerConfig.dataTooManyRows': 'The file has more than the {max} row limit',
+    'runnerConfig.csvInvalid': 'The CSV file could not be read: {detail}',
+    'runnerConfig.jsonInvalid': 'The JSON file could not be read: {detail}',
     'runnerConfig.advancedSettings': 'Advanced Settings',
     'runnerConfig.persistResponses': 'Persist responses for a session',
     'runnerConfig.stopOnError': 'Stop run if an error occurs',
@@ -1784,6 +1818,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runSequence.collapseFolder': 'Collapse {name}',
     'runSequence.selectFolder': 'Select folder {name}',
     'runSequence.selectRequest': 'Select {name}',
+    'runSequence.markCritical': 'Mark {name} as critical',
+    'runSequence.criticalSaveFailed': 'Could not update the Critical flag: {error}',
     'runnerTab.scheduledRunName': 'Scheduled Run',
     'runnerTab.showVariables': 'Show variables',
     'runnerTab.showVariablesPanel': 'Show variables panel',
@@ -1815,6 +1851,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runResults.allMethods': 'All methods',
     'runResults.clearFilters': 'Clear filters',
     'runResults.noMatches': 'No request matches the current filters.',
+    'runResults.nothingTitle': 'No results to show',
+    'runResults.nothingBody':
+      'This run left no results here. A window reload can lose a run that was in progress; All Runs keeps finished ones.',
+    'runResults.liveBanner': 'A run is in progress: {current} of {total}',
+    'runResults.liveBannerShow': 'Show run',
+    'runResults.alreadyRunning': 'A run is already in progress in this tab. Showing it.',
     'runResults.revealInApis': 'Reveal in APIs',
     'runResults.revealNotFound': 'This request is no longer in the APIs tree.',
     'runResults.revealInTests': 'Reveal in Tests',
@@ -1918,6 +1960,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'export.skipped': '{count} item(s) left out of the {format} export: {names}',
     'export.skippedMore': 'and {count} more',
     'export.v3Notes': '{count} detail(s) could not be carried into Postman v3',
+    'export.notesOne': '{count} detail could not be carried into the exported file',
+    'export.notes': '{count} details could not be carried into the exported file',
     'testsPanel.import': 'Import…',
     'testsPanel.duplicate': 'Duplicate',
     'testsPanel.delete': 'Delete',
@@ -2904,9 +2948,20 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.importPostman': 'Import Postman',
     'mock.importing': 'Importing…',
     'mock.importFailed': 'Import failed',
-    'mock.warningCountOne': '1 warning',
-    'mock.warningCount': '{count} warnings',
-    'mock.importDone': '{endpoints}, {responses} imported{warnings}',
+    'mock.importDone': '{endpoints}, {responses} imported',
+    'mock.fromFolderFailed': 'Could not create the mock server: {error}',
+    'mock.fromFolderNoRequests': 'None of these requests has a URL a mock can bind.',
+    'mock.fromFolderSkipped': '"{name}" was skipped: it has no URL a mock can bind.',
+    'mock.fromFolderUnreadable': 'A request could not be read and was skipped.',
+    'mock.fromFolderOtherProtocol': '"{name}" was skipped: a {protocol} request has no HTTP mock.',
+    'mock.fromFolderDuplicate':
+      '"{name}" was skipped: "{first}" already answers {slot}, and only one can.',
+    'mock.fromFolderLiteralVariables':
+      'Examples of "{name}" hold {{…}} text that is sent as written, not read from project variables. To use a variable, remove the backslash in the mock editor.',
+    'mock.fromFolderEndpointFailed': '"{name}" could not be added: {error}',
+    'mock.fromFolderResponseFailed': 'A response of "{name}" could not be added: {error}',
+    'mock.fromFolderBinaryExample':
+      'Example "{example}" of "{name}" has a binary body and was skipped.',
     'mock.importEndpointCountOne': '1 endpoint',
     'mock.importEndpointCount': '{count} endpoints',
     'mock.importResponseCountOne': '1 response',
@@ -3084,6 +3139,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'grpc.calling': 'Calling…',
     'grpc.cancel': 'Cancel',
     'grpc.cancelStream': 'Cancel Stream',
+    'grpc.protoFromSavedCopy':
+      'Could not download the proto. Using the copy saved earlier, which may be out of date.',
+    'grpc.savedMethodMissing':
+      'The proto downloaded from the URL has no {method}. Pick a method and send again.',
+    'grpc.streamWriteRefused':
+      'The message was not sent: the stream is no longer open or the body is not valid JSON.',
     'grpc.guide.title': 'How to use',
     'grpc.guide.step1': 'Enter the server address (e.g. {address})',
     'grpc.guide.step2': 'Toggle the lock if TLS is required',
@@ -3272,6 +3333,12 @@ const translations: Record<Locale, Record<string, string>> = {
       '{count} secret values are empty on this machine (secrets never travel through git) — fill them in Environments / project settings',
     'toast.pulledEmptySecretOne':
       '1 secret value is empty on this machine (secrets never travel through git) — fill it in Environments / project settings',
+    'toast.pullSkippedFileOne':
+      '{count} file in the repository was not read because it is a link, a special file or too large: {files}',
+    'toast.pullSkippedFiles':
+      '{count} files in the repository were not read because each is a link, a special file or too large: {files}',
+    'toast.absoluteFiles':
+      'Some requests in this project read files by an absolute path. A file outside the working directory is refused until you turn on Project Settings → Read files outside the working directory.',
     'toast.pullFailed': 'Pull failed',
     'toast.pullNoProjectFile':
       'Pull finished, but the repository holds no project file — nothing was imported',
@@ -3893,6 +3960,23 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.title': 'New mock server',
     'mockNew.subtitle':
       'Pick a type and a starting point. Everything can be changed later in the editor.',
+    'mockNew.importLabel': 'Import a file',
+    'mockNew.importHint': 'Create the endpoints from an OpenAPI spec or a Postman collection',
+    'mockNew.importChoose': 'Choose file…',
+    'mockNew.importChange': 'Choose another file…',
+    'mockNew.importRequired': 'Choose an OpenAPI or Postman file first.',
+    'mockNew.importUnreadable': 'This file could not be read.',
+    'mockNew.importTooLarge': 'This file is larger than 50 MB.',
+    'mockNew.importNotRecognised': 'This is not an OpenAPI spec or a Postman collection.',
+    'mockNew.importTooComplex':
+      'This file is too large or too deeply nested to read. It may repeat itself through YAML aliases.',
+    'mockNew.importNoVersion':
+      'This file has no openapi or swagger version. Testnizer reads OpenAPI 3.x and Swagger 2.0.',
+    'mockNew.importUnsupportedVersion':
+      'This OpenAPI version is not supported. Testnizer reads OpenAPI 3.x and Swagger 2.0.',
+    'mockNew.importUnsupportedPostman':
+      'This Postman file is not a collection. A single file of a Postman v3 folder is imported from the APIs panel, with its folder.',
+    'mockNew.importEmpty': 'This file has no requests to mock.',
     'mockNew.close': 'Close',
     'mockNew.type': 'Server type',
     'mockNew.typeHttpHint': 'REST-style HTTP endpoints with rule-based responses',
@@ -4034,6 +4118,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.emptyResponse': 'Run a query to see the response',
     'graphql.errorsTitle': 'GraphQL errors ({count})',
     'graphql.moreErrors': '+{count} more — see body',
+    'graphql.operation.label': 'Operation',
+    'graphql.operation.stale': '"{name}" is no longer in the document. Using "{used}".',
     'graphql.subscribed': 'Subscribed',
     'graphql.subscription': 'Subscription',
     'graphql.subscribe': 'Subscribe',
@@ -4056,6 +4142,47 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.subscriptionEvents': 'Subscription Events',
     'graphql.live': 'Live',
     'graphql.waitingEvents': 'Waiting for subscription events...',
+    'graphql.sub.close.4400': 'Invalid message: the server could not read a message it received',
+    'graphql.sub.close.4401':
+      'Unauthorized: the server received the subscription before connection_ack, or refused the credentials',
+    'graphql.sub.close.4403':
+      'Forbidden: the server rejected the connection. Check the headers and the connection_init payload',
+    'graphql.sub.close.4406':
+      'Subprotocol not acceptable: the server does not accept this WebSocket subprotocol',
+    'graphql.sub.close.4408':
+      'Connection initialisation timeout: the server did not receive connection_init in time',
+    'graphql.sub.close.4409':
+      'Subscriber already exists: the server already runs an operation with this id',
+    'graphql.sub.close.4429':
+      'Too many initialisation requests: the server received more than one connection_init',
+    'graphql.sub.close.4500': 'Internal server error',
+    'graphql.sub.failure.noSubprotocol':
+      'The server did not choose a GraphQL subprotocol (it was offered graphql-transport-ws and graphql-ws)',
+    'graphql.sub.failure.noAck':
+      'The WebSocket opened but the server sent no connection_ack within {seconds} s',
+    'graphql.sub.failure.initRejected': 'The server refused connection_init',
+    'graphql.sub.failure.closed': 'The server closed the connection before connection_ack',
+    'graphql.sub.hint.noSubprotocol': 'Check that the URL is the GraphQL WebSocket endpoint',
+    'graphql.sub.hint.noAck':
+      'Check the connection_init payload and the credentials the server expects',
+    'graphql.sub.hint.initRejected':
+      'Check the connection_init payload and the credentials the server expects',
+    'graphql.sub.hint.closed': 'Check the headers, the connection_init payload and the server logs',
+    'graphql.sub.connectionInit': 'Connection init payload',
+    'graphql.sub.invalidInit': 'The connection_init payload must be a JSON object',
+    'graphql.sub.status.connecting': 'Connecting',
+    'graphql.sub.status.ended': 'Ended',
+    'graphql.sub.status.failed': 'Failed',
+    'graphql.sub.kind.data': 'Data',
+    'graphql.sub.kind.error': 'Error',
+    'graphql.sub.kind.notice': 'Note',
+    'graphql.sub.end.completed': 'The server completed the subscription.',
+    'graphql.sub.end.error': 'The server ended the subscription with an error.',
+    'graphql.sub.end.unsubscribed': 'Unsubscribed.',
+    'graphql.sub.end.projectLeft': 'The subscription was closed because you left its project.',
+    'graphql.sub.end.closed': 'The connection closed: {detail}',
+    'graphql.sub.droppedOne': '{count} older event dropped',
+    'graphql.sub.dropped': '{count} older events dropped',
     'grpc.response.calling': 'Calling gRPC method...',
     'grpc.response.empty': 'Execute a gRPC call to see the response',
     'grpc.response.error': 'gRPC error',
@@ -4497,6 +4624,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'connError.closed.what': 'Connection closed',
     'connError.closed.hint': 'Check the server logs and the connection settings',
     'connError.aborted.what': 'Connection aborted',
+    'connError.proxy.what': 'Proxy connection failed',
+    'connError.proxy.hint':
+      'Check the proxy host, port, username and password in the project or app Settings',
     'connError.spawn-failed.what': 'Could not start the server command',
     'connError.spawn-failed.hint': 'Check that the command is installed and on PATH',
     'connError.unknown.what': 'Connection failed',
@@ -4676,6 +4806,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'userMenu.managePassword': 'Şifreyi yönet…',
     'userMenu.lock': 'Kilitle',
     'userMenu.setPassword': 'Şifre belirle…',
+    'userMenu.reportIssue': 'Sorun bildir veya özellik iste',
+    'userMenu.reportIssueFailed': 'Tarayıcı açılamadı: {error}',
     'userMenu.about': 'Testnizer Hakkında',
     'env.importing': 'İçe aktarılıyor…',
     'env.importSuccess': 'Ortam içe aktarıldı',
@@ -4812,6 +4944,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'scheduledTasks.lastRun': 'Son çalıştırma: {date}',
     'scheduledTasks.environmentDeleted': 'Silinmiş ortam',
     'scheduledTasks.runNow': 'Şimdi çalıştır',
+    'scheduledTasks.running': 'Çalışıyor…',
     'scheduledTasks.pause': 'Duraklat',
     'scheduledTasks.resume': 'Sürdür',
     'scheduledTasks.delete': 'Sil',
@@ -4939,6 +5072,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'codeGen.unavailableTitle': '{protocol} istekleri için kod oluşturma kullanılamaz',
     'codeGen.unavailableHint': 'Kod Oluştur; HTTP, GraphQL ve SOAP isteklerini kapsar.',
     'codeGen.unavailableTab': 'Bu sekme için kod oluşturma kullanılamaz',
+    'codeGen.unavailableSubscription': 'GraphQL abonelikleri için kod oluşturma kullanılamaz',
+    'codeGen.unavailableSubscriptionHint':
+      'Abonelik WebSocket üzerinden çalışır. Kod Oluştur; HTTP, GraphQL sorgu ve mutasyonları ile SOAP isteklerini kapsar.',
     'curlPaste.applied': 'İstek {dialect} cURL komutundan dolduruldu',
     'curlPaste.dialect.bash': 'bash',
     'curlPaste.dialect.cmd': 'Windows CMD',
@@ -4953,6 +5089,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'curlPaste.warning.unknown-flag': 'Bilinmeyen {arg} seçeneği yok sayıldı',
     'curlPaste.warning.unsupported-flag': '{arg} seçeneğinin burada karşılığı yok, yok sayıldı',
     'curlPaste.warning.file-reference': '{arg} dosyası okunmadı — gövdeyi kontrol edin',
+    'curlPaste.warning.absolute-file':
+      '{arg} dosyasının yolu mutlak: Gönder bu dosyayı yalnızca Proje Ayarları → Çalışma dizini içindeyse veya Çalışma dizini dışındaki dosyaları oku seçeneği açıksa okur',
     'curlPaste.warning.missing-value': '{arg} için değer verilmemiş',
     'curlPaste.warning.extra-url': 'Yalnızca ilk URL kullanıldı; {arg} yok sayıldı',
     'curlPaste.warning.ignored-arg': '"{arg}" anlaşılamadı ve yok sayıldı',
@@ -5198,6 +5336,8 @@ const translations: Record<Locale, Record<string, string>> = {
       'Yazılan bearer token, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{variable}} (gizli bir değişken) kullanın.',
     'credentials.restartHint':
       'Yazılan parola, token ve anahtarlar, istek kaydedilmedikçe yeniden başlatmadan sonra korunmaz. Ortamda saklamak için bunun yerine bir {{variable}} (gizli bir değişken) kullanın.',
+    'credentials.sendDroppedTabChanged':
+      'Sekme değiştiği için istek gönderilmedi. O sekmeden yeniden gönderin.',
     'credentials.reloadFailedSend':
       'Kayıtlı kimlik bilgileri yeniden yüklenemedi; bu istek boş alanlarla gönderiliyor. İsteği ağaçtan yeniden açıp tekrar deneyin.',
     'socketio.tokenPlaceholder': 'Bearer token (isteğe bağlı)',
@@ -5716,7 +5856,23 @@ const translations: Record<Locale, Record<string, string>> = {
     'general.workingDirectory': 'Çalışma dizini',
     'general.workingDirectoryPlaceholder': '/istek-dosyalarinin/yolu',
     'general.workingDirectoryHint':
-      'Bu bilgisayardaki mutlak klasör yolu. Göreli form-data ve binary dosya yolları (ör. Postman içe aktarımından gelenler) buradan okunur; mutlak yollar olduğu gibi kullanılır.',
+      'Bu bilgisayardaki mutlak klasör yolu. Göreli form-data ve binary dosya yolları (ör. Postman içe aktarımından gelenler) buradan okunur. Aşağıdaki seçenek açık değilse mutlak bir yol bu klasörün içinde olmalıdır.',
+    'general.readFilesOutsideWorkingDirectory': 'Çalışma dizini dışındaki dosyaları oku',
+    'general.readFilesOutsideWorkingDirectoryHint':
+      'Sizin yazmadığınız koleksiyon ve projelerin bu bilgisayardaki herhangi bir dosyayı okuyup göndermesine izin verir. Yalnızca onlara güveniyorsanız açın. Bir istek için klasör dışından dosya seçmek bu seçeneği açar. Yalnızca bu bilgisayarda geçerlidir.',
+    'general.scriptTrust': "Bu projenin script'leri",
+    'general.scriptTrustAllowed':
+      "Bu bilgisayarda izinli. Script'ler korumalı alanda çalışmaz: kullanıcı hesabınızın erişebildiği her şeye erişebilir.",
+    'general.scriptTrustBlocked':
+      "Bu bilgisayarda engelli: çalıştırılmazlar ve script'i olan istekler gönderilmez. Bu projede {count} script var.",
+    'general.scriptTrustBlockedOne':
+      "Bu bilgisayarda engelli: çalıştırılmaz ve script'i olan istekler gönderilmez. Bu projede {count} script var.",
+    'general.scriptTrustAllow': 'İzin ver',
+    'general.scriptTrustBlock': 'Engelle',
+    'scriptTrust.sendRefused':
+      "Bu projenin script'lerine bu bilgisayarda izin verilmedi, istek gönderilmedi. Yeniden gönderip İzin ver'i seçin ya da Proje Ayarları'ndan izin verin.",
+    'scriptTrust.runRefused':
+      "Çalıştırma başlamadı: bu projenin script'lerine bu bilgisayarda izin verilmedi.",
     'general.headers': 'Header’lar',
     'general.requestBehavior': 'İstek davranışı',
     'general.editor': 'Editör',
@@ -5865,6 +6021,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'proxy.noProxy': 'Proxy yok',
     'proxy.custom': 'Özel proxy',
     'proxy.proxyType': 'Proxy tipi',
+    'proxy.socksUnsupported': 'SOCKS (henüz desteklenmiyor)',
     'proxy.host': 'Host',
     'proxy.port': 'Port',
     'proxy.bypass': 'Bu host’lar için bypass',
@@ -6080,6 +6237,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'newProject.bothSave': 'Yerel + Git yedekli kayıt',
 
     // Update Modal
+    'update.unavailable': 'Bu sürümde güncelleme kullanılamıyor.',
     'update.checking': 'Güncellemeler kontrol ediliyor...',
     'update.available': 'Güncelleme mevcut',
     'update.download': 'İndir',
@@ -6271,6 +6429,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runnerConfig.dataRowNotObject': '{index}. satır bir nesne değil',
     'runnerConfig.csvTooShort': 'CSV bir başlık satırı ve en az bir veri satırı içermeli',
     'runnerConfig.dataUnsupported': 'Desteklenmeyen dosya biçimi — .json veya .csv kullanın',
+    'runnerConfig.dataEmpty': 'JSON dizisinde satır yok, yinelenecek veri bulunmuyor',
+    'runnerConfig.dataNotText': 'Bu bir metin dosyası değil — UTF-8 CSV veya JSON olarak kaydedin',
+    'runnerConfig.dataTooLarge': 'Dosya {max} MB sınırından büyük',
+    'runnerConfig.dataTooManyRows': 'Dosyada {max} satır sınırından fazla satır var',
+    'runnerConfig.csvInvalid': 'CSV dosyası okunamadı: {detail}',
+    'runnerConfig.jsonInvalid': 'JSON dosyası okunamadı: {detail}',
     'runnerConfig.advancedSettings': 'Gelişmiş Ayarlar',
     'runnerConfig.persistResponses': 'Yanıtları oturum boyunca sakla',
     'runnerConfig.stopOnError': 'Hata olursa çalıştırmayı durdur',
@@ -6287,6 +6451,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'runSequence.collapseFolder': '{name} klasörünü daralt',
     'runSequence.selectFolder': '{name} klasörünü seç',
     'runSequence.selectRequest': '{name} isteğini seç',
+    'runSequence.markCritical': '{name} isteğini kritik olarak işaretle',
+    'runSequence.criticalSaveFailed': 'Kritik işareti güncellenemedi: {error}',
     'runnerTab.scheduledRunName': 'Planlanmış Çalıştırma',
     'runnerTab.showVariables': 'Değişkenleri göster',
     'runnerTab.showVariablesPanel': 'Değişkenler panelini göster',
@@ -6318,6 +6484,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'runResults.allMethods': 'Tüm metotlar',
     'runResults.clearFilters': 'Filtreleri temizle',
     'runResults.noMatches': 'Geçerli filtrelerle eşleşen istek yok.',
+    'runResults.nothingTitle': 'Gösterilecek sonuç yok',
+    'runResults.nothingBody':
+      "Bu çalıştırma burada sonuç bırakmadı. Pencereyi yeniden yüklemek devam eden çalıştırmayı kaybettirebilir; bitenler Tüm Çalıştırmalar'da durur.",
+    'runResults.liveBanner': 'Çalıştırma devam ediyor: {current} / {total}',
+    'runResults.liveBannerShow': 'Çalıştırmayı göster',
+    'runResults.alreadyRunning': 'Bu sekmede zaten bir çalıştırma sürüyor. O gösteriliyor.',
     'runResults.revealInApis': "API'lerde göster",
     'runResults.revealNotFound': 'Bu istek artık API ağacında yok.',
     'runResults.revealInTests': 'Testlerde göster',
@@ -6420,6 +6592,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'export.skipped': '{count} öğe {format} dışa aktarımına dahil edilmedi: {names}',
     'export.skippedMore': 've {count} öğe daha',
     'export.v3Notes': '{count} ayrıntı Postman v3’e aktarılamadı',
+    'export.notesOne': '{count} ayrıntı dışa aktarılan dosyaya taşınamadı',
+    'export.notes': '{count} ayrıntı dışa aktarılan dosyaya taşınamadı',
     'testsPanel.import': 'İçe Aktar…',
     'testsPanel.duplicate': 'Çoğalt',
     'testsPanel.delete': 'Sil',
@@ -7413,9 +7587,20 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.importPostman': 'Postman içe aktar',
     'mock.importing': 'İçe aktarılıyor…',
     'mock.importFailed': 'İçe aktarma başarısız',
-    'mock.warningCountOne': '1 uyarı',
-    'mock.warningCount': '{count} uyarı',
-    'mock.importDone': '{endpoints}, {responses} içe aktarıldı{warnings}',
+    'mock.importDone': '{endpoints}, {responses} içe aktarıldı',
+    'mock.fromFolderFailed': 'Mock sunucu oluşturulamadı: {error}',
+    'mock.fromFolderNoRequests': "Bu isteklerin hiçbirinde mock'un bağlanabileceği bir URL yok.",
+    'mock.fromFolderSkipped': '"{name}" atlandı: mock\'un bağlanabileceği bir URL\'si yok.',
+    'mock.fromFolderUnreadable': 'Bir istek okunamadı ve atlandı.',
+    'mock.fromFolderOtherProtocol': '"{name}" atlandı: {protocol} isteğinin HTTP mock\'u olmaz.',
+    'mock.fromFolderDuplicate':
+      '"{name}" atlandı: {slot} isteğini zaten "{first}" yanıtlıyor ve yalnız biri yanıtlayabilir.',
+    'mock.fromFolderLiteralVariables':
+      '"{name}" örneklerindeki {{…}} metni proje değişkenlerinden okunmaz, yazıldığı gibi gönderilir. Değişken kullanmak için mock düzenleyicisinde ters eğik çizgiyi silin.',
+    'mock.fromFolderEndpointFailed': '"{name}" eklenemedi: {error}',
+    'mock.fromFolderResponseFailed': '"{name}" için bir yanıt eklenemedi: {error}',
+    'mock.fromFolderBinaryExample':
+      '"{name}" isteğinin "{example}" örneğinin gövdesi ikili olduğu için atlandı.',
     'mock.importEndpointCountOne': '1 uç nokta',
     'mock.importEndpointCount': '{count} uç nokta',
     'mock.importResponseCountOne': '1 yanıt',
@@ -7592,6 +7777,12 @@ const translations: Record<Locale, Record<string, string>> = {
     'grpc.calling': 'Çağrılıyor…',
     'grpc.cancel': 'İptal',
     'grpc.cancelStream': 'Akışı İptal Et',
+    'grpc.protoFromSavedCopy':
+      'Proto indirilemedi. Daha önce kaydedilen kopya kullanılıyor; güncel olmayabilir.',
+    'grpc.savedMethodMissing':
+      "URL'den indirilen proto dosyasında {method} yok. Bir metot seçip yeniden gönderin.",
+    'grpc.streamWriteRefused':
+      'Mesaj gönderilmedi: akış artık açık değil ya da gövde geçerli bir JSON değil.',
     'grpc.guide.title': 'Nasıl kullanılır?',
     'grpc.guide.step1': 'Sunucu adresini girin (ör. {address})',
     'grpc.guide.step2': 'TLS gerekiyorsa kilit simgesine tıklayın',
@@ -7780,6 +7971,12 @@ const translations: Record<Locale, Record<string, string>> = {
       'Bu makinede {count} gizli değer boş (gizli değerler git ile taşınmaz) — Ortamlar / proje ayarlarından doldurun',
     'toast.pulledEmptySecretOne':
       'Bu makinede 1 gizli değer boş (gizli değerler git ile taşınmaz) — Ortamlar / proje ayarlarından doldurun',
+    'toast.pullSkippedFileOne':
+      'Depodaki {count} dosya okunmadı; bağlantı, özel dosya ya da çok büyük: {files}',
+    'toast.pullSkippedFiles':
+      'Depodaki {count} dosya okunmadı; bağlantı, özel dosya ya da çok büyük: {files}',
+    'toast.absoluteFiles':
+      'Bu projedeki bazı istekler dosyaları mutlak yolla okuyor. Çalışma dizini dışındaki dosya, Proje Ayarları → Çalışma dizini dışındaki dosyaları oku açılana dek reddedilir.',
     'toast.pullFailed': 'Çekim başarısız',
     'toast.pullNoProjectFile':
       'Çekim tamamlandı ancak depoda proje dosyası yok — hiçbir şey içe aktarılmadı',
@@ -8404,6 +8601,24 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.title': 'Yeni mock sunucu',
     'mockNew.subtitle':
       'Bir tür ve başlangıç noktası seçin. Her şey daha sonra düzenleyicide değiştirilebilir.',
+    'mockNew.importLabel': 'Dosyadan içe aktar',
+    'mockNew.importHint':
+      'Uç noktaları bir OpenAPI belgesinden ya da Postman koleksiyonundan oluşturun',
+    'mockNew.importChoose': 'Dosya seç…',
+    'mockNew.importChange': 'Başka dosya seç…',
+    'mockNew.importRequired': 'Önce bir OpenAPI ya da Postman dosyası seçin.',
+    'mockNew.importUnreadable': 'Bu dosya okunamadı.',
+    'mockNew.importTooLarge': "Bu dosya 50 MB'tan büyük.",
+    'mockNew.importNotRecognised': 'Bu dosya bir OpenAPI belgesi ya da Postman koleksiyonu değil.',
+    'mockNew.importTooComplex':
+      'Bu dosya okunamayacak kadar büyük ya da iç içe. YAML takma adlarıyla kendini tekrar ediyor olabilir.',
+    'mockNew.importNoVersion':
+      'Bu dosyada openapi ya da swagger sürümü yok. Testnizer OpenAPI 3.x ve Swagger 2.0 okur.',
+    'mockNew.importUnsupportedVersion':
+      'Bu OpenAPI sürümü desteklenmiyor. Testnizer OpenAPI 3.x ve Swagger 2.0 okur.',
+    'mockNew.importUnsupportedPostman':
+      'Bu Postman dosyası bir koleksiyon değil. Postman v3 klasöründeki tek bir dosya, klasörüyle birlikte APIs panelinden içe aktarılır.',
+    'mockNew.importEmpty': "Bu dosyada mock'lanacak istek yok.",
     'mockNew.close': 'Kapat',
     'mockNew.type': 'Sunucu türü',
     'mockNew.typeHttpHint': 'Kural tabanlı yanıtlar veren REST tarzı HTTP uç noktaları',
@@ -8545,6 +8760,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.emptyResponse': 'Yanıtı görmek için bir sorgu çalıştırın',
     'graphql.errorsTitle': 'GraphQL hataları ({count})',
     'graphql.moreErrors': '+{count} hata daha — gövdeye bakın',
+    'graphql.operation.label': 'İşlem',
+    'graphql.operation.stale': '"{name}" artık belgede yok. "{used}" kullanılıyor.',
     'graphql.subscribed': 'Abone olundu',
     'graphql.subscription': 'Abonelik',
     'graphql.subscribe': 'Abone ol',
@@ -8567,6 +8784,46 @@ const translations: Record<Locale, Record<string, string>> = {
     'graphql.subscriptionEvents': 'Abonelik Olayları',
     'graphql.live': 'Canlı',
     'graphql.waitingEvents': 'Abonelik olayları bekleniyor...',
+    'graphql.sub.close.4400': 'Geçersiz mesaj: sunucu aldığı bir mesajı okuyamadı',
+    'graphql.sub.close.4401':
+      'Yetkisiz: sunucu aboneliği connection_ack öncesinde aldı ya da kimlik bilgilerini reddetti',
+    'graphql.sub.close.4403':
+      'Erişim engellendi: sunucu bağlantıyı reddetti. Başlıkları ve connection_init içeriğini kontrol edin',
+    'graphql.sub.close.4406':
+      'Alt protokol kabul edilmedi: sunucu bu WebSocket alt protokolünü kabul etmiyor',
+    'graphql.sub.close.4408':
+      'Bağlantı başlatma zaman aşımı: sunucu connection_init mesajını zamanında almadı',
+    'graphql.sub.close.4409': 'Abone zaten var: sunucu bu kimlikle bir işlemi zaten çalıştırıyor',
+    'graphql.sub.close.4429': 'Çok fazla başlatma isteği: sunucu birden fazla connection_init aldı',
+    'graphql.sub.close.4500': 'Sunucu iç hatası',
+    'graphql.sub.failure.noSubprotocol':
+      'Sunucu bir GraphQL alt protokolü seçmedi (graphql-transport-ws ve graphql-ws önerildi)',
+    'graphql.sub.failure.noAck':
+      'WebSocket açıldı ama sunucu {seconds} sn içinde connection_ack göndermedi',
+    'graphql.sub.failure.initRejected': 'Sunucu connection_init mesajını reddetti',
+    'graphql.sub.failure.closed': 'Sunucu bağlantıyı connection_ack öncesinde kapattı',
+    'graphql.sub.hint.noSubprotocol': "URL'nin GraphQL WebSocket uç noktası olduğunu kontrol edin",
+    'graphql.sub.hint.noAck':
+      'connection_init içeriğini ve sunucunun beklediği kimlik bilgilerini kontrol edin',
+    'graphql.sub.hint.initRejected':
+      'connection_init içeriğini ve sunucunun beklediği kimlik bilgilerini kontrol edin',
+    'graphql.sub.hint.closed':
+      'Başlıkları, connection_init içeriğini ve sunucu günlüklerini kontrol edin',
+    'graphql.sub.connectionInit': 'Bağlantı başlatma içeriği',
+    'graphql.sub.invalidInit': 'connection_init içeriği bir JSON nesnesi olmalıdır',
+    'graphql.sub.status.connecting': 'Bağlanıyor',
+    'graphql.sub.status.ended': 'Bitti',
+    'graphql.sub.status.failed': 'Başarısız',
+    'graphql.sub.kind.data': 'Veri',
+    'graphql.sub.kind.error': 'Hata',
+    'graphql.sub.kind.notice': 'Not',
+    'graphql.sub.end.completed': 'Sunucu aboneliği tamamladı.',
+    'graphql.sub.end.error': 'Sunucu aboneliği bir hatayla sonlandırdı.',
+    'graphql.sub.end.unsubscribed': 'Abonelik bitirildi.',
+    'graphql.sub.end.projectLeft': 'Projesinden ayrıldığınız için abonelik kapatıldı.',
+    'graphql.sub.end.closed': 'Bağlantı kapandı: {detail}',
+    'graphql.sub.droppedOne': '{count} eski olay atıldı',
+    'graphql.sub.dropped': '{count} eski olay atıldı',
     'grpc.response.calling': 'gRPC metodu çağrılıyor...',
     'grpc.response.empty': 'Yanıtı görmek için bir gRPC çağrısı çalıştırın',
     'grpc.response.error': 'gRPC hatası',
@@ -9011,6 +9268,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'connError.closed.what': 'Bağlantı kapandı',
     'connError.closed.hint': 'Sunucu günlüklerini ve bağlantı ayarlarını kontrol edin',
     'connError.aborted.what': 'Bağlantı iptal edildi',
+    'connError.proxy.what': 'Proxy bağlantısı kurulamadı',
+    'connError.proxy.hint':
+      'Proje ya da uygulama Ayarları’ndaki proxy host, port, kullanıcı adı ve parolasını kontrol edin',
     'connError.spawn-failed.what': 'Sunucu komutu başlatılamadı',
     'connError.spawn-failed.hint':
       'Komutun kurulu olduğunu ve PATH üzerinde bulunduğunu kontrol edin',

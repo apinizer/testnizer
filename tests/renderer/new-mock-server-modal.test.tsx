@@ -85,6 +85,7 @@ describe('New mock server dialog', () => {
       'mock-new-preset-echo',
       'mock-new-preset-auth',
       'mock-new-preset-faults',
+      'mock-new-preset-import',
     ])
     expect(screen.getByTestId('mock-new-preset-blank')).toHaveAttribute('aria-checked', 'true')
 

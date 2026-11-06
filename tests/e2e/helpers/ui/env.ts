@@ -99,6 +99,7 @@ export async function switchEnvironment(page: Page, name: string): Promise<void>
 /** Click Set Active for the currently selected environment pane. */
 export async function setActiveEnvironment(page: Page): Promise<void> {
   const btn = page.getByTestId('env-set-active')
+  // optional: the button is only rendered while the selected env is not the active one yet
   if (await btn.isVisible().catch(() => false)) {
     await btn.click()
     // Scope to the modal — the workbench can hold its own "Active" label.

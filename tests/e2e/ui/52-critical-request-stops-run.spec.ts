@@ -163,4 +163,75 @@ uiTest.describe('Issue #304 — critical request stops the run', () => {
       await deleteFolderAndRequests(window, projectId, folderId, [first, second]).catch(() => {})
     }
   })
+
+  // Issue #315: the same flag, set from the run sequence.
+  uiTest('the run sequence marks a request critical, by keyboard', async ({ window }) => {
+    const stamp = uid()
+    const folderName = `Crit315 ${stamp}`
+    const first = `Seq first ${stamp}`
+    const second = `Seq second ${stamp}`
+    const projectId = await getActiveProjectId(window)
+    const folderId = await createFolder(window, projectId, folderName)
+
+    try {
+      await openHttpRequestTab(window)
+      await fillUrl(window, `${localHttpBin()}/status/404?seq=${stamp}`)
+      await saveRequestToFolder(window, first, folderName)
+      // Left open, clean: its copy of the flag must follow the row.
+      await openHttpRequestTab(window)
+      await fillUrl(window, `${localHttpBin()}/get?seq=${stamp}`)
+      await saveRequestToFolder(window, second, folderName)
+
+      await openCollectionRunner(window)
+      await selectOnlyRunnerEndpoints(window, stamp)
+      const wb = window.getByTestId('workbench')
+      const stopOnError = wb.getByLabel(/Stop run if an error occurs/i)
+      await stopOnError.setChecked(false)
+      const seqRow = wb.locator('div.border-b').filter({ hasText: first })
+      const toggle = seqRow.getByTestId('critical-toggle')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+      await toggle.focus()
+      await window.keyboard.press('Space')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+      await expect(seqRow.getByTestId('critical-badge')).toBeVisible()
+      // The tree refresh behind the toggle left the plan as it was.
+      await expect(stopOnError).not.toBeChecked()
+      await expect(seqRow.locator('input[type="checkbox"]')).toBeChecked()
+      // Pressed reads red like the badge next to it, in both themes.
+      const badgeColor = await seqRow
+        .getByTestId('critical-badge')
+        .evaluate((el) => getComputedStyle(el).color)
+      await expect(toggle).toHaveCSS('color', badgeColor)
+      await window.screenshot({ path: shot('315-1-run-sequence-toggle.png') })
+      await window.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'))
+      await window.waitForTimeout(250)
+      await window.screenshot({ path: shot('315-2-run-sequence-toggle-dark.png') })
+      await window.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'))
+
+      // Setup rows do not offer it; back on Flow it is still set.
+      const phase = wb.getByRole('combobox', { name: `Phase: ${first}` })
+      await phase.selectOption('setup')
+      await expect(toggle).toHaveCount(0)
+      await phase.selectOption('main')
+      await expect(toggle).toHaveAttribute('aria-pressed', 'true')
+
+      await startRunnerTabRun(window)
+      await waitRunnerTabComplete(window)
+      await expect(wb.getByTestId('runner-stop-critical')).toContainText(first)
+      await expect(wb.getByTestId('runner-results-list')).toContainText('NOT RUN')
+
+      // One field: the Settings switch shows it, and its Ctrl+S keeps it.
+      await closeAllTabs(window)
+      await navigateSidebar(window, 'apis')
+      await treeOpenNode(window, first)
+      await clickRequestTab(window, 'settings')
+      await expect(window.getByTestId('settings-critical')).toBeChecked({ timeout: 10_000 })
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'false')
+      await treeClearSearch(window)
+    } finally {
+      await treeClearSearch(window).catch(() => {})
+      await closeAllTabs(window).catch(() => {})
+      await deleteFolderAndRequests(window, projectId, folderId, [first, second]).catch(() => {})
+    }
+  })
 })

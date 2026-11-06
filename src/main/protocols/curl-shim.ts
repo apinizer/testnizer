@@ -25,6 +25,7 @@ import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
 import { app } from 'electron'
+import { isProxyBypassed } from '../../shared/proxy-bypass'
 import type { HttpRequestOptions } from './http.engine'
 import { getJarCookieHeader, storeResponseCookies } from './http.engine'
 
@@ -687,6 +688,8 @@ export async function executeViaCurl(options: HttpRequestOptions): Promise<CurlA
     }
 
     // ── Cookies from jar ─────────────────────────────────────
+    const proxyBypassed =
+      options.proxy?.mode === 'custom' && isProxyBypassed(options.proxy.bypass, url.toString())
     const jarCookies = await getJarCookieHeader(url.toString(), options.projectId)
 
     // ── Cert / CA temp files ─────────────────────────────────
@@ -737,14 +740,14 @@ export async function executeViaCurl(options: HttpRequestOptions): Promise<CurlA
       followRedirects: options.followRedirects !== false,
       timeoutMs: options.timeout ?? 30000,
       proxy:
-        options.proxy?.mode === 'custom' && options.proxy.host
+        options.proxy?.mode === 'custom' && options.proxy.host && !proxyBypassed
           ? {
               host: options.proxy.host,
               port: options.proxy.port ?? 8080,
               auth: options.proxy.auth,
             }
           : null,
-      proxyDisabled: options.proxy?.mode === 'none',
+      proxyDisabled: options.proxy?.mode === 'none' || proxyBypassed,
       caCertPath,
       clientCertPath,
       clientCertType,

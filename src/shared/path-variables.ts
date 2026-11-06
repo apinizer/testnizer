@@ -47,6 +47,25 @@ function segmentName(segment: string): string | null {
   return segment.length > 1 && segment.startsWith(':') ? segment.slice(1) : null
 }
 
+/**
+ * `/pets/{petId}` as `/pets/:petId`, for the specs that write path variables in
+ * braces (OpenAPI, RAML): a `{x}` left in a URL goes out percent-encoded and gets no
+ * row in the Params tab. `:name` is a whole path segment, so `/{name}.json` stays as
+ * written and is warned.
+ */
+export function bracesToPathVariables(path: string, warnings: string[]): string {
+  const segments = path.split('/').map((seg) => {
+    const whole = /^\{([^{}]+)\}$/.exec(seg)
+    return whole ? `:${whole[1]}` : seg
+  })
+  if (segments.some((seg) => /\{[^{}]+\}/.test(seg))) {
+    warnings.push(
+      `"${path}" has a variable inside a path segment, which cannot have a Path Variables row: edit the URL before sending.`,
+    )
+  }
+  return segments.join('/')
+}
+
 /** `:name` segments of the URL's path, in order, each name once. */
 export function pathVariableNames(url: string): string[] {
   const bounds = pathBounds(url ?? '')

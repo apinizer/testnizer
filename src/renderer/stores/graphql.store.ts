@@ -8,8 +8,9 @@ import { useRequestStore } from './request.store'
 import { loadInheritedNetwork, networkPayload } from '../lib/network-settings'
 import { resolveVariables, resolveKeyValuePairs } from '../lib/variable-resolver'
 import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
-import { reloadWithheldBeforeSend } from '../lib/withheld-before-send'
+import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
+import { patchTabSlice, readTabSlice, updateTabSlice, withoutTab } from '../lib/tab-slice'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -20,6 +21,12 @@ import {
 import { jsonCredentialText, urlCredentialText } from '../lib/credential-text'
 import { makeId } from '../lib/utils'
 import { graphqlMaskedSendError } from '../lib/masked-send-guard'
+import { t } from '../lib/i18n'
+import { subscriptionFailureText, type SubscriptionEnd } from '../lib/graphql-subscription-text'
+import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
+import { chooseGraphqlOperation } from '../../shared/graphql-row'
+import { graphqlJson } from '../../shared/codegen/normalize'
+import { GQL_MAX_SUBSCRIPTION_EVENTS, parseConnectionInit } from '../../shared/graphql-ws'
 // Shared dirty-flag helper — flags the active tab's blue dot on a user edit so
 // the unsaved-change indicator works for GraphQL, not just HTTP (issue #8).
 import { markActiveTabDirty } from '../lib/mark-dirty'
@@ -62,6 +69,8 @@ export interface GqlSchema {
 
 export interface GqlSubscriptionEvent {
   id: string
+  /** `data`: a server frame. `error`: a server error. */
+  kind: 'data' | 'error'
   data: string
   timestamp: number
 }
@@ -71,9 +80,8 @@ export interface GqlSubscriptionEvent {
 type SubscriptionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
 /**
- * Snapshot of GraphQL state for per-tab caching. `schemaData` /
- * `isIntrospecting` / `introspectError` are intentionally NOT in this set —
- * the schema is keyed off the endpoint URL and lives in a separate global cache.
+ * Snapshot of GraphQL state for per-tab caching. The schema is per tab too:
+ * each tab introspects its own endpoint without overwriting its siblings.
  */
 interface TabGraphQLState extends WithheldState {
   url: string
@@ -84,16 +92,29 @@ interface TabGraphQLState extends WithheldState {
   isLoading: boolean
   /** request:send IPC id for the in-flight GraphQL query — used by cancelQuery. */
   _inflightRequestId: string | null
+  /** The `connection_init` payload, JSON as typed; '' = none. */
+  connectionInit: string
+  /** The Operation select's choice, as picked; '' = none. `chooseGraphqlOperation` reads it. */
+  operationName: string
   subscriptionState: SubscriptionState
+  /** Newest last, at most `GQL_MAX_SUBSCRIPTION_EVENTS`. */
   subscriptionEvents: GqlSubscriptionEvent[]
-}
-
-interface GraphQLStore extends TabGraphQLState {
-  // Global schema state (shared across tabs — schema is keyed by URL externally).
+  /** Events dropped by the cap. */
+  subscriptionDropped: number
+  subscriptionError: string | null
+  /** Why the last subscription ended, until the next Subscribe. */
+  subscriptionEnd: SubscriptionEnd | null
+  /** The running subscription; slice fields `lib/realtime-connections.ts` reads. */
+  connectionId: string | null
+  _pendingConnectId?: string
+  _projectId?: string | null
+  _unsubscribe?: () => void
   schemaData: GqlSchema | null
   isIntrospecting: boolean
   introspectError: string | null
+}
 
+interface GraphQLStore extends TabGraphQLState {
   /** Per-tab state cache */
   _tabStates: Map<string, TabGraphQLState>
   _currentTabId: string | null
@@ -102,6 +123,8 @@ interface GraphQLStore extends TabGraphQLState {
   setQuery: (query: string) => void
   setVariables: (vars: string) => void
   setHeaders: (headers: KeyValuePair[]) => void
+  setConnectionInit: (text: string) => void
+  setOperationName: (name: string) => void
   addHeader: () => void
   updateHeader: (id: string, updates: Partial<KeyValuePair>) => void
   removeHeader: (id: string) => void
@@ -151,11 +174,6 @@ query IntrospectionQuery {
   }
 }
 `
-
-function isSubscriptionQuery(query: string): boolean {
-  const trimmed = query.replace(/#.*$/gm, '').trim()
-  return trimmed.startsWith('subscription')
-}
 
 function resolveTypeName(typeObj: Record<string, unknown>): string {
   if (!typeObj) return 'Unknown'
@@ -207,8 +225,20 @@ function emptyTabState(): TabGraphQLState {
     response: null,
     isLoading: false,
     _inflightRequestId: null,
+    connectionInit: '',
+    operationName: '',
     subscriptionState: 'disconnected',
     subscriptionEvents: [],
+    subscriptionDropped: 0,
+    subscriptionError: null,
+    subscriptionEnd: null,
+    connectionId: null,
+    _pendingConnectId: undefined,
+    _projectId: null,
+    _unsubscribe: undefined,
+    schemaData: null,
+    isIntrospecting: false,
+    introspectError: null,
   }
 }
 
@@ -222,8 +252,20 @@ function extractState(s: GraphQLStore): TabGraphQLState {
     response: s.response,
     isLoading: s.isLoading,
     _inflightRequestId: s._inflightRequestId,
+    connectionInit: s.connectionInit,
+    operationName: s.operationName,
     subscriptionState: s.subscriptionState,
     subscriptionEvents: s.subscriptionEvents,
+    subscriptionDropped: s.subscriptionDropped,
+    subscriptionError: s.subscriptionError,
+    subscriptionEnd: s.subscriptionEnd,
+    connectionId: s.connectionId,
+    _pendingConnectId: s._pendingConnectId,
+    _projectId: s._projectId,
+    _unsubscribe: s._unsubscribe,
+    schemaData: s.schemaData,
+    isIntrospecting: s.isIntrospecting,
+    introspectError: s.introspectError,
   }
 }
 
@@ -238,19 +280,28 @@ function extractState(s: GraphQLStore): TabGraphQLState {
  * the snapshot (the row and its name stay; `{{var}}`-only values are kept).
  * The saved row keeps the value — `lib/withheld-credentials.ts` reloads it.
  * Issue #247: credential-named members of the `variables` JSON
- * (`"password": ""`) — blanked in the text, formatting kept.
+ * (`"password": ""`) — blanked in the text, formatting kept. The same for the
+ * `connection_init` payload, where browsers-first servers read their token.
  */
 export const GQL_CREDENTIALS: CredentialSpec = {
   fields: [],
   rows: [credentialRows('headers')],
-  texts: [jsonCredentialText('variables'), urlCredentialText('url')],
+  texts: [
+    jsonCredentialText('variables'),
+    jsonCredentialText('connectionInit'),
+    urlCredentialText('url'),
+  ],
 }
 
 function persistableGql(st: TabGraphQLState): TabGraphQLState {
   return idleGql(withholdCredentials(st, GQL_CREDENTIALS))
 }
 
-/** A tab with no request in flight, subscription or response — stored and copied by Duplicate Tab. */
+/**
+ * A tab with no request in flight, subscription or response — stored and copied
+ * by Duplicate Tab. The schema is left out of the snapshot: an introspection
+ * result can be megabytes and the next Introspect fetches it again.
+ */
 function idleGql(st: TabGraphQLState): TabGraphQLState {
   const idle = emptyTabState()
   return {
@@ -260,7 +311,59 @@ function idleGql(st: TabGraphQLState): TabGraphQLState {
     _inflightRequestId: idle._inflightRequestId,
     subscriptionState: idle.subscriptionState,
     subscriptionEvents: idle.subscriptionEvents,
+    subscriptionDropped: idle.subscriptionDropped,
+    subscriptionError: idle.subscriptionError,
+    subscriptionEnd: idle.subscriptionEnd,
+    connectionId: idle.connectionId,
+    _pendingConnectId: idle._pendingConnectId,
+    _projectId: idle._projectId,
+    _unsubscribe: idle._unsubscribe,
+    schemaData: idle.schemaData,
+    isIntrospecting: idle.isIntrospecting,
+    introspectError: idle.introspectError,
   }
+}
+
+/**
+ * The tab's saved fields: `metadata.graphql` on Ctrl+S and History's `configured`.
+ * `connectionInit` and `operationName` only when set, so a row without one stays
+ * byte-identical. A selection the document no longer holds is not written.
+ */
+export function gqlMetaOf(
+  s: Pick<
+    TabGraphQLState,
+    'url' | 'query' | 'variables' | 'headers' | 'connectionInit' | 'operationName'
+  >,
+): Record<string, unknown> {
+  const choice = chooseGraphqlOperation(s.query, s.operationName)
+  const selected = s.operationName && !choice.staleSelection ? choice.operationName : undefined
+  return {
+    url: s.url,
+    query: s.query,
+    variables: s.variables,
+    headers: s.headers,
+    ...(s.connectionInit ? { connectionInit: s.connectionInit } : {}),
+    ...(selected ? { operationName: selected } : {}),
+  }
+}
+
+function getSubscriptionApi() {
+  return window.api?.graphqlWs
+}
+
+/** Append, dropping the oldest past the cap. */
+function withEvent(
+  slice: TabGraphQLState,
+  event: GqlSubscriptionEvent,
+): Pick<TabGraphQLState, 'subscriptionEvents' | 'subscriptionDropped'> {
+  const next = [...slice.subscriptionEvents, event]
+  const over = next.length - GQL_MAX_SUBSCRIPTION_EVENTS
+  return over > 0
+    ? {
+        subscriptionEvents: next.slice(over),
+        subscriptionDropped: slice.subscriptionDropped + over,
+      }
+    : { subscriptionEvents: next, subscriptionDropped: slice.subscriptionDropped }
 }
 
 const STORAGE_KEY = 'testnizer-graphql'
@@ -270,10 +373,6 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   ...persisted.current,
   _tabStates: persisted._tabStates,
   _currentTabId: persisted._currentTabId,
-
-  schemaData: null,
-  isIntrospecting: false,
-  introspectError: null,
 
   setUrl: (url) => {
     set({ url })
@@ -289,6 +388,14 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   },
   setHeaders: (headers) => {
     set({ headers })
+    markActiveTabDirty()
+  },
+  setConnectionInit: (connectionInit) => {
+    set({ connectionInit })
+    markActiveTabDirty()
+  },
+  setOperationName: (operationName) => {
+    set({ operationName })
     markActiveTabDirty()
   },
 
@@ -311,8 +418,10 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
 
   executeQuery: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
-    const { url, query, variables, headers } = get()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
+    const { url, query, variables, headers, operationName } = get()
+    // Read now: the tab can change while the settings below load.
+    const configuredMeta = gqlMetaOf(get())
     if (!url.trim() || !query.trim()) return
 
     const responseStore = useResponseStore.getState()
@@ -355,27 +464,11 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       activeVars,
     )
 
-    let parsedVars: Record<string, unknown> = {}
-    try {
-      parsedVars = JSON.parse(resolvedVarsRaw || '{}')
-    } catch {
-      // ignore parse errors, send empty
-    }
-
     const requestId = makeId()
     set({ _inflightRequestId: requestId })
 
-    const applyToOwner = (patch: Partial<TabGraphQLState>): void => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) {
-        set(patch as Partial<GraphQLStore>)
-      } else if (ownerTabId !== null) {
-        const map = new Map(current._tabStates)
-        const existing = map.get(ownerTabId) ?? emptyTabState()
-        map.set(ownerTabId, { ...existing, ...patch })
-        set({ _tabStates: map })
-      }
-    }
+    const applyToOwner = (patch: Partial<TabGraphQLState>): void =>
+      patchTabSlice<TabGraphQLState, GraphQLStore>(useGraphQLStore, ownerTabId, patch)
 
     try {
       const ws = useWorkspaceStore.getState()
@@ -391,7 +484,12 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         headers: resolvedHeaders,
         body: {
           type: 'json',
-          content: JSON.stringify({ query: resolvedQuery, variables: parsedVars }),
+          // Variables that do not parse go out empty (`graphqlJson`, Run's builder too).
+          content: graphqlJson(
+            resolvedQuery,
+            resolvedVarsRaw,
+            chooseGraphqlOperation(query, operationName).operationName,
+          ),
         },
         ...network,
         _protocol: 'graphql',
@@ -400,15 +498,13 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         _projectId: ws.activeProjectId || undefined,
         // Editor state with `{{var}}` kept — the History row reopens from it
         // (issues #182, #195). Same shape `snapshotProtocol` saves.
-        _configured: { url, meta: { graphql: { url, query, variables, headers } } },
+        _configured: { url, meta: { graphql: configuredMeta } },
       })
 
       if (result?.success && result.data) {
         const apiResp = result.data as ApiResponse
         applyToOwner({ response: apiResp })
-        if (get()._currentTabId === ownerTabId) {
-          responseStore.setResponse(apiResp, activeTabId)
-        }
+        responseStore.setResponse(apiResp, activeTabId)
       } else {
         const errResp: ApiResponse = {
           requestId: makeId(),
@@ -417,59 +513,23 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           timing: { total: 0 },
         }
         applyToOwner({ response: errResp })
-        if (get()._currentTabId === ownerTabId) {
-          responseStore.setResponse(errResp, activeTabId)
-        }
+        responseStore.setResponse(errResp, activeTabId)
       }
-    } catch {
-      // Demo mode
-      const demoResp: ApiResponse = {
+    } catch (e) {
+      const errResp: ApiResponse = {
         requestId: makeId(),
         protocol: 'graphql',
-        status: 200,
-        statusText: 'OK',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(
-          {
-            data: {
-              hello: 'Hello from GraphQL demo!',
-            },
-          },
-          null,
-          2,
-        ),
-        bodySize: 52,
-        timing: { total: 89 },
-        actualRequest: {
-          method: 'POST',
-          url,
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, variables: parsedVars }),
-        },
+        error: (e as Error).message || 'GraphQL query failed',
+        timing: { total: 0 },
       }
-      applyToOwner({ response: demoResp })
-      if (get()._currentTabId === ownerTabId) {
-        responseStore.setResponse(demoResp, activeTabId)
-      }
+      applyToOwner({ response: errResp })
+      responseStore.setResponse(errResp, activeTabId)
     } finally {
-      const current = get()
-      const ownerIsLive = current._currentTabId === ownerTabId
-      if (ownerIsLive) {
-        set((s) => ({
-          isLoading: false,
-          _inflightRequestId: s._inflightRequestId === requestId ? null : s._inflightRequestId,
-        }))
-      } else if (ownerTabId !== null) {
-        const map = new Map(current._tabStates)
-        const existing = map.get(ownerTabId) ?? emptyTabState()
-        map.set(ownerTabId, {
-          ...existing,
-          isLoading: false,
-          _inflightRequestId:
-            existing._inflightRequestId === requestId ? null : existing._inflightRequestId,
-        })
-        set({ _tabStates: map })
-      }
+      const owner = readTabSlice<TabGraphQLState, GraphQLStore>(useGraphQLStore, ownerTabId)
+      applyToOwner({
+        isLoading: false,
+        ...(owner?._inflightRequestId === requestId ? { _inflightRequestId: null } : {}),
+      })
       responseStore.setLoading(false, activeTabId)
       if (activeTabId) tabsStore.markLoading(activeTabId, false)
     }
@@ -478,18 +538,27 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   cancelQuery: async () => {
     const id = get()._inflightRequestId
     if (!id) return
+    const ownerTabId = get()._currentTabId
     try {
       await window.api?.request?.cancel(id)
     } catch {
       // engine already finished
     }
-    set({ _inflightRequestId: null, isLoading: false })
+    patchTabSlice<TabGraphQLState, GraphQLStore>(useGraphQLStore, ownerTabId, {
+      _inflightRequestId: null,
+      isLoading: false,
+    })
   },
 
   introspect: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
     const { url, headers } = get()
+    // The tab that asked gets the schema or the error, also when the user has
+    // moved to another tab by the time it arrives.
+    const ownerTabId = get()._currentTabId
+    const patchOwner = (patch: Partial<TabGraphQLState>): void =>
+      patchTabSlice<TabGraphQLState, GraphQLStore>(useGraphQLStore, ownerTabId, patch)
     if (!url.trim()) {
       // Previously silently returned — the user clicked Introspect and
       // nothing happened, no banner, no log (v1.4.4 §12.7). Surface a
@@ -559,22 +628,21 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           try {
             parsed = JSON.parse(apiResp.body)
           } catch {
-            set({
+            patchOwner({
               introspectError: `Server returned non-JSON response (status ${apiResp.status ?? '?'}).`,
               isIntrospecting: false,
             })
             return
           }
           // GraphQL surface-level errors come back with { errors: [...] }
-          // even on HTTP 200. Bubble the first message instead of
-          // dropping to a misleading demo schema.
+          // even on HTTP 200.
           if (parsed.errors && parsed.errors.length > 0) {
             const msg = parsed.errors[0]?.message || 'GraphQL endpoint returned errors'
-            set({ introspectError: msg, isIntrospecting: false })
+            patchOwner({ introspectError: msg, isIntrospecting: false })
             return
           }
           if (!parsed.data) {
-            set({
+            patchOwner({
               introspectError:
                 'Server response had no `data` field — endpoint may not support introspection.',
               isIntrospecting: false,
@@ -582,218 +650,200 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
             return
           }
           const schema = parseIntrospectionResult(parsed.data as Record<string, unknown>)
-          set({ schemaData: schema, isIntrospecting: false })
+          patchOwner({ schemaData: schema, isIntrospecting: false })
           return
         }
       }
 
       const errorMsg =
         (result as { error?: string } | undefined)?.error ?? 'Failed to introspect schema'
-      set({ introspectError: errorMsg, isIntrospecting: false })
+      patchOwner({ introspectError: errorMsg, isIntrospecting: false })
     } catch (e) {
-      // Real introspection failures used to fall through to a fake demo
-      // schema, which made the button look broken (v1.4.2 T-12.11 —
-      // user clicked Introspect, "saw" a Query/User/Post tree appear,
-      // then could not figure out why their actual schema's queries
-      // didn't run). Surface the error instead.
-      set({
+      patchOwner({
         introspectError: (e as Error)?.message ?? 'Introspection failed',
         isIntrospecting: false,
       })
-      // Demo schema kept below so existing test fixtures still parse,
-      // but is now unreachable in normal product paths.
-      const _demoSchema: GqlSchema = {
-        queryType: 'Query',
-        mutationType: 'Mutation',
-        subscriptionType: 'Subscription',
-        types: [
-          {
-            name: 'Query',
-            kind: 'OBJECT',
-            description: 'Root query type',
-            fields: [
-              { name: 'hello', type: 'String', args: [], description: 'A simple hello query' },
-              {
-                name: 'user',
-                type: 'User',
-                args: [{ name: 'id', type: 'ID!', description: 'User ID' }],
-                description: 'Get user by ID',
-              },
-              { name: 'users', type: '[User]', args: [], description: 'List all users' },
-              {
-                name: 'posts',
-                type: '[Post]',
-                args: [
-                  { name: 'limit', type: 'Int' },
-                  { name: 'offset', type: 'Int' },
-                ],
-                description: 'List posts with pagination',
-              },
-            ],
-          },
-          {
-            name: 'Mutation',
-            kind: 'OBJECT',
-            description: 'Root mutation type',
-            fields: [
-              {
-                name: 'createUser',
-                type: 'User',
-                args: [
-                  { name: 'name', type: 'String!' },
-                  { name: 'email', type: 'String!' },
-                ],
-                description: 'Create a new user',
-              },
-              {
-                name: 'deleteUser',
-                type: 'Boolean',
-                args: [{ name: 'id', type: 'ID!' }],
-                description: 'Delete a user',
-              },
-            ],
-          },
-          {
-            name: 'Subscription',
-            kind: 'OBJECT',
-            description: 'Root subscription type',
-            fields: [
-              {
-                name: 'onMessage',
-                type: 'Message',
-                args: [],
-                description: 'Listen for new messages',
-              },
-            ],
-          },
-          {
-            name: 'User',
-            kind: 'OBJECT',
-            description: 'A user in the system',
-            fields: [
-              { name: 'id', type: 'ID!', args: [] },
-              { name: 'name', type: 'String!', args: [] },
-              { name: 'email', type: 'String!', args: [] },
-              { name: 'posts', type: '[Post]', args: [] },
-            ],
-          },
-          {
-            name: 'Post',
-            kind: 'OBJECT',
-            description: 'A blog post',
-            fields: [
-              { name: 'id', type: 'ID!', args: [] },
-              { name: 'title', type: 'String!', args: [] },
-              { name: 'content', type: 'String', args: [] },
-              { name: 'author', type: 'User', args: [] },
-            ],
-          },
-          {
-            name: 'Message',
-            kind: 'OBJECT',
-            fields: [
-              { name: 'id', type: 'ID!', args: [] },
-              { name: 'text', type: 'String!', args: [] },
-              { name: 'sender', type: 'User', args: [] },
-            ],
-          },
-          {
-            name: 'Role',
-            kind: 'ENUM',
-            fields: [],
-            enumValues: ['ADMIN', 'USER', 'MODERATOR'],
-          },
-        ],
-      }
-      void _demoSchema
     }
   },
 
   subscribe: async () => {
     // Issue #244: a credential still withheld after a restart is reloaded first.
-    if (get().withheldCredentials.length > 0) await reloadWithheldBeforeSend()
-    const { url, query } = get()
-    if (!url.trim() || !isSubscriptionQuery(query)) return
+    if (get().withheldCredentials.length > 0 && !(await reloadedOnSameTab(get))) return
+    const start = get()
+    const chosen = chooseGraphqlOperation(start.query, start.operationName)
+    if (!start.url.trim() || !chosen.isSubscription) return
+    if (start.subscriptionState === 'connecting' || start.subscriptionState === 'connected') return
 
-    set({ subscriptionState: 'connecting', subscriptionEvents: [] })
+    const failNow = (text: string): void =>
+      set({ subscriptionState: 'error', subscriptionError: text, subscriptionEnd: null })
 
-    const subVars = useEnvironmentStore.getState().getActiveVariables()
-    const subUrl = resolveVariables(url, subVars)
-    const subQuery = resolveVariables(query, subVars)
+    const headerRows = start.headers.filter((h) => h.enabled && h.key.trim())
+    // Issue #195: a History mask left in a credential field is never sent.
+    const masked = graphqlMaskedSendError({
+      url: start.url,
+      variables: start.variables,
+      headers: headerRows,
+      connectionInit: start.connectionInit,
+    })
+    if (masked) return failNow(masked)
+
+    const vars = useEnvironmentStore.getState().getActiveVariables()
+    const connectionInit = resolveVariables(start.connectionInit, vars)
+    if (!parseConnectionInit(connectionInit).ok) return failNow(t('graphql.sub.invalidInit'))
+    const api = getSubscriptionApi()
+    if (!api) return failNow('GraphQL subscription bridge unavailable')
+
+    const ownerTabId = start._currentTabId
+    const owner = (): TabGraphQLState | undefined =>
+      readTabSlice<TabGraphQLState, GraphQLStore>(useGraphQLStore, ownerTabId)
+    const patchOwner = (patch: (slice: TabGraphQLState) => Partial<TabGraphQLState>): void =>
+      updateTabSlice<TabGraphQLState, GraphQLStore>(useGraphQLStore, ownerTabId, patch)
+
+    // The renderer's own id: a frame that overtakes the connect's reply is already this tab's.
+    const connectionId = makeId()
+    const workspace = useWorkspaceStore.getState()
+    const { sslVerification, followRedirects } = useRequestStore.getState()
+    start._unsubscribe?.()
+    set({
+      subscriptionState: 'connecting',
+      subscriptionEvents: [],
+      subscriptionDropped: 0,
+      subscriptionError: null,
+      subscriptionEnd: null,
+      connectionId: null,
+      _pendingConnectId: connectionId,
+      _projectId: workspace.activeProjectId,
+    })
+
+    const unsub = api.onEvent((evt) => {
+      if (evt.connectionId !== connectionId) return
+      if (evt.type === 'data') {
+        const row = {
+          id: makeId(),
+          kind: 'data' as const,
+          data: evt.data,
+          timestamp: evt.timestamp,
+        }
+        patchOwner((sl) => withEvent(sl, row))
+      } else if (evt.type === 'error') {
+        const row = {
+          id: makeId(),
+          kind: 'error' as const,
+          data: evt.data ? `${evt.message}\n${evt.data}` : evt.message,
+          timestamp: evt.timestamp,
+        }
+        patchOwner((sl) => withEvent(sl, row))
+      } else {
+        unsub()
+        const end: SubscriptionEnd =
+          evt.reason === 'close'
+            ? { kind: 'closed', code: evt.code, reason: evt.closeReason }
+            : { kind: evt.reason === 'complete' ? 'completed' : 'error' }
+        patchOwner(() => ({
+          subscriptionState: 'disconnected',
+          subscriptionEnd: end,
+          connectionId: null,
+          _pendingConnectId: undefined,
+          _unsubscribe: undefined,
+        }))
+      }
+    })
+    set({ _unsubscribe: unsub })
+
+    const failOwner = (text: string): void => {
+      unsub()
+      patchOwner(() => ({
+        subscriptionState: 'error',
+        subscriptionError: text,
+        connectionId: null,
+        _pendingConnectId: undefined,
+        _unsubscribe: undefined,
+      }))
+    }
 
     try {
-      const result = await window.api?.request?.send({
-        method: 'GQL_SUBSCRIBE',
-        url: subUrl,
-        body: { type: 'json', content: JSON.stringify({ query: subQuery }) },
+      // SSL verification and TLS by the chain GraphQL Send uses (issue #287).
+      const network = networkPayload(
+        { sslVerification, followRedirects },
+        await loadInheritedNetwork(workspace.activeProjectId),
+      )
+      // Given up while the settings loaded (Cancel, the tab closed, its project left).
+      if (owner()?._pendingConnectId !== connectionId) return unsub()
+
+      const headerMap: Record<string, string> = {}
+      for (const row of resolveKeyValuePairs(headerRows, vars)) headerMap[row.key] = row.value
+      const res = await api.connect({
+        connectionId,
+        url: resolveVariables(start.url, vars),
+        headers: headerMap,
+        query: resolveVariables(start.query, vars),
+        variables: resolveVariables(start.variables || '', vars),
+        ...(chosen.operationName ? { operationName: chosen.operationName } : {}),
+        connectionInit,
+        sslVerification: network.sslVerification,
+        tls: network.tls,
+        ...(network.proxy ? { proxy: network.proxy } : {}),
+        _tabId: ownerTabId ?? undefined,
+        _workspaceId: workspace.activeWorkspaceId || undefined,
+        _projectId: workspace.activeProjectId || undefined,
+        // Editor state with `{{var}}` kept: the History row reopens from it.
+        _configured: { url: start.url, meta: { graphql: gqlMetaOf(start) } },
       })
 
-      if (result?.success) {
-        set({ subscriptionState: 'connected' })
-      } else {
-        set({ subscriptionState: 'error' })
+      if (owner()?._pendingConnectId !== connectionId) {
+        // It finished just as it was given up, or the server already ended it.
+        if (res?.success) void api.disconnect(connectionId).catch(() => {})
+        return
       }
-    } catch {
-      // Demo mode: simulate subscription
-      set({ subscriptionState: 'connected' })
-
-      const interval = setInterval(() => {
-        const state = get()
-        if (state.subscriptionState !== 'connected') {
-          clearInterval(interval)
-          return
-        }
-        set((s) => ({
-          subscriptionEvents: [
-            ...s.subscriptionEvents,
-            {
-              id: makeId(),
-              data: JSON.stringify(
-                {
-                  data: {
-                    onMessage: { id: makeId(), text: `Event at ${new Date().toISOString()}` },
-                  },
-                },
-                null,
-                2,
-              ),
-              timestamp: Date.now(),
-            },
-          ],
+      if (res?.success) {
+        patchOwner(() => ({
+          subscriptionState: 'connected',
+          connectionId,
+          _pendingConnectId: undefined,
         }))
-      }, 3000)
-
-      // Store cleanup reference
-      const unsubscribeCheck = setInterval(() => {
-        if (get().subscriptionState !== 'connected') {
-          clearInterval(interval)
-          clearInterval(unsubscribeCheck)
-        }
-      }, 500)
+      } else {
+        failOwner(subscriptionFailureText(res, 'GraphQL subscription failed'))
+      }
+    } catch (e) {
+      failOwner((e as Error).message)
     }
   },
 
   unsubscribe: async () => {
-    set({ subscriptionState: 'disconnected' })
-
+    const { connectionId, _pendingConnectId, _unsubscribe } = get()
+    const api = getSubscriptionApi()
+    if (!connectionId && !_pendingConnectId) return
+    set({
+      subscriptionState: 'disconnected',
+      subscriptionEnd: { kind: 'unsubscribed' },
+      connectionId: null,
+      _pendingConnectId: undefined,
+      _unsubscribe: undefined,
+    })
+    _unsubscribe?.()
     try {
-      await window.api?.request?.cancel('gql-subscription')
+      // The socket sends complete or stop, then closes.
+      if (connectionId) await api?.disconnect(connectionId)
+      else if (_pendingConnectId) await api?.cancelConnect(_pendingConnectId)
     } catch {
-      // Ignore
+      // Already gone in main.
     }
   },
 
-  clearSubscriptionEvents: () => set({ subscriptionEvents: [] }),
+  clearSubscriptionEvents: () => set({ subscriptionEvents: [], subscriptionDropped: 0 }),
 
   cloneTabState: (srcTabId, dstTabId) =>
-    cloneTabSlice(useGraphQLStore, extractState, srcTabId, dstTabId, idleGql),
+    // A duplicate points at the same endpoint: it keeps the schema already fetched.
+    cloneTabSlice(useGraphQLStore, extractState, srcTabId, dstTabId, (st) => ({
+      ...idleGql(st),
+      schemaData: st.schemaData,
+    })),
 
   switchToTab: (tabId) => {
     const state = get()
     const tabStates = new Map(state._tabStates)
 
-    const currentKey = state._currentTabId === null ? '__null__' : state._currentTabId
-    tabStates.set(currentKey, extractState(state))
+    if (state._currentTabId) tabStates.set(state._currentTabId, extractState(state))
 
     const target = tabStates.get(tabId) || emptyTabState()
 
@@ -805,18 +855,31 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
   },
 
   removeTabState: (tabId) => {
-    const tabStates = new Map(get()._tabStates)
-    tabStates.delete(tabId)
-    set({ _tabStates: tabStates })
+    const state = get()
+    const live = state._currentTabId === tabId
+    // Closing the tab closes its subscription.
+    releaseConnection(
+      live ? extractState(state) : state._tabStates.get(tabId),
+      getSubscriptionApi(),
+    )
+    const gone = withoutTab<TabGraphQLState>(state, tabId)
+    set(
+      live
+        ? {
+            ...gone,
+            subscriptionState: 'disconnected',
+            connectionId: null,
+            _pendingConnectId: undefined,
+            _unsubscribe: undefined,
+          }
+        : gone,
+    )
   },
 
-  reset: () =>
-    set({
-      ...emptyTabState(),
-      schemaData: null,
-      isIntrospecting: false,
-      introspectError: null,
-    }),
+  reset: () => {
+    releaseConnection(extractState(get()), getSubscriptionApi())
+    set({ ...emptyTabState() })
+  },
 }))
 
 attachTabbedPersist(
@@ -828,3 +891,15 @@ attachTabbedPersist(
 )
 // Issue #244: a user edit to a withheld value drops its marker.
 trackCredentialEdits(useGraphQLStore, GQL_CREDENTIALS)
+// Leaving a project closes the subscriptions opened in it (one rule for the
+// realtime editors, `lib/realtime-connections.ts`).
+bindConnectionsToProject({
+  store: useGraphQLStore,
+  extract: extractState,
+  api: getSubscriptionApi,
+  closed: (sl, wasConnected) => ({
+    ...sl,
+    subscriptionState: 'disconnected' as const,
+    subscriptionEnd: wasConnected ? { kind: 'projectLeft' as const } : sl.subscriptionEnd,
+  }),
+})

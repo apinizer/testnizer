@@ -78,6 +78,7 @@ uiTest.describe('Keyboard shortcuts', () => {
     } finally {
       // The collapsed flag is persisted (`ui.leftPanelCollapsed`, #202) and the
       // ui project shares one Electron instance — never leave it collapsed.
+      // optional: cleanup in finally: re-expand the left panel if the test left it collapsed
       if (!(await leftPanel.isVisible())) await window.getByTestId('nav-apis').click()
     }
   })

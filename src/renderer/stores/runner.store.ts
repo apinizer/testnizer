@@ -1,3 +1,4 @@
+import { runScriptsAllowed } from '../lib/script-trust-gate'
 import { create } from 'zustand'
 import type { EndpointRunResult, RunnerReport } from '../../shared/runner-types'
 import { buildExecutePayload, RUNNER_DEFAULTS } from '../lib/runner-payload'
@@ -35,7 +36,7 @@ interface RunnerStore {
   endpoints: RunnerEndpoint[]
   delay: number
   iterations: number
-  iterationData: Record<string, string>[]
+  iterationData: Record<string, unknown>[]
   stopOnError: boolean
   persistResponses: boolean
   keepVariableValues: boolean
@@ -57,7 +58,7 @@ interface RunnerStore {
   deselectAll: () => void
   setDelay: (ms: number) => void
   setIterations: (n: number) => void
-  setIterationData: (rows: Record<string, string>[]) => void
+  setIterationData: (rows: Record<string, unknown>[]) => void
   setStopOnError: (v: boolean) => void
   setPersistResponses: (v: boolean) => void
   setKeepVariableValues: (v: boolean) => void
@@ -122,6 +123,9 @@ export const useRunnerStore = create<RunnerStore>((set, get) => ({
     // Persist the active tab if it's a dirty member of this run (so the run uses
     // fresh data, not the stale DB snapshot) + warn about other dirty run items.
     await saveDirtyRunItemsBeforeRun(selected.map((ep) => ep.id))
+
+    // Same gate as `startLiveRun`: "Not now" does not start the run.
+    if (!(await runScriptsAllowed({ projectId }))) return
 
     // total = endpoints × iterations so progress % reflects the real run.
     const expectedTotal = selected.length * Math.max(1, state.iterations)

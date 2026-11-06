@@ -395,6 +395,18 @@ export interface IpcResult<T = undefined> {
   error?: string
 }
 
+// ─── Project script trust (main: `lib/project-script-trust.ts`) ──
+export interface ProjectTrustStatus {
+  blocked: boolean
+  /** Scripts saved in the project (whitespace-only ones do not count). */
+  scriptCount: number
+}
+
+export interface ProjectTrustEnsure extends ProjectTrustStatus {
+  /** May this project's scripts run now? False = "Not now". */
+  allowed: boolean
+}
+
 // ─── Workspace & Project ─────────────────────────────────────
 
 export interface Workspace {

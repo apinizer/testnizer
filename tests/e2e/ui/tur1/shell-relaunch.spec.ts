@@ -192,9 +192,15 @@ test.describe('Tur1 — App relaunch state restore [MST-221, MST-246]', () => {
       })
       await win2.waitForTimeout(1000)
 
-      // EULA gate should not be visible
-      const eulaGateVisible = await win2.getByTestId('eula-gate').isVisible().catch(() => false)
-      expect(eulaGateVisible).toBe(false)
+      // EULA gate should not be visible — but only once the app rendered
+      // something past the gate, or "not visible" is true of a blank window.
+      await expect(
+        win2
+          .getByTestId('login-continue-anonymous')
+          .or(win2.getByTestId('project-home'))
+          .or(win2.getByTestId('nav-apis')),
+      ).toBeVisible({ timeout: 15_000 })
+      await expect(win2.getByTestId('eula-gate')).toHaveCount(0)
 
       // EULA state via IPC: still accepted (nested under data.state — see above)
       const eulaState2 = await win2.evaluate(async () => {

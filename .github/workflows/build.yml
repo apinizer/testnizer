@@ -106,23 +106,29 @@ jobs:
                   || echo "  (already gone)"
               done
 
-      - name: Delete old workflow runs (keep latest 30)
+      # Scheduled runs are kept apart: pushes would push every night out of the
+      # latest 30 within days, and nobody could tell how long the nightly was red.
+      - name: Delete old workflow runs (keep latest 30, and 60 scheduled)
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -u
-          gh api -X GET /repos/${{ github.repository }}/actions/runs \
-            --paginate --jq '.workflow_runs[] | "\(.id) \(.created_at)"' \
-            | sort -k2 \
-            | head -n -30 \
-            | awk '{print $1}' \
-            | while read -r id; do
-                [ -z "$id" ] && continue
-                echo "Deleting run $id (logs included)"
-                gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/$id" \
-                  || echo "  (already gone or in-progress)"
-              done
+          delete_old_runs() {
+            gh api -X GET /repos/${{ github.repository }}/actions/runs \
+              --paginate --jq ".workflow_runs[] | select($1) | \"\(.id) \(.created_at)\"" \
+              | sort -r -k2 \
+              | tail -n +$(($2 + 1)) \
+              | awk '{print $1}' \
+              | while read -r id; do
+                  [ -z "$id" ] && continue
+                  echo "Deleting run $id (logs included)"
+                  gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/$id" \
+                    || echo "  (already gone or in-progress)"
+                done
+          }
+          delete_old_runs '.event == "schedule"' 60
+          delete_old_runs '.event != "schedule"' 30
 
   # ---------------------------------------------------------------------------
   # Quality gate — runs once before any platform build. Blocks the matrix on
@@ -314,6 +320,35 @@ jobs:
           fi
         shell: bash
 
+  # A red nightly used to wait for someone to look at the Actions tab: the full
+  # suite (flows/, tur1/) runs only here, so that was the one place a regression
+  # showed, and MST-161 sat red unnoticed. One open issue carries every failure,
+  # new runs comment on it, so a bad week is not seven issues.
+  nightly-alert:
+    name: Report a failed nightly
+    needs: [quality, renderer-e2e]
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open or update the nightly failure issue
+        run: |
+          title='Nightly E2E is failing'
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number,title \
+            --jq "map(select(.title == \"$title\"))[0].number // empty")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Failed again: $RUN_URL"
+          else
+            gh issue create --title "$title" \
+              --body "The nightly full suite failed: $RUN_URL. Close this once a nightly is green."
+          fi
+        shell: bash
+
   # ---------------------------------------------------------------------------
   # macOS — ONE job builds BOTH arches (arm64 native + x64 cross-build) on a
   # single Apple-Silicon runner, in a single `electron-builder --mac --arm64
@@ -334,7 +369,7 @@ jobs:
       contents: read
     env:
       GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -366,7 +401,7 @@ jobs:
           node scripts/download-curl-binaries.js --target=darwin-x64
 
       # The Vite/Rollup main-process bundle pulls in the full Electron deps
-      # graph (better-sqlite3, soap, grpc, etc.) and on macos-14 (arm64) the
+      # graph (better-sqlite3, soap, grpc, etc.) and on macos-15 (arm64) the
       # default 2 GB Node heap is occasionally exceeded during minification.
       # Bump the heap so the build is deterministic.
       - name: Build renderer + main

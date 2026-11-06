@@ -15,10 +15,20 @@ import CodegenWsseNote from '../shared/CodegenWsseNote'
 /** Shell-like languages get the terminal icon, the rest the code icon. */
 const SHELL_LANGS = new Set(['curl', 'shell', 'http', 'powershell'])
 
+/**
+ * Mounted for the app's lifetime (`AppShell`), so everything that reads the
+ * active request lives in the open body below. A hidden modal used to generate
+ * a snippet on every store change, and an error there took the whole renderer
+ * down with no dialog in sight.
+ */
 export default function CodeGeneratorModal() {
-  const { t } = useTranslation()
   const show = useUIStore((s) => s.showCodeGenerator)
-  const setShowCodeGenerator = useUIStore((s) => s.setShowCodeGenerator)
+  return show ? <OpenCodeGenerator /> : null
+}
+
+function OpenCodeGenerator() {
+  const { t } = useTranslation()
+  const setShow = useUIStore((s) => s.setShowCodeGenerator)
   const selection = useCodegenSelection()
   const [copied, setCopied] = useState(false)
 
@@ -29,13 +39,6 @@ export default function CodeGeneratorModal() {
     includeSecrets,
     selection.options,
   )
-  // The modal stays mounted while hidden — the opt-in must not outlive one opening.
-  function setShow(open: boolean): void {
-    if (!open) setIncludeSecrets(false)
-    setShowCodeGenerator(open)
-  }
-
-  if (!show) return null
 
   function handleCopy() {
     navigator.clipboard.writeText(code)
@@ -44,12 +47,7 @@ export default function CodeGeneratorModal() {
   }
 
   return (
-    <Modal
-      open={show}
-      onOpenChange={setShow}
-      title={t('codeGen.title')}
-      testId="code-generator-modal"
-    >
+    <Modal open onOpenChange={setShow} title={t('codeGen.title')} testId="code-generator-modal">
       <div className="flex h-[560px] w-[860px] max-w-[95vw] flex-col overflow-hidden rounded-[14px] bg-[var(--white)] shadow-[var(--shadow-modal)]">
         {/* Header */}
         <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-5 py-3">
