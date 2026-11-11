@@ -2,6 +2,7 @@ import { useId } from 'react'
 import { Plug, Shuffle, Unplug, X } from 'lucide-react'
 import { useMqttStore } from '../../../stores/mqtt.store'
 import { useTranslation } from '../../../lib/i18n'
+import { isModEnterChord } from '../../../lib/shortcut-chords'
 import { MQTT_VERSIONS, randomMqttClientId, type MqttVersion } from '../../../../shared/mqtt'
 import McpStatusPill from '../mcp/McpStatusPill'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
@@ -69,7 +70,7 @@ export default function MqttConnectionBar() {
               value={url}
               onChange={setUrl}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !busy && url.trim()) void connect()
+                if (e.key === 'Enter' && !isModEnterChord(e) && !busy && url.trim()) void connect()
               }}
               data-testid="mqtt-url"
               aria-label={t('mqtt.url')}

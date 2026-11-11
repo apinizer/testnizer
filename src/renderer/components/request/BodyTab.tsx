@@ -245,6 +245,7 @@ export default function BodyTab() {
       {isRawType(body.type) && (
         <div className="flex-1 overflow-hidden pt-1" data-testid="body-raw-editor">
           <MonacoWrapper
+            runsActiveRequest
             value={body.content || ''}
             onChange={handleContentChange}
             language={monacoLanguage}

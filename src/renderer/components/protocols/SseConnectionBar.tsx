@@ -1,6 +1,7 @@
 import { Plug, Unplug, RefreshCw, X } from 'lucide-react'
 import { useSseStore, type SseHttpMethod } from '../../stores/sse.store'
 import { useTranslation } from '../../lib/i18n'
+import { isModEnterChord } from '../../lib/shortcut-chords'
 import McpStatusPill from './mcp/McpStatusPill'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import {
@@ -87,7 +88,7 @@ export default function SseConnectionBar() {
               autoComplete="off"
               className={CB_URL_FIELD}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isConnected) connect()
+                if (e.key === 'Enter' && !isModEnterChord(e) && !isConnected) connect()
               }}
             />
           </fieldset>

@@ -54,6 +54,7 @@ export default function MqttWillTab() {
       {/* Monaco like the composer: `{{var}}` highlighting + completion (issue #284 audit). */}
       <div data-testid="mqtt-will-payload" className="min-h-0">
         <MonacoWrapper
+          runsActiveRequest
           value={w.payload}
           onChange={(payload) => set({ payload })}
           language={RT_MONACO_LANGUAGE[w.type]}

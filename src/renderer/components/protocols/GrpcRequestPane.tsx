@@ -299,6 +299,7 @@ export default function GrpcRequestPane() {
               data-testid="grpc-request-editor"
             >
               <MonacoWrapper
+                runsActiveRequest
                 value={requestBody}
                 onChange={setRequestBody}
                 language="json"

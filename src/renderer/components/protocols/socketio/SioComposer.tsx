@@ -1,6 +1,7 @@
 import { Plus, Save, Send } from 'lucide-react'
 import { useSocketIOStore } from '../../../stores/socketio.store'
 import { useTranslation } from '../../../lib/i18n'
+import { isModEnterChord } from '../../../lib/shortcut-chords'
 import { formatCount } from '../../../lib/plural'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { Checkbox, GhostButton, PrimaryButton } from '../../mock-mcp/ui'
@@ -41,7 +42,8 @@ export default function SioComposer() {
             value={emitEvent}
             onChange={setEmitEvent}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && connected) void emit()
+              // Mod+Enter belongs to the global chord (one press, one emit).
+              if (e.key === 'Enter' && !isModEnterChord(e) && connected) void emit()
             }}
             placeholder={t('socketio.eventNamePlaceholder')}
             data-testid="socketio-event-name"

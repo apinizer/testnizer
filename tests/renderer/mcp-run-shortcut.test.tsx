@@ -4,7 +4,8 @@
  * MCP tab it fired an HTTP request built from a stale URL instead of the
  * tool. It now dispatches by the active tab's protocol: MCP runs the active
  * capability's primary action (Invoke / Read / Get) when connected; every
- * other protocol keeps `sendRequest` exactly as before.
+ * other protocol keeps `sendRequest` exactly as before. (Since tester finding
+ * 10 only HTTP does; see `mod-enter-per-protocol.test.tsx`.)
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
@@ -70,8 +71,11 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('runActiveRequest — one dispatch for the chord and the palette (issue #165)', () => {
-  it.each(['http', 'soap', 'graphql'])('%s tabs still call sendRequest', (protocol) => {
-    activate(protocol)
+  // SOAP and GraphQL used to land here too — an HTTP send of a stale slice
+  // (tester finding 10); their own actions are covered in
+  // `mod-enter-per-protocol.test.tsx`.
+  it('HTTP tabs still call sendRequest', () => {
+    activate('http')
     runActiveRequest()
     expect(sendRequest).toHaveBeenCalledTimes(1)
     expect(mcp.callTool).not.toHaveBeenCalled()

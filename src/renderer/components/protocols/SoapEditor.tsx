@@ -24,7 +24,7 @@ function RawXmlBodyEditor() {
   const setRawXml = useSoapStore((s) => s.setRawXml)
   return (
     <div className="h-full overflow-hidden rounded-lg border border-[var(--border)]">
-      <MonacoWrapper value={rawXml} onChange={setRawXml} language="xml" />
+      <MonacoWrapper runsActiveRequest value={rawXml} onChange={setRawXml} language="xml" />
     </div>
   )
 }

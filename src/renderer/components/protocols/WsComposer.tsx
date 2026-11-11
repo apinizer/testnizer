@@ -101,6 +101,7 @@ export default function WsComposer() {
         )}
         <div data-testid="ws-composer" className="min-h-0">
           <MonacoWrapper
+            runsActiveRequest
             value={content}
             onChange={setContent}
             language={RT_MONACO_LANGUAGE[mode]}

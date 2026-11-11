@@ -1,6 +1,7 @@
 import { Plug, Unplug, X } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import { useTranslation } from '../../lib/i18n'
+import { isModEnterChord } from '../../lib/shortcut-chords'
 import McpStatusPill from './mcp/McpStatusPill'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import {
@@ -49,7 +50,7 @@ export default function WsConnectionBar() {
               autoComplete="off"
               className={CB_URL_FIELD}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !busy) connect()
+                if (e.key === 'Enter' && !isModEnterChord(e) && !busy) connect()
               }}
             />
           </fieldset>

@@ -234,6 +234,7 @@ export default function TestsTab() {
         data-testid="tests-post-script"
       >
         <MonacoWrapper
+          runsActiveRequest
           value={postScript}
           onChange={setPostScript}
           language="javascript"
