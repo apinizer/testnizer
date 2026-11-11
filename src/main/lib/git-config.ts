@@ -12,7 +12,15 @@
 import { app } from 'electron'
 import { join } from 'path'
 import { getDb } from '../db/database'
-import { GitCodedError, gitFailure, gitFailureOf, type GitFailure } from '../../shared/git-errors'
+import {
+  GitCodedError,
+  gitFailure,
+  gitFailureOf,
+  scrubGitFailure,
+  wrappedGitFailure,
+  type GitErrorCode,
+  type GitFailure,
+} from '../../shared/git-errors'
 import { decryptSecret } from './secure-storage'
 
 export interface ProjectGitConfig {
@@ -502,16 +510,8 @@ export function sameRemote(a: string | undefined, b: string | undefined): boolea
  * the IPC envelope (`{ success: false, ...describeGitFailure(e, token) }`).
  */
 export function describeGitFailure(e: unknown, token: string | undefined): GitFailure {
-  if (e instanceof GitCodedError) {
-    const params = e.params
-      ? Object.fromEntries(Object.entries(e.params).map(([k, v]) => [k, redactToken(v, token)]))
-      : undefined
-    return gitFailure(
-      e.code,
-      e.detail === undefined ? undefined : redactToken(e.detail, token),
-      params,
-    )
-  }
+  if (e instanceof GitCodedError)
+    return scrubGitFailure(gitFailureOf(e), (s) => redactToken(s, token))
   const msg = redactToken(gitFailureOf(e).error, token)
   if (isGitAuthError(msg)) return gitFailure('GIT_AUTH_FAILED', msg.split('\n')[0])
   if (isPushRejectedError(msg)) return gitFailure('GIT_PUSH_REJECTED')
@@ -519,10 +519,28 @@ export function describeGitFailure(e: unknown, token: string | undefined): GitFa
   return { error: msg }
 }
 
+/**
+ * `code` wrapping a caught error (pull / merge "succeeded but importing …
+ * failed"), redacted like {@link describeGitFailure}: a coded inner error
+ * travels as `errorCause` so the renderer words it too.
+ */
+export function describeWrappedGitFailure(
+  code: GitErrorCode,
+  inner: unknown,
+  token: string | undefined,
+): GitFailure {
+  return scrubGitFailure(wrappedGitFailure(code, inner), (s) => redactToken(s, token))
+}
+
 /** {@link describeGitFailure} as a throwable, for helpers that rethrow. */
 export function describedGitError(e: unknown, token: string | undefined): Error {
   const f = describeGitFailure(e, token)
   return f.errorCode
-    ? new GitCodedError(f.errorCode, { detail: f.errorDetail, params: f.errorParams, cause: e })
+    ? new GitCodedError(f.errorCode, {
+        detail: f.errorDetail,
+        params: f.errorParams,
+        inner: f.errorCause,
+        cause: e,
+      })
     : new Error(f.error, { cause: e })
 }

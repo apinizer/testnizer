@@ -3,6 +3,7 @@
 
 import { useMemo } from 'react'
 import { useUIStore } from '../stores/ui.store'
+import { fillTemplate, type TemplateValues } from '../../shared/fill-template'
 
 export type Locale = 'en' | 'tr'
 
@@ -9882,8 +9883,15 @@ const translations: Record<Locale, Record<string, string>> = {
 
 let currentLocale: Locale = 'en'
 
-export function t(key: string): string {
-  return translations[currentLocale][key] ?? key
+/**
+ * The text of `key` in the current locale; `values` fill its `{name}`
+ * placeholders through the one filler (`shared/fill-template.ts`) — use it
+ * instead of `.replace('{name}', value)`, which expands `$&` / `$1` in a
+ * user's project or branch name.
+ */
+export function t(key: string, values?: TemplateValues): string {
+  const text = translations[currentLocale][key] ?? key
+  return values ? fillTemplate(text, values) : text
 }
 
 export function setLocale(locale: Locale): void {
@@ -9909,7 +9917,10 @@ export function valuesInAllLocales(key: string): string[] {
  * Hook that integrates with the UI store for reactive locale changes.
  * Components using this hook will re-render when locale changes.
  */
-export function useTranslation(): { t: (key: string) => string; locale: Locale } {
+export function useTranslation(): {
+  t: (key: string, values?: TemplateValues) => string
+  locale: Locale
+} {
   const locale = useUIStore((s) => s.locale)
   if (locale !== currentLocale) {
     currentLocale = locale
@@ -9918,8 +9929,10 @@ export function useTranslation(): { t: (key: string) => string; locale: Locale }
   // don't invalidate on every render of the consumer.
   const t = useMemo(
     () =>
-      (key: string): string =>
-        translations[locale][key] ?? key,
+      (key: string, values?: TemplateValues): string => {
+        const text = translations[locale][key] ?? key
+        return values ? fillTemplate(text, values) : text
+      },
     [locale],
   )
   return { t, locale }

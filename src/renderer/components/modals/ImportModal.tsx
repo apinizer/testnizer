@@ -825,7 +825,7 @@ export default function ImportModal() {
               {step === 1
                 ? t('import.title')
                 : step === 2
-                  ? t('import.titleFormat').replace('{format}', selectedFormat.name)
+                  ? t('import.titleFormat', { format: selectedFormat.name })
                   : t('import.titleDestination')}
             </div>
             <div className="text-[var(--muted)]">
@@ -835,8 +835,8 @@ export default function ImportModal() {
                   ? selectedFormat.id === 'curl'
                     ? t('import.subtitleCurl')
                     : canUrlImport
-                      ? t('import.subtitleUrlOrFile').replace('{format}', selectedFormat.name)
-                      : t('import.subtitleFile').replace('{format}', selectedFormat.name)
+                      ? t('import.subtitleUrlOrFile', { format: selectedFormat.name })
+                      : t('import.subtitleFile', { format: selectedFormat.name })
                   : t('import.subtitleDestination')}
             </div>
           </div>
@@ -1037,7 +1037,7 @@ export default function ImportModal() {
                     ) : (
                       <ClipboardPaste size={16} />
                     )}
-                    {t('import.pasteSpec').replace('{format}', selectedFormat.name)}
+                    {t('import.pasteSpec', { format: selectedFormat.name })}
                   </button>
                 </div>
               )}
@@ -1079,7 +1079,7 @@ export default function ImportModal() {
                     ) : (
                       <Upload size={16} />
                     )}
-                    {t('import.pickFile').replace('{format}', selectedFormat.name)}
+                    {t('import.pickFile', { format: selectedFormat.name })}
                   </button>
                   {selectedFormat.id === 'postman' && (
                     <div className="mt-1.5 text-[var(--hint)]">{t('import.postmanFileHint')}</div>

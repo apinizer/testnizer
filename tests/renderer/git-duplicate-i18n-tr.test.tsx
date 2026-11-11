@@ -362,3 +362,91 @@ describe('finding 6 — git-config failures (auth, transient 5xx) follow the UI 
     expect(await pushFails()).toBe(PUSH_TRANSIENT.error)
   })
 })
+
+/*
+ * Codex review: `.replace('{name}', value)` expands `$&`, `$1`, `` $` `` and
+ * `$'` in the VALUE (String.replace replacement patterns), so a project named
+ * `$&` got a wrong toast. `t(key, values)` fills through the one callback
+ * filler (`shared/fill-template.ts`), which inserts the value verbatim.
+ */
+describe('Codex review — names with replacement patterns stay byte-identical', () => {
+  const WEIRD = "Q $& $1 $` $' $$ {name}"
+
+  async function duplicateWeird(): Promise<string> {
+    useWorkspaceStore.setState({
+      activeProjectId: null,
+      projects: [{ ...PROJECT, display_name: WEIRD } as Project],
+    } as unknown as Partial<ReturnType<typeof useWorkspaceStore.getState>>)
+    render(<ProjectHome />)
+    const card = screen
+      .getAllByTestId('project-card')
+      .find((c) => (c.textContent ?? '').includes('Q $&')) as HTMLElement
+    const trigger = within(card)
+      .getAllByRole('button')
+      .find((b) => (b.textContent ?? '').trim() === '') as HTMLElement
+    fireEvent.click(trigger)
+    const dup = within(card)
+      .getAllByRole('button')
+      .find((b) => ['Duplicate', 'Çoğalt'].includes((b.textContent ?? '').trim())) as HTMLElement
+    fireEvent.click(dup)
+    await waitFor(() => expect(toastMock.success).toHaveBeenCalledTimes(1))
+    return String(toastMock.success.mock.calls[0][0])
+  }
+
+  it('EN', async () => {
+    useLocale('en')
+    expect(await duplicateWeird()).toBe(`Duplicated "${WEIRD}"`)
+  })
+
+  it('TR', async () => {
+    useLocale('tr')
+    expect(await duplicateWeird()).toBe(`"${WEIRD}" çoğaltıldı`)
+  })
+})
+
+/*
+ * Codex review: a pull / merge whose import then fails on a CODED error
+ * (`GIT_PROJECT_FILE_AMBIGUOUS`) used to keep only the inner English message
+ * as `{detail}` — a Turkish UI showed an English sentence inside a Turkish
+ * one. Main now sends the inner code as `errorCause`; this is the envelope
+ * `describeWrappedGitFailure` builds.
+ */
+describe('Codex review — a wrapped coded failure is worded in Turkish end to end', () => {
+  const INNER_EN =
+    "The repository holds several project files (a.json, b.json) and none matches this project's name (banking.json). Rename the project to match a file, or remove the extra files."
+  const WRAPPED = {
+    success: false,
+    error: `Pull succeeded but importing the new state failed: ${INNER_EN}`,
+    errorCode: 'GIT_PULL_IMPORT_FAILED',
+    errorDetail: INNER_EN,
+    errorCause: {
+      code: 'GIT_PROJECT_FILE_AMBIGUOUS',
+      params: { files: 'a.json, b.json', name: 'banking.json' },
+    },
+  }
+
+  async function pullStatus(): Promise<string> {
+    mockWindowApi({
+      git: {
+        changes: vi.fn(async () => ({ success: false })),
+        pull: vi.fn(async () => WRAPPED),
+      },
+    })
+    render(<HeaderProjectActions />)
+    fireEvent.click(screen.getByTestId('header-pull'))
+    await waitFor(() => expect(screen.getByTestId('header-status').textContent).not.toBe(''))
+    return screen.getByTestId('header-status').textContent ?? ''
+  }
+
+  it('TR: outer and inner sentence are both Turkish', async () => {
+    useLocale('tr')
+    expect(await pullStatus()).toBe(
+      'Çekim başarılı ancak yeni durum içe aktarılamadı: Depoda birden fazla proje dosyası var (a.json, b.json) ve hiçbiri bu projenin adıyla (banking.json) eşleşmiyor. Proje adını bir dosyanın adına uydurun ya da fazla dosyaları kaldırın.',
+    )
+  })
+
+  it('EN: the sentence main sent', async () => {
+    useLocale('en')
+    expect(await pullStatus()).toBe(WRAPPED.error)
+  })
+})

@@ -123,7 +123,7 @@ export default function ProjectHome() {
         toast.error(result?.error || t('home.duplicateFailed'))
         return
       }
-      toast.success(t('home.duplicated').replace('{name}', project.display_name || project.name))
+      toast.success(t('home.duplicated', { name: project.display_name || project.name }))
       // Refresh project list so the new copy appears immediately.
       const wsState = useWorkspaceStore.getState()
       if (wsState.activeWorkspaceId) await wsState.fetchProjects(wsState.activeWorkspaceId)
