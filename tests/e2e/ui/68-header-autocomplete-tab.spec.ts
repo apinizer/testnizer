@@ -106,11 +106,14 @@ uiTest.describe('Headers autocomplete — Tab keeps what was typed (findings 8, 
       await expect(ctKey).toHaveValue('Content-Type')
 
       // ── What reaches the wire ──────────────────────────────────────────────
-      const { status, body } = await sendAndReadBody(window)
+      const { status } = await sendAndReadBody(window)
       expect(status).toBe(200)
-      // `sendAndReadBody` returns '' when the body pane cannot be read.
-      expect(body.trim().length).toBeGreaterThan(0)
-      const text = body.replace(/\u00a0/g, ' ')
+      // The body pane is Monaco and mounts lazily ("Loading editor…"): wait
+      // until the echoed headers are rendered before reading them.
+      const bodyPane = window.getByTestId('res-body-content')
+      const readBody = async () => (await bodyPane.innerText()).replace(/\u00a0/g, ' ')
+      await expect.poll(readBody, { timeout: 15_000 }).toMatch(/"authorization"/i)
+      const text = await readBody()
       expect(text).toMatch(new RegExp(`"authorization"\\s*:\\s*"Bearer ${token}"`, 'i'))
       expect(text.toLowerCase()).not.toContain('proxy-authorization')
       expect(text).not.toMatch(/"content-type":\s*"application\/json"/i)
