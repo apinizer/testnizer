@@ -262,6 +262,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'deleteConfirm.thisHistoryEntry': 'this history entry',
     'deleteConfirm.runCountOne': '1 run',
     'deleteConfirm.runCount': '{count} runs',
+    // Clear a project's request history — History sidebar + Settings → Data (tester finding 4)
+    'deleteConfirm.type.projectHistory': 'project history',
+    'deleteConfirm.projectHistoryCountOne': "this project's 1 history entry",
+    'deleteConfirm.projectHistoryCount': "this project's {count} history entries",
+    'deleteConfirm.projectHistoryItem': "this project's request history",
 
     // Runner history — All Runs (issue #248)
     'runnerHistory.back': 'Back',
@@ -1020,7 +1025,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'console.kv.event': 'Event',
     // History sidebar (requests + commits)
     'history.clear': 'Clear',
-    'history.clearAllTitle': 'Clear all history',
+    'history.clearAllTitle': "Clear this project's history",
     'history.filterPlaceholder': 'Filter history...',
     'history.emptyTitle': 'No history yet.',
     'history.emptyDesc': 'Send a request to see it appear here.',
@@ -1303,6 +1308,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'data.exportFailed': 'Export failed',
     'data.clearHistorySuccess': 'History cleared',
     'data.clearHistoryFailed': 'Could not clear history',
+    'data.clearHistoryEmpty': 'This project has no request history',
     'data.dnsResolution': 'DNS resolution',
     'data.dnsIpv4': 'Prefer IPv4',
     'data.dnsIpv6': 'Prefer IPv6',
@@ -3094,6 +3100,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'common.saving': 'Saving…',
     'common.close': 'Close',
     'common.delete': 'Delete',
+    'common.moreActions': 'More actions',
     'common.create': 'Create',
 
     // Endpoint save modal
@@ -4889,6 +4896,11 @@ const translations: Record<Locale, Record<string, string>> = {
     'deleteConfirm.thisHistoryEntry': 'Bu geçmiş kaydı',
     'deleteConfirm.runCountOne': '1 çalıştırma kaydı',
     'deleteConfirm.runCount': '{count} çalıştırma kaydı',
+    // Projenin istek geçmişini temizleme — Geçmiş kenar çubuğu + Ayarlar → Veri (test bulgusu 4)
+    'deleteConfirm.type.projectHistory': 'proje geçmişi',
+    'deleteConfirm.projectHistoryCountOne': 'Bu projenin 1 geçmiş kaydı',
+    'deleteConfirm.projectHistoryCount': 'Bu projenin {count} geçmiş kaydı',
+    'deleteConfirm.projectHistoryItem': 'Bu projenin istek geçmişi',
 
     // Çalıştırma geçmişi — Tüm Çalıştırmalar (issue #248)
     'runnerHistory.back': 'Geri',
@@ -5650,7 +5662,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'console.kv.event': 'Olay',
     // Geçmiş kenar çubuğu (istekler + commit'ler)
     'history.clear': 'Temizle',
-    'history.clearAllTitle': 'Tüm geçmişi temizle',
+    'history.clearAllTitle': 'Bu projenin geçmişini temizle',
     'history.filterPlaceholder': 'Geçmişte ara...',
     'history.emptyTitle': 'Henüz geçmiş yok.',
     'history.emptyDesc': 'Burada görmek için bir istek gönderin.',
@@ -5933,6 +5945,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'data.exportFailed': 'Dışa aktarma başarısız',
     'data.clearHistorySuccess': 'Geçmiş temizlendi',
     'data.clearHistoryFailed': 'Geçmiş temizlenemedi',
+    'data.clearHistoryEmpty': 'Bu projenin istek geçmişi yok',
     'data.dnsResolution': 'DNS çözümleme',
     'data.dnsIpv4': 'IPv4 tercih et',
     'data.dnsIpv6': 'IPv6 tercih et',
@@ -7732,6 +7745,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'common.saving': 'Kaydediliyor…',
     'common.close': 'Kapat',
     'common.delete': 'Sil',
+    'common.moreActions': 'Diğer işlemler',
     'common.create': 'Oluştur',
 
     // Endpoint save modal

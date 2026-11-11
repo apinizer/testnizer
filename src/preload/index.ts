@@ -255,6 +255,9 @@ const api = {
     add: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('history:add', payload),
     clear: (scope?: string | { workspace_id?: string; project_id?: string }): Promise<unknown> =>
       ipcRenderer.invoke('history:clear', scope),
+    /** How many rows `clear(scope)` would delete — the Clear confirmation's count. */
+    count: (scope?: string | { workspace_id?: string; project_id?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('history:count', scope),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('history:delete', id),
     prune: (limit: number, workspaceId?: string): Promise<unknown> =>
       ipcRenderer.invoke('history:prune', limit, workspaceId),

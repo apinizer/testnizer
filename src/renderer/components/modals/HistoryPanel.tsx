@@ -146,7 +146,8 @@ export default function HistoryPanel() {
           <div className="flex-1" />
           <button
             type="button"
-            onClick={() => clear(activeWorkspaceId || undefined)}
+            // Dead component (never mounted); kept compiling on the project scope.
+            onClick={() => activeProjectId && void clear(activeProjectId)}
             className="cursor-pointer rounded px-2 py-1"
             style={{
               background: 'transparent',

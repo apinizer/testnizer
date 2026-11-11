@@ -21,6 +21,7 @@ import { toast } from '../../lib/toast'
 import { projectDisplayName } from '../../lib/project-export'
 import { useProjectExportStore } from '../../stores/project-export.store'
 import ProjectScriptTrustRow from './ProjectScriptTrustRow'
+import { useHistoryClearConfirm } from '../shared/use-history-clear-confirm'
 
 // ════════════════════════════════════════════════════════════════
 // Shared types & styles
@@ -1189,29 +1190,19 @@ export function DataPane({
   onOpenImport: () => void
 }) {
   const { t } = useTranslation()
-  const [clearing, setClearing] = useState<'cache' | 'history' | null>(null)
+  // The History sidebar's clear flow: same project scope, same confirmation.
+  const historyClear = useHistoryClearConfirm({
+    projectId,
+    onCleared: (res) => {
+      if (res.ok) toast.success(t('data.clearHistorySuccess'))
+      else toast.error(res.error || t('data.clearHistoryFailed'))
+    },
+    onNothingToClear: () => toast.info(t('data.clearHistoryEmpty')),
+  })
 
   // Format picker → shared `exportProjectAs` (issue #208).
   function handleExport() {
     useProjectExportStore.getState().openPicker(projectId, projectDisplayName(projectId))
-  }
-
-  async function handleClearHistory() {
-    setClearing('history')
-    try {
-      const result = (await window.api?.history?.clear?.({ project_id: projectId })) as
-        | { success: boolean; error?: string }
-        | undefined
-      if (result?.success === false) {
-        toast.error(result.error || t('data.clearHistoryFailed'))
-      } else {
-        toast.success(t('data.clearHistorySuccess'))
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error(t('data.clearHistoryFailed'))
-    }
-    setClearing(null)
   }
 
   return (
@@ -1234,11 +1225,13 @@ export function DataPane({
         <DataRow
           title={t('data.clearHistory')}
           description={t('data.clearHistoryDesc')}
-          buttonLabel={clearing === 'history' ? '…' : t('data.clearHistoryBtn')}
+          buttonLabel={historyClear.busy ? '…' : t('data.clearHistoryBtn')}
           destructive
-          onClick={handleClearHistory}
+          testId="data-clear-history-btn"
+          onClick={() => void historyClear.ask()}
         />
       </div>
+      {historyClear.dialog}
     </div>
   )
 }
@@ -1248,12 +1241,14 @@ function DataRow({
   description,
   buttonLabel,
   destructive,
+  testId,
   onClick,
 }: {
   title: string
   description: string
   buttonLabel: string
   destructive?: boolean
+  testId?: string
   onClick: () => void
 }) {
   return (
@@ -1269,6 +1264,7 @@ function DataRow({
       </div>
       <button
         type="button"
+        data-testid={testId}
         onClick={onClick}
         className="cursor-pointer rounded-[7px] px-4 py-2"
         style={{

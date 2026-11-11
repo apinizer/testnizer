@@ -996,6 +996,8 @@ export default function TreeNodeComponent({
           <button
             type="button"
             data-testid="tree-node-more"
+            aria-label={t('common.moreActions')}
+            title={t('common.moreActions')}
             onClick={(e) => {
               e.stopPropagation()
               openContextMenu(e)
