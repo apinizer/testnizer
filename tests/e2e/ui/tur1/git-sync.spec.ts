@@ -182,7 +182,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
           projectId,
         )
         expect(bad.success).toBe(false)
-        expect(bad.error ?? '').toMatch(/kimlik doğrulaması|401|Authentication/i)
+        expect(bad.error ?? '').toMatch(/Git authentication failed|401|Authentication/i)
         expect(bad.error ?? '').not.toContain('definitely-wrong')
         log = await authLog(gitUrl)
         expect(log.some((a) => !a.ok && a.password === 'definitely-wrong')).toBe(true)

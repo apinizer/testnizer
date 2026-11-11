@@ -60,12 +60,15 @@ vi.mock('simple-git', () => {
 })
 
 const { registerSaveHandlers } = await import('../../../src/main/ipc/save.handler')
+const { GIT_ERROR_TEXT } = await import('../../../src/shared/git-errors')
 
 const REPO = 'https://github.com/acme/apis.git'
 const payload = { repoUrl: REPO, branch: 'main', username: 'u', token: 'ghp_secret' }
 type Result = {
   success: boolean
   error?: string
+  errorCode?: string
+  errorDetail?: string
   data?: { isEmpty: boolean; files: unknown[]; tmpDir: string }
 }
 const list = () => harness.invoke('save:gitListFiles', payload) as Promise<Result>
@@ -110,8 +113,12 @@ describe('save:gitListFiles decides from ls-remote', () => {
     )
     const res = await list()
     expect(res.success).toBe(false)
-    expect(res.error).toMatch(/kimlik doğrulaması/i)
-    expect(res.error).not.toContain('ghp_secret')
+    expect(res.errorCode).toBe('GIT_AUTH_FAILED')
+    expect(res.error).toBe(
+      GIT_ERROR_TEXT.GIT_AUTH_FAILED.replace('{detail}', res.errorDetail ?? ''),
+    )
+    expect(res.errorDetail).toContain('Authentication failed')
+    expect(JSON.stringify(res)).not.toContain('ghp_secret')
     expect(remote.calls.some((c) => c.startsWith('clone'))).toBe(false)
   })
 
@@ -121,7 +128,11 @@ describe('save:gitListFiles decides from ls-remote', () => {
     )
     const res = await list()
     expect(res.success).toBe(false)
-    expect(res.error).toContain('Could not resolve host')
+    expect(res.errorCode).toBe('GIT_REMOTE_UNREACHABLE')
+    expect(res.errorDetail).toContain('Could not resolve host')
+    expect(res.error).toBe(
+      GIT_ERROR_TEXT.GIT_REMOTE_UNREACHABLE.replace('{detail}', res.errorDetail ?? ''),
+    )
   })
 
   it('a clone that fails after ls-remote succeeded is an error, not an empty repo', async () => {
@@ -130,6 +141,8 @@ describe('save:gitListFiles decides from ls-remote', () => {
     const res = await list()
     expect(res.success).toBe(false)
     expect(res.error).toContain('early EOF')
+    // Raw git stderr: no code, shown as git wrote it.
+    expect(res.errorCode).toBeUndefined()
     expect(remote.calls).not.toContain('init')
   })
 })
