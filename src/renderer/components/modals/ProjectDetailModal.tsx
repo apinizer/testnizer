@@ -334,18 +334,18 @@ export default function ProjectDetailModal() {
 
       if (failures.length > 0) {
         // Same channel the outer catch uses, and the modal stays open.
-        toast.error(`Save failed: ${failures.join(' · ')}`)
+        toast.error(`${t('toast.saveFailed')}: ${failures.join(' · ')}`)
         return false
       }
 
-      toast.success(t('modal.saved') || 'Project settings saved')
+      toast.success(t('modal.saved'))
       handleClose()
       return true
     } catch (e) {
       // Surface save failures instead of silently closing the modal — without
       // this, a renameProject / updateProject reject left the user thinking
       // their change had landed (v1.4.0 review finding).
-      toast.error(`Save failed: ${(e as Error).message}`)
+      toast.error(`${t('toast.saveFailed')}: ${(e as Error).message}`)
       return false
     } finally {
       setSaving(false)
@@ -484,7 +484,7 @@ export default function ProjectDetailModal() {
               style={{ borderTop: '1px solid var(--border)' }}
             >
               <span style={{ color: 'var(--hint)' }}>
-                {modeLabels[activeProject.save_mode || 'local']?.label || 'Local'}
+                {modeLabels[activeProject.save_mode || 'local']?.label || t('storage.local')}
               </span>
               <button
                 type="button"

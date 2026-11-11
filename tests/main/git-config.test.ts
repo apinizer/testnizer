@@ -49,13 +49,25 @@ const {
   isGitAuthError,
   isPushRejectedError,
   sameRemote,
-  describeGitError,
+  describeGitFailure,
   redactToken,
   legacyCredentialKey,
-  GIT_SSH_URL_ERROR,
-  GIT_AUTH_FAILED_ERROR,
-  GIT_PUSH_REJECTED_ERROR,
 } = await import('../../src/main/lib/git-config')
+const { GitCodedError, GIT_ERROR_TEXT } = await import('../../src/shared/git-errors')
+
+/** A thrown failure carries its code (tester finding 6: the renderer words it). */
+function codeOf(fn: () => unknown): string | undefined {
+  try {
+    fn()
+  } catch (e) {
+    expect(e).toBeInstanceOf(GitCodedError)
+    expect((e as Error).message).toBe(
+      GIT_ERROR_TEXT[(e as InstanceType<typeof GitCodedError>).code],
+    )
+    return (e as InstanceType<typeof GitCodedError>).code
+  }
+  return undefined
+}
 
 const enc = (s: string) => 'enc:v1:' + Buffer.from(s, 'utf-8').reverse().toString('base64')
 
@@ -137,8 +149,8 @@ describe('buildAuthUrl', () => {
   })
 
   it('rejects SSH remotes with an explicit message instead of "Invalid URL"', () => {
-    expect(() => buildAuthUrl('git@github.com:a/b.git', 'u', 't')).toThrow(GIT_SSH_URL_ERROR)
-    expect(() => buildAuthUrl('ssh://git@github.com/a/b.git', 'u', 't')).toThrow(GIT_SSH_URL_ERROR)
+    expect(codeOf(() => buildAuthUrl('git@github.com:a/b.git', 'u', 't'))).toBe('GIT_SSH_URL')
+    expect(codeOf(() => buildAuthUrl('ssh://git@github.com/a/b.git', 'u', 't'))).toBe('GIT_SSH_URL')
   })
 
   it('passes file:// mirrors and plain paths through untouched (e2e bare-repo fixtures)', () => {
@@ -173,7 +185,7 @@ describe('gitAuth (per-process credential, clean remote URL)', () => {
     const a = gitAuth('file:///tmp/bare.git', 'u', 't')
     expect(a.cleanUrl).toBe('file:///tmp/bare.git')
     expect(a.config.some((c) => c.startsWith('http.extraHeader'))).toBe(false)
-    expect(() => gitAuth('git@github.com:a/b.git', 'u', 't')).toThrow(GIT_SSH_URL_ERROR)
+    expect(codeOf(() => gitAuth('git@github.com:a/b.git', 'u', 't'))).toBe('GIT_SSH_URL')
   })
 })
 
@@ -313,14 +325,20 @@ describe('sameRemote', () => {
   })
 })
 
-describe('describeGitError — the one mapping both handlers use', () => {
-  it('maps 401/403 to the auth message with the token redacted', () => {
-    const out = describeGitError(
+describe('describeGitFailure — the one mapping both handlers use', () => {
+  it('maps 401/403 to GIT_AUTH_FAILED with the token redacted', () => {
+    const out = describeGitFailure(
       new Error("fatal: Authentication failed for 'https://github.com/a/b.git/' (ghp_secret)"),
       'ghp_secret',
     )
-    expect(out.startsWith(GIT_AUTH_FAILED_ERROR)).toBe(true)
-    expect(out).not.toContain('ghp_secret')
+    expect(out.errorCode).toBe('GIT_AUTH_FAILED')
+    expect(out.errorDetail).toBe(
+      "fatal: Authentication failed for 'https://github.com/a/b.git/' (***)",
+    )
+    expect(out.error).toBe(
+      GIT_ERROR_TEXT.GIT_AUTH_FAILED.replace('{detail}', out.errorDetail ?? ''),
+    )
+    expect(JSON.stringify(out)).not.toContain('ghp_secret')
   })
 
   it('maps a non-fast-forward rejection to the pull-first hint', () => {
@@ -328,19 +346,25 @@ describe('describeGitError — the one mapping both handlers use', () => {
     expect(isPushRejectedError('Updates were rejected because the remote contains work')).toBe(true)
     expect(isPushRejectedError('fatal: repository not found')).toBe(false)
     expect(
-      describeGitError(
+      describeGitFailure(
         new Error('error: failed to push some refs\n ! [rejected] main -> main (non-fast-forward)'),
         'tok_abc',
       ),
-    ).toBe(GIT_PUSH_REJECTED_ERROR)
+    ).toEqual({ error: GIT_ERROR_TEXT.GIT_PUSH_REJECTED, errorCode: 'GIT_PUSH_REJECTED' })
   })
 
-  it('is idempotent on an already-mapped auth message and passes other text through redacted', () => {
-    const mapped = `${GIT_AUTH_FAILED_ERROR} (x)`
-    expect(describeGitError(new Error(mapped), 'tok_abc')).toBe(mapped)
-    expect(describeGitError(new Error('Could not resolve host: github.com tok123'), 'tok123')).toBe(
-      'Could not resolve host: github.com ***',
-    )
+  it('keeps the code of an already-coded failure (redacting only its detail) and passes other text through redacted', () => {
+    const coded = new GitCodedError('GIT_AUTH_FAILED', { detail: 'x tok_abc' })
+    expect(describeGitFailure(coded, 'tok_abc')).toEqual({
+      error: GIT_ERROR_TEXT.GIT_AUTH_FAILED.replace('{detail}', 'x ***'),
+      errorCode: 'GIT_AUTH_FAILED',
+      errorDetail: 'x ***',
+    })
+    expect(
+      describeGitFailure(new Error('Could not resolve host: github.com tok123'), 'tok123'),
+    ).toEqual({
+      error: 'Could not resolve host: github.com ***',
+    })
   })
 })
 

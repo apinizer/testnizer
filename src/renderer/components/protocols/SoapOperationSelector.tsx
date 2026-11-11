@@ -1,6 +1,8 @@
 import { useSoapStore } from '../../stores/soap.store'
+import { useTranslation } from '../../lib/i18n'
 
 export default function SoapOperationSelector() {
+  const { t } = useTranslation()
   const parsedWsdl = useSoapStore((s) => s.parsedWsdl)
   const selectedService = useSoapStore((s) => s.selectedService)
   const selectedPort = useSoapStore((s) => s.selectedPort)
@@ -22,12 +24,12 @@ export default function SoapOperationSelector() {
   return (
     <div className="space-y-3">
       <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
-        Service Configuration
+        {t('soap.serviceConfig')}
       </label>
       <div className="grid grid-cols-3 gap-3">
         {/* Service */}
         <div className="space-y-1">
-          <span className="text-[var(--muted)]">Service</span>
+          <span className="text-[var(--muted)]">{t('soap.service')}</span>
           <select
             value={selectedService || ''}
             onChange={(e) => selectService(e.target.value)}
@@ -43,7 +45,7 @@ export default function SoapOperationSelector() {
 
         {/* Port */}
         <div className="space-y-1">
-          <span className="text-[var(--muted)]">Port</span>
+          <span className="text-[var(--muted)]">{t('soap.port')}</span>
           <select
             value={selectedPort || ''}
             onChange={(e) => selectPort(e.target.value)}
@@ -59,7 +61,7 @@ export default function SoapOperationSelector() {
 
         {/* Operation */}
         <div className="space-y-1">
-          <span className="text-[var(--muted)]">Operation</span>
+          <span className="text-[var(--muted)]">{t('soap.operation')}</span>
           <select
             value={selectedOperation || ''}
             onChange={(e) => selectOperation(e.target.value)}
@@ -77,7 +79,7 @@ export default function SoapOperationSelector() {
       {/* Endpoint URL — editable */}
       {currentPort && (
         <div className="space-y-1">
-          <span className="text-[var(--muted)]">Endpoint URL</span>
+          <span className="text-[var(--muted)]">{t('soap.endpointUrl')}</span>
           <input
             type="text"
             value={endpointUrl || currentPort.endpointUrl}

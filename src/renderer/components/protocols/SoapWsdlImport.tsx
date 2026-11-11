@@ -1,8 +1,10 @@
 import { Download, Loader2 } from 'lucide-react'
+import { useTranslation } from '../../lib/i18n'
 import { useSoapStore } from '../../stores/soap.store'
 import { isModEnterChord } from '../../lib/shortcut-chords'
 
 export default function SoapWsdlImport() {
+  const { t } = useTranslation()
   const wsdlUrl = useSoapStore((s) => s.wsdlUrl)
   const setWsdlUrl = useSoapStore((s) => s.setWsdlUrl)
   const parseWsdl = useSoapStore((s) => s.parseWsdl)
@@ -32,7 +34,7 @@ export default function SoapWsdlImport() {
           style={{ background: 'var(--accent)', border: 'none' }}
         >
           {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
-          {isLoading ? 'Parsing...' : 'Import WSDL'}
+          {isLoading ? t('soap.parsing') : t('soap.importWsdl')}
         </button>
       </div>
       {parseError && (

@@ -20,10 +20,12 @@ import * as React from 'react'
 import { expect } from 'vitest'
 import { render, within } from '@testing-library/react'
 import { ErrorBoundary } from '../../../src/renderer/components/shared/ErrorBoundary'
+import { valuesInAllLocales } from '../../../src/renderer/lib/i18n'
 
-// The recovery panel's headline (ErrorBoundary.tsx). Stable across redeploys —
-// if it ever changes, this harness must change with it.
-const ERROR_BOUNDARY_MARKER = 'Testnizer hit a render error'
+// The recovery panel's headline (ErrorBoundary.tsx), in every locale: the
+// panel follows the UI language (tester finding 6), so a screen rendered in
+// Turkish that crashes shows the Turkish headline.
+const ERROR_BOUNDARY_MARKERS = valuesInAllLocales('errorBoundary.title')
 
 /**
  * Render `ui` inside the real ErrorBoundary and assert it mounted cleanly:
@@ -43,10 +45,13 @@ export function mountsWithoutCrash(ui: React.ReactElement): void {
   const { container, baseElement } = render(<ErrorBoundary>{ui}</ErrorBoundary>)
   // If the child threw, the boundary rendered its recovery panel (into container,
   // even for a portalled child). Scope to baseElement so it's found either way.
-  expect(
-    within(baseElement).queryByText(ERROR_BOUNDARY_MARKER),
-    'Screen threw on mount — ErrorBoundary recovery panel is showing',
-  ).toBeNull()
+  expect(ERROR_BOUNDARY_MARKERS).toContain('Testnizer hit a render error')
+  for (const marker of ERROR_BOUNDARY_MARKERS) {
+    expect(
+      within(baseElement).queryByText(marker),
+      'Screen threw on mount — ErrorBoundary recovery panel is showing',
+    ).toBeNull()
+  }
   // Something meaningful must have rendered (guards a component that bails to
   // null). Inline screens fill `container`; portalled modals fill a sibling of
   // `container` inside `baseElement`.
@@ -68,8 +73,11 @@ type ApiEnvelope = { success: boolean; data?: unknown; error?: string }
 
 function makeMethod(name: string): unknown {
   // Event subscriptions are synchronous and return an unsubscribe function.
-  if (name.startsWith('on')) return (..._args: unknown[]) => () => {}
-  return (..._args: unknown[]): Promise<ApiEnvelope> => Promise.resolve({ success: true, data: null })
+  if (name.startsWith('on'))
+    return (..._args: unknown[]) =>
+      () => {}
+  return (..._args: unknown[]): Promise<ApiEnvelope> =>
+    Promise.resolve({ success: true, data: null })
 }
 
 function makeNamespace(): Record<string, unknown> {

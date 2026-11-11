@@ -112,7 +112,7 @@ export default function ProjectHome() {
     try {
       const wsId = useWorkspaceStore.getState().activeWorkspaceId
       if (!wsId) {
-        toast.error('No active workspace')
+        toast.error(t('home.noActiveWorkspace'))
         return
       }
       const result = (await window.api?.project?.duplicate({
@@ -120,15 +120,15 @@ export default function ProjectHome() {
         workspaceId: wsId,
       })) as { success: boolean; error?: string; data?: { projectId: string } } | undefined
       if (!result?.success) {
-        toast.error(result?.error || 'Project duplication failed')
+        toast.error(result?.error || t('home.duplicateFailed'))
         return
       }
-      toast.success(`Duplicated "${project.display_name || project.name}"`)
+      toast.success(t('home.duplicated').replace('{name}', project.display_name || project.name))
       // Refresh project list so the new copy appears immediately.
       const wsState = useWorkspaceStore.getState()
       if (wsState.activeWorkspaceId) await wsState.fetchProjects(wsState.activeWorkspaceId)
     } catch (e) {
-      toast.error('Project duplication failed: ' + (e as Error).message)
+      toast.error(`${t('home.duplicateFailed')}: ${(e as Error).message}`)
     }
   }
 
@@ -468,7 +468,7 @@ export default function ProjectHome() {
                       }}
                     >
                       <Copy size={14} />
-                      {t('home.duplicate') || 'Duplicate'}
+                      {t('home.duplicate')}
                     </button>
                     <button
                       type="button"

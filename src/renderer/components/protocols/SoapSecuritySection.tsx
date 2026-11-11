@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, Shield } from 'lucide-react'
 import { useSoapStore } from '../../stores/soap.store'
+import { useTranslation } from '../../lib/i18n'
 import { useNumberDraft } from '../../lib/number-draft'
 import KeyMaterialField from '../shared/KeyMaterialField'
 import CredentialRestartHint from '../shared/CredentialRestartHint'
@@ -33,6 +34,7 @@ const SIGN_REFERENCES: WsSignReference[] = ['Body', 'Timestamp', 'UsernameToken'
 const SOAP_RESTART_HINT_ID = 'soap-wss-restart-hint-text'
 
 export default function SoapSecuritySection() {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(true)
   const wsSecurity = useSoapStore((s) => s.wsSecurity)
   const setWsSecurity = useSoapStore((s) => s.setWsSecurity)
@@ -155,7 +157,7 @@ export default function SoapSecuritySection() {
               onChange={(e) => setWsSecurity({ enabled: e.target.checked })}
               className="accent-[var(--accent)]"
             />
-            <span className="text-[var(--text)]">Enable WS-Security</span>
+            <span className="text-[var(--text)]">{t('soap.sec.enable')}</span>
           </label>
 
           {wsSecurity.enabled && (
@@ -187,28 +189,30 @@ export default function SoapSecuritySection() {
                     UsernameToken
                   </legend>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Username</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.username')}</span>
                     <input
                       type="text"
                       value={wsSecurity.usernameToken?.username ?? ''}
                       onChange={(e) => updateUsernameToken({ username: e.target.value })}
                       className={INPUT}
-                      placeholder="Enter username"
+                      placeholder={t('soap.sec.usernamePlaceholder')}
                     />
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Password</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.password')}</span>
                     <input
                       type="password"
                       value={wsSecurity.usernameToken?.password ?? ''}
                       onChange={(e) => updateUsernameToken({ password: e.target.value })}
                       className={INPUT}
-                      placeholder="Enter password"
+                      placeholder={t('soap.sec.passwordPlaceholder')}
                       aria-describedby={SOAP_RESTART_HINT_ID}
                     />
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Password Type</span>
+                    <span className="text-xs text-[var(--muted)]">
+                      {t('soap.sec.passwordType')}
+                    </span>
                     <select
                       value={wsSecurity.usernameToken?.passwordType ?? 'PasswordText'}
                       onChange={(e) =>
@@ -230,7 +234,9 @@ export default function SoapSecuritySection() {
                         onChange={(e) => updateUsernameToken({ nonce: e.target.checked })}
                         className="accent-[var(--accent)]"
                       />
-                      <span className="text-sm text-[var(--text)]">Include Nonce</span>
+                      <span className="text-sm text-[var(--text)]">
+                        {t('soap.sec.includeNonce')}
+                      </span>
                     </label>
                     <label className="flex cursor-pointer items-center gap-2">
                       <input
@@ -239,7 +245,9 @@ export default function SoapSecuritySection() {
                         onChange={(e) => updateUsernameToken({ created: e.target.checked })}
                         className="accent-[var(--accent)]"
                       />
-                      <span className="text-sm text-[var(--text)]">Include Created</span>
+                      <span className="text-sm text-[var(--text)]">
+                        {t('soap.sec.includeCreated')}
+                      </span>
                     </label>
                   </div>
                   {/* Issue #247: the typed password is not kept in the tab snapshot. */}
@@ -250,10 +258,10 @@ export default function SoapSecuritySection() {
               {modes.includes('timestamp') && (
                 <fieldset className="rounded border border-[var(--border)] p-3 space-y-2">
                   <legend className="px-1 text-xs font-medium text-[var(--accent-text)]">
-                    Timestamp
+                    {t('soap.sec.timestamp')}
                   </legend>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">TTL (seconds)</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.ttlSeconds')}</span>
                     <input type="number" min={1} {...ttlDraft.inputProps} className={INPUT} />
                   </div>
                 </fieldset>
@@ -262,10 +270,10 @@ export default function SoapSecuritySection() {
               {modes.includes('sign') && (
                 <fieldset className="rounded border border-[var(--border)] p-3 space-y-2">
                   <legend className="px-1 text-xs font-medium text-[var(--accent-text)]">
-                    Sign
+                    {t('soap.sec.sign')}
                   </legend>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Algorithm</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.algorithm')}</span>
                     <select
                       value={wsSecurity.sign?.algorithm ?? 'RSA-SHA256'}
                       onChange={(e) => updateSign({ algorithm: e.target.value as WsSignAlgorithm })}
@@ -279,7 +287,9 @@ export default function SoapSecuritySection() {
                     </select>
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">KeyInfo Strategy</span>
+                    <span className="text-xs text-[var(--muted)]">
+                      {t('soap.sec.keyInfoStrategy')}
+                    </span>
                     <select
                       value={wsSecurity.sign?.keyInfoStrategy ?? 'BinarySecurityToken'}
                       onChange={(e) =>
@@ -295,7 +305,9 @@ export default function SoapSecuritySection() {
                     </select>
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">References to sign</span>
+                    <span className="text-xs text-[var(--muted)]">
+                      {t('soap.sec.referencesToSign')}
+                    </span>
                     <div className="flex flex-wrap gap-3 mt-1">
                       {SIGN_REFERENCES.map((ref) => (
                         <label key={ref} className="flex cursor-pointer items-center gap-1">
@@ -311,7 +323,7 @@ export default function SoapSecuritySection() {
                     </div>
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Certificate (PEM)</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.certificate')}</span>
                     <textarea
                       value={wsSecurity.sign?.certPem ?? ''}
                       onChange={(e) => updateSign({ certPem: e.target.value })}
@@ -320,7 +332,7 @@ export default function SoapSecuritySection() {
                     />
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Private Key (PEM)</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.privateKey')}</span>
                     <textarea
                       value={wsSecurity.sign?.privateKeyPem ?? ''}
                       onChange={(e) => updateSign({ privateKeyPem: e.target.value })}
@@ -343,10 +355,10 @@ export default function SoapSecuritySection() {
               {modes.includes('encrypt') && (
                 <fieldset className="rounded border border-[var(--border)] p-3 space-y-2">
                   <legend className="px-1 text-xs font-medium text-[var(--accent-text)]">
-                    Encrypt
+                    {t('soap.sec.encrypt')}
                   </legend>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Algorithm</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.algorithm')}</span>
                     <select
                       value={wsSecurity.encrypt?.algorithm ?? 'AES-256-CBC'}
                       onChange={(e) =>
@@ -362,7 +374,7 @@ export default function SoapSecuritySection() {
                     </select>
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Key Wrap</span>
+                    <span className="text-xs text-[var(--muted)]">{t('soap.sec.keyWrap')}</span>
                     <select
                       value={wsSecurity.encrypt?.keyWrap ?? 'RSA-OAEP'}
                       onChange={(e) =>
@@ -378,7 +390,9 @@ export default function SoapSecuritySection() {
                     </select>
                   </div>
                   <div>
-                    <span className="text-xs text-[var(--muted)]">Recipient Certificate (PEM)</span>
+                    <span className="text-xs text-[var(--muted)]">
+                      {t('soap.sec.recipientCert')}
+                    </span>
                     <textarea
                       value={wsSecurity.encrypt?.recipientCertPem ?? ''}
                       onChange={(e) => updateEncrypt({ recipientCertPem: e.target.value })}
@@ -397,9 +411,7 @@ export default function SoapSecuritySection() {
                     onChange={(e) => setWsSecurity({ signFirst: e.target.checked })}
                     className="accent-[var(--accent)]"
                   />
-                  <span className="text-sm text-[var(--text)]">
-                    Sign-then-encrypt (recommended)
-                  </span>
+                  <span className="text-sm text-[var(--text)]">{t('soap.sec.signFirst')}</span>
                 </label>
               )}
             </>

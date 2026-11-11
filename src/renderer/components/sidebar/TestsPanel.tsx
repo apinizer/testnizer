@@ -845,7 +845,7 @@ export default function TestsPanel() {
               />
               <ContextMenuItem
                 icon={<Play size={13} />}
-                label={t('testsPanel.quickRunSuite') || 'Quick Run (skip config)'}
+                label={t('testsPanel.quickRunSuite')}
                 onClick={() => handleRunSuite(suite, true)}
               />
               <ContextMenuItem

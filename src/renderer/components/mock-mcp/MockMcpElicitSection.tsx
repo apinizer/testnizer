@@ -130,7 +130,7 @@ export default function MockMcpElicitSection({
                       data-testid="mock-mcp-tool-elicit-field-enum"
                       value={row.enumText}
                       disabled={row.type !== 'enum'}
-                      placeholder={row.type === 'enum' ? 'low, normal, high' : ''}
+                      placeholder={row.type === 'enum' ? t('mockMcp.elicit.enumPlaceholder') : ''}
                       onChange={(e) => setRow(row.id, { enumText: e.target.value })}
                       className={`${CELL_CLS} disabled:opacity-40`}
                     />

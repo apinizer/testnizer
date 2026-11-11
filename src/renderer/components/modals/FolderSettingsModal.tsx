@@ -131,11 +131,11 @@ export default function FolderSettingsModal({
             | { success: boolean; error?: string }
             | undefined)
       if (res?.success) {
-        toast.success(t('folderSettings.saved') || 'Folder settings saved')
+        toast.success(t('folderSettings.saved'))
         onSaved?.()
         onClose()
       } else {
-        toast.error(res?.error || 'Save failed')
+        toast.error(res?.error || t('toast.saveFailed'))
       }
     } catch (e) {
       toast.error((e as Error).message)
@@ -148,7 +148,7 @@ export default function FolderSettingsModal({
     <Modal
       open={open}
       onOpenChange={(o) => !o && onClose()}
-      title={t('folderSettings.title') || 'Folder Settings'}
+      title={t('folderSettings.title')}
       contentStyle={{ width: 560, maxWidth: '92vw' }}
     >
       <div
@@ -158,7 +158,7 @@ export default function FolderSettingsModal({
         {/* Header */}
         <div className="border-b px-5 py-3.5" style={{ borderColor: 'var(--border)' }}>
           <div className="text-[14px] font-semibold" style={{ color: 'var(--text)' }}>
-            {t('folderSettings.title') || 'Folder Settings'}
+            {t('folderSettings.title')}
           </div>
           <div className="mt-0.5 text-[12px]" style={{ color: 'var(--muted)' }}>
             {folderName}
@@ -184,9 +184,7 @@ export default function FolderSettingsModal({
                 borderBottomColor: tab === tk ? 'var(--accent)' : 'transparent',
               }}
             >
-              {tk === 'auth'
-                ? t('folderSettings.authorization') || 'Authorization'
-                : t('folderSettings.scripts') || 'Scripts'}
+              {tk === 'auth' ? t('folderSettings.authorization') : t('folderSettings.scripts')}
             </button>
           ))}
         </div>
@@ -201,7 +199,7 @@ export default function FolderSettingsModal({
             <div className="space-y-3">
               <div>
                 <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                  {t('folderSettings.authType') || 'Type'}
+                  {t('folderSettings.authType')}
                 </label>
                 <select
                   className={INPUT}
@@ -219,21 +217,19 @@ export default function FolderSettingsModal({
 
               {auth.type === 'inherit' && (
                 <p className="text-[12px]" style={{ color: 'var(--hint)' }}>
-                  {t('folderSettings.inheritHint') ||
-                    'Requests in this folder inherit auth from the parent folder or project.'}
+                  {t('folderSettings.inheritHint')}
                 </p>
               )}
               {auth.type === 'none' && (
                 <p className="text-[12px]" style={{ color: 'var(--hint)' }}>
-                  {t('folderSettings.noneHint') ||
-                    'Requests in this folder send no authorization (overrides any parent auth).'}
+                  {t('folderSettings.noneHint')}
                 </p>
               )}
 
               {auth.type === 'bearer' && (
                 <div>
                   <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                    Token
+                    {t('authPane.token')}
                   </label>
                   <input
                     className={INPUT}
@@ -254,7 +250,7 @@ export default function FolderSettingsModal({
                 <div className="space-y-3">
                   <div>
                     <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                      Username
+                      {t('authPane.username')}
                     </label>
                     <input
                       className={INPUT}
@@ -270,7 +266,7 @@ export default function FolderSettingsModal({
                   </div>
                   <div>
                     <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                      Password
+                      {t('authPane.password')}
                     </label>
                     <input
                       className={INPUT}
@@ -291,7 +287,7 @@ export default function FolderSettingsModal({
                 <div className="space-y-3">
                   <div>
                     <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                      Key
+                      {t('authPane.key')}
                     </label>
                     <input
                       className={INPUT}
@@ -311,7 +307,7 @@ export default function FolderSettingsModal({
                   </div>
                   <div>
                     <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                      Value
+                      {t('authPane.value')}
                     </label>
                     <input
                       className={INPUT}
@@ -331,7 +327,7 @@ export default function FolderSettingsModal({
                   </div>
                   <div>
                     <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                      Add to
+                      {t('authPane.addTo')}
                     </label>
                     <select
                       className={INPUT}
@@ -348,8 +344,8 @@ export default function FolderSettingsModal({
                         })
                       }
                     >
-                      <option value="header">Header</option>
-                      <option value="query">Query Param</option>
+                      <option value="header">{t('authPane.header')}</option>
+                      <option value="query">{t('folderSettings.queryParam')}</option>
                     </select>
                   </div>
                 </div>
@@ -359,7 +355,7 @@ export default function FolderSettingsModal({
             <div className="space-y-4">
               <div>
                 <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                  {t('folderSettings.preRequest') || 'Pre-request Script'}
+                  {t('folderSettings.preRequest')}
                 </label>
                 <textarea
                   className={INPUT}
@@ -376,7 +372,7 @@ export default function FolderSettingsModal({
               </div>
               <div>
                 <label className={LABEL} style={{ color: 'var(--muted)' }}>
-                  {t('folderSettings.testScript') || 'Test Script'}
+                  {t('folderSettings.testScript')}
                 </label>
                 <textarea
                   className={INPUT}
@@ -392,8 +388,7 @@ export default function FolderSettingsModal({
                 />
               </div>
               <p className="text-[12px]" style={{ color: 'var(--hint)' }}>
-                {t('folderSettings.cascadeHint') ||
-                  'These run in cascade: project → folder → request (pre-request before each request, test after).'}
+                {t('folderSettings.cascadeHint')}
               </p>
             </div>
           )}
@@ -419,7 +414,7 @@ export default function FolderSettingsModal({
               border: '1px solid var(--border)',
             }}
           >
-            {t('common.cancel') || 'Cancel'}
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -433,7 +428,7 @@ export default function FolderSettingsModal({
               opacity: saving ? 0.6 : 1,
             }}
           >
-            {t('common.save') || 'Save'}
+            {t('common.save')}
           </button>
         </div>
       </div>

@@ -3,6 +3,7 @@ import MonacoWrapper from '../shared/MonacoWrapper'
 import ToolShell from './ToolShell'
 import { jsonToYaml, yamlToJson } from '../../lib/tools/yaml-json'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 type Direction = 'yaml2json' | 'json2yaml'
 
@@ -97,8 +98,20 @@ export default function YamlJsonTool() {
               color: 'var(--text)',
             }}
           >
-            <option value={2}>2 spaces</option>
-            <option value={4}>4 spaces</option>
+            <option value={2}>
+              {formatCount(
+                2,
+                t('tools.yamlJson.indentSpacesOne'),
+                t('tools.yamlJson.indentSpaces'),
+              )}
+            </option>
+            <option value={4}>
+              {formatCount(
+                4,
+                t('tools.yamlJson.indentSpacesOne'),
+                t('tools.yamlJson.indentSpaces'),
+              )}
+            </option>
           </select>
           <label
             className="flex cursor-pointer items-center gap-1.5 text-xs"

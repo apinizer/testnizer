@@ -1,3 +1,5 @@
+import { GitCodedError } from '../../shared/git-errors'
+
 /**
  * The name a project takes as a TRACKED file in the user's git repository.
  *
@@ -49,8 +51,8 @@ export function pickProjectFile(
   const preferred = projectFileName(projectName)
   if (jsonFiles.includes(preferred)) return preferred
   if (jsonFiles.length === 1) return jsonFiles[0]
-  if (jsonFiles.length === 0) throw new Error('Depoda proje dosyası (.json) bulunamadı.')
-  throw new Error(
-    `Depoda birden fazla proje dosyası var (${jsonFiles.join(', ')}) ve hiçbiri bu projenin adıyla (${preferred}) eşleşmiyor. Proje adını dosya adına uydurun veya fazla dosyaları kaldırın.`,
-  )
+  if (jsonFiles.length === 0) throw new GitCodedError('GIT_PROJECT_FILE_MISSING')
+  throw new GitCodedError('GIT_PROJECT_FILE_AMBIGUOUS', {
+    params: { files: jsonFiles.join(', '), name: preferred },
+  })
 }

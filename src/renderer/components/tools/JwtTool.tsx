@@ -564,7 +564,7 @@ function DecoderBody(props: {
                 placeholder={
                   asymmetric
                     ? '-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----'
-                    : 'shared secret'
+                    : t('tools.jwt.sharedSecretPlaceholder')
                 }
                 className="w-full rounded border px-2 py-1 font-mono text-xs"
                 style={{
@@ -834,7 +834,7 @@ function EncoderBody(props: {
                 placeholder={
                   asymmetric
                     ? '-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----'
-                    : 'shared secret'
+                    : t('tools.jwt.sharedSecretPlaceholder')
                 }
                 className="w-full rounded border px-2 py-1 font-mono text-xs disabled:opacity-50"
                 style={{
@@ -939,7 +939,7 @@ function Section({
             JSON
           </ViewToggle>
           <ViewToggle active={view === 'table'} onClick={() => setView('table')}>
-            Table
+            {t('tools.jwt.viewTable')}
           </ViewToggle>
           <CopyButton
             text={view === 'json' ? json : rowsToText(rows)}
@@ -962,6 +962,7 @@ function Section({
 }
 
 function ClaimTable({ rows }: { rows: ClaimRow[] }) {
+  const { t } = useTranslation()
   if (rows.length === 0) {
     return (
       <div className="px-3 py-3 text-xs" style={{ color: 'var(--muted)' }}>
@@ -978,19 +979,19 @@ function ClaimTable({ rows }: { rows: ClaimRow[] }) {
               className="border-b px-3 py-1.5 text-left font-semibold"
               style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
             >
-              Claim
+              {t('tools.jwt.colClaim')}
             </th>
             <th
               className="border-b px-3 py-1.5 text-left font-semibold"
               style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
             >
-              Value
+              {t('tools.jwt.colValue')}
             </th>
             <th
               className="border-b px-3 py-1.5 text-left font-semibold"
               style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
             >
-              Description
+              {t('tools.jwt.colDescription')}
             </th>
           </tr>
         </thead>
