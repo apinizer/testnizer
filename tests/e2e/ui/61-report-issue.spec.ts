@@ -47,7 +47,7 @@ uiTest.describe('Report an issue or request a feature', () => {
   })
 
   uiTest('the session menu opens the form', async ({ app, window }) => {
-    await window.getByTitle('Session').click()
+    await window.getByTitle('Session', { exact: true }).click()
     await window.getByTestId('user-menu-report-issue').click()
     await expect(window.getByTestId('user-menu-report-issue')).toHaveCount(0)
     await expect.poll(() => openedUrls(app)).toHaveLength(1)
@@ -55,7 +55,7 @@ uiTest.describe('Report an issue or request a feature', () => {
   })
 
   uiTest('the Help menu opens the same form', async ({ app, window }) => {
-    await window.getByTitle('Session').waitFor()
+    await window.getByTitle('Session', { exact: true }).waitFor()
     await app.evaluate(({ Menu }) => {
       const help = Menu.getApplicationMenu()?.items.find((item) => item.role === 'help')
       const entry = help?.submenu?.items.find((item) => item.label.startsWith('Report an Issue'))

@@ -667,6 +667,9 @@ export function EndpointTabBar() {
               aria-selected={isActive}
               tabIndex={isActive ? 0 : -1}
               onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
+              // Full name as the tooltip over the whole tab (badge and chip
+              // included) — the label below is cut off with "…".
+              title={tab.name}
               className="group"
               draggable={renamingTabId !== tab.id}
               onDragStart={(e) => {
@@ -831,12 +834,11 @@ export function EndpointTabBar() {
                 // the drag-source set lets the gesture bubble to the parent.
                 // The label is capped and ends in "…" (a 100+ character name
                 // pushed every other tab off the strip); the full name is the
-                // tooltip. Only CSS cuts it — `data-tab-name` and text
+                // tab's tooltip. Only CSS cuts it — `data-tab-name` and text
                 // locators keep the full name.
                 <span
                   data-testid="tab-name"
                   draggable={false}
-                  title={tab.name}
                   className={`${TAB_NAME_MAX_W} min-w-0 truncate`}
                   onDoubleClick={(e) => {
                     e.stopPropagation()
@@ -850,13 +852,20 @@ export function EndpointTabBar() {
                   {tab.name}
                 </span>
               )}
-              {/* One fixed slot for the dirty dot and the ×, so a tab never
-                changes width on hover. The × is always shown on the active
-                clean tab and on hover / keyboard focus elsewhere; on a dirty
-                tab the dot holds the slot until then (VS Code). Opacity, not
-                display: a hidden button could not take keyboard focus. */}
+              {/* The active tab always shows its × — dirty or not — so on a
+                dirty active tab the dot stands beside it as its own mark. */}
+              {isActive && tab.isDirty && (
+                <span
+                  data-testid="tab-dirty"
+                  className="pointer-events-none h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]"
+                />
+              )}
+              {/* One fixed slot for the ×, so a tab never changes width on
+                hover. On other tabs the × shows on hover / keyboard focus, and
+                a dirty tab's dot holds the slot until then (VS Code). Opacity,
+                not display: a hidden button could not take keyboard focus. */}
               <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center">
-                {tab.isDirty && (
+                {!isActive && tab.isDirty && (
                   <span
                     data-testid="tab-dirty"
                     className="pointer-events-none absolute h-1.5 w-1.5 rounded-full bg-[var(--accent)] group-hover:opacity-0 group-focus-visible:opacity-0 group-has-[:focus-visible]:opacity-0"
@@ -872,7 +881,7 @@ export function EndpointTabBar() {
                   onClick={(e) => handleCloseTab(tab.id, e)}
                   onDoubleClick={(e) => e.stopPropagation()}
                   className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-sm leading-none text-[var(--hint)] hover:bg-[var(--surface)] hover:text-[var(--text)] group-hover:opacity-100 group-focus-visible:opacity-100 focus-visible:opacity-100 ${
-                    isActive && !tab.isDirty ? 'opacity-100' : 'opacity-0'
+                    isActive ? 'opacity-100' : 'opacity-0'
                   }`}
                 >
                   ×

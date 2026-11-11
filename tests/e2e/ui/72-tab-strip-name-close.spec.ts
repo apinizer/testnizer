@@ -78,7 +78,8 @@ uiTest.describe('72 — tab strip: long names are cut off, × is a keyboard butt
 
     const long = tabNamed(window, longName)
     const label = long.getByTestId('tab-name')
-    await expect(label).toHaveAttribute('title', longName)
+    // Tooltip over the whole tab (badge and chip included).
+    await expect(long).toHaveAttribute('title', longName)
     // The text is cut by CSS only — the DOM still holds the whole name.
     await expect(label).toHaveText(longName)
     const overflow = await label.evaluate((el) => ({
@@ -157,25 +158,31 @@ uiTest.describe('72 — tab strip: long names are cut off, × is a keyboard butt
     },
   )
 
-  uiTest('a dirty tab shows its dot, and its × still asks before closing', async ({ window }) => {
-    const id = uid()
-    const name = `Dirty ${id}`
-    await savedRequest(window, name, '/get?n=d')
-    await fillUrl(window, `${localHttpBin()}/get?n=d&edited=1`)
-    await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true', { timeout: 8_000 })
-    await pointerAway(window)
+  uiTest(
+    'the active dirty tab shows its dot AND its ×, which still asks before closing',
+    async ({ window }) => {
+      const id = uid()
+      const name = `Dirty ${id}`
+      await savedRequest(window, name, '/get?n=d')
+      await fillUrl(window, `${localHttpBin()}/get?n=d&edited=1`)
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true', { timeout: 8_000 })
+      await pointerAway(window)
 
-    await expect(activeTab(window).getByTestId('tab-dirty')).toHaveCSS('opacity', '1')
-    await window.screenshot({ path: `${SCREENS}/72-dirty-dot.png` })
+      await expect(activeTab(window).getByTestId('tab-dirty')).toHaveCSS('opacity', '1')
+      // The active tab always shows its × — dirty or not — with the dot beside it.
+      await expect(activeTab(window).getByTestId('tab-dirty')).toBeVisible()
+      await expect(activeTab(window).getByTestId('tab-close')).toHaveCSS('opacity', '1')
+      await window.screenshot({ path: `${SCREENS}/72-dirty-dot.png` })
 
-    await activeTab(window).focus()
-    await window.keyboard.press('Tab')
-    await expect(activeTab(window).getByTestId('tab-close')).toBeFocused()
-    await expect(activeTab(window).getByTestId('tab-close')).toHaveCSS('opacity', '1')
-    await window.screenshot({ path: `${SCREENS}/72-dirty-focus-close.png` })
-    await window.keyboard.press('Enter')
-    await expect(window.getByTestId('unsaved-cancel-btn')).toBeVisible({ timeout: 8_000 })
-    await window.getByTestId('unsaved-cancel-btn').click()
-    await expect(tabNamed(window, name)).toHaveCount(1)
-  })
+      await activeTab(window).focus()
+      await window.keyboard.press('Tab')
+      await expect(activeTab(window).getByTestId('tab-close')).toBeFocused()
+      await expect(activeTab(window).getByTestId('tab-close')).toHaveCSS('opacity', '1')
+      await window.screenshot({ path: `${SCREENS}/72-dirty-focus-close.png` })
+      await window.keyboard.press('Enter')
+      await expect(window.getByTestId('unsaved-cancel-btn')).toBeVisible({ timeout: 8_000 })
+      await window.getByTestId('unsaved-cancel-btn').click()
+      await expect(tabNamed(window, name)).toHaveCount(1)
+    },
+  )
 })

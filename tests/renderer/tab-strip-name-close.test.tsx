@@ -76,7 +76,8 @@ describe('finding 2 — a long tab name is cut off with an ellipsis', () => {
     const label = within(tabEl(LONG_NAME)).getByTestId('tab-name')
     expect(label.className).toMatch(/\btruncate\b/)
     expect(label.className).toMatch(/\bmax-w-\[\d+px\]/)
-    expect(label.getAttribute('title')).toBe(LONG_NAME)
+    // The tooltip sits on the whole tab (badge and chip included), not the label alone.
+    expect(tabEl(LONG_NAME).getAttribute('title')).toBe(LONG_NAME)
     // The text is not shortened in JS — locators match the full name.
     expect(label.textContent).toBe(LONG_NAME)
   })
@@ -123,6 +124,20 @@ describe('finding 3 — the close button is a real, named, keyboard-reachable bu
     const close = within(dirty).getByTestId('tab-close')
     expect(close.className).toMatch(/(^|\s)opacity-0(\s|$)/)
     expect(close.className).toMatch(/group-hover:opacity-100/)
+  })
+
+  it('the active DIRTY tab still always shows its ×, with the dot beside it (not in its place)', () => {
+    useTabsStore.setState({ activeTabId: 'c' })
+    render(<EndpointTabBar />)
+    const dirty = tabEl('Orders')
+    const close = within(dirty).getByTestId('tab-close')
+    expect(close.className).not.toMatch(/(^|\s)opacity-0(\s|$)/)
+    expect(close.className).toMatch(/(^|\s)opacity-100(\s|$)/)
+    const dot = within(dirty).getByTestId('tab-dirty')
+    // A separate mark that never fades — it does not share the ×'s slot.
+    expect(dot.className).not.toMatch(/opacity-0/)
+    expect(dot.className).not.toMatch(/\babsolute\b/)
+    expect(dot.parentElement).not.toBe(close.parentElement)
   })
 
   it('closes a clean background tab without activating it', () => {
