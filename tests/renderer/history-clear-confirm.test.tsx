@@ -16,7 +16,7 @@
  */
 import * as React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import HistoryListPanel from '../../src/renderer/components/sidebar/HistoryListPanel'
 import { useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
@@ -177,6 +177,57 @@ describe('History Clear asks first (finding 4)', () => {
     expect(count).not.toHaveBeenCalled()
     expect(clear).not.toHaveBeenCalled()
     expect(screen.queryByTestId('delete-confirm-btn')).toBeNull()
+  })
+})
+
+describe('Clear never deletes a project the dialog did not name (GPT P1)', () => {
+  /** Hold the next `history:count` until the test resolves it. */
+  function holdCount(): (n: number) => void {
+    let release: (n: number) => void = () => {}
+    count.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = (n) => resolve({ success: true, data: n })
+        }),
+    )
+    return (n) => release(n)
+  }
+
+  const switchProject = (id: string): void => {
+    act(() => {
+      useWorkspaceStore.setState({ activeProjectId: id })
+    })
+  }
+
+  it('a count that resolves after a project switch opens nothing and deletes nothing', async () => {
+    await renderWithRows()
+    const release = holdCount()
+    fireEvent.click(screen.getByTestId('history-clear-btn'))
+    expect(count).toHaveBeenCalledWith({ project_id: 'p1' })
+
+    switchProject('p2')
+    await act(async () => {
+      release(5)
+    })
+
+    expect(screen.queryByTestId('delete-confirm-btn')).toBeNull()
+    expect(screen.queryByText('Delete project history')).toBeNull()
+    expect(clear).not.toHaveBeenCalled()
+  })
+
+  it('an open confirmation closes when the project changes, and nothing is deleted', async () => {
+    await renderWithRows()
+    fireEvent.click(screen.getByTestId('history-clear-btn'))
+    await screen.findByTestId('delete-confirm-btn')
+
+    switchProject('p2')
+    await waitFor(() => expect(screen.queryByTestId('delete-confirm-btn')).toBeNull())
+    expect(clear).not.toHaveBeenCalled()
+
+    // Back on p1: the old confirmation does not come back by itself.
+    switchProject('p1')
+    expect(screen.queryByTestId('delete-confirm-btn')).toBeNull()
+    expect(clear).not.toHaveBeenCalled()
   })
 })
 

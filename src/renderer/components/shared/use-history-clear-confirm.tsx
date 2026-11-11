@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useHistoryStore } from '../../stores/history.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatCount } from '../../lib/plural'
@@ -14,6 +14,11 @@ import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
  * then opens the shared `DeleteConfirmDialog` with that count. The dialog is
  * the sibling bulk delete's (RunnerHistory: `formatCount`, no typed
  * confirmation). Nothing is deleted before Confirm.
+ *
+ * The confirmation is bound to the project it was opened for: Confirm deletes
+ * THAT project, never "whatever is active now". The History panel does not
+ * remount on a project switch, so a switch cancels a count still in flight and
+ * closes an open confirmation — the dialog's number belongs to the old project.
  */
 export function useHistoryClearConfirm({
   projectId,
@@ -29,40 +34,57 @@ export function useHistoryClearConfirm({
   const { t } = useTranslation()
   const clear = useHistoryStore((s) => s.clear)
   const count = useHistoryStore((s) => s.count)
-  // undefined = closed; null = open, count unknown; number = open with count.
-  const [pending, setPending] = useState<number | null | undefined>(undefined)
+  // The open confirmation: the project it names + its count (null = unknown).
+  const [pending, setPending] = useState<{ projectId: string; count: number | null } | null>(null)
   const [busy, setBusy] = useState(false)
+  // Project switch → drop the confirmation (render-time reset, not an effect).
+  const [boundProject, setBoundProject] = useState(projectId)
+  if (boundProject !== projectId) {
+    setBoundProject(projectId)
+    setPending(null)
+  }
+  // The project the hook serves now, read by a count that resolves later.
+  const currentProject = useRef(projectId)
+  useEffect(() => {
+    currentProject.current = projectId
+  }, [projectId])
 
   async function ask(): Promise<void> {
-    if (!projectId || busy) return
+    const target = projectId
+    if (!target || busy) return
     setBusy(true)
     try {
-      const n = await count(projectId)
+      const n = await count(target)
+      // Switched away while counting: this answer is for another project.
+      if (currentProject.current !== target) return
       if (n === 0 && onNothingToClear) onNothingToClear()
-      else setPending(n)
+      else setPending({ projectId: target, count: n })
     } finally {
       setBusy(false)
     }
   }
 
   async function confirm(): Promise<void> {
-    setPending(undefined)
-    if (!projectId) return
+    const target = pending?.projectId
+    setPending(null)
+    // Only the project the dialog named, and only while it is still the one shown.
+    if (!target || target !== currentProject.current) return
     setBusy(true)
     try {
       // Not `onCleared?.(await clear(…))`: an optional call skips its
       // arguments when the callback is absent, so nothing would be deleted.
-      const result = await clear(projectId)
+      const result = await clear(target)
       onCleared?.(result)
     } finally {
       setBusy(false)
     }
   }
 
+  const open = pending !== null && pending.projectId === projectId
   const itemName =
-    typeof pending === 'number'
+    open && typeof pending.count === 'number'
       ? formatCount(
-          pending,
+          pending.count,
           t('deleteConfirm.projectHistoryCountOne'),
           t('deleteConfirm.projectHistoryCount'),
         )
@@ -70,12 +92,12 @@ export function useHistoryClearConfirm({
 
   const dialog = (
     <DeleteConfirmDialog
-      open={pending !== undefined}
+      open={open}
       itemName={itemName}
       itemType="project history"
       typeLabel={t('deleteConfirm.type.projectHistory')}
       onConfirm={() => void confirm()}
-      onCancel={() => setPending(undefined)}
+      onCancel={() => setPending(null)}
     />
   )
 

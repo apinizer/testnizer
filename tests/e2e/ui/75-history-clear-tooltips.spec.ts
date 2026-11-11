@@ -155,6 +155,42 @@ uiTest.describe('History — Clear asks first, rows show their full URL (finding
   })
 
   uiTest(
+    'Settings → Data → Clear history asks first; Cancel keeps the rows',
+    async ({ window }) => {
+      const marker = `settings-${uid()}`
+      try {
+        await openHttpRequestTab(window)
+        await fillUrl(window, `${localHttpBin()}/get?${marker}=1`)
+        await sendAndWaitResponse(window)
+
+        await window.getByTestId('nav-settings').click()
+        await expect(window.getByTestId('project-detail-modal')).toBeVisible({ timeout: 8_000 })
+        await window.getByTestId('project-detail-tab-data').click()
+        await window.getByTestId('data-clear-history-btn').click()
+
+        // The History sidebar's dialog: same title, the project's count from main.
+        await expect(window.getByText('Delete project history')).toBeVisible()
+        await expect(window.getByText(/this project's \d+ history entr(y|ies)/)).toBeVisible()
+        await shot(window, 'settings-confirm-dialog')
+        await window.getByTestId('delete-cancel-btn').click()
+        await expect(window.getByTestId('delete-confirm-btn')).toHaveCount(0)
+
+        await window.keyboard.press('Escape')
+        await expect(window.getByTestId('project-detail-modal')).toBeHidden({ timeout: 5_000 })
+        await navigateSidebar(window, 'history')
+        await filter(window).fill(marker)
+        await expect(entries(window)).toHaveCount(1, { timeout: 10_000 })
+      } finally {
+        await dismissOverlays(window).catch(() => {})
+        await filter(window)
+          .fill('')
+          .catch(() => {})
+        await closeAllTabs(window).catch(() => {})
+      }
+    },
+  )
+
+  uiTest(
     'Clear confirms; Cancel keeps rows, Confirm deletes, empty list disables it',
     async ({ window }) => {
       const marker = `clear-${uid()}`
