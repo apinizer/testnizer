@@ -113,7 +113,11 @@ uiTest.describe('Realtime close isolation (tester finding 13)', () => {
         const tabA = await openWsTab(window, serverA.url)
         await window.getByTestId('ws-connect').click()
         await expect(window.getByTestId('ws-disconnect')).toBeVisible({ timeout: 15_000 })
-        await expect(systemRows(window).filter({ hasText: /\bConnected\b/ })).toHaveCount(1)
+        // The row's title and preview are adjacent text ("Connectedws://…"):
+        // match the first row's text, not a word-bounded regex over the row.
+        await expect(window.getByTestId('ws-status')).toHaveAttribute('data-state', 'connected')
+        await expect(systemRows(window)).toHaveCount(1)
+        await expect(systemRows(window).first()).toContainText('Connected')
 
         await serverA.hangUp()
         await expect(window.getByTestId('ws-status')).toHaveAttribute(
