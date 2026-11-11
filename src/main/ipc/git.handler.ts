@@ -35,6 +35,7 @@ import {
   isGitAuthError,
   redactToken,
   describeGitFailure,
+  describeWrappedGitFailure,
   describedGitError,
   pushWithRetry,
   sameRemote,
@@ -1063,7 +1064,10 @@ export function registerGitHandlers(): void {
           try {
             await reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
           } catch (e) {
-            return gitErrorResult('GIT_MERGE_IMPORT_FAILED', (e as Error).message)
+            return {
+              success: false,
+              ...describeWrappedGitFailure('GIT_MERGE_IMPORT_FAILED', e, config.token),
+            }
           }
           return {
             success: true,
@@ -1457,7 +1461,10 @@ export function registerGitHandlers(): void {
           base,
         })
       } catch (e) {
-        return gitErrorResult('GIT_PULL_IMPORT_FAILED', (e as Error).message)
+        return {
+          success: false,
+          ...describeWrappedGitFailure('GIT_PULL_IMPORT_FAILED', e, config.token),
+        }
       }
       return {
         success: true,

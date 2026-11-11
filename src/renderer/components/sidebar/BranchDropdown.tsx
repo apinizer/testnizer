@@ -89,7 +89,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
       // for is the one you want to be on. Without this auto-switch v1.3.1 left
       // the indicator on the source branch and forced a second click — B7.
       try {
-        setGitLoading(t('git.switching').replace('{name}', name))
+        setGitLoading(t('git.switching', { name }))
         await switchBranch(activeProjectId, name)
         await syncAfterGit(activeProjectId)
       } catch {
@@ -108,7 +108,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   async function handleSwitch(branchName: string) {
     if (!activeProjectId || branchName === currentBranch) return
     setBusy(true)
-    setGitLoading(t('git.switching').replace('{name}', branchName))
+    setGitLoading(t('git.switching', { name: branchName }))
     const ok = await switchBranch(activeProjectId, branchName)
     if (ok) {
       toast.success(t('toast.branchSwitched').replace('{name}', branchName))
@@ -125,7 +125,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   async function handleMerge(sourceBranch: string) {
     if (!activeProjectId) return
     setBusy(true)
-    setGitLoading(t('git.merging').replace('{name}', sourceBranch))
+    setGitLoading(t('git.merging', { name: sourceBranch }))
     const result = await mergeBranch(activeProjectId, sourceBranch)
     if (result.success) {
       toast.success(
@@ -398,7 +398,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                 {branch.name !== currentBranch && branch.name !== 'main' && (
                   <button
                     type="button"
-                    aria-label={t('branchMenu.deleteBranch').replace('{name}', branch.name)}
+                    aria-label={t('branchMenu.deleteBranch', { name: branch.name })}
                     className="hidden shrink-0 rounded p-0.5 group-hover:block"
                     style={{ color: 'var(--muted)', background: 'transparent', border: 'none' }}
                     onClick={(e) => {
@@ -448,7 +448,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                     setNewName('')
                   }
                 }}
-                placeholder={t('branchMenu.newFrom').replace('{name}', currentBranch)}
+                placeholder={t('branchMenu.newFrom', { name: currentBranch })}
                 className="flex-1 border-none bg-transparent outline-none"
                 style={{
                   fontSize: 13,

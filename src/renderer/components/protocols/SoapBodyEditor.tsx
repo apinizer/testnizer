@@ -81,7 +81,7 @@ export default function SoapBodyEditor() {
                 value={formValues[key]}
                 onChange={(e) => setFormValue(key, e.target.value)}
                 className="border-none bg-transparent px-3 py-1.5 font-mono text-[var(--blue)] outline-none"
-                placeholder={t('soap.paramPlaceholder').replace('{name}', key)}
+                placeholder={t('soap.paramPlaceholder', { name: key })}
               />
             </div>
           ))}

@@ -293,10 +293,11 @@ export default function SaveModal() {
       if (result?.success) {
         const imp = result.data?.imported
         const msg = imp
-          ? `${t('toast.pulled')}: ${t('saveModal.pulledSummary')
-              .replace('{endpoints}', String(imp.endpoints || 0))
-              .replace('{requests}', String(imp.savedRequests || 0))
-              .replace('{environments}', String(imp.environments || 0))}`
+          ? `${t('toast.pulled')}: ${t('saveModal.pulledSummary', {
+              endpoints: imp.endpoints || 0,
+              requests: imp.savedRequests || 0,
+              environments: imp.environments || 0,
+            })}`
           : t('toast.pulled')
         toast.success(msg)
         pullWarnings(t, result.data).forEach((m) => toast.warning(m))
@@ -350,7 +351,7 @@ export default function SaveModal() {
         error?: string
       }
       if (result?.success) {
-        toast.success(t('saveModal.loaded').replace('{name}', file.name))
+        toast.success(t('saveModal.loaded', { name: file.name }))
       } else {
         toast.error(gitErrorText(result) || t('saveModal.readFileFailed'))
       }

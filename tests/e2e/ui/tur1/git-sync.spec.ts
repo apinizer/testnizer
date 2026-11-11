@@ -277,7 +277,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
         )
         const rejected = await push()
         expect(rejected.success).toBe(false)
-        expect(rejected.error ?? '').toMatch(/Önce Pull/i)
+        expect(rejected.error ?? '').toMatch(/Pull first, then try Push again/)
         expect(rejected.error ?? '').not.toMatch(/\[rejected\]|fetch first/) // no raw git text
 
         // ── Pull reconciles by merging (pull.rebase=false), then Push lands.

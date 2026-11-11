@@ -1100,7 +1100,7 @@ export default function NewProjectModal() {
                             type="button"
                             role="radio"
                             aria-checked={selectedEmoji === e}
-                            aria-label={t('newProject.emojiOption').replace('{emoji}', e)}
+                            aria-label={t('newProject.emojiOption', { emoji: e })}
                             onClick={() => {
                               setSelectedEmoji(e)
                               setCustomEmoji('')
@@ -1152,7 +1152,7 @@ export default function NewProjectModal() {
                         type="button"
                         role="radio"
                         aria-checked={col === selectedColor}
-                        aria-label={t('newProject.colorOption').replace('{color}', col)}
+                        aria-label={t('newProject.colorOption', { color: col })}
                         onClick={() => setSelectedColor(col)}
                         className="cursor-pointer"
                         style={{
@@ -1338,7 +1338,7 @@ export default function NewProjectModal() {
                           ? 'gRPC'
                           : 'WebSocket'}
                       {' · '}
-                      {t('newProject.summaryBranch').replace('{branch}', branchName)}
+                      {t('newProject.summaryBranch', { branch: branchName })}
                     </div>
                   </div>
                 </div>
