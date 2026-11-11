@@ -117,6 +117,13 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.saml': SamlTool,
 }
 
+/**
+ * A tab label's width cap: ~25 characters of 13 px text, so a tab with its
+ * method badge stays near 250 px — the range other tab strips (browsers,
+ * Postman) use — and a handful of tabs still fits next to each other.
+ */
+const TAB_NAME_MAX_W = 'max-w-[180px]'
+
 /** Exported for the zero-tab regression test (issue #97). */
 export function EndpointTabBar() {
   const { t } = useTranslation()
@@ -467,6 +474,32 @@ export function EndpointTabBar() {
     requestCloseTab(tabId)
   }
 
+  /**
+   * Keys on a focused tab: ←/→/Home/End move focus along the strip, Enter /
+   * Space activate it. Keys from inside the tab (the ×, the rename input) are
+   * theirs — the × closes through its native click, the input types a space.
+   */
+  function handleTabKeyDown(e: React.KeyboardEvent<HTMLDivElement>, tabId: string) {
+    if (e.target !== e.currentTarget) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleSwitchTab(tabId)
+      return
+    }
+    const all = Array.from(
+      e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(':scope > [role="tab"]') ?? [],
+    )
+    const at = all.indexOf(e.currentTarget)
+    let next = -1
+    if (e.key === 'ArrowRight') next = (at + 1) % all.length
+    else if (e.key === 'ArrowLeft') next = (at - 1 + all.length) % all.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = all.length - 1
+    if (next < 0 || at < 0) return
+    e.preventDefault()
+    all[next].focus()
+  }
+
   // ─── Unsaved-changes confirm handlers (issue #9) ────────────────
   /**
    * Mock MCP editor tab: save its draft through the editor's own path — it is
@@ -605,6 +638,7 @@ export function EndpointTabBar() {
       <div
         ref={stripRef}
         data-testid="tab-strip"
+        role="tablist"
         className="scroll-strip min-w-0 flex-1"
         style={{
           display: 'flex',
@@ -626,6 +660,16 @@ export function EndpointTabBar() {
               data-preview={isPreview ? 'true' : 'false'}
               data-dirty={tab.isDirty ? 'true' : 'false'}
               data-active={isActive ? 'true' : 'false'}
+              // Keyboard: one tab stop (the active tab), arrows move focus,
+              // Enter / Space activate — the WAI-ARIA tabs pattern with manual
+              // activation (switching a tab re-points every protocol store).
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
+              onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
+              // Full name as the tooltip over the whole tab (badge and chip
+              // included) — the label below is cut off with "…".
+              title={tab.name}
               className="group"
               draggable={renamingTabId !== tab.id}
               onDragStart={(e) => {
@@ -788,8 +832,14 @@ export function EndpointTabBar() {
                 // tab-drag gesture entirely (the SOAP tab in particular sees
                 // the user mouse-down on this label). Forcing the span out of
                 // the drag-source set lets the gesture bubble to the parent.
+                // The label is capped and ends in "…" (a 100+ character name
+                // pushed every other tab off the strip); the full name is the
+                // tab's tooltip. Only CSS cuts it — `data-tab-name` and text
+                // locators keep the full name.
                 <span
+                  data-testid="tab-name"
                   draggable={false}
+                  className={`${TAB_NAME_MAX_W} min-w-0 truncate`}
                   onDoubleClick={(e) => {
                     e.stopPropagation()
                     if (isPreview) {
@@ -802,25 +852,40 @@ export function EndpointTabBar() {
                   {tab.name}
                 </span>
               )}
-              {tab.isDirty && (
+              {/* The active tab always shows its × — dirty or not — so on a
+                dirty active tab the dot stands beside it as its own mark. */}
+              {isActive && tab.isDirty && (
                 <span
                   data-testid="tab-dirty"
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: T.accent,
-                    flexShrink: 0,
-                  }}
+                  className="pointer-events-none h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]"
                 />
               )}
-              <span
-                data-testid="tab-close"
-                className="hidden cursor-pointer group-hover:inline"
-                style={{ color: T.ghost, fontSize: 13 }}
-                onClick={(e) => handleCloseTab(tab.id, e)}
-              >
-                ×
+              {/* One fixed slot for the ×, so a tab never changes width on
+                hover. On other tabs the × shows on hover / keyboard focus, and
+                a dirty tab's dot holds the slot until then (VS Code). Opacity,
+                not display: a hidden button could not take keyboard focus. */}
+              <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                {!isActive && tab.isDirty && (
+                  <span
+                    data-testid="tab-dirty"
+                    className="pointer-events-none absolute h-1.5 w-1.5 rounded-full bg-[var(--accent)] group-hover:opacity-0 group-focus-visible:opacity-0 group-has-[:focus-visible]:opacity-0"
+                  />
+                )}
+                <button
+                  type="button"
+                  data-testid="tab-close"
+                  aria-label={t('tabStrip.closeTabNamed').replace('{name}', () => tab.name)}
+                  title={t('tabStrip.close')}
+                  tabIndex={isActive ? 0 : -1}
+                  draggable={false}
+                  onClick={(e) => handleCloseTab(tab.id, e)}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-sm leading-none text-[var(--hint)] hover:bg-[var(--surface)] hover:text-[var(--text)] group-hover:opacity-100 group-focus-visible:opacity-100 focus-visible:opacity-100 ${
+                    isActive ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  ×
+                </button>
               </span>
             </div>
           )
