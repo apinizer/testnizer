@@ -160,3 +160,27 @@ describe('keyRunResults — the one row key', () => {
     expect(passed.map((r) => r.key)).toEqual([all[1].key, all[2].key])
   })
 })
+
+describe('selection under a filter (finding 12)', () => {
+  it('a repeated request in one iteration, filtered to Failed, opens the row that was clicked', () => {
+    const looped = [
+      run({ iteration: 1, responseBody: '{"visit":1}', status: 500 }),
+      run({ iteration: 1, endpointId: 'ep-2', endpointName: 'Other', responseBody: '{"o":1}' }),
+      run({ iteration: 1, responseBody: '{"visit":2}', status: 500 }),
+      run({ iteration: 1, responseBody: '{"visit":3}' }),
+    ]
+    render(<Harness results={looped} />)
+    fireEvent.click(screen.getByTestId('runner-filter-failed'))
+    expect(rows()).toHaveLength(2)
+
+    fireEvent.click(rows()[1])
+    expect(selectedRows()).toEqual([rows()[1]])
+    expect(detailBody()).toContain('"visit": 2')
+
+    // Clearing the filter keeps the same row: the key comes from the whole run.
+    fireEvent.click(screen.getByTestId('runner-filter-all'))
+    expect(rows()).toHaveLength(4)
+    expect(selectedRows()).toEqual([rows()[2]])
+    expect(detailBody()).toContain('"visit": 2')
+  })
+})
