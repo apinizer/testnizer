@@ -25,6 +25,7 @@
 
 import { getDb } from '../db/database'
 import { projectsWithAbsoluteFiles } from './body-file-paths'
+import type { ProxySetting } from '../../shared/request-settings'
 
 export interface StoredProjectAuth {
   type?: 'none' | 'inherit' | 'basic' | 'bearer' | 'api-key'
@@ -64,12 +65,7 @@ export interface StoredProjectSettings {
    * Machine-local proxy (Proxy pane). `auth.password` is stored ENCRYPTED
    * (settings handler `SENSITIVE_FIELDS`) — decrypt before use.
    */
-  proxy?: {
-    mode?: 'system' | 'none' | 'custom'
-    host?: string
-    port?: number
-    auth?: { username: string; password: string }
-  }
+  proxy?: ProxySetting
   /**
    * Machine-local folder relative form-data / binary file paths resolve
    * against (`lib/working-directory.ts`, issue #276). Not shared: a folder on
