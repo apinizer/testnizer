@@ -12,6 +12,8 @@ import GraphQLSettingsSection from './GraphQLSettingsSection'
 import GraphQLConnectionInitSection from './GraphQLConnectionInitSection'
 import GraphQLOperationSelect from './GraphQLOperationSelect'
 import { chooseGraphqlOperation } from '../../../shared/graphql-row'
+import { runGraphqlPrimaryAction } from '../../lib/run-active-request'
+import { isModEnterChord } from '../../lib/shortcut-chords'
 
 export default function GraphQLQueryPane() {
   const { t, locale } = useTranslation()
@@ -77,10 +79,10 @@ export default function GraphQLQueryPane() {
           placeholder="https://api.example.com/graphql"
           className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
           onKeyDown={(e) => {
-            if (e.key !== 'Enter') return
+            // Mod+Enter is the global chord, which runs the same rule once.
+            if (e.key !== 'Enter' || isModEnterChord(e)) return
             // A subscription is never POSTed; Enter does not end a running one.
-            if (!isSubscription) void executeQuery()
-            else if (!isSubscribing) void subscribe()
+            void runGraphqlPrimaryAction()
           }}
         />
 
@@ -139,7 +141,13 @@ export default function GraphQLQueryPane() {
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Query editor */}
         <div className="flex-1 min-h-0" data-testid="graphql-query-editor">
-          <MonacoWrapper value={query} onChange={setQuery} language="graphql" height="100%" />
+          <MonacoWrapper
+            runsActiveRequest
+            value={query}
+            onChange={setQuery}
+            language="graphql"
+            height="100%"
+          />
         </div>
 
         {/* Variables (collapsible) */}
@@ -156,6 +164,7 @@ export default function GraphQLQueryPane() {
           {variablesExpanded && (
             <div className="h-[120px] border-t border-[var(--border)]">
               <MonacoWrapper
+                runsActiveRequest
                 value={variables}
                 onChange={setVariables}
                 language="json"

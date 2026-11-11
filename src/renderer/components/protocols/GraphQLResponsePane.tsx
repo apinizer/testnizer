@@ -153,7 +153,7 @@ function ResponseTab({
       )}
 
       {/* Body */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0" data-testid="graphql-response-body">
         <MonacoWrapper value={response.body || ''} readOnly language="json" height="100%" />
       </div>
     </div>

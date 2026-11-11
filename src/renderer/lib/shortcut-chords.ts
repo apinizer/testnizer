@@ -33,3 +33,19 @@ export function adjacentTabChord(e: KeyboardEvent): 1 | -1 | 0 {
 export function isCloseTabKey(e: KeyboardEvent): boolean {
   return physicalKey(e, 'w', 'KeyW')
 }
+
+/**
+ * Mod+Enter — run the active request (`run-active-request.ts`). The global
+ * handler in `keyboard-shortcuts.ts` owns it; a field's own plain-Enter
+ * handler skips it so one key press is one dispatch (tester finding 10:
+ * the Socket.IO event field emitted twice). Takes the React or the DOM event.
+ */
+export function isModEnterChord(e: {
+  key: string
+  metaKey: boolean
+  ctrlKey: boolean
+  shiftKey: boolean
+}): boolean {
+  // Shift excluded like the global matcher: Mod+Shift+Enter stays the field's.
+  return e.key === 'Enter' && !e.shiftKey && (isMac() ? e.metaKey : e.ctrlKey)
+}

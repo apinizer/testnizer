@@ -6,6 +6,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
 import { DYNAMIC_VARIABLES } from '../../../shared/dynamic-variables'
+import { runActiveRequest } from '../../lib/run-active-request'
 
 /** CSS class name used by Monaco decorations to colorize {{variables}} */
 const VARIABLE_DECO_CLASS = 'monaco-variable-highlight'
@@ -77,6 +78,16 @@ interface MonacoWrapperProps {
   wordWrap?: boolean
   /** Accessible name for the editor. Defaults to the translated "Editor content". */
   ariaLabel?: string
+  /**
+   * A request editor (body, scripts, GraphQL query, SOAP envelope, gRPC
+   * message, realtime composer): Ctrl/Cmd+Enter runs the active request like
+   * everywhere else in the app. Without it Monaco's own Ctrl/Cmd+Enter
+   * (insert line below) takes the key and stops it, so the window chord never
+   * fired with the cursor in an editor (tester finding 10). Off by default:
+   * Tools, mock editors and modals keep Monaco's chord rather than running
+   * the request behind them.
+   */
+  runsActiveRequest?: boolean
 }
 
 /** Track registered disposables so we don't register multiple providers */
@@ -183,6 +194,7 @@ export default function MonacoWrapperImpl({
   className,
   wordWrap = true,
   ariaLabel,
+  runsActiveRequest = false,
 }: MonacoWrapperProps) {
   const { t } = useTranslation()
   const theme = useUIStore((s) => s.theme)
@@ -208,6 +220,19 @@ export default function MonacoWrapperImpl({
     ensureVariableStyle()
     if (!readOnly) {
       registerVariableCompletionProvider(monaco)
+    }
+    if (runsActiveRequest) {
+      // `addAction` binds on THIS editor only (`editorId` precondition);
+      // `addCommand` would be global and run the last-mounted editor's handler.
+      // KeyMod / KeyCode come from the mount argument, not the module import.
+      ed.addAction({
+        id: 'testnizer.runActiveRequest',
+        label: t('command.action.send'),
+        keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter],
+        run: () => {
+          void runActiveRequest()
+        },
+      })
     }
     // Initial highlight + refresh on content change
     applyVariableHighlights(ed, decoCollectionRef)

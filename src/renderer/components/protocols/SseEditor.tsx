@@ -124,6 +124,7 @@ export default function SseEditor() {
                 style={{ height: 200 }}
               >
                 <MonacoWrapper
+                  runsActiveRequest
                   value={body}
                   onChange={setBody}
                   language={bodyType === 'json' ? 'json' : 'plaintext'}

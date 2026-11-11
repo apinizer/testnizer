@@ -152,6 +152,7 @@ export default function ScriptsTab() {
         {activeSection === 'pre-request' && (
           <div data-testid="scripts-pre-editor" className="h-full">
             <MonacoWrapper
+              runsActiveRequest
               value={preScript}
               onChange={setPreScript}
               language="javascript"
@@ -162,6 +163,7 @@ export default function ScriptsTab() {
         {activeSection === 'post-response' && (
           <div data-testid="scripts-post-editor" className="h-full">
             <MonacoWrapper
+              runsActiveRequest
               value={postScript}
               onChange={setPostScript}
               language="javascript"

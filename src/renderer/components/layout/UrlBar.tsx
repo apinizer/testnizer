@@ -3,6 +3,7 @@ import { useRequestStore } from '../../stores/request.store'
 import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
+import { isModEnterChord } from '../../lib/shortcut-chords'
 import { useCompactUrlBar } from '../../lib/use-narrow-layout'
 import {
   URL_BAR_COMPACT_METHOD_MIN_PX,
@@ -197,10 +198,9 @@ export default function UrlBar() {
         }}
         onPaste={handleUrlBarPaste}
         onKeyDown={(e) => {
-          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-            sendRequest()
-          }
-          if (e.key === 'Enter' && !e.metaKey && !e.ctrlKey) {
+          // Mod+Enter is the global chord (`keyboard-shortcuts.ts`): handling it
+          // here too sent the request twice.
+          if (e.key === 'Enter' && !isModEnterChord(e)) {
             sendRequest()
           }
         }}

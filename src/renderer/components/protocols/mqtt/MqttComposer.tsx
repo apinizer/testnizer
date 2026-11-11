@@ -150,6 +150,7 @@ export default function MqttComposer() {
         )}
         <div data-testid="mqtt-composer" className="min-h-0">
           <MonacoWrapper
+            runsActiveRequest
             value={c.content}
             onChange={(content) => setComposer({ content })}
             language={RT_MONACO_LANGUAGE[c.contentType]}

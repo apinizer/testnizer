@@ -1,5 +1,6 @@
 import { Download, Loader2 } from 'lucide-react'
 import { useSoapStore } from '../../stores/soap.store'
+import { isModEnterChord } from '../../lib/shortcut-chords'
 
 export default function SoapWsdlImport() {
   const wsdlUrl = useSoapStore((s) => s.wsdlUrl)
@@ -19,7 +20,8 @@ export default function SoapWsdlImport() {
           placeholder="https://example.com/service?wsdl"
           className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--white)] px-3 py-2 font-mono text-[var(--text)] outline-none transition-colors placeholder:text-[var(--placeholder)] focus:border-[var(--accent)]"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') parseWsdl()
+            // Mod+Enter is the global Send chord, not Parse.
+            if (e.key === 'Enter' && !isModEnterChord(e)) parseWsdl()
           }}
         />
         <button

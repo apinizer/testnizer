@@ -88,7 +88,13 @@ export default function SoapBodyEditor() {
           )}
         </div>
       ) : (
-        <MonacoWrapper value={rawXml} onChange={setRawXml} language="xml" height={280} />
+        <MonacoWrapper
+          runsActiveRequest
+          value={rawXml}
+          onChange={setRawXml}
+          language="xml"
+          height={280}
+        />
       )}
     </div>
   )
