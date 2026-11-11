@@ -12,6 +12,7 @@
  * crash of server A can never land on server B's editor.
  */
 import { create } from 'zustand'
+import { describeListenError, mockIpcErrorText } from '../lib/listen-error-text'
 import type {
   MockMcpBridge,
   MockMcpLogEntry,
@@ -69,8 +70,12 @@ export interface MockMcpStoreState {
 
 const UNAVAILABLE = 'Mock MCP bridge unavailable'
 
-function errorOf(r: { success: boolean; error?: string }, fallback: string): string {
-  return r.error ?? fallback
+/** The failure's reason; a bind failure (busy port…) is worded in the user's language. */
+function errorOf(
+  r: { success: boolean; error?: string; errorInfo?: unknown },
+  fallback: string,
+): string {
+  return mockIpcErrorText(r, fallback)
 }
 
 function omit<T>(obj: Record<string, T>, key: string): Record<string, T> {
@@ -222,7 +227,12 @@ export function handleMockMcpLog(entry: MockMcpLogEntry): void {
 /** `mockMcp:status` — replace the owning server's live state. */
 export function handleMockMcpStatus(state: MockMcpServerState): void {
   if (!state || typeof state.serverId !== 'string') return
-  setState(state.serverId, state)
+  setState(
+    state.serverId,
+    state.errorMessage && state.errorInfo
+      ? { ...state, errorMessage: describeListenError(state.errorInfo, state.errorMessage) }
+      : state,
+  )
 }
 
 let subscribedApi: MockMcpBridge | null = null

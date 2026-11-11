@@ -4400,6 +4400,19 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.serverTypeConfirm': 'Change type',
     'mock.serverTypeChanged': 'Server type changed to {kind}.',
     'mock.serverTypeFailed': 'Could not change the server type.',
+    'mock.portChangeRefused': 'Port not changed — the server keeps running on {address}. {detail}',
+    'mock.hostChangeRefused':
+      'Address not changed — the server keeps running on {address}. {detail}',
+    'mock.listen.inUse':
+      'Port {port} is already in use on {host}. Stop whatever is listening there (another mock server or app) or pick a different port.',
+    'mock.listen.inUseByMock':
+      'Port {port} is already in use by mock server "{name}". Stop it or use a different port.',
+    'mock.listen.inUseByMockOtherProject':
+      'Port {port} is already in use by mock server "{name}", which belongs to another project. Mock servers keep running when you switch projects — stop it there, or use a different port.',
+    'mock.listen.permission':
+      'Permission denied binding {host}:{port}. Ports below 1024 usually need elevated rights — pick a higher port.',
+    'mock.listen.unavailable': 'Address {host} is not available on this machine.',
+    'mock.settingSaveFailed': 'Could not save the setting: {detail}',
     'mock.openInAiChatAnthropic': 'Open in AI Chat (Anthropic)',
     'mock.startAndOpenInAiChatAnthropic': 'Start & open in AI Chat (Anthropic)',
     'mock.noChatEndpoint': 'Add POST /v1/chat/completions first',
@@ -9045,6 +9058,20 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.serverTypeConfirm': 'Tipi değiştir',
     'mock.serverTypeChanged': 'Sunucu tipi {kind} olarak değiştirildi.',
     'mock.serverTypeFailed': 'Sunucu tipi değiştirilemedi.',
+    'mock.portChangeRefused':
+      'Port değiştirilmedi — sunucu {address} adresinde çalışmaya devam ediyor. {detail}',
+    'mock.hostChangeRefused':
+      'Adres değiştirilmedi — sunucu {address} adresinde çalışmaya devam ediyor. {detail}',
+    'mock.listen.inUse':
+      '{port} portu {host} üzerinde kullanımda. Orada dinleyeni (başka bir mock sunucu ya da uygulama) durdurun veya başka bir port seçin.',
+    'mock.listen.inUseByMock':
+      '{port} portu "{name}" mock sunucusu tarafından kullanılıyor. Onu durdurun ya da başka bir port kullanın.',
+    'mock.listen.inUseByMockOtherProject':
+      '{port} portu başka bir projeye ait "{name}" mock sunucusu tarafından kullanılıyor. Mock sunucular proje değiştirince çalışmaya devam eder — orada durdurun ya da başka bir port kullanın.',
+    'mock.listen.permission':
+      '{host}:{port} adresine bağlanma izni yok. 1024 altındaki portlar genellikle yönetici yetkisi ister — daha yüksek bir port seçin.',
+    'mock.listen.unavailable': '{host} adresi bu makinede kullanılamıyor.',
+    'mock.settingSaveFailed': 'Ayar kaydedilemedi: {detail}',
     'mock.openInAiChatAnthropic': 'AI Chat sekmesinde aç (Anthropic)',
     'mock.startAndOpenInAiChatAnthropic': 'Başlat ve AI Chat sekmesinde aç (Anthropic)',
     'mock.noChatEndpoint': 'Önce POST /v1/chat/completions ekleyin',
