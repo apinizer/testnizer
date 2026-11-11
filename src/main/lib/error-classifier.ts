@@ -22,12 +22,14 @@ import {
   composeConnectionMessage,
   connectionHintEn,
   joinConnectionHint,
+  scrubConnectionText,
   type ConnectionErrorInfo,
   type ConnectionErrorKind,
 } from '../../shared/connection-error'
-import { isCredentialArgName, isCredentialHeaderName } from '../../shared/credential-headers'
 
 export type { ConnectionErrorInfo, ConnectionErrorKind } from '../../shared/connection-error'
+// The credential scrub lives in shared (git errors use it too); re-exported for the engines.
+export { scrubConnectionText } from '../../shared/connection-error'
 
 export interface ClassifiedError {
   /** Single-line user-facing message (already includes any prefix/hint). */
@@ -308,49 +310,6 @@ function targetOf(f: Facets, ctx: ConnectionErrorContext | undefined): string | 
     if (hit) return hit[1]
   }
   return undefined
-}
-
-// ─── Credential scrub ───────────────────────────────────────
-
-const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s'"<>()]+/gi
-
-/**
- * Remove credentials from server / SDK text: URL userinfo and URL query /
- * fragment (`?token=…`), plus any literal userinfo or credential-named query value of the
- * connection URL. Bare origins are left untouched.
- */
-export function scrubConnectionText(text: string, ctxUrl: string | undefined): string {
-  let out = text.replace(URL_IN_TEXT, (m) =>
-    m.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1').replace(/[?#].*$/, ''),
-  )
-  if (ctxUrl) {
-    try {
-      const u = new URL(ctxUrl)
-      const queryCredentials = [...u.searchParams.entries()]
-        // Query names are ARGUMENTS: the shared argument rule (whole words —
-        // `sig`, `api_key`, `access_token`) is the one History / Console use
-        // for query fields. The broader header rule stays as a superset so no
-        // value this scrub already removed can start leaking.
-        .filter(([name]) => isCredentialArgName(name) || isCredentialHeaderName(name))
-        .map(([, value]) => value)
-      const secrets = [u.username, u.password, ...queryCredentials]
-        .flatMap((v) => {
-          if (!v) return []
-          let decoded = v
-          try {
-            decoded = decodeURIComponent(v)
-          } catch {
-            /* keep raw */
-          }
-          return decoded === v ? [v] : [v, decoded]
-        })
-        .filter((v) => v.length >= 3)
-      for (const s of secrets) out = out.split(s).join('••••••')
-    } catch {
-      /* not a URL — nothing more to remove */
-    }
-  }
-  return out.trim()
 }
 
 // ─── Kind rules ─────────────────────────────────────────────

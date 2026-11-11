@@ -33,10 +33,9 @@ export function describeListenError(info: unknown, fallback: string): string {
   if (!key) return fallback
   const text = t(key)
   if (text === key) return fallback
-  return text
-    .replace('{port}', String(info.port))
-    .replace('{host}', info.host)
-    .replace('{name}', info.by ?? '')
+  // `t(key, values)`, not `.replace('{name}', …)`: the mock name is user text
+  // and a string replacement would expand `$&` / `$1` in it.
+  return t(key, { port: info.port, host: info.host, name: info.by ?? '' })
 }
 
 /** The reason of a failed mock IPC result, localized when it is a bind failure. */

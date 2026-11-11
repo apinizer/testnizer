@@ -146,22 +146,15 @@ export default function WsseResponsePanel({ body }: Props) {
                   {verifyResult.certInfo && (
                     <div className="mt-1 text-[var(--muted)]">
                       <div>
-                        {t('soap.resp.subject').replace(
-                          '{value}',
-                          verifyResult.certInfo.subject ?? '—',
-                        )}
+                        {t('soap.resp.subject', { value: verifyResult.certInfo.subject ?? '—' })}
                       </div>
                       <div>
-                        {t('soap.resp.issuer').replace(
-                          '{value}',
-                          verifyResult.certInfo.issuer ?? '—',
-                        )}
+                        {t('soap.resp.issuer', { value: verifyResult.certInfo.issuer ?? '—' })}
                       </div>
                       <div>
-                        {t('soap.resp.validUntil').replace(
-                          '{value}',
-                          verifyResult.certInfo.notAfter ?? '—',
-                        )}
+                        {t('soap.resp.validUntil', {
+                          value: verifyResult.certInfo.notAfter ?? '—',
+                        })}
                       </div>
                     </div>
                   )}

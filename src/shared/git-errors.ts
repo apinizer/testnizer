@@ -16,6 +16,7 @@
  * code travels with it to the handler's catch: nothing downstream ever
  * matches on the wording of our own sentences.
  */
+import { scrubConnectionText } from './connection-error'
 import { fillTemplate } from './fill-template'
 
 export const GIT_ERROR_TEXT = {
@@ -140,12 +141,19 @@ export class GitCodedError extends Error {
 
 /**
  * A caught error as failure fields: a {@link GitCodedError} keeps its code,
- * anything else is its message as-is (no classification — that is
+ * anything else is its message (no classification — that is
  * `describeGitFailure`'s job, in `main/lib/git-config.ts`).
+ *
+ * Both pass the connection-text scrub (`scrubConnectionText`): git echoes the
+ * remote it failed on, and a user-written remote can carry `user:pass@`; a
+ * stray `Authorization: Basic …` (the token rides as an extraHeader) goes
+ * too. Our own coded sentence is rebuilt from the scrubbed values.
  */
 export function gitFailureOf(e: unknown): GitFailure {
-  if (e instanceof GitCodedError) return gitFailure(e.code, e.detail, e.params, e.inner)
-  return { error: e instanceof Error ? e.message : String(e) }
+  const scrub = (s: string): string => scrubConnectionText(s, undefined)
+  if (e instanceof GitCodedError)
+    return scrubGitFailure(gitFailure(e.code, e.detail, e.params, e.inner), scrub)
+  return { error: scrub(e instanceof Error ? e.message : String(e)) }
 }
 
 /**
@@ -158,13 +166,15 @@ export function wrappedGitFailure(
   code: GitErrorCode,
   inner: unknown,
 ): GitFailure & { errorCode: GitErrorCode } {
+  // Through gitFailureOf: the inner values get the same connection-text scrub.
+  const f = gitFailureOf(inner)
   if (inner instanceof GitCodedError) {
     const cause: GitErrorCause = { code: inner.code }
-    if (inner.detail !== undefined) cause.detail = inner.detail
-    if (inner.params !== undefined) cause.params = inner.params
+    if (f.errorDetail !== undefined) cause.detail = f.errorDetail
+    if (f.errorParams !== undefined) cause.params = f.errorParams
     return gitFailure(code, gitCauseText(cause), undefined, cause)
   }
-  return gitFailure(code, gitFailureOf(inner).error)
+  return gitFailure(code, f.error)
 }
 
 /**

@@ -124,3 +124,42 @@ describe('token canary — nothing in the envelope carries the token', () => {
     expect(holds(JSON.stringify(envelope))).toBe(false)
   })
 })
+
+describe('gitFailureOf — connection-text scrub (Codex review of e6e82a7)', () => {
+  const CANARY = 'CANARY-pw-7731'
+  const BASIC = Buffer.from(`e2e:${CANARY}`).toString('base64')
+  const envelope = (f: object): string => JSON.stringify({ success: false, ...f })
+
+  it('drops URL userinfo from a raw git message', async () => {
+    const { gitFailureOf } = await import('../../src/shared/git-errors')
+    const f = gitFailureOf(new Error(`fatal: unable to access 'https://u:${CANARY}@h/r.git/'`))
+    expect(envelope(f)).not.toContain(CANARY)
+    expect(f.error).toContain('https://h/r.git/')
+  })
+
+  it('drops an Authorization: Basic / Bearer credential (raw and base64)', async () => {
+    const { gitFailureOf } = await import('../../src/shared/git-errors')
+    for (const msg of [
+      `error: http.extraHeader=Authorization: Basic ${BASIC} rejected`,
+      `> Authorization: Bearer ${CANARY}`,
+    ]) {
+      const f = gitFailureOf(new Error(msg))
+      expect(envelope(f)).not.toContain(CANARY)
+      expect(envelope(f)).not.toContain(BASIC)
+      expect(f.error).toMatch(/Authorization: (Basic|Bearer) /)
+    }
+  })
+
+  it('scrubs a coded error’s values and a wrapped cause too', () => {
+    const remote = `https://old:${CANARY}@host/repo.git`
+    const coded = new GitCodedError('GIT_FOREIGN_REPO', {
+      params: { path: '/tmp/x', remote },
+    })
+    const viaDescribe = describeGitFailure(coded, undefined)
+    expect(envelope(viaDescribe)).not.toContain(CANARY)
+    expect(viaDescribe.errorParams?.remote).toBe('https://host/repo.git')
+    const wrapped = describeWrappedGitFailure('GIT_PULL_IMPORT_FAILED', coded, undefined)
+    expect(envelope(wrapped)).not.toContain(CANARY)
+    expect(wrapped.errorCause?.code).toBe('GIT_FOREIGN_REPO')
+  })
+})

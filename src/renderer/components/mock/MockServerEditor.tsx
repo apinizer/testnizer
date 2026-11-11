@@ -1240,10 +1240,8 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
       k === 'port' ? 'mock.portChangeRefused' : k === 'host' ? 'mock.hostChangeRefused' : null
     toast.error(
       refusedKey && running
-        ? t(refusedKey)
-            .replace('{address}', `${stored.host}:${stored.port}`)
-            .replace('{detail}', err)
-        : t('mock.settingSaveFailed').replace('{detail}', err),
+        ? t(refusedKey, { address: `${stored.host}:${stored.port}`, detail: err })
+        : t('mock.settingSaveFailed', { detail: err }),
     )
   }
 
