@@ -7,7 +7,6 @@ import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
 import { isBlankScratchTab } from '../../lib/tab-kind'
 import { defaultRequestTabName } from '../../lib/endpoint-name'
-import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import { activateTabStores, cloneTabStores, switchActiveTab } from '../../lib/activate-tab'
 import { useTranslation } from '../../lib/i18n'
@@ -77,11 +76,9 @@ import { T } from '../../styles/tokens'
 // leaked protocol-store slices that the in-Workbench Ctrl+W path cleaned
 // up — v1.4.4 close-bypass).
 import { cleanupTabState } from '../../lib/cleanup-tab-state'
-import { saveActiveRequestInPlace } from '../../lib/save-active-request'
+import { saveTabForClose } from '../../lib/save-tab-for-close'
 import { ensureWithheldCredentialsLoaded } from '../../lib/withheld-credentials'
-import { saveMockMcpDraft } from '../mock-mcp/mock-mcp-save'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
-import { toast } from '../../lib/toast'
 import { EditorVisibilityProvider } from '../../lib/editor-visibility'
 
 // Tool-tab protocol → component. The Workbench renders EVERY open tool tab and
@@ -468,75 +465,18 @@ export function EndpointTabBar() {
   }
 
   // ─── Unsaved-changes confirm handlers (issue #9) ────────────────
-  /**
-   * Mock MCP editor tab: save its draft through the editor's own path — it is
-   * not a request row, `saveActiveRequestInPlace` would report it not
-   * applicable and Save did nothing (issue #154). No activation needed.
-   */
-  async function closeSaveMockMcp(tabId: string, serverId: string | undefined) {
-    const result = serverId ? await saveMockMcpDraft(serverId) : null
-    setCloseSaving(false)
-    if (result && !result.ok) {
-      if (result.error) toast.error(`Failed to save: ${result.error}`)
-      return // keep the dialog open so the user can fix, retry or cancel
-    }
-    setCloseConfirmTabId(null)
-    doCloseTab(tabId)
-  }
-
+  // Save & Close: `saveTabForClose` is the one implementation (the header's
+  // project-tab close uses it too). Only a real save closes the tab; Save As
+  // (never-saved / orphaned tab, issues #101 / #269) and a failure keep it open.
   async function handleCloseSave() {
     const tabId = closeConfirmTabId
     if (!tabId) return
     setCloseSaving(true)
-    const closing = useTabsStore.getState().tabs.find((t) => t.id === tabId)
-    if (closing?.protocol === 'mockMcpServer') {
-      await closeSaveMockMcp(tabId, closing.mockMcpServerId)
-      return
-    }
-    try {
-      // `saveActiveRequestInPlace` targets the ACTIVE tab — make the closing tab
-      // active first so a background tab's × still saves the right request.
-      // `activateTab` only flips the protocol stores' live slices; it does NOT
-      // touch `tabs.activeTabId`, so without the explicit `setActiveTab` the
-      // save resolved the PREVIOUS active tab and wrote the closing tab's
-      // editor content into that tab's row (background-tab × corruption).
-      if (useTabsStore.getState().activeTabId !== tabId) {
-        activateTab(tabId)
-        useTabsStore.getState().setActiveTab(tabId)
-      }
-      const result = await saveActiveRequestInPlace()
-      if (result.notApplicable) {
-        // Never-saved tab (New → HTTP etc.): there is no row to write in
-        // place. Route to the "Save As" modal — the same fallback Ctrl+S
-        // uses — and keep the tab OPEN: the modal's success path attaches
-        // the new savedRequestId and clears the dirty flag, after which a
-        // plain × closes without prompting. Previously this branch fell
-        // through to doCloseTab, so "Save & Close" on a new tab silently
-        // discarded the edits (issue #101).
-        // A tab whose row was deleted (issue #269) lands here too — unbound
-        // and still dirty, so it stays open and goes to Save As like a draft.
-        setCloseSaving(false)
-        setCloseConfirmTabId(null)
-        if (result.orphaned) toast.info(t('toast.requestOrphaned'))
-        const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)
-        if (tab && isRequestLikeTab(tab)) {
-          useUIStore.getState().setShowEndpointSaveModal(true)
-        }
-        return
-      }
-      if (!result.success) {
-        toast.error(`Failed to save: ${result.error ?? 'unknown error'}`)
-        setCloseSaving(false)
-        return // keep the dialog open so the user can retry or cancel
-      }
-    } catch (err) {
-      toast.error(`Failed to save: ${(err as Error).message || 'unknown error'}`)
-      setCloseSaving(false)
-      return
-    }
+    const outcome = await saveTabForClose(tabId)
     setCloseSaving(false)
+    if (outcome === 'failed') return // keep the dialog open: retry or cancel
     setCloseConfirmTabId(null)
-    doCloseTab(tabId)
+    if (outcome === 'saved') doCloseTab(tabId)
   }
 
   function handleCloseDiscard() {

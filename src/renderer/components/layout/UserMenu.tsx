@@ -60,6 +60,7 @@ export default function UserMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        data-testid="user-menu-trigger"
         title={t('userMenu.title')}
         aria-haspopup="menu"
         aria-expanded={open}

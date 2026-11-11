@@ -15,6 +15,7 @@ import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate } from '../../lib/format-datetime'
 import { toast } from '../../lib/toast'
+import { deleteProjectReleasingTabs } from '../../lib/close-project-tab'
 import { isMac } from '../../lib/platform'
 import { useProjectExportStore } from '../../stores/project-export.store'
 import type { Project } from '../../types'
@@ -27,7 +28,6 @@ export default function ProjectHome() {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   const fetchProjects = useWorkspaceStore((s) => s.fetchProjects)
   const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
-  const deleteProject = useWorkspaceStore((s) => s.deleteProject)
   const renameProject = useWorkspaceStore((s) => s.renameProject)
   const setShowNewProjectModal = useUIStore((s) => s.setShowNewProjectModal)
   const { t, locale } = useTranslation()
@@ -90,7 +90,7 @@ export default function ProjectHome() {
 
   async function confirmDeleteProject() {
     if (!deleteTarget) return
-    await deleteProject(deleteTarget.id)
+    await deleteProjectReleasingTabs(deleteTarget.id)
     setDeleteTarget(null)
   }
 
