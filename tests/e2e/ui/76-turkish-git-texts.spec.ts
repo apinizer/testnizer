@@ -10,9 +10,10 @@
  * Screenshots: set `TESTNIZER_SHOT_DIR` to a folder and every step saves one
  * there (`76-<step>.png`).
  *
- * Cleanup (shared Electron, `finally`): back to English, the git settings of
+ * Cleanup (shared Electron, `finally`, each step on its own): the canonical
+ * project opened first, then back to English, the git settings of
  * the spec's project cleared, the project and its duplicate deleted, the
- * canonical project active again, the temp repos removed.
+ * temp repos removed — and, when the body passed, the result asserted.
  */
 import { expect, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
@@ -26,7 +27,7 @@ import {
   openCommandPalette,
 } from '../helpers/ui/bootstrap'
 import { getActiveProjectId } from '../helpers/ui/assert-ipc'
-import { createProject, goToProjectHome, openProject } from '../helpers/ui/workspace-flow'
+import { createProject, goToProjectHome } from '../helpers/ui/workspace-flow'
 import { deleteProject } from '../helpers/ui/db-flow'
 import { persistedLocale, restoreEnglishLocale } from '../helpers/ui/locale'
 
@@ -85,6 +86,9 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
       const checkout = path.join(tmp, 'checkout')
       execFileSync('git', ['init', '-q', '--bare', bare])
 
+      const cleanupErrors: string[] = []
+      let copies: string[] = []
+      let owned: string[] = []
       let projectId: string | null = null
       let before: string[] = []
       try {
@@ -107,15 +111,46 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
           },
           { pid: projectId, repoUrl: bare, lp: checkout },
         )
-        // Re-open so the header reads the new save mode.
-        await openProject(window, name)
 
         await switchToTurkish(window)
         await dismissOverlays(window)
 
+        // ── Project Home: Duplicate toast.
+        // The IPC write above did not reach the renderer's project list
+        // (opening a project reads that list, it does not re-fetch it). The
+        // Duplicate action re-fetches the list after it succeeds, so the
+        // header below sees `save_mode: 'git'` — a user action, no store poke.
+        before = await allProjectIds(window)
+        await goToProjectHome(window)
+        // Exact name: the copy's card ("… (copy)") contains the name too.
+        const card = window
+          .getByTestId('project-card')
+          .filter({ has: window.getByText(name, { exact: true }) })
+        await card.hover()
+        // The card's "…" button (revealed on hover) is its only button.
+        await card.locator('button').first().click()
+        await card.getByRole('button', { name: 'Çoğalt' }).click()
+        await expect(
+          window.locator('[data-sonner-toast]').filter({ hasText: `"${name}" çoğaltıldı` }),
+        ).toBeVisible({ timeout: 15_000 })
+        await expect(
+          window.locator('[data-sonner-toast]').filter({ hasText: /Duplicated/ }),
+        ).toHaveCount(0)
+        await shot(window, 'duplicate-toast')
+        // The copy is in the list now, so the list was re-fetched.
+        await expect
+          .poll(async () => (await allProjectIds(window)).length, { timeout: 10_000 })
+          .toBeGreaterThan(before.length)
+
+        // Re-open the project: the header reads the refreshed save mode.
+        await card.click()
+        await expect(window.getByTestId('nav-apis')).toBeVisible({ timeout: 15_000 })
+
         // ── Header: Pull / Push and their tooltips (the git term in parentheses).
         const pull = window.getByTestId('header-pull')
         const push = window.getByTestId('header-push')
+        await expect(pull).toBeVisible({ timeout: 10_000 })
+        await expect(push).toBeVisible()
         await expect(pull).toHaveText('Çek')
         await expect(push).toHaveText('Gönder')
         await expect(pull).toHaveAttribute('title', 'Uzak depodan çek (pull)')
@@ -139,49 +174,63 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
         await expect(window.getByPlaceholder(/dalından yeni dal/)).toBeVisible()
         await shot(window, 'branch-new-input')
         await dismissOverlays(window)
-
-        // ── Project Home: Duplicate toast.
-        before = await allProjectIds(window)
-        await goToProjectHome(window)
-        const card = window.getByTestId('project-card').filter({ hasText: name }).first()
-        await card.hover()
-        // The card's "…" button (revealed on hover) is its only button.
-        await card.locator('button').first().click()
-        await card.getByRole('button', { name: 'Çoğalt' }).click()
-        await expect(
-          window.locator('[data-sonner-toast]').filter({ hasText: `"${name}" çoğaltıldı` }),
-        ).toBeVisible({ timeout: 15_000 })
-        await expect(
-          window.locator('[data-sonner-toast]').filter({ hasText: /Duplicated/ }),
-        ).toHaveCount(0)
-        await shot(window, 'duplicate-toast')
       } finally {
-        await restoreEnglishLocale(window).catch(() => {})
-        await dismissOverlays(window).catch(() => {})
+        // Each step on its own: one failing must not skip the others. The
+        // failures are asserted after the `finally` — so a failed test body
+        // keeps its own error instead of a cleanup one.
+        const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
+          try {
+            await fn()
+          } catch (e) {
+            cleanupErrors.push(`${label}: ${(e as Error).message}`)
+          }
+        }
+        await step('dismiss overlays', () => dismissOverlays(window))
+        // A project must be open first: `restoreEnglishLocale` ends on the
+        // APIs page and the header tabs exist only inside a project (Project
+        // Home has neither). The canonical one — this spec's project is
+        // deleted below.
+        await step('open canonical project', () => ensureCanonicalProject(window))
+        await step('restore English', () => restoreEnglishLocale(window))
         if (projectId) {
-          await window
-            .evaluate(
-              (pid) => (window as unknown as Win).api?.settings?.set(`git.${pid}`, { repoUrl: '' }),
-              projectId,
-            )
-            .catch(() => {})
+          const pid = projectId
+          await step('clear git settings', () =>
+            window.evaluate(
+              (id) => (window as unknown as Win).api?.settings?.set(`git.${id}`, { repoUrl: '' }),
+              pid,
+            ),
+          )
         }
-        const copies = before.length
-          ? (await allProjectIds(window).catch(() => [] as string[])).filter(
-              (id) => !before.includes(id),
-            )
-          : []
-        // Close the header tabs first (an open tab of a deleted project would linger).
-        for (const id of [...copies, ...(projectId ? [projectId] : [])]) {
-          const close = window.getByTestId(`header-project-tab-close-${id}`)
-          if ((await close.count()) > 0) await close.click({ force: true }).catch(() => {})
+        await step('find the copy', async () => {
+          if (before.length) {
+            copies = (await allProjectIds(window)).filter((id) => !before.includes(id))
+          }
+        })
+        owned = [...copies, ...(projectId ? [projectId] : [])]
+        // Close their header tabs (an open tab of a deleted project would linger).
+        for (const id of owned) {
+          await step(`close tab ${id}`, async () => {
+            const close = window.getByTestId(`header-project-tab-close-${id}`)
+            if ((await close.count()) > 0) {
+              await close.click({ force: true })
+              await expect(close).toHaveCount(0, { timeout: 5_000 })
+            }
+          })
         }
-        await ensureCanonicalProject(window).catch(() => {})
-        for (const id of [...copies, ...(projectId ? [projectId] : [])]) {
-          await deleteProject(window, id).catch(() => {})
+        for (const id of owned) {
+          await step(`delete project ${id}`, () => deleteProject(window, id))
         }
-        fs.rmSync(tmp, { recursive: true, force: true })
+        await step('remove temp dir', async () => {
+          fs.rmSync(tmp, { recursive: true, force: true })
+        })
       }
+
+      // Reached only when the body passed: the cleanup left the shared window clean.
+      expect(cleanupErrors).toEqual([])
+      expect(copies.length).toBeGreaterThan(0)
+      expect(await persistedLocale(window)).toBe('en')
+      const remaining = await allProjectIds(window)
+      for (const id of owned) expect(remaining).not.toContain(id)
     },
   )
 })
