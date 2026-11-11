@@ -1226,9 +1226,23 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
 
   useEffect(() => setDraft(server), [server])
 
-  function commit<K extends keyof MockServer>(k: K, v: MockServer[K]): void {
+  async function commit<K extends keyof MockServer>(k: K, v: MockServer[K]): Promise<void> {
     setDraft((d) => ({ ...d, [k]: v }))
-    updateServer(server.id, { [k]: v })
+    const err = await updateServer(server.id, { [k]: v })
+    if (!err) return
+    // Not stored (tester finding 11: a running server's new port is busy) —
+    // the field goes back to the stored value instead of showing one the
+    // server does not use.
+    const stored = useMockStore.getState().servers.find((s) => s.id === server.id) ?? server
+    setDraft((d) => ({ ...d, [k]: stored[k] }))
+    const running = useMockStore.getState().statusByServer[server.id] === 'running'
+    toast.error(
+      (k === 'port' || k === 'host') && running
+        ? t('mock.addressChangeRefused')
+            .replace('{address}', `${stored.host}:${stored.port}`)
+            .replace('{detail}', err)
+        : t('mock.settingSaveFailed').replace('{detail}', err),
+    )
   }
 
   // The port box could not be cleared at all: emptying it wrote 0, so a new port
@@ -1276,6 +1290,7 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
         <div className="grid grid-cols-2 gap-3">
           <Field label={t('mock.host')}>
             <select
+              data-testid="mock-settings-host"
               value={draft.host}
               onChange={(e) => commit('host', e.target.value as MockServer['host'])}
               className="w-full rounded border px-2 py-1 text-sm"
@@ -1293,6 +1308,7 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
           <Field label={t('mock.port')}>
             <input
               type="number"
+              data-testid="mock-settings-port"
               {...portDraft.inputProps}
               onBlur={() => {
                 portDraft.inputProps.onBlur()

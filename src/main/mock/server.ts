@@ -12,6 +12,7 @@ import http from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { URL } from 'node:url'
 import { EventEmitter } from 'node:events'
+import { hostsOverlap, listenErrorMessage, probeListen } from '../lib/listen-address'
 import { importedMockText } from '../../shared/mock-imported-text'
 import { matchEndpoint, type MatchableEndpoint } from './matcher'
 import { evaluateCondition } from './condition'
@@ -205,16 +206,18 @@ class MockServerManager extends EventEmitter {
     return this.servers.get(serverId)?.status ?? 'stopped'
   }
 
-  /** Start (or restart) a server with the given configuration. */
-  async start(def: MockServerDef): Promise<{ ok: true } | { ok: false; error: string }> {
-    // Pre-bind check: refuse to start if another running server is bound
-    // to the same port. listen() would otherwise emit EADDRINUSE
-    // asynchronously and we'd surface a confusing message to the user.
+  /**
+   * Pre-bind check: another running mock of this manager on the same port and
+   * an overlapping host (`hostsOverlap` — 0.0.0.0 overlaps every host).
+   * listen() would otherwise emit EADDRINUSE asynchronously with a message that
+   * does not say which mock holds the port. `null` = no such mock.
+   */
+  private heldByOtherMock(def: MockServerDef): string | null {
     for (const [otherId, s] of this.servers) {
       if (
         otherId !== def.id &&
         s.def.port === def.port &&
-        s.def.host === def.host &&
+        hostsOverlap(s.def.host, def.host) &&
         (s.status === 'running' || s.status === 'starting')
       ) {
         /*
@@ -226,16 +229,20 @@ class MockServerManager extends EventEmitter {
          */
         const sameProject =
           (s.def.projectId ?? null) === (def.projectId ?? null) || !s.def.projectId
-        return {
-          ok: false,
-          error: sameProject
-            ? `Port ${def.port} is already in use by mock server "${s.def.name}" in this project`
-            : `Port ${def.port} is already in use by mock server "${s.def.name}", which belongs to ` +
+        return sameProject
+          ? `Port ${def.port} is already in use by mock server "${s.def.name}" in this project`
+          : `Port ${def.port} is already in use by mock server "${s.def.name}", which belongs to ` +
               'another project. Mock servers keep running when you switch projects — stop it there, ' +
-              'or use a different port.',
-        }
+              'or use a different port.'
       }
     }
+    return null
+  }
+
+  /** Start (or restart) a server with the given configuration. */
+  async start(def: MockServerDef): Promise<{ ok: true } | { ok: false; error: string }> {
+    const held = this.heldByOtherMock(def)
+    if (held) return { ok: false, error: held }
 
     // If something is running for this id, stop it first.
     if (this.servers.has(def.id)) {
@@ -262,10 +269,11 @@ class MockServerManager extends EventEmitter {
     return new Promise((resolve) => {
       running.http.once('error', (err) => {
         running.status = 'error'
-        running.errorMessage = err.message
+        const message = listenErrorMessage(err, def.host, def.port)
+        running.errorMessage = message
         this.servers.delete(def.id)
-        this.emitStatus(def.id, err.message)
-        resolve({ ok: false, error: err.message })
+        this.emitStatus(def.id, message)
+        resolve({ ok: false, error: message })
       })
       running.http.listen(def.port, def.host, () => {
         running.status = 'running'
@@ -341,17 +349,36 @@ class MockServerManager extends EventEmitter {
    * Replace running server's definition without dropping the port (hot reload).
    * Open SSE streams are NOT closed (design Ek C R06): each runs on the
    * snapshot it opened with; the new definition applies to the next request.
+   *
+   * A host/port change restarts the listener — and never half-applies
+   * (tester finding 11): when the new address cannot be bound the server keeps
+   * serving on the old one and `{ ok: false, error }` says why. The caller
+   * decides what happens to the row (the editor keeps the stored address,
+   * `reconcileRunningMockServers` stops the server).
    */
-  async update(def: MockServerDef): Promise<{ ok: boolean }> {
+  async update(def: MockServerDef): Promise<{ ok: true } | { ok: false; error: string }> {
     const cur = this.servers.get(def.id)
     if (!cur) return { ok: true }
-    // If host/port changed, must restart.
-    if (cur.def.host !== def.host || cur.def.port !== def.port) {
-      const r = await this.start(def)
-      return { ok: r.ok }
+    if (cur.def.host === def.host && cur.def.port === def.port) {
+      cur.def = def
+      return { ok: true }
     }
-    cur.def = def
-    return { ok: true }
+    const held = this.heldByOtherMock(def)
+    if (held) return { ok: false, error: held }
+    // A new port is tested while the old listener is still up. A host-only
+    // change on the same port cannot be (our own listener holds it): that one
+    // is restarted and, on failure, put back below.
+    if (cur.def.port !== def.port) {
+      const busy = await probeListen(def.host, def.port)
+      if (busy) return { ok: false, error: busy }
+    }
+    const previous = cur.def
+    const r = await this.start(def)
+    if (r.ok) return r
+    // Lost the race after the probe, or the same-port host change failed:
+    // serve the old address again (its logs and state start empty).
+    await this.start(previous)
+    return r
   }
 
   getLogs(serverId: string): MockLogEntry[] {

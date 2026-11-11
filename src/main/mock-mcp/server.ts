@@ -37,6 +37,7 @@ import type { AddressInfo } from 'node:net'
 import { localhostHostValidation } from '@modelcontextprotocol/node'
 import type { Server } from '@modelcontextprotocol/server'
 import { loadMockTemplateVars } from '../lib/env-vars'
+import { listenErrorMessage, probeListen } from '../lib/listen-address'
 import {
   DEFAULT_LEGACY_MODE,
   isExposedWithoutAuth,
@@ -218,19 +219,8 @@ class MockMcpServerManager extends EventEmitter {
     const checked = checkDef(input)
     if (!checked.ok) return checked
     const def = checked.def
-    for (const [otherId, s] of this.servers) {
-      if (
-        otherId !== def.id &&
-        def.port !== 0 &&
-        s.boundPort === def.port &&
-        (s.status === 'running' || s.status === 'starting')
-      ) {
-        return {
-          ok: false,
-          error: `Port ${def.port} is already in use by mock MCP server "${s.def.name}". Stop it or use a different port.`,
-        }
-      }
-    }
+    const held = this.heldByOtherMock(def)
+    if (held) return { ok: false, error: held }
     if (this.servers.has(def.id)) await this.stop(def.id)
 
     const running = this.createRunning(def)
@@ -266,13 +256,7 @@ class MockMcpServerManager extends EventEmitter {
         resolve({ ok: false, error: message })
       }
       running.http.once('error', (err: NodeJS.ErrnoException) => {
-        fail(
-          err.code === 'EADDRINUSE'
-            ? `Port ${def.port} is already in use on ${def.host}. Stop whatever is listening there (another mock server or app) or pick a different port.`
-            : err.code === 'EACCES'
-              ? `Permission denied binding ${def.host}:${def.port}. Ports below 1024 usually need elevated rights — pick a higher port.`
-              : err.message,
-        )
+        fail(listenErrorMessage(err, def.host, def.port))
       })
       try {
         running.http.listen(def.port, def.host, () => {
@@ -291,6 +275,21 @@ class MockMcpServerManager extends EventEmitter {
         fail(err instanceof Error ? err.message : String(err))
       }
     })
+  }
+
+  /** Another running Mock MCP server bound to `def.port`; `null` = none. */
+  private heldByOtherMock(def: MockMcpServerDef): string | null {
+    for (const [otherId, s] of this.servers) {
+      if (
+        otherId !== def.id &&
+        def.port !== 0 &&
+        s.boundPort === def.port &&
+        (s.status === 'running' || s.status === 'starting')
+      ) {
+        return `Port ${def.port} is already in use by mock MCP server "${s.def.name}". Stop it or use a different port.`
+      }
+    }
+    return null
   }
 
   private createRunning(def: MockMcpServerDef): RunningServer {
@@ -353,12 +352,8 @@ class MockMcpServerManager extends EventEmitter {
   async update(def: MockMcpServerDef): Promise<MockMcpStartResult> {
     const cur = this.servers.get(def.id)
     if (!cur) return { ok: true, state: this.state(def.id) }
-    if (
-      cur.def.host !== def.host ||
-      cur.def.port !== def.port ||
-      cur.def.path !== def.path ||
-      cur.def.legacySse !== def.legacySse
-    ) {
+    if (cur.def.host !== def.host || cur.def.port !== def.port) return this.moveTo(cur, def)
+    if (cur.def.path !== def.path || cur.def.legacySse !== def.legacySse) {
       return this.start(def)
     }
     const changed = changedFamilies(cur.def, def)
@@ -366,6 +361,27 @@ class MockMcpServerManager extends EventEmitter {
     for (const kind of changed) this.announce(cur, kind)
     this.emitStatus(def.id)
     return { ok: true, state: this.state(def.id) }
+  }
+
+  /**
+   * Host/port change of a running server — never half-applied (tester
+   * finding 11, same rule as the HTTP mock's `update`): a new port is probed
+   * while the old listener is still up; a refused or failed move leaves the
+   * server serving on its old address and returns `{ ok: false, error }`.
+   */
+  private async moveTo(cur: RunningServer, def: MockMcpServerDef): Promise<MockMcpStartResult> {
+    const held = this.heldByOtherMock(def)
+    if (held) return { ok: false, error: held }
+    if (cur.def.port !== def.port) {
+      const busy = await probeListen(def.host, def.port)
+      if (busy) return { ok: false, error: busy }
+    }
+    const previous = cur.def
+    const r = await this.start(def)
+    if (r.ok) return r
+    // Lost the race after the probe, or a same-port host change failed.
+    await this.start(previous)
+    return r
   }
 
   /**

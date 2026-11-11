@@ -4400,6 +4400,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.serverTypeConfirm': 'Change type',
     'mock.serverTypeChanged': 'Server type changed to {kind}.',
     'mock.serverTypeFailed': 'Could not change the server type.',
+    'mock.addressChangeRefused':
+      'Port not changed — the server keeps running on {address}. {detail}',
+    'mock.settingSaveFailed': 'Could not save the setting: {detail}',
     'mock.openInAiChatAnthropic': 'Open in AI Chat (Anthropic)',
     'mock.startAndOpenInAiChatAnthropic': 'Start & open in AI Chat (Anthropic)',
     'mock.noChatEndpoint': 'Add POST /v1/chat/completions first',
@@ -9045,6 +9048,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.serverTypeConfirm': 'Tipi değiştir',
     'mock.serverTypeChanged': 'Sunucu tipi {kind} olarak değiştirildi.',
     'mock.serverTypeFailed': 'Sunucu tipi değiştirilemedi.',
+    'mock.addressChangeRefused':
+      'Port değiştirilmedi — sunucu {address} adresinde çalışmaya devam ediyor. {detail}',
+    'mock.settingSaveFailed': 'Ayar kaydedilemedi: {detail}',
     'mock.openInAiChatAnthropic': 'AI Chat sekmesinde aç (Anthropic)',
     'mock.startAndOpenInAiChatAnthropic': 'Başlat ve AI Chat sekmesinde aç (Anthropic)',
     'mock.noChatEndpoint': 'Önce POST /v1/chat/completions ekleyin',

@@ -223,13 +223,35 @@ export function registerMockHandlers(): void {
 
   ipcMain.handle('mock:server:update', async (_e, id: string, patch: UpdateMockServerInput) => {
     try {
-      const row = updateMockServer(id, patch)
-      if (!row) return fail('Server not found')
-      // Hot-reload running server if any
-      if (mockServerManager.status(id) === 'running') {
+      const before = getMockServer(id)
+      if (!before) return fail('Server not found')
+      // Tester finding 11: a running server moves to its new host/port BEFORE
+      // the row is written. If it cannot listen there (another mock, another
+      // app), nothing is stored and the server keeps serving where it was —
+      // the editor used to show the new port "Running" while the old one
+      // answered (or, for a port held outside the manager, nothing did).
+      if (mockServerManager.status(id) === 'running' && changesAddress(before, patch)) {
         const def = buildServerDef(id)
-        if (def) await mockServerManager.update(def)
+        if (def) {
+          const moved = await mockServerManager.update({
+            ...def,
+            host: patch.host ?? def.host,
+            port: patch.port ?? def.port,
+          })
+          if (!moved.ok) return fail(moved.error)
+        }
       }
+      let row: MockServerRow | null
+      try {
+        row = updateMockServer(id, patch)
+      } catch (e) {
+        // The listener may already be on the new address: follow the row back.
+        await reloadIfRunning(id)
+        throw e
+      }
+      if (!row) return fail('Server not found')
+      // Hot-reload the rest of the change (the address already matches).
+      await reloadIfRunning(id)
       return ok(serverRowToView(row))
     } catch (e) {
       return fail(e)
@@ -438,11 +460,24 @@ export async function reconcileRunningMockServers(): Promise<void> {
       continue
     }
     const r = await mockServerManager.update(def)
-    // A host/port change whose restart was refused up front (port held by
-    // another mock) leaves the old listener up — never keep serving the
-    // stale config.
-    if (!r.ok && mockServerManager.status(id) === 'running') await mockServerManager.stop(id)
+    // A refused host/port change (the new address is busy) leaves the old
+    // listener up (tester finding 11). The editor keeps the stored address in
+    // that case; here the row was already rewritten by an import, so never
+    // keep serving the stale config.
+    if (!r.ok && mockServerManager.status(id) === 'running') {
+      await mockServerManager.stop(id)
+      // Say why, as Mock MCP's `syncWithStored` does.
+      mockServerManager.emit('status', { serverId: id, status: 'error', errorMessage: r.error })
+    }
   }
+}
+
+/** Does `patch` move the server to another host or port? */
+function changesAddress(row: MockServerRow, patch: UpdateMockServerInput): boolean {
+  return (
+    (patch.host !== undefined && patch.host !== row.host) ||
+    (patch.port !== undefined && patch.port !== row.port)
+  )
 }
 
 /** A mock import is an import into the server's project (`withProjectImportCheck`). */

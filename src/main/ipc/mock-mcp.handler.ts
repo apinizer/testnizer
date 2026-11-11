@@ -114,12 +114,35 @@ export function registerMockMcpHandlers(): void {
     'mockMcp:server:update',
     async (_e, id: string, patch: UpdateMockMcpServerInput) => {
       try {
-        const cfg = updateMockMcpServer(id, patch)
+        const before = getMockMcpServer(id)
+        if (!before) return fail('Mock MCP server not found')
+        const running = mockMcpServerManager.status(id) === 'running'
+        // Tester finding 11 (same rule as `mock:server:update`): a running
+        // server moves to its new host/port BEFORE the row is written; a busy
+        // address stores nothing and the server keeps serving where it was.
+        const host = patch.host !== undefined ? patch.host.trim() : before.host
+        const port = patch.port ?? before.port
+        if (running && (host !== before.host || port !== before.port)) {
+          const moved = await mockMcpServerManager.update(
+            buildMockMcpDef({ ...before, host, port }),
+          )
+          if (!moved.ok) return fail(moved.error)
+        }
+        let cfg: MockMcpServerConfig | null
+        try {
+          cfg = updateMockMcpServer(id, patch)
+        } catch (e) {
+          // The listener may already be on the new address: follow the row back.
+          const stored = getMockMcpServer(id)
+          if (running && stored) await mockMcpServerManager.update(buildMockMcpDef(stored))
+          throw e
+        }
         if (!cfg) return fail('Mock MCP server not found')
-        // Hot reload: knobs apply to live sessions; host/port/path/SSE restart.
-        // A failed restart surfaces through the `mockMcp:status` event.
-        if (mockMcpServerManager.status(id) === 'running') {
-          await mockMcpServerManager.update(buildMockMcpDef(cfg))
+        // Hot reload: knobs apply to live sessions; a path / SSE change restarts
+        // on the same port.
+        if (running) {
+          const r = await mockMcpServerManager.update(buildMockMcpDef(cfg))
+          if (!r.ok) return fail(r.error)
         }
         return ok(cfg)
       } catch (e) {

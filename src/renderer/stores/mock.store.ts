@@ -45,7 +45,11 @@ export interface MockState {
     /** Absent = `http`; changeable later via `updateServer` (issue #222). */
     kind?: MockServerKind
   }) => Promise<MockServer | null>
-  updateServer: (id: string, patch: Partial<MockServer>) => Promise<void>
+  /**
+   * `null` = saved. Otherwise the reason, and the stored server is unchanged —
+   * e.g. a running server's new port is busy (tester finding 11).
+   */
+  updateServer: (id: string, patch: Partial<MockServer>) => Promise<string | null>
   deleteServer: (id: string) => Promise<void>
   startServer: (id: string) => Promise<string | null> // returns error message, or null on success
   stopServer: (id: string) => Promise<void>
@@ -141,9 +145,10 @@ export const useMockStore = create<MockState>((set, get) => ({
 
   updateServer: async (id, patch) => {
     const r = await api.server.update(id, patch)
-    if (r.success && r.data) {
-      set((s) => ({ servers: s.servers.map((sv) => (sv.id === id ? r.data! : sv)) }))
-    }
+    if (!r.success || !r.data) return r.error ?? 'Unknown error'
+    const updated = r.data
+    set((s) => ({ servers: s.servers.map((sv) => (sv.id === id ? updated : sv)) }))
+    return null
   },
 
   deleteServer: async (id) => {
