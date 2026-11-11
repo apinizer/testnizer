@@ -383,3 +383,223 @@ describe('pinnedEvents', () => {
     expect(got).toEqual(['open', 'close'])
   })
 })
+
+// ─── Held events before the connect reply (review P2) ───────────────────────
+//
+// The first cut trimmed the held queue at 1000 events of ANY kind and ANY id:
+// `open(A)` followed by 1000 messages lost the `open` (the tab stayed on
+// Connecting while it showed messages), and another connection's traffic could
+// push A's own events out. Control events are never dropped, the cap counts
+// one connection's data events only, and a drop is reported, never silent.
+
+describe('pinnedEvents: the held queue', () => {
+  type E = { id?: string; kind: 'open' | 'data' | 'close'; v: string }
+  const isControl = (e: E): boolean => e.kind !== 'data'
+
+  it('never drops a control event; drops the oldest data past the cap and reports it in place', () => {
+    const got: string[] = []
+    const p = pinnedEvents<E>(
+      (e) => e.id,
+      (e) => got.push(e.v),
+      { isControl, limit: 3, onDropped: (n) => got.push(`dropped:${n}`) },
+    )
+    p.receive({ id: 'a', kind: 'open', v: 'open' })
+    for (let i = 1; i <= 5; i++) p.receive({ id: 'a', kind: 'data', v: `d${i}` })
+    p.receive({ id: 'a', kind: 'close', v: 'close' })
+    p.pin('a')
+    expect(got).toEqual(['open', 'dropped:2', 'd3', 'd4', 'd5', 'close'])
+  })
+
+  it("another connection's flood never pushes this connection's events out", () => {
+    const got: string[] = []
+    const dropped: number[] = []
+    const p = pinnedEvents<E>(
+      (e) => e.id,
+      (e) => got.push(e.v),
+      { isControl, limit: 3, onDropped: (n) => dropped.push(n) },
+    )
+    p.receive({ id: 'a', kind: 'open', v: 'open' })
+    for (let i = 0; i < 50; i++) p.receive({ id: 'x', kind: 'data', v: `x${i}` })
+    p.receive({ id: 'a', kind: 'data', v: 'a1' })
+    p.pin('a')
+    expect(got).toEqual(['open', 'a1'])
+    expect(dropped).toEqual([])
+  })
+})
+
+describe('stores: a flood before the connect reply', () => {
+  const FLOOD = 1001
+
+  it('WebSocket: open + 1001 messages → connected, 1000 kept, one "dropped" row', async () => {
+    const ch = channel()
+    let reply!: Held<unknown>
+    ;(window as unknown as { api: unknown }).api = {
+      ws: {
+        connect: () => {
+          reply = held<unknown>()
+          return reply.promise
+        },
+        disconnect: vi.fn(async () => ({ success: true })),
+        cancelConnect: vi.fn(async () => ({ success: true })),
+        onEvent: ch.on,
+      },
+    }
+    useWebSocketStore.setState({ _tabStates: new Map(), _currentTabId: null })
+    const ws = () => useWebSocketStore.getState()
+    ws().switchToTab('A')
+    ws().setUrl('ws://127.0.0.1/flood')
+    const done = ws().connect()
+    await vi.waitFor(() => expect(reply).toBeDefined())
+    ch.emit({ connectionId: 'wA', type: 'open' })
+    for (let i = 0; i < 1500; i++) ch.emit({ connectionId: 'wX', type: 'message', data: `x${i}` })
+    for (let i = 0; i < FLOOD; i++) ch.emit({ connectionId: 'wA', type: 'message', data: `m${i}` })
+    reply.resolve({ success: true, data: { connectionId: 'wA' } })
+    await done
+
+    expect(ws().connectionState).toBe('connected')
+    const rows = ws().messages
+    expect(rows[0].event).toBe('connected')
+    expect(rows[1].event).toBe('dropped')
+    expect(rows[1].content).toContain('1')
+    const received = rows.filter((m) => m.direction === 'received')
+    expect(received).toHaveLength(1000)
+    expect(received[0].content).toBe('m1')
+    expect(received.some((m) => m.content.startsWith('x'))).toBe(false)
+  })
+
+  it('SSE: open + 1001 events → connected, 1000 kept, the drop counted on the tab', async () => {
+    const ch = channel()
+    let reply!: Held<unknown>
+    ;(window as unknown as { api: unknown }).api = {
+      sse: {
+        onEvent: ch.on,
+        connect: () => {
+          reply = held<unknown>()
+          return reply.promise
+        },
+        cancelConnect: async () => ({ success: true, data: { canceled: false } }),
+        disconnect: async () => ({ success: true, data: true }),
+      },
+    }
+    useSseStore.setState({ _tabStates: new Map(), _currentTabId: null })
+    const sse = () => useSseStore.getState()
+    sse().switchToTab('A')
+    sse().setUrl('http://127.0.0.1/flood')
+    const done = sse().connect()
+    await vi.waitFor(() => expect(reply).toBeDefined())
+    ch.emit({ connectionId: 'sA', type: 'open' })
+    for (let i = 0; i < FLOOD; i++) {
+      ch.emit({ connectionId: 'sA', type: 'event', data: `e${i}`, eventType: 'message' })
+    }
+    reply.resolve({ success: true, data: { connectionId: 'sA' } })
+    await done
+
+    expect(sse().connectionState).toBe('connected')
+    expect(sse().events).toHaveLength(1000)
+    expect(sse().droppedEarly).toBe(1)
+  })
+
+  it('gRPC bidi: an error main sends before the stream id settles the tab', async () => {
+    const ch = channel()
+    ;(window as unknown as { api: unknown }).api = {
+      grpc: {
+        onStreamEvent: ch.on,
+        bidiStream: async () => {
+          ch.emit({ streamId: 'g-bidi', type: 'error', error: 'Method not found: Chat' })
+          return { success: true, data: { streamId: 'g-bidi' } }
+        },
+        cancelStream: async () => ({ success: true }),
+      },
+    }
+    useGrpcStore.setState({ _tabStates: new Map(), _currentTabId: null })
+    useGrpcStore.getState().switchToTab('A')
+    useGrpcStore.setState({
+      address: 'a.example:1',
+      requestBody: '{}',
+      services: [
+        {
+          name: 'a.Greeter',
+          methods: [{ name: 'Chat', type: 'bidi_streaming', requestType: 'Q', responseType: 'R' }],
+        },
+      ],
+      selectedService: 'a.Greeter',
+      selectedMethod: 'Chat',
+    })
+    await useGrpcStore.getState().execute()
+    const g = useGrpcStore.getState()
+    expect(g.errorMessage).toBe('Method not found: Chat')
+    expect(g.isStreaming).toBe(false)
+    expect(g.activeStreamId).toBeNull()
+    expect(ch.listeners).toHaveLength(0)
+  })
+
+  it('gRPC client stream: main answers with data + end before the stream id', async () => {
+    const ch = channel()
+    ;(window as unknown as { api: unknown }).api = {
+      grpc: {
+        onStreamEvent: ch.on,
+        bidiStream: async () => {
+          ch.emit({ streamId: 'g-cs', type: 'data', data: '{"total":3}' })
+          ch.emit({ streamId: 'g-cs', type: 'end' })
+          return { success: true, data: { streamId: 'g-cs' } }
+        },
+        sendStreamMessage: vi.fn(async () => ({ success: true })),
+        cancelStream: async () => ({ success: true }),
+      },
+    }
+    useGrpcStore.setState({ _tabStates: new Map(), _currentTabId: null })
+    useGrpcStore.getState().switchToTab('A')
+    useGrpcStore.setState({
+      address: 'a.example:1',
+      requestBody: '{}',
+      services: [
+        {
+          name: 'a.Greeter',
+          methods: [{ name: 'Sum', type: 'client_streaming', requestType: 'Q', responseType: 'R' }],
+        },
+      ],
+      selectedService: 'a.Greeter',
+      selectedMethod: 'Sum',
+    })
+    await useGrpcStore.getState().execute()
+    const g = useGrpcStore.getState()
+    expect(g.streamEvents.map((e) => e.data)).toEqual(['{"total":3}'])
+    expect(g.isStreaming).toBe(false)
+    expect(g.activeStreamId).toBeNull()
+    expect(ch.listeners).toHaveLength(0)
+  })
+
+  it('gRPC server stream: a data flood before the stream id is counted, not silent', async () => {
+    const ch = channel()
+    ;(window as unknown as { api: unknown }).api = {
+      grpc: {
+        onStreamEvent: ch.on,
+        serverStream: async () => {
+          for (let i = 0; i < FLOOD; i++) ch.emit({ streamId: 'g-f', type: 'data', data: `${i}` })
+          return { success: true, data: { streamId: 'g-f' } }
+        },
+        cancelStream: async () => ({ success: true }),
+      },
+    }
+    useGrpcStore.setState({ _tabStates: new Map(), _currentTabId: null })
+    useGrpcStore.getState().switchToTab('A')
+    useGrpcStore.setState({
+      address: 'a.example:1',
+      services: [
+        {
+          name: 'a.Greeter',
+          methods: [
+            { name: 'Watch', type: 'server_streaming', requestType: 'Q', responseType: 'R' },
+          ],
+        },
+      ],
+      selectedService: 'a.Greeter',
+      selectedMethod: 'Watch',
+    })
+    await useGrpcStore.getState().execute()
+    const g = useGrpcStore.getState()
+    expect(g.streamEvents).toHaveLength(1000)
+    expect(g.droppedEarly).toBe(1)
+    expect(g.isStreaming).toBe(true)
+  })
+})

@@ -62,6 +62,8 @@ interface TabSseState extends WithheldState {
    */
   reconnecting: boolean
   events: SseEvent[]
+  /** Events dropped while waiting for the connect reply (`lib/pinned-events.ts`). */
+  droppedEarly: number
   connectedAt: number | null
   /** Per-tab subscription returned by `sse.onEvent`. */
   _unsubscribe?: () => void
@@ -133,6 +135,7 @@ function emptyTabState(): TabSseState {
     errorMessage: null,
     reconnecting: false,
     events: [],
+    droppedEarly: 0,
     connectedAt: null,
     _unsubscribe: undefined,
     _pendingConnectId: undefined,
@@ -156,6 +159,7 @@ function extractState(s: SseStore): TabSseState {
     errorMessage: s.errorMessage,
     reconnecting: s.reconnecting,
     events: s.events,
+    droppedEarly: s.droppedEarly,
     connectedAt: s.connectedAt,
     _unsubscribe: s._unsubscribe,
     _pendingConnectId: s._pendingConnectId,
@@ -193,6 +197,7 @@ function idleSse(st: TabSseState): TabSseState {
   return {
     ...st,
     events: idle.events,
+    droppedEarly: idle.droppedEarly,
     errorMessage: idle.errorMessage,
     connectionId: idle.connectionId,
     connectionState: idle.connectionState,
@@ -253,6 +258,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
       errorMessage: null,
       reconnecting: false,
       events: [],
+      droppedEarly: 0,
       _pendingConnectId: pendingConnectId,
       _projectId: useWorkspaceStore.getState().activeProjectId,
     })
@@ -317,6 +323,10 @@ export const useSseStore = create<SseStore>((set, get) => ({
     const pinned = pinnedEvents<SseEvt>(
       (evt) => evt.connectionId,
       (evt) => onOwnEvent(evt),
+      {
+        isControl: (evt) => evt.type !== 'event',
+        onDropped: (count) => applyToOwner({ droppedEarly: count }),
+      },
     )
     const offEvent = sse.onEvent((evt) => pinned.receive(evt))
     const unsub = (): void => {
@@ -508,7 +518,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
     if (get()._currentTabId === ownerTabId) await get().connect()
   },
 
-  clearEvents: () => set({ events: [] }),
+  clearEvents: () => set({ events: [], droppedEarly: 0 }),
 
   addHeader: () => {
     set((state) => ({ customHeaders: [...state.customHeaders, defaultKv()] }))

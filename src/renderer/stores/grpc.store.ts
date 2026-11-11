@@ -196,6 +196,8 @@ interface TabGrpcState extends WithheldState {
   metadata: KeyValuePair[]
   response: ApiResponse | null
   streamEvents: GrpcStreamEvent[]
+  /** Stream messages dropped while waiting for the start reply (`lib/pinned-events.ts`). */
+  droppedEarly: number
   activeStreamId: string | null
   /** Per-tab disposer for the `grpc:streamEvent` listener. */
   streamUnsubscribe: (() => void) | null
@@ -284,6 +286,7 @@ function emptyTabState(): TabGrpcState {
     metadata: [defaultKv()],
     response: null,
     streamEvents: [],
+    droppedEarly: 0,
     activeStreamId: null,
     streamUnsubscribe: null,
     isLoading: false,
@@ -310,6 +313,7 @@ function extractState(s: GrpcStore): TabGrpcState {
     metadata: s.metadata,
     response: s.response,
     streamEvents: s.streamEvents,
+    droppedEarly: s.droppedEarly,
     activeStreamId: s.activeStreamId,
     streamUnsubscribe: s.streamUnsubscribe,
     isLoading: s.isLoading,
@@ -347,6 +351,7 @@ function idleGrpc(st: TabGrpcState): TabGrpcState {
     ...st,
     response: idle.response,
     streamEvents: idle.streamEvents,
+    droppedEarly: idle.droppedEarly,
     activeStreamId: idle.activeStreamId,
     streamUnsubscribe: idle.streamUnsubscribe,
     isLoading: idle.isLoading,
@@ -662,6 +667,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       errorMessage: null,
       response: null,
       streamEvents: [],
+      droppedEarly: 0,
       activeStreamId: null,
       streamUnsubscribe: null,
       halfClosed: false,
@@ -753,6 +759,10 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
     const pinned = pinnedEvents<GrpcStreamPayload>(
       (evt) => evt.streamId,
       (evt) => onOwnStreamEvent(evt),
+      {
+        isControl: (evt) => evt.type !== 'data',
+        onDropped: (count) => applyToOwner({ droppedEarly: count }),
+      },
     )
     let offStream: (() => void) | null = null
     const unsubscribe = (): void => {

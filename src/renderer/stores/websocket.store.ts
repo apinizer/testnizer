@@ -36,6 +36,8 @@ import { wsMetaOf, type WsRequestFields } from '../lib/realtime-meta'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 import { patchTabSlice, readTabSlice, updateTabSlice, withoutTab } from '../lib/tab-slice'
 import { pinnedEvents } from '../lib/pinned-events'
+import { t } from '../lib/i18n'
+import { formatCount } from '../lib/plural'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -334,6 +336,16 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
       const pinned = pinnedEvents<WsEvent>(
         (evt) => evt.connectionId,
         (evt) => onOwnEvent(evt),
+        {
+          isControl: (evt) => evt.type !== 'message',
+          onDropped: (count) =>
+            appendRow(
+              systemRow(
+                'dropped',
+                formatCount(count, t('rt.droppedEarlyOne'), t('rt.droppedEarly')),
+              ),
+            ),
+        },
       )
       const offEvent = ws.onEvent((evt) => pinned.receive(evt))
       const unsub = (): void => {
