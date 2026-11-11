@@ -49,7 +49,7 @@ function renderRunning(opts: {
       onNewRun={noop}
       onRunAgain={noop}
       onViewAllRuns={noop}
-      selectedResultId={null}
+      selectedResultKey={null}
       onSelectResult={noop}
     />,
   )
