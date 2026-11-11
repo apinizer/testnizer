@@ -121,4 +121,40 @@ describe('Add Folder in a long tree', () => {
     await waitFor(() => expect(rowFor('Invoices')).not.toBeNull())
     expect(useWorkspaceStore.getState().activeNodeId).toBe('fld-new')
   })
+
+  it('does not reveal into another project the user switched to while the tree refreshed', async () => {
+    // The refresh finishes after the user moved to project B. Like the real
+    // `refreshTree` (it writes the tree it started building, whatever is
+    // active by then), it leaves a tree holding the new row — so only the
+    // project check keeps B's search, selection and scroll untouched.
+    useWorkspaceStore.setState({
+      refreshTree: async () => {
+        useWorkspaceStore.setState({
+          activeProjectId: 'proj-2',
+          searchQuery: 'invoice',
+          activeNodeId: 'e3',
+        })
+        useWorkspaceStore.setState({
+          treeData: treeWith([{ id: 'fld-new', label: 'Invoices', type: 'folder', children: [] }]),
+        })
+      },
+    })
+    const revealSeq = useWorkspaceStore.getState().revealCommand.seq
+    render(<TreeView />)
+    fireEvent.contextMenu(rowFor('Shop') as Element)
+    fireEvent.click(screen.getByText('Add Folder'))
+    const input = await screen.findByTestId('new-folder-input')
+    fireEvent.change(input, { target: { value: 'Invoices' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(created.folders).toHaveLength(1))
+    expect(created.folders[0].project_id).toBe('proj-1')
+    await waitFor(() => expect(useWorkspaceStore.getState().activeProjectId).toBe('proj-2'))
+    // Let the confirm handler's last await settle before asserting nothing moved.
+    await new Promise((r) => setTimeout(r, 0))
+    const st = useWorkspaceStore.getState()
+    expect(st.searchQuery).toBe('invoice')
+    expect(st.activeNodeId).toBe('e3')
+    expect(st.revealCommand.seq).toBe(revealSeq)
+  })
 })

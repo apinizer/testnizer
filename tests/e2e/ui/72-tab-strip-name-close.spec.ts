@@ -7,6 +7,8 @@
  * 3 — the × was hover-only and keyboard-unreachable. It is now a named button,
  *     always shown on the active clean tab, reachable with Tab, closing on
  *     Enter; a dirty tab still asks first. Tabs are a tablist (arrows + Enter).
+ *     A modified key (Mod+Enter) is not the strip's: with focus on a background
+ *     tab it runs the ACTIVE tab's request, once (fe83094).
  *
  * jsdom cannot measure, so the pixel proof (scrollWidth > clientWidth, bounded
  * tab width, computed opacity) lives here; the renderer test pins the rest
@@ -23,6 +25,8 @@ import {
 } from '../helpers/ui/bootstrap'
 import { fillUrl, saveRequestToTree } from '../helpers/ui/request-flow'
 import { localHttpBin } from '../helpers/test-servers'
+import { getActiveProjectId } from '../helpers/ui/assert-ipc'
+import { pressModShortcut } from '../helpers/ui/keyboard'
 
 const uid = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
 const SCREENS = 'test-results/screens'
@@ -31,6 +35,20 @@ const activeTab = (page: Page): Locator =>
   page.locator('[data-testid="endpoint-tab"][data-active="true"]')
 const tabNamed = (page: Page, name: string): Locator =>
   page.locator(`[data-testid="endpoint-tab"][data-tab-name="${name}"]`)
+
+/** The URLs this project's History holds (each Send writes one row). */
+async function historyUrls(page: Page, projectId: string): Promise<string[]> {
+  return page.evaluate(async (pid) => {
+    const w = window as unknown as Window & {
+      api: {
+        history: {
+          list: (o: { project_id: string }) => Promise<{ data?: Array<{ url: string }> }>
+        }
+      }
+    }
+    return ((await w.api.history.list({ project_id: pid })).data ?? []).map((r) => r.url)
+  }, projectId)
+}
 
 /** Park the pointer over the URL bar so no tab is hovered. */
 async function pointerAway(page: Page): Promise<void> {
@@ -155,6 +173,40 @@ uiTest.describe('72 — tab strip: long names are cut off, × is a keyboard butt
       await window.keyboard.press('Enter')
       await expect(tabNamed(window, `One ${id}`)).toHaveCount(0)
       await expect(activeTab(window)).toHaveAttribute('data-tab-name', `Two ${id}`)
+    },
+  )
+
+  uiTest(
+    'Mod+Enter with focus on a background tab sends the ACTIVE tab once, activates nothing',
+    async ({ window }) => {
+      // The strip's own Enter used to ignore modifiers: it activated the
+      // focused tab, then the window's Mod+Enter ran that tab's request.
+      const id = uid()
+      const a = `Active ${id}`
+      const b = `Focused ${id}`
+      await savedRequest(window, a, `/get?mod=a-${id}`)
+      await savedRequest(window, b, `/get?mod=b-${id}`)
+      await tabNamed(window, a).click()
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', a)
+      const projectId = await getActiveProjectId(window)
+      const sentTo = async (tag: string): Promise<number> =>
+        (await historyUrls(window, projectId)).filter((u) => u.includes(tag)).length
+
+      // Arrow moves focus only: A stays active, B holds the focus.
+      await activeTab(window).focus()
+      await window.keyboard.press('ArrowRight')
+      await expect(tabNamed(window, b)).toBeFocused()
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', a)
+
+      await pressModShortcut(window, 'Enter')
+      await expect.poll(() => sentTo(`a-${id}`), { timeout: 30_000 }).toBe(1)
+      await expect(window.getByTestId('response-status')).toContainText('200')
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', a)
+      // Still exactly one send of A and none of B once things have settled.
+      await window.waitForTimeout(1_000)
+      expect(await sentTo(`a-${id}`)).toBe(1)
+      expect(await sentTo(`b-${id}`)).toBe(0)
+      await window.screenshot({ path: `${SCREENS}/72-mod-enter-background-focus.png` })
     },
   )
 

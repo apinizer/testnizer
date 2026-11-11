@@ -833,22 +833,32 @@ export default function TreeView() {
       const target = pendingFolder
       setPendingFolder(null)
       if (!target || !activeProjectId) return
+      // The project and branch the folder is created in, taken BEFORE the
+      // first await: the reveal below must not land in another project the
+      // user switched to meanwhile.
+      const projectId = activeProjectId
+      const branchScope = useBranchStore.getState().getActiveBranchScope()
       try {
         const res = (await window.api?.folder?.create({
-          project_id: activeProjectId,
+          project_id: projectId,
           parent_id: target.parentFolderId,
           name,
           // Branch-stamp so a folder added on a non-default branch stays on it
           // (#8 — the exact reported repro).
-          branch_id: useBranchStore.getState().getActiveBranchScope(),
+          branch_id: branchScope,
         })) as { success?: boolean; data?: { id?: string } } | undefined
         await refreshTree()
         // The new folder sorts after its siblings — in a long tree that row
         // is below the virtual window and never rendered, so the folder the
         // user just named seemed not to appear. Reveal it (select + scroll),
-        // like the draft row it replaces.
+        // like the draft row it replaces — only while the user is still in
+        // that project and branch: `revealNode` clears the search box and
+        // moves the selection and scroll of whatever tree is active.
         const id = res?.success ? res.data?.id : undefined
-        if (id) useWorkspaceStore.getState().revealNode(id)
+        const stillHere =
+          useWorkspaceStore.getState().activeProjectId === projectId &&
+          useBranchStore.getState().getActiveBranchScope() === branchScope
+        if (id && stillHere) useWorkspaceStore.getState().revealNode(id)
       } catch {
         /* ignore */
       }
