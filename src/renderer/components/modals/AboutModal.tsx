@@ -264,7 +264,7 @@ export default function AboutModal() {
                           fontFamily: 'var(--font-mono, monospace)',
                         }}
                       >
-                        {l.license || 'UNKNOWN'}
+                        {l.license || t('about.licenseUnknown')}
                       </span>
                     </li>
                   ))}

@@ -56,16 +56,16 @@ export default function BranchGitActions({
         <ActionButton
           testId="branch-pull"
           icon={<ArrowDownCircle size={13} aria-hidden="true" />}
-          label="Pull"
+          label={t('git.pull')}
           badge={known && behind > 0 ? `${behind}↓` : undefined}
           disabled={busy || pullOff}
-          title={pullOff ? t('gitCommit.noUpstream') : 'Pull'}
+          title={pullOff ? t('gitCommit.noUpstream') : t('git.pull')}
           onClick={onPull}
         />
         <ActionButton
           testId="branch-push"
           icon={<ArrowUpCircle size={13} aria-hidden="true" />}
-          label="Push"
+          label={t('git.push')}
           badge={known && ahead > 0 ? `${ahead}↑` : undefined}
           disabled={busy || pushOff}
           onClick={onPush}
@@ -73,7 +73,7 @@ export default function BranchGitActions({
         <ActionButton
           testId="branch-merge"
           icon={<GitMerge size={13} aria-hidden="true" />}
-          label="Merge"
+          label={t('git.merge')}
           disabled={busy}
           onClick={onToggleMerge}
         />

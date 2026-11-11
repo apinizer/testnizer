@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SaveHistoryEntry } from '../types'
 import type { GitChangesSummary, GitPushOpts } from '../../shared/git-changes'
+import { gitErrorText } from '../lib/git-error-text'
 
 interface GitBranch {
   /** DB row id (UUID) for legacy non-git branches. Absent for synthetic
@@ -307,7 +308,9 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
         await get().fetchBranches(projectId)
         return { success: true }
       }
-      return { success: false, error: result?.error || 'Merge failed' }
+      // No English fallback here: an empty error lets the caller show its
+      // translated "… failed" text (tester finding 6).
+      return { success: false, error: gitErrorText(result) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -319,7 +322,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
       if (result?.success) {
         return { success: true, committed: result.data?.committed !== false }
       }
-      return { success: false, error: result?.error || 'Push failed' }
+      return { success: false, error: gitErrorText(result) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -352,7 +355,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
           absoluteFiles: (result.data as { absoluteFiles?: boolean }).absoluteFiles,
         }
       }
-      return { success: false, error: result?.error || 'Pull failed' }
+      return { success: false, error: gitErrorText(result) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -391,7 +394,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
           included: result.data?.included,
         }
       }
-      return { success: false, error: result?.error }
+      return { success: false, error: gitErrorText(result) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -401,7 +404,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     try {
       const result = await api().git.discard(projectId)
       if (result?.success) return { success: true }
-      return { success: false, error: result?.error }
+      return { success: false, error: gitErrorText(result) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -420,7 +423,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
       if (!result?.success) {
         return {
           success: false,
-          error: result?.error || 'Resolve failed',
+          error: gitErrorText(result),
           complete: false,
         }
       }
@@ -450,7 +453,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
     try {
       const result = await api().git.abortMerge(conflict.projectId)
       set({ pendingConflict: null })
-      if (!result?.success) return { success: false, error: result?.error || 'Abort failed' }
+      if (!result?.success) return { success: false, error: gitErrorText(result) }
       await get().fetchBranches(conflict.projectId)
       return { success: true }
     } catch (e) {
@@ -474,7 +477,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
         if (!br.id) return { success: false, error: 'Cannot delete this branch' }
         const res = (await api().branch.delete(br.id)) as { success: boolean; error?: string }
         if (res && res.success === false) {
-          return { success: false, error: res.error || 'Delete failed' }
+          return { success: false, error: gitErrorText(res) }
         }
         await get().fetchBranches(projectId)
         return { success: true }
@@ -489,7 +492,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
         await get().fetchBranches(projectId)
         return { success: true }
       }
-      return { success: false, error: result?.error || 'Delete failed' }
+      return { success: false, error: gitErrorText(result) }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

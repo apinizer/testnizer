@@ -1,10 +1,9 @@
-/// <reference types="react" />
 import '@testing-library/jest-dom/vitest'
 import * as React from 'react'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import { ErrorBoundary } from '../../src/renderer/components/shared/ErrorBoundary'
-
+import { setLocale } from '../../src/renderer/lib/i18n'
 ;(globalThis as unknown as { React: typeof React }).React = React
 
 // Stable marker rendered by the boundary's recovery panel (ErrorBoundary.tsx).
@@ -108,5 +107,21 @@ describe('ErrorBoundary', () => {
     )
     expect(screen.getByText(RECOVERY_MARKER)).toBeInTheDocument()
     expect(screen.queryByTestId('healthy-screen')).not.toBeInTheDocument()
+  })
+  // Tester finding 6: the recovery panel follows the UI language.
+  it('words the recovery panel in Turkish when the UI is Turkish', () => {
+    setLocale('tr')
+    try {
+      render(
+        <ErrorBoundary>
+          <Boom crash />
+        </ErrorBoundary>,
+      )
+      expect(screen.getByText('Testnizer bir görüntüleme hatasıyla karşılaştı')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Yeniden yükle' })).toBeInTheDocument()
+      expect(screen.queryByText(RECOVERY_MARKER)).toBeNull()
+    } finally {
+      setLocale('en')
+    }
   })
 })

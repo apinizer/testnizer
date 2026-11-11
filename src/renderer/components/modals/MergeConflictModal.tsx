@@ -104,7 +104,7 @@ export default function MergeConflictModal() {
       onOpenChange={(o) => {
         if (!o && busy === null) void abort()
       }}
-      title="Merge conflict"
+      title={t('mergeConflict.titleMerge')}
       preventClose={busy !== null}
     >
       <div

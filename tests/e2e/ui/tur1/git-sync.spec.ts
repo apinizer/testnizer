@@ -302,7 +302,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
         await configure('http://127.0.0.1:9/nothing-here.git', deadPath)
         const dead = await push()
         expect(dead.success).toBe(false)
-        expect(dead.error ?? '').toContain('Uzak depoya erişilemedi')
+        expect(dead.error ?? '').toContain('Could not reach the remote repository')
         expect(fs.existsSync(path.join(deadPath, '.git'))).toBe(false)
 
         // ── local_path is somebody else's checkout → refused, origin untouched.
@@ -311,7 +311,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
         await configure(repo, foreignPath)
         const foreign = await push()
         expect(foreign.success).toBe(false)
-        expect(foreign.error ?? '').toContain('başka bir uzak depoya')
+        expect(foreign.error ?? '').toContain('connected to another remote')
         expect(teammate(foreignPath, ['remote', 'get-url', 'origin']).trim()).toBe(
           'https://example.com/other/dotfiles.git',
         )

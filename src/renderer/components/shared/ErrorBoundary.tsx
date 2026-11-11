@@ -1,4 +1,6 @@
 import { Component, type ReactNode, type ErrorInfo } from 'react'
+import { t } from '../../lib/i18n'
+import { fillNodes } from '../../lib/i18n-nodes'
 
 /**
  * Top-level error boundary.
@@ -139,12 +141,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           }}
         >
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
-            Testnizer hit a render error
+            {t('errorBoundary.title')}
           </div>
           <p style={{ color: '#666', marginBottom: 16, lineHeight: 1.5 }}>
-            The window is recovering instead of staying blank. Your projects, requests, environments
-            and history are stored in the local database and are <strong>not affected</strong> —
-            only the in-memory UI state crashed.
+            {fillNodes(t('errorBoundary.body'), {
+              notAffected: <strong>{t('errorBoundary.notAffected')}</strong>,
+            })}
           </p>
 
           <pre
@@ -178,7 +180,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 cursor: 'pointer',
               }}
             >
-              Reload
+              {t('errorBoundary.reload')}
             </button>
             <button
               type="button"
@@ -192,9 +194,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
-              title="Wipes localStorage + sessionStorage (per-tab UI snapshots, panel sizes, filters). DB untouched."
+              title={t('errorBoundary.resetTitle')}
             >
-              Reset UI state &amp; reload
+              {t('errorBoundary.reset')}
             </button>
             <button
               type="button"
@@ -209,14 +211,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 cursor: 'pointer',
               }}
             >
-              Copy error
+              {t('errorBoundary.copy')}
             </button>
           </div>
 
           <p style={{ color: '#888', fontSize: 12, marginTop: 14 }}>
-            If <em>Reset UI state &amp; reload</em> doesn't help, the crash is probably triggered by
-            something in the DB itself. Open an issue at github.com/apinizer/testnizer/issues with
-            the copied error.
+            {fillNodes(t('errorBoundary.footer'), { reset: <em>{t('errorBoundary.reset')}</em> })}
           </p>
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useSoapStore } from '../../stores/soap.store'
+import { useTranslation } from '../../lib/i18n'
 
 const INPUT =
   'w-full rounded-lg border border-[var(--border)] bg-[var(--white)] px-2.5 py-1.5 text-sm text-[var(--text)] outline-none focus:border-[var(--accent)]'
@@ -19,6 +20,7 @@ type SoapVersion = 'soap11' | 'soap12'
  * fine-tunes the actual XML payload.
  */
 export default function SoapManualForm() {
+  const { t } = useTranslation()
   const endpointUrl = useSoapStore((s) => s.endpointUrl)
   const setEndpointUrl = useSoapStore((s) => s.setEndpointUrl)
   const setRawXml = useSoapStore((s) => s.setRawXml)
@@ -58,7 +60,7 @@ export default function SoapManualForm() {
   return (
     <div className="space-y-3">
       <div>
-        <label className={LABEL}>Endpoint URL</label>
+        <label className={LABEL}>{t('soap.endpointUrl')}</label>
         <input
           type="text"
           value={endpointUrl}
@@ -71,7 +73,7 @@ export default function SoapManualForm() {
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={LABEL}>SOAP Version</label>
+          <label className={LABEL}>{t('soap.version')}</label>
           <select
             value={version}
             onChange={(e) => setVersion(e.target.value as SoapVersion)}
@@ -88,14 +90,14 @@ export default function SoapManualForm() {
             value={soapAction}
             onChange={(e) => setSoapAction(e.target.value)}
             className={INPUT}
-            placeholder='e.g. "urn:Echo"'
+            placeholder={t('soap.soapActionPlaceholder')}
           />
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className={LABEL}>Operation Name</label>
+          <label className={LABEL}>{t('soap.operationName')}</label>
           <input
             type="text"
             value={operationName}
@@ -105,7 +107,7 @@ export default function SoapManualForm() {
           />
         </div>
         <div>
-          <label className={LABEL}>Operation Namespace</label>
+          <label className={LABEL}>{t('soap.operationNamespace')}</label>
           <input
             type="text"
             value={operationNamespace}
@@ -123,11 +125,9 @@ export default function SoapManualForm() {
           className="rounded-lg px-4 py-2 text-sm font-medium text-white"
           style={{ background: 'var(--accent)', border: 'none' }}
         >
-          Generate Envelope → Body
+          {t('soap.generateEnvelope')}
         </button>
-        <span className="text-xs text-[var(--muted)]">
-          Writes a SOAP envelope template into the Body tab
-        </span>
+        <span className="text-xs text-[var(--muted)]">{t('soap.generateEnvelopeHint')}</span>
       </div>
     </div>
   )

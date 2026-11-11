@@ -9,7 +9,8 @@ import { isBlankScratchTab } from '../../lib/tab-kind'
 import { defaultRequestTabName } from '../../lib/endpoint-name'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import { activateTabStores, cloneTabStores, switchActiveTab } from '../../lib/activate-tab'
-import { useTranslation } from '../../lib/i18n'
+import { useTranslation, t as translate } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useScrollStrip } from '../../lib/use-scroll-strip'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
@@ -242,9 +243,11 @@ export function EndpointTabBar() {
       const dirtyCount = idsToClose.filter((id) => allTabs.find((t) => t.id === id)?.isDirty).length
       if (dirtyCount > 0) {
         const ok = window.confirm(
-          dirtyCount === 1
-            ? 'This tab has unsaved changes. Close anyway?'
-            : `${dirtyCount} tabs have unsaved changes. Close anyway?`,
+          formatCount(
+            dirtyCount,
+            t('tabStrip.confirmCloseUnsaved'),
+            t('tabStrip.confirmCloseUnsavedMany'),
+          ),
         )
         if (!ok) return
       }
@@ -1082,7 +1085,8 @@ export default function Workbench() {
         e.preventDefault()
         const target = useTabsStore.getState().tabs.find((t) => t.id === currentId)
         if (!force && target?.isDirty) {
-          const ok = window.confirm('This tab has unsaved changes. Close anyway?')
+          // Module-level `translate`: this listener is registered once.
+          const ok = window.confirm(translate('tabStrip.confirmCloseUnsaved'))
           if (!ok) return
         }
         cleanupTabState(currentId)

@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { existsSync, mkdirSync, writeFileSync, readdirSync as readDirSync, unlinkSync } from 'fs'
 import { isAbsolute, join } from 'path'
 import { getDb } from '../db/database'
+import { gitErrorResult, gitFailureOf } from '../../shared/git-errors'
 import { exportProjectData, importProjectDataFromJson, type ProjectExport } from './save.handler'
 import { asConflictAwareGit, runGitOpWithConflictHandling } from '../lib/git-conflict'
 import type { SimpleGit, BranchSummaryBranch } from 'simple-git'
@@ -33,12 +34,12 @@ import {
   gitProcessEnv,
   isGitAuthError,
   redactToken,
-  describeGitError,
+  describeGitFailure,
+  describedGitError,
   pushWithRetry,
   sameRemote,
   foreignRepoError,
   unreachableRemoteError,
-  GIT_TOKEN_MISSING_ERROR,
   type ProjectGitConfig,
   type GitAuth,
 } from '../lib/git-config'
@@ -71,7 +72,7 @@ async function pointHeadAt(git: SimpleGit, branch: string): Promise<void> {
 }
 
 function authFailure(e: unknown, token: string): Error {
-  return new Error(describeGitError(e, token))
+  return describedGitError(e, token)
 }
 
 /**
@@ -89,7 +90,7 @@ async function remoteHeads(bare: SimpleGit, auth: GitAuth, token: string): Promi
     out = await bare.listRemote(['--heads', auth.cleanUrl])
   } catch (e) {
     if (isGitAuthError((e as Error).message)) throw authFailure(e, token)
-    throw new Error(unreachableRemoteError(redactToken((e as Error).message, token)))
+    throw unreachableRemoteError(redactToken((e as Error).message, token))
   }
   const heads = new Set<string>()
   for (const line of out.split('\n')) {
@@ -136,7 +137,7 @@ async function ensureGitRepo(config: ProjectGitConfig): Promise<SimpleGit> {
     if (existing && !sameRemote(existing, auth.cleanUrl)) {
       // Not ours: a checkout of some other repository lives here. Re-pointing
       // its origin would hijack it (and Push would commit its files).
-      throw new Error(foreignRepoError(localPath, redactToken(existing, config.token)))
+      throw foreignRepoError(localPath, redactToken(existing, config.token))
     }
     // Keep origin pointing at the clean URL (also replaces token-bearing
     // URLs written by older builds).
@@ -817,7 +818,7 @@ export function registerGitHandlers(): void {
     try {
       const config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
 
       const git = await ensureGitRepo(config)
@@ -873,7 +874,7 @@ export function registerGitHandlers(): void {
 
       return { success: true, data: { branches, current: branchSummary.current || config.branch } }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, ...gitFailureOf(e) }
     }
   })
 
@@ -882,7 +883,7 @@ export function registerGitHandlers(): void {
     try {
       const config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
 
       const git = await ensureGitRepo(config)
@@ -890,7 +891,7 @@ export function registerGitHandlers(): void {
 
       return { success: true, data: current }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, ...gitFailureOf(e) }
     }
   })
 
@@ -908,7 +909,7 @@ export function registerGitHandlers(): void {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.repoUrl || !config.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
 
         const git = await ensureGitRepo(config)
@@ -938,7 +939,7 @@ export function registerGitHandlers(): void {
 
         return { success: true, data: { branch: payload.branchName, remotePushed } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, ...gitFailureOf(e) }
       }
     },
   )
@@ -956,7 +957,7 @@ export function registerGitHandlers(): void {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.repoUrl || !config.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
 
         const git = await ensureGitRepo(config)
@@ -998,7 +999,7 @@ export function registerGitHandlers(): void {
 
         return { success: true, data: { branch: payload.branchName, fastForwarded } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, ...gitFailureOf(e) }
       }
     },
   )
@@ -1016,7 +1017,7 @@ export function registerGitHandlers(): void {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.repoUrl || !config.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
 
         const git = await ensureGitRepo(config)
@@ -1062,10 +1063,7 @@ export function registerGitHandlers(): void {
           try {
             await reimportProjectFromDir(config.localPath, payload.projectId, { mode: 'replace' })
           } catch (e) {
-            return {
-              success: false,
-              error: `Merge succeeded but importing the merged state failed: ${(e as Error).message}`,
-            }
+            return gitErrorResult('GIT_MERGE_IMPORT_FAILED', (e as Error).message)
           }
           return {
             success: true,
@@ -1091,7 +1089,7 @@ export function registerGitHandlers(): void {
         }
         return { success: false, error: outcome.error }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, ...gitFailureOf(e) }
       }
     },
   )
@@ -1115,7 +1113,7 @@ export function registerGitHandlers(): void {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
         // Defence-in-depth: the side string is built into a CLI flag via
         // template literal; reject anything that's not the expected literal.
@@ -1164,7 +1162,7 @@ export function registerGitHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, ...gitFailureOf(e) }
       }
     },
   )
@@ -1174,7 +1172,7 @@ export function registerGitHandlers(): void {
     try {
       const config = await getProjectGitConfig(projectId)
       if (!config?.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
       const git = await openRepo(config)
       try {
@@ -1189,7 +1187,7 @@ export function registerGitHandlers(): void {
       }
       return { success: true, data: { aborted: true } }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, ...gitFailureOf(e) }
     }
   })
 
@@ -1206,10 +1204,10 @@ export function registerGitHandlers(): void {
     try {
       config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
       if (!config.token) {
-        return { success: false, error: GIT_TOKEN_MISSING_ERROR }
+        return gitErrorResult('GIT_TOKEN_MISSING')
       }
 
       const git = await ensureGitRepo(config)
@@ -1237,7 +1235,7 @@ export function registerGitHandlers(): void {
       // still ran (it may carry earlier unpushed commits).
       return { success: true, data: { branch: currentBranch, pushed: true, committed: changed } }
     } catch (e) {
-      return { success: false, error: describeGitError(e, config?.token) }
+      return { success: false, ...describeGitFailure(e, config?.token) }
     }
   })
 
@@ -1249,7 +1247,7 @@ export function registerGitHandlers(): void {
     try {
       const config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
       const live = liveExportForFile(projectId)
       if (!existsSync(join(config.localPath, '.git'))) {
@@ -1273,7 +1271,7 @@ export function registerGitHandlers(): void {
       }
       return { success: true, data }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, ...gitFailureOf(e) }
     }
   })
 
@@ -1289,7 +1287,7 @@ export function registerGitHandlers(): void {
       try {
         config = await getProjectGitConfig(projectId)
         if (!config?.repoUrl || !config.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
         const git = await ensureGitRepo(config)
         if (await mergeInProgress(git, config.localPath)) {
@@ -1308,7 +1306,7 @@ export function registerGitHandlers(): void {
         const data: GitCommitOutcome = { ...outcome, sha: await headSha(git), branch }
         return { success: true, data }
       } catch (e) {
-        return { success: false, error: describeGitError(e, config?.token) }
+        return { success: false, ...describeGitFailure(e, config?.token) }
       }
     },
   )
@@ -1326,7 +1324,7 @@ export function registerGitHandlers(): void {
     try {
       config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
       const dir = config.localPath
       if (!existsSync(join(dir, '.git'))) {
@@ -1364,7 +1362,7 @@ export function registerGitHandlers(): void {
       const data: GitDiscardOutcome = { discarded: true, file: head.file }
       return { success: true, data }
     } catch (e) {
-      return { success: false, error: describeGitError(e, config?.token) }
+      return { success: false, ...describeGitFailure(e, config?.token) }
     }
   })
 
@@ -1374,10 +1372,10 @@ export function registerGitHandlers(): void {
     try {
       config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
       if (!config.token) {
-        return { success: false, error: GIT_TOKEN_MISSING_ERROR }
+        return gitErrorResult('GIT_TOKEN_MISSING')
       }
 
       const git = await ensureGitRepo(config)
@@ -1459,10 +1457,7 @@ export function registerGitHandlers(): void {
           base,
         })
       } catch (e) {
-        return {
-          success: false,
-          error: `Pull succeeded but importing the new state failed: ${(e as Error).message}`,
-        }
+        return gitErrorResult('GIT_PULL_IMPORT_FAILED', (e as Error).message)
       }
       return {
         success: true,
@@ -1480,7 +1475,7 @@ export function registerGitHandlers(): void {
         },
       }
     } catch (e) {
-      return { success: false, error: describeGitError(e, config?.token) }
+      return { success: false, ...describeGitFailure(e, config?.token) }
     }
   })
 
@@ -1489,7 +1484,7 @@ export function registerGitHandlers(): void {
     try {
       const config = await getProjectGitConfig(projectId)
       if (!config?.repoUrl || !config.localPath) {
-        return { success: false, error: 'Git yapılandırması bulunamadı.' }
+        return gitErrorResult('GIT_CONFIG_MISSING')
       }
 
       const git = await ensureGitRepo(config)
@@ -1523,7 +1518,7 @@ export function registerGitHandlers(): void {
         },
       }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, ...gitFailureOf(e) }
     }
   })
 
@@ -1543,7 +1538,7 @@ export function registerGitHandlers(): void {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.repoUrl || !config.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
         const git = await ensureGitRepo(config)
         const limit = Math.max(1, Math.min(500, payload.limit ?? 100))
@@ -1572,7 +1567,7 @@ export function registerGitHandlers(): void {
           return { success: true, data: { commits: [], total: 0 } }
         }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, ...gitFailureOf(e) }
       }
     },
   )
@@ -1590,14 +1585,14 @@ export function registerGitHandlers(): void {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.repoUrl || !config.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
 
         const git = await ensureGitRepo(config)
 
         const currentBranch = await getCurrentBranch(git, config.branch)
         if (currentBranch === payload.branchName) {
-          return { success: false, error: "Aktif branch silinemez. Önce başka bir branch'e geçin." }
+          return gitErrorResult('GIT_ACTIVE_BRANCH_DELETE')
         }
 
         // Delete local
@@ -1618,7 +1613,7 @@ export function registerGitHandlers(): void {
 
         return { success: true, data: { deleted: payload.branchName } }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, ...gitFailureOf(e) }
       }
     },
   )
@@ -1636,7 +1631,7 @@ export function registerGitHandlers(): void {
       try {
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.repoUrl || !config.localPath) {
-          return { success: false, error: 'Git yapılandırması bulunamadı.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
 
         const git = await ensureGitRepo(config)
@@ -1652,7 +1647,7 @@ export function registerGitHandlers(): void {
 
         return { success: true, data: commits }
       } catch (e) {
-        return { success: false, error: (e as Error).message }
+        return { success: false, ...gitFailureOf(e) }
       }
     },
   )
@@ -1671,7 +1666,7 @@ export function registerGitHandlers(): void {
         },
       }
     } catch (e) {
-      return { success: false, error: (e as Error).message }
+      return { success: false, ...gitFailureOf(e) }
     }
   })
 }

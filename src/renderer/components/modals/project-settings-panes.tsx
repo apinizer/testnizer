@@ -5,6 +5,7 @@ import KeyMaterialField from '../shared/KeyMaterialField'
 import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
+import { fillNodes } from '../../lib/i18n-nodes'
 import { formatDate } from '../../lib/format-datetime'
 import { platformLabel } from '../../lib/platform-label'
 import {
@@ -904,7 +905,7 @@ export function BranchesPane({
                     border: '1px solid var(--border)',
                   }}
                 >
-                  remote
+                  {t('projectSettings.remoteBadge')}
                 </span>
               )}
               {isActive && (
@@ -1595,19 +1596,20 @@ export function CertificatesPane({
                 lineHeight: 1.5,
               }}
             >
-              <strong>Legacy TLS notice:</strong> TLS 1.0/1.1 are deprecated by RFC 8996. Requests
-              using these versions are routed through the system <code>curl</code> binary (Schannel
-              on Windows, Secure Transport on macOS, OpenSSL on Linux). If <code>curl</code>
-              is missing on this machine the request will fail with a clear error — install it from{' '}
-              <a
-                href="https://curl.se/download.html"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'inherit', textDecoration: 'underline' }}
-              >
-                curl.se/download.html
-              </a>
-              .
+              {fillNodes(t('projectSettings.legacyTlsNotice'), {
+                label: <strong>{t('projectSettings.legacyTlsLabel')}</strong>,
+                curl: <code>curl</code>,
+                link: (
+                  <a
+                    href="https://curl.se/download.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'inherit', textDecoration: 'underline' }}
+                  >
+                    curl.se/download.html
+                  </a>
+                ),
+              })}
             </div>
           )}
 

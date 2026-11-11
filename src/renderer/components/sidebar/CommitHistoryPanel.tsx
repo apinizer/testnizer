@@ -4,6 +4,7 @@ import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate, formatRelativeTime, type DateTimeLocale } from '../../lib/format-datetime'
+import { gitErrorText } from '../../lib/git-error-text'
 
 interface CommitRow {
   hash: string
@@ -45,7 +46,7 @@ export default function CommitHistoryPanel() {
         | { success: boolean; error?: string; data?: { commits: CommitRow[]; total: number } }
         | undefined
       if (!result?.success) {
-        setError(result?.error || t('commitHistory.loadFailed'))
+        setError(gitErrorText(result) || t('commitHistory.loadFailed'))
         setCommits([])
       } else {
         setCommits(result.data?.commits ?? [])

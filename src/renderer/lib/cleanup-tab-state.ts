@@ -7,6 +7,7 @@
 // Workbench.tsx, but the v1.4.4 menu fix needs it from AppShell too.
 
 import { useTabsStore } from '../stores/tabs.store'
+import { t } from './i18n'
 import type { Tab } from '../types'
 import { forgetStoredAuth } from './stored-auth-credentials'
 import { useRequestStore } from '../stores/request.store'
@@ -73,7 +74,7 @@ export function closeTabSafely(tabId: string, options?: { force?: boolean }): bo
   const target = tabs.tabs.find((t) => t.id === tabId)
   if (!target) return false
   if (!options?.force && target.isDirty) {
-    const ok = window.confirm('This tab has unsaved changes. Close anyway?')
+    const ok = window.confirm(t('tabStrip.confirmCloseUnsaved'))
     if (!ok) return false
   }
   cleanupTabState(tabId)

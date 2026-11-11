@@ -780,7 +780,7 @@ export default function TreeView() {
         if (!result?.success) {
           const reason = result?.error || 'no response'
           console.error('savedRequest.create failed:', reason)
-          toast.error(`Failed to create request: ${reason}`)
+          toast.error(`${t('tree.createRequestFailed')}: ${reason}`)
           return
         }
         await refreshTree()
@@ -802,7 +802,9 @@ export default function TreeView() {
         }
       } catch (err) {
         console.error('Add Request from context menu failed:', err)
-        toast.error(`Failed to create request: ${(err as Error).message || 'unknown error'}`)
+        toast.error(
+          `${t('tree.createRequestFailed')}: ${(err as Error).message || t('tree.unknownError')}`,
+        )
       }
     },
     [activeProjectId, refreshTree],
@@ -886,14 +888,14 @@ export default function TreeView() {
             | { success: boolean; error?: string; data?: { newFolderId: string } }
             | undefined
           if (!result?.success) {
-            toast.error(result?.error || 'Folder duplication failed')
+            toast.error(result?.error || t('tree.folderDuplicateFailed'))
             return
           }
-          toast.success('Folder duplicated')
+          toast.success(t('tree.folderDuplicated'))
         } else if (node.type === 'module') {
           // Module-level (project root) duplication is handled by the
           // project hub menu (B3), not the tree node.
-          toast.error('Use the project Duplicate action from the Project Hub.')
+          toast.error(t('tree.duplicateProjectFromHub'))
           return
         }
         await refreshTree()
@@ -1049,7 +1051,9 @@ export default function TreeView() {
           name: folderNode.label,
         })) as { success: boolean; data?: { id: string }; error?: string }
         if (!createRes?.success || !createRes.data) {
-          toast.error(`${t('tree.suiteCreateFailed')}: ${createRes?.error || 'unknown error'}`)
+          toast.error(
+            `${t('tree.suiteCreateFailed')}: ${createRes?.error || t('tree.unknownError')}`,
+          )
           return
         }
         const importRes = (await window.api?.testSuite?.importEndpoints({
@@ -1067,7 +1071,9 @@ export default function TreeView() {
         // Done before reporting, so a warning lands next to what it describes.
         setActiveSidebarPage('tests')
         if (!importRes?.success) {
-          toast.error(`${t('tree.suiteCreateFailed')}: ${importRes?.error || 'unknown error'}`)
+          toast.error(
+            `${t('tree.suiteCreateFailed')}: ${importRes?.error || t('tree.unknownError')}`,
+          )
           return
         }
         const added = importRes.data?.added ?? 0
@@ -1078,7 +1084,9 @@ export default function TreeView() {
           toast.success(`${t('tree.suiteCreated')}: ${folderNode.label} (${added})`)
         }
       } catch (err) {
-        toast.error(`${t('tree.suiteCreateFailed')}: ${(err as Error).message || 'unknown error'}`)
+        toast.error(
+          `${t('tree.suiteCreateFailed')}: ${(err as Error).message || t('tree.unknownError')}`,
+        )
       }
     },
     [activeProjectId],

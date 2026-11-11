@@ -194,13 +194,13 @@ export default function McpMessagesPane() {
                   <ArrowUpRight
                     size={13}
                     className="shrink-0 text-[var(--accent)]"
-                    aria-label="out"
+                    aria-label={t('mcp.messages.dirOut')}
                   />
                 ) : (
                   <ArrowDownLeft
                     size={13}
                     className="shrink-0 text-[var(--green)]"
-                    aria-label="in"
+                    aria-label={t('mcp.messages.dirIn')}
                   />
                 )}
                 <span className="shrink-0 font-mono text-[11px] text-[var(--muted)]">

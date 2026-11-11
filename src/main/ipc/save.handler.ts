@@ -11,6 +11,7 @@ import { sealMcpBearerRows, sealMockAuthRows, sealVariableRows } from '../lib/se
 import { assertTmpSubpath, assertImportFilePath, GIT_TMP_PREFIXES } from '../lib/path-safety'
 import { safeFileName } from '../lib/filename-safe'
 import { InputDocumentError } from '../../shared/bounded-document'
+import { gitErrorResult } from '../../shared/git-errors'
 import {
   clearIrregularFile,
   importErrorText,
@@ -54,7 +55,7 @@ import {
   gitAuth,
   gitClientOptions,
   gitProcessEnv,
-  describeGitError,
+  describeGitFailure,
   pushWithRetry,
   getSettingsStore,
   getLegacyCredentialStore,
@@ -3161,7 +3162,7 @@ export function registerSaveHandlers(): void {
         // (`settings.git.<projectId>`, token safeStorage-encrypted) so the
         // toolbar Push/Pull work right after a manual "Save → Git". The old
         // code wrote only the legacy `git-credentials` store, which carries
-        // the token but not the URL → "Git yapılandırması bulunamadı".
+        // the token but not the URL → `GIT_CONFIG_MISSING`.
         const persistGitConfig = async (): Promise<void> => {
           const settings = await getSettingsStore()
           const allGit = (settings.get('git') as Record<string, unknown> | undefined) ?? {}
@@ -3215,7 +3216,7 @@ export function registerSaveHandlers(): void {
 
         return { success: true, data: { repoUrl: payload.repoUrl, branch: payload.branch } }
       } catch (e) {
-        return { success: false, error: describeGitError(e, payload.token) }
+        return { success: false, ...describeGitFailure(e, payload.token) }
       } finally {
         if (tmpDir) removeTempClone(tmpDir)
       }
@@ -3239,10 +3240,7 @@ export function registerSaveHandlers(): void {
       try {
         config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
-          return {
-            success: false,
-            error: 'Git yapılandırması bulunamadı. Proje ayarlarından Git bilgilerini girin.',
-          }
+          return gitErrorResult('GIT_CONFIG_MISSING_SETTINGS')
         }
 
         const { simpleGit } = await import('simple-git')
@@ -3302,7 +3300,7 @@ export function registerSaveHandlers(): void {
         if (status.staged.length === 0 && !isEmptyRepo) {
           return {
             success: true,
-            data: { noChanges: true, message: 'Değişiklik yok — her şey güncel.' },
+            data: { noChanges: true, message: 'No changes — everything is up to date.' },
           }
         }
 
@@ -3323,7 +3321,7 @@ export function registerSaveHandlers(): void {
           data: { repoUrl: config.repoUrl, branch: config.branch, message: msg },
         }
       } catch (e) {
-        return { success: false, error: describeGitError(e, config?.token) }
+        return { success: false, ...describeGitFailure(e, config?.token) }
       } finally {
         if (tmpDir) removeTempClone(tmpDir)
       }
@@ -3346,10 +3344,7 @@ export function registerSaveHandlers(): void {
       try {
         config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
-          return {
-            success: false,
-            error: 'Git yapılandırması bulunamadı. Proje ayarlarından Git bilgilerini girin.',
-          }
+          return gitErrorResult('GIT_CONFIG_MISSING_SETTINGS')
         }
 
         const { simpleGit } = await import('simple-git')
@@ -3379,14 +3374,14 @@ export function registerSaveHandlers(): void {
             await git.clone(auth.cleanUrl, tmpDir, ['--depth', '1'])
           } catch {
             // Empty repo — nothing to pull
-            return { success: false, error: 'Git repository boş — henüz push yapılmamış.' }
+            return gitErrorResult('GIT_REMOTE_EMPTY')
           }
         }
 
         // The file that belongs to THIS project (slug match, or the only one).
         const ownFile = pickCheckoutProjectFile(tmpDir, projectNameOf(payload.projectId))
         if (!ownFile) {
-          return { success: false, error: "Git repository'de proje dosyası bulunamadı." }
+          return gitErrorResult('GIT_PROJECT_FILE_MISSING')
         }
         const parsed = parseJsonFile(readCheckoutFile(join(tmpDir, ownFile)), PROJECT_FILE)
         const problem = projectFileProblem(parsed)
@@ -3419,7 +3414,7 @@ export function registerSaveHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: describeGitError(e, config?.token) }
+        return { success: false, ...describeGitFailure(e, config?.token) }
       } finally {
         if (tmpDir) removeTempClone(tmpDir)
       }
@@ -3507,7 +3502,7 @@ export function registerSaveHandlers(): void {
         } catch (e) {
           rmSync(tmpDir, { recursive: true, force: true })
           if (isGitAuthError((e as Error).message)) throw e
-          throw new Error(unreachableRemoteError(redactToken((e as Error).message, payload.token)))
+          throw unreachableRemoteError(redactToken((e as Error).message, payload.token))
         }
         const branchSet = new Set(
           heads
@@ -3537,7 +3532,7 @@ export function registerSaveHandlers(): void {
 
         return { success: true, data: { tmpDir, files, isEmpty, skipped: listed.skipped } }
       } catch (e) {
-        return { success: false, error: describeGitError(e, payload.token) }
+        return { success: false, ...describeGitFailure(e, payload.token) }
       }
     },
   )
@@ -3584,7 +3579,7 @@ export function registerSaveHandlers(): void {
       try {
         config = await getProjectGitConfig(payload.projectId)
         if (!config || !config.repoUrl || !config.token) {
-          return { success: false, error: 'Git configuration not found.' }
+          return gitErrorResult('GIT_CONFIG_MISSING')
         }
 
         const { simpleGit } = await import('simple-git')
@@ -3720,7 +3715,7 @@ export function registerSaveHandlers(): void {
           },
         }
       } catch (e) {
-        return { success: false, error: describeGitError(e, config?.token) }
+        return { success: false, ...describeGitFailure(e, config?.token) }
       }
     },
   )

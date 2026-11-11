@@ -8,6 +8,7 @@ import PushCommitModal, { type PushChoice } from '../modals/PushCommitModal'
 import { suggestedCommitMessage } from '../../lib/push-commit-message'
 import { pullWarnings, type PullNotices } from '../../lib/pull-messages'
 import { toast } from '../../lib/toast'
+import { gitErrorText } from '../../lib/git-error-text'
 import { formatShortcut } from '../../lib/shortcut-format'
 import HeaderGitOpButton, { type OpStatus } from './HeaderGitOpButton'
 
@@ -98,7 +99,7 @@ export default function HeaderProjectActions() {
     if (!activeProject) return
     setPushStatus('loading')
     setStatusMsg('')
-    setGitLoading('Pushing to remote...')
+    setGitLoading(t('git.pushing'))
     try {
       const result = await window.api.git.push(activeProject.id, {
         commitMessage,
@@ -106,9 +107,13 @@ export default function HeaderProjectActions() {
       })
       if (result?.success) {
         const done = result.data?.committed === false ? 'toast.pushedNoChanges' : 'toast.pushed'
-        finishOp(setPushStatus, 'success', `${t(done)} (${result.data?.branch || 'branch'})`)
+        finishOp(
+          setPushStatus,
+          'success',
+          `${t(done)} (${result.data?.branch || t('git.branchFallback')})`,
+        )
       } else {
-        finishOp(setPushStatus, 'error', result?.error || t('toast.pushFailed'))
+        finishOp(setPushStatus, 'error', gitErrorText(result) || t('toast.pushFailed'))
       }
     } catch (e) {
       finishOp(setPushStatus, 'error', (e as Error).message)
@@ -121,11 +126,11 @@ export default function HeaderProjectActions() {
     if (!activeProject) return
     setPullStatus('loading')
     setStatusMsg('')
-    setGitLoading('Pulling from remote...')
+    setGitLoading(t('git.pulling'))
     try {
       const result = await window.api.git.pull(activeProject.id)
       if (result?.success) {
-        const branch = result.data?.branch || 'branch'
+        const branch = result.data?.branch || t('git.branchFallback')
         // A pull that stopped on conflicts (nothing imported — the branch
         // dropdown's conflict flow takes over) or found no project .json is
         // not a success from the user's seat — say so instead of "pulled".
@@ -149,7 +154,7 @@ export default function HeaderProjectActions() {
           setStatusMsg('')
         }, 3000)
       } else {
-        finishOp(setPullStatus, 'error', result?.error || t('toast.pullFailed'))
+        finishOp(setPullStatus, 'error', gitErrorText(result) || t('toast.pullFailed'))
       }
     } catch (e) {
       finishOp(setPullStatus, 'error', (e as Error).message)

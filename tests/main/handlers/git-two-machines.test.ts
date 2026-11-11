@@ -59,7 +59,7 @@ class FakeStore {
 vi.mock('electron-store', () => ({ default: FakeStore }))
 
 const { registerGitHandlers } = await import('../../../src/main/ipc/git.handler')
-const { GIT_PUSH_REJECTED_ERROR } = await import('../../../src/main/lib/git-config')
+const { GIT_ERROR_TEXT } = await import('../../../src/shared/git-errors')
 const { openSecret } = await import('../../../src/main/lib/secret-at-rest')
 
 const PROJECT_NAME = 'Shared APIs'
@@ -362,7 +362,10 @@ describe('row-level sync on Pull', () => {
     addEndpoint(B, 'B2')
     const rejected = await call<unknown>('git:push', on(B).projectId)
     expect(rejected.success).toBe(false)
-    expect(rejected.error).toBe(GIT_PUSH_REJECTED_ERROR)
+    expect(rejected).toMatchObject({
+      errorCode: 'GIT_PUSH_REJECTED',
+      error: GIT_ERROR_TEXT.GIT_PUSH_REJECTED,
+    })
 
     // B's rejected push left its commit on local main; the pull's merge
     // conflicts on the endpoints array and is auto-resolved by row.
@@ -650,7 +653,10 @@ describe('issue #135 — teammate pulls a merge made on the other machine', () =
     // Non-fast-forward: git refuses, the user is told to Pull. M1 must not be lost.
     const rejected = await call<unknown>('git:push', on(A).projectId)
     expect(rejected.success).toBe(false)
-    expect(rejected.error).toBe(GIT_PUSH_REJECTED_ERROR)
+    expect(rejected).toMatchObject({
+      errorCode: 'GIT_PUSH_REJECTED',
+      error: GIT_ERROR_TEXT.GIT_PUSH_REJECTED,
+    })
     expect(remoteNames('main')).toEqual(['M1', 'X1', 'X2'])
 
     const pulledA = await pull(A)

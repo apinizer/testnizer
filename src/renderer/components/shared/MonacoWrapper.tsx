@@ -60,7 +60,7 @@ function MonacoFallback({
             justifyContent: 'center',
           }}
         >
-          Loading editor…
+          {t('modal.editorLoading')}
         </div>
       </div>
     </div>

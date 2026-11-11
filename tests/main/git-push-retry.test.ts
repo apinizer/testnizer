@@ -25,16 +25,9 @@ vi.mock('electron-store', () => ({
 }))
 vi.mock('../../src/main/db/database', () => ({ getDb: () => ({}) }))
 
-const {
-  isTransientRemoteError,
-  isPushRejectedError,
-  pushWithRetry,
-  describeGitError,
-  GIT_PUSH_TRANSIENT_ERROR,
-  GIT_REMOTE_TRANSIENT_ERROR,
-  GIT_PUSH_REJECTED_ERROR,
-  GIT_AUTH_FAILED_ERROR,
-} = await import('../../src/main/lib/git-config')
+const { isTransientRemoteError, isPushRejectedError, pushWithRetry, describeGitFailure } =
+  await import('../../src/main/lib/git-config')
+const { GitCodedError, GIT_ERROR_TEXT } = await import('../../src/shared/git-errors')
 
 /** GitHub's actual 500 on push (request id redacted). */
 const GITHUB_500 = [
@@ -96,29 +89,37 @@ describe('isTransientRemoteError', () => {
   })
 })
 
-describe('describeGitError — transient forms', () => {
-  it('GitHub 500 on a non-push op → "try again", not the raw stderr / pull-first', () => {
-    const out = describeGitError(new Error(GITHUB_500), 'tok')
-    expect(out.startsWith(GIT_REMOTE_TRANSIENT_ERROR)).toBe(true)
-    expect(out).toContain('remote: Internal Server Error')
-    expect(out).not.toBe(GIT_PUSH_REJECTED_ERROR)
+describe('describeGitFailure — transient forms', () => {
+  it('GitHub 500 on a non-push op → GIT_REMOTE_TRANSIENT ("try again"), not the raw stderr / pull-first', () => {
+    const out = describeGitFailure(new Error(GITHUB_500), 'tok')
+    expect(out.errorCode).toBe('GIT_REMOTE_TRANSIENT')
+    expect(out.errorDetail).toContain('remote: Internal Server Error')
+    expect(out.error).toBe(
+      GIT_ERROR_TEXT.GIT_REMOTE_TRANSIENT.replace('{detail}', out.errorDetail ?? ''),
+    )
   })
 
-  it('auth and non-ff keep their own messages', () => {
-    expect(describeGitError(new Error(NOT_TRANSIENT['401']), 'tok-123')).toContain(
-      GIT_AUTH_FAILED_ERROR,
+  it('auth and non-ff keep their own codes', () => {
+    expect(describeGitFailure(new Error(NOT_TRANSIENT['401']), 'tok-123').errorCode).toBe(
+      'GIT_AUTH_FAILED',
     )
-    expect(describeGitError(new Error(NOT_TRANSIENT['non-fast-forward']), 'tok-123')).toBe(
-      GIT_PUSH_REJECTED_ERROR,
-    )
+    expect(describeGitFailure(new Error(NOT_TRANSIENT['non-fast-forward']), 'tok-123')).toEqual({
+      error: GIT_ERROR_TEXT.GIT_PUSH_REJECTED,
+      errorCode: 'GIT_PUSH_REJECTED',
+    })
   })
 
   it('a short token never mangles our own sentence', () => {
     // The sentence says "5xx"; a token "x" must only be scrubbed from git's detail.
-    const e = new Error(`${GIT_PUSH_TRANSIENT_ERROR} (remote: Internal Server Error (x))`)
-    const out = describeGitError(e, 'x')
-    expect(out.startsWith(GIT_PUSH_TRANSIENT_ERROR)).toBe(true)
-    expect(out.endsWith('(remote: Internal Server Error (***))')).toBe(true)
+    const e = new GitCodedError('GIT_PUSH_TRANSIENT', {
+      detail: 'remote: Internal Server Error (x)',
+    })
+    const out = describeGitFailure(e, 'x')
+    expect(out.errorCode).toBe('GIT_PUSH_TRANSIENT')
+    expect(out.errorDetail).toBe('remote: Internal Server Error (***)')
+    expect(out.error).toBe(
+      GIT_ERROR_TEXT.GIT_PUSH_TRANSIENT.replace('{detail}', 'remote: Internal Server Error (***)'),
+    )
   })
 })
 
@@ -152,9 +153,15 @@ describe('pushWithRetry', () => {
   it('gives up after 1 + N attempts with the transient message', async () => {
     const sleep = vi.fn(async () => undefined)
     const git = fakeGit([GITHUB_500, GITHUB_500, GITHUB_500, GITHUB_500])
-    await expect(
-      pushWithRetry(git, 'origin', 'main', [], { sleep, delaysMs: [1000, 3000] }),
-    ).rejects.toThrow(GIT_PUSH_TRANSIENT_ERROR)
+    const thrown = await pushWithRetry(git, 'origin', 'main', [], {
+      sleep,
+      delaysMs: [1000, 3000],
+    }).catch((e: unknown) => e)
+    expect(thrown).toBeInstanceOf(GitCodedError)
+    expect((thrown as InstanceType<typeof GitCodedError>).code).toBe('GIT_PUSH_TRANSIENT')
+    expect(
+      (thrown as Error).message.startsWith(GIT_ERROR_TEXT.GIT_PUSH_TRANSIENT.split('{detail}')[0]),
+    ).toBe(true)
     expect(git.push).toHaveBeenCalledTimes(3)
     expect(sleep.mock.calls.map((c) => c[0])).toEqual([1000, 3000])
   })

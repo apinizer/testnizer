@@ -89,7 +89,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
       // for is the one you want to be on. Without this auto-switch v1.3.1 left
       // the indicator on the source branch and forced a second click — B7.
       try {
-        setGitLoading(`Switching to ${name}...`)
+        setGitLoading(t('git.switching').replace('{name}', name))
         await switchBranch(activeProjectId, name)
         await syncAfterGit(activeProjectId)
       } catch {
@@ -108,7 +108,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   async function handleSwitch(branchName: string) {
     if (!activeProjectId || branchName === currentBranch) return
     setBusy(true)
-    setGitLoading(`Switching to ${branchName}...`)
+    setGitLoading(t('git.switching').replace('{name}', branchName))
     const ok = await switchBranch(activeProjectId, branchName)
     if (ok) {
       toast.success(t('toast.branchSwitched').replace('{name}', branchName))
@@ -125,7 +125,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   async function handleMerge(sourceBranch: string) {
     if (!activeProjectId) return
     setBusy(true)
-    setGitLoading(`Merging ${sourceBranch}...`)
+    setGitLoading(t('git.merging').replace('{name}', sourceBranch))
     const result = await mergeBranch(activeProjectId, sourceBranch)
     if (result.success) {
       toast.success(
@@ -162,7 +162,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setPushDraft(null)
     if (!activeProjectId) return
     setBusy(true)
-    setGitLoading('Pushing to remote...')
+    setGitLoading(t('git.pushing'))
     const result = await pushBranch(activeProjectId, commitMessage, {
       commitPending: choice?.commitPending !== false,
     })
@@ -179,7 +179,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   async function handlePull() {
     if (!activeProjectId) return
     setBusy(true)
-    setGitLoading('Pulling from remote...')
+    setGitLoading(t('git.pulling'))
     const result = await pullBranch(activeProjectId)
     if (result.success) {
       toast.success(t('toast.pulled'))
@@ -213,6 +213,9 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
   }
 
   const otherBranches = branches.filter((b) => b.name !== currentBranch)
+  // "Merge into {branch} from:" — the branch name is bold, so split the
+  // translated sentence around its placeholder (word order differs in TR).
+  const [mergeIntoBefore, mergeIntoAfter = ''] = t('branchMenu.mergeInto').split('{branch}')
 
   return (
     <div ref={dropdownRef} className="relative">
@@ -299,7 +302,9 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
             >
               <div style={{ fontSize: 13, color: 'var(--hint)', marginBottom: 4 }}>
-                Merge into <strong style={{ color: 'var(--text)' }}>{currentBranch}</strong> from:
+                {mergeIntoBefore}
+                <strong style={{ color: 'var(--text)' }}>{currentBranch}</strong>
+                {mergeIntoAfter}
               </div>
               {otherBranches.map((b) => (
                 <button
@@ -328,7 +333,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               ))}
               {otherBranches.length === 0 && (
                 <div style={{ fontSize: 13, color: 'var(--hint)', padding: '4px 0' }}>
-                  No other branches
+                  {t('branchMenu.noOtherBranches')}
                 </div>
               )}
             </div>
@@ -344,7 +349,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                 textAlign: 'center',
               }}
             >
-              Loading branches...
+              {t('branchMenu.loading')}
             </div>
           )}
 
@@ -393,7 +398,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                 {branch.name !== currentBranch && branch.name !== 'main' && (
                   <button
                     type="button"
-                    aria-label={`Delete branch ${branch.name}`}
+                    aria-label={t('branchMenu.deleteBranch').replace('{name}', branch.name)}
                     className="hidden shrink-0 rounded p-0.5 group-hover:block"
                     style={{ color: 'var(--muted)', background: 'transparent', border: 'none' }}
                     onClick={(e) => {
@@ -421,7 +426,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                   textAlign: 'center',
                 }}
               >
-                No branches
+                {t('branchMenu.none')}
               </div>
             )}
           </div>
@@ -443,7 +448,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                     setNewName('')
                   }
                 }}
-                placeholder={`New branch from ${currentBranch}`}
+                placeholder={t('branchMenu.newFrom').replace('{name}', currentBranch)}
                 className="flex-1 border-none bg-transparent outline-none"
                 style={{
                   fontSize: 13,
@@ -468,7 +473,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
                 onClick={handleCreate}
                 disabled={busy}
               >
-                OK
+                {t('branchMenu.ok')}
               </button>
             </div>
           ) : (
@@ -491,7 +496,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
               }}
             >
               <Plus size={12} aria-hidden="true" />
-              New Branch
+              {t('branchMenu.newBranch')}
             </button>
           )}
         </div>

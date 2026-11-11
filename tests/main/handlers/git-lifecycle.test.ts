@@ -52,7 +52,7 @@ vi.mock('electron-store', () => ({ default: FakeStore }))
 
 const { registerGitHandlers } = await import('../../../src/main/ipc/git.handler')
 const { registerSaveHandlers } = await import('../../../src/main/ipc/save.handler')
-const { GIT_TOKEN_MISSING_ERROR } = await import('../../../src/main/lib/git-config')
+const { GIT_ERROR_TEXT } = await import('../../../src/shared/git-errors')
 
 let root: string
 let fx: RealGitFixture
@@ -195,8 +195,13 @@ describe('first contact with the remote', () => {
     const A = fx.machine('A', { token: '' })
     const push = await fx.call('git:push', fx.on(A).projectId)
     const pull = await fx.call('git:pull', fx.on(A).projectId)
-    expect(push).toEqual({ success: false, error: GIT_TOKEN_MISSING_ERROR })
-    expect(pull).toEqual({ success: false, error: GIT_TOKEN_MISSING_ERROR })
+    const refused = {
+      success: false,
+      error: GIT_ERROR_TEXT.GIT_TOKEN_MISSING,
+      errorCode: 'GIT_TOKEN_MISSING',
+    }
+    expect(push).toEqual(refused)
+    expect(pull).toEqual(refused)
   })
 })
 
@@ -260,6 +265,11 @@ describe('branches', () => {
       branchName: 'feature',
     })
     expect(refused.success).toBe(false)
+    // Worded by the renderer from the code (tester finding 6), not Turkish.
+    expect(refused).toMatchObject({
+      errorCode: 'GIT_ACTIVE_BRANCH_DELETE',
+      error: 'The active branch cannot be deleted. Switch to another branch first.',
+    })
 
     await fx.switchTo(A, 'main')
     expect(
