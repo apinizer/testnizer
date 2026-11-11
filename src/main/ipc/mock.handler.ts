@@ -32,6 +32,7 @@ import {
   type UpdateMockResponseInput,
 } from '../db/mock.repo'
 import { mockServerManager, type MockServerDef } from '../mock/server'
+import type { ListenErrorInfo, ListenFailure } from '../../shared/listen-error'
 import { importOpenApi, importPostman, type ImportResult } from '../mock/importers'
 import { withProjectImportCheck } from './save.handler'
 import { normalizeMockServerKind, type MockServerKind } from '../../shared/mock-kind'
@@ -59,6 +60,11 @@ function ok<T>(data: T): Result<T> {
 }
 function fail(error: unknown): Result<never> {
   return { success: false, error: error instanceof Error ? error.message : String(error) }
+}
+
+/** A refused bind: the English text plus the structured reason the UI words in EN/TR. */
+function failBind(r: ListenFailure): Result<never> & { errorInfo: ListenErrorInfo } {
+  return { success: false, error: r.error, errorInfo: r.errorInfo }
 }
 
 export function buildServerDef(serverId: string): MockServerDef | null {
@@ -238,7 +244,7 @@ export function registerMockHandlers(): void {
             host: patch.host ?? def.host,
             port: patch.port ?? def.port,
           })
-          if (!moved.ok) return fail(moved.error)
+          if (!moved.ok) return failBind(moved)
         }
       }
       let row: MockServerRow | null
@@ -273,7 +279,7 @@ export function registerMockHandlers(): void {
       const def = buildServerDef(id)
       if (!def) return fail('Server not found')
       const r = await mockServerManager.start(def)
-      if (!r.ok) return fail(r.error)
+      if (!r.ok) return failBind(r)
       return ok({ status: mockServerManager.status(id), port: def.port })
     } catch (e) {
       return fail(e)
@@ -467,7 +473,12 @@ export async function reconcileRunningMockServers(): Promise<void> {
     if (!r.ok && mockServerManager.status(id) === 'running') {
       await mockServerManager.stop(id)
       // Say why, as Mock MCP's `syncWithStored` does.
-      mockServerManager.emit('status', { serverId: id, status: 'error', errorMessage: r.error })
+      mockServerManager.emit('status', {
+        serverId: id,
+        status: 'error',
+        errorMessage: r.error,
+        errorInfo: r.errorInfo,
+      })
     }
   }
 }

@@ -92,19 +92,91 @@ describe('Mock Settings: a refused port change (tester finding 11)', () => {
     expect(screen.getByTestId('mock-base-url')).toHaveTextContent(':3001')
   })
 
-  it('Turkish toast', async () => {
+  it("Turkish toast: the whole text is Turkish (structured reason, not main's English)", async () => {
     useUIStore.getState().setLocale('tr')
     const input = await mountSettings('running')
     httpBridge.server.update.mockImplementationOnce(() =>
-      Promise.resolve({ success: false as const, error: REFUSAL }),
+      Promise.resolve({
+        success: false as const,
+        error: REFUSAL,
+        errorInfo: { kind: 'in-use', host: '127.0.0.1', port: 3002, by: 'B' },
+      }),
     )
 
     typePort(input, '3002')
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(toast.error).mock.calls[0][0]).toContain(
-      'Port değiştirilmedi — sunucu 127.0.0.1:3001 adresinde çalışmaya devam ediyor.',
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toBe(
+      'Port değiştirilmedi — sunucu 127.0.0.1:3001 adresinde çalışmaya devam ediyor. ' +
+        '3002 portu "B" mock sunucusu tarafından kullanılıyor. Onu durdurun ya da başka bir port kullanın.',
     )
+  })
+
+  it('Turkish toast: a port held by another application', async () => {
+    useUIStore.getState().setLocale('tr')
+    const input = await mountSettings('running')
+    httpBridge.server.update.mockImplementationOnce(() =>
+      Promise.resolve({
+        success: false as const,
+        error: 'Port 3002 is already in use on 127.0.0.1. …',
+        errorInfo: { kind: 'in-use', host: '127.0.0.1', port: 3002 },
+      }),
+    )
+
+    typePort(input, '3002')
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toBe(
+      'Port değiştirilmedi — sunucu 127.0.0.1:3001 adresinde çalışmaya devam ediyor. ' +
+        '3002 portu 127.0.0.1 üzerinde kullanımda. Orada dinleyeni (başka bir mock sunucu ya da ' +
+        'uygulama) durdurun veya başka bir port seçin.',
+    )
+  })
+
+  it('a refused HOST change says "Address not changed", not "Port"', async () => {
+    await mountSettings('running')
+    httpBridge.server.update.mockImplementationOnce(() =>
+      Promise.resolve({
+        success: false as const,
+        error: 'x',
+        errorInfo: { kind: 'in-use', host: '0.0.0.0', port: 3001, by: 'B' },
+      }),
+    )
+
+    fireEvent.change(screen.getByTestId('mock-settings-host'), { target: { value: '0.0.0.0' } })
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledTimes(1))
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toBe(
+      'Address not changed — the server keeps running on 127.0.0.1:3001. ' +
+        'Port 3001 is already in use by mock server "B". Stop it or use a different port.',
+    )
+    await waitFor(() =>
+      expect((screen.getByTestId('mock-settings-host') as HTMLSelectElement).value).toBe(
+        '127.0.0.1',
+      ),
+    )
+  })
+
+  it('Start failure with a structured reason is worded in Turkish', async () => {
+    useUIStore.getState().setLocale('tr')
+    resetHttpBridge([SERVER])
+    useMockStore.setState({ servers: [SERVER], statusByServer: {}, errorByServer: {} })
+    httpBridge.server.start.mockImplementationOnce(
+      () =>
+        Promise.resolve({
+          success: false as const,
+          error: 'Port 3001 is already in use on 127.0.0.1. …',
+          errorInfo: { kind: 'in-use', host: '127.0.0.1', port: 3001 },
+        }) as never,
+    )
+
+    const err = await useMockStore.getState().startServer(SERVER.id)
+
+    expect(err).toBe(
+      '3001 portu 127.0.0.1 üzerinde kullanımda. Orada dinleyeni (başka bir mock sunucu ya da ' +
+        'uygulama) durdurun veya başka bir port seçin.',
+    )
+    expect(useMockStore.getState().errorByServer[SERVER.id]).toBe(err)
   })
 
   it('an accepted change keeps the new port and shows no error', async () => {

@@ -37,7 +37,8 @@ import type { AddressInfo } from 'node:net'
 import { localhostHostValidation } from '@modelcontextprotocol/node'
 import type { Server } from '@modelcontextprotocol/server'
 import { loadMockTemplateVars } from '../lib/env-vars'
-import { listenErrorMessage, probeListen } from '../lib/listen-address'
+import { heldByMock, listenFailure, probeListen } from '../lib/listen-address'
+import type { ListenErrorInfo, ListenFailure } from '../../shared/listen-error'
 import {
   DEFAULT_LEGACY_MODE,
   isExposedWithoutAuth,
@@ -87,7 +88,11 @@ interface RunningServer {
 
 export type MockMcpStartResult =
   | { ok: true; state: MockMcpServerState }
-  | { ok: false; error: string }
+  | {
+      ok: false
+      error: string
+      /** set for a bind failure (EN/TR in the UI) */ errorInfo?: ListenErrorInfo
+    }
 
 function tokensEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a)
@@ -220,7 +225,7 @@ class MockMcpServerManager extends EventEmitter {
     if (!checked.ok) return checked
     const def = checked.def
     const held = this.heldByOtherMock(def)
-    if (held) return { ok: false, error: held }
+    if (held) return { ok: false, ...held }
     if (this.servers.has(def.id)) await this.stop(def.id)
 
     const running = this.createRunning(def)
@@ -246,17 +251,23 @@ class MockMcpServerManager extends EventEmitter {
 
     return new Promise((resolve) => {
       // Any start failure drops the entry — never a phantom "starting" server.
-      const fail = (message: string): void => {
+      const fail = (message: string, errorInfo?: ListenErrorInfo): void => {
         running.status = 'error'
         running.errorMessage = message
         running.stopped = true
         void running.endpoint.close().catch(() => {})
         this.servers.delete(def.id)
-        this.emit('status', { ...this.state(def.id), status: 'error', errorMessage: message })
-        resolve({ ok: false, error: message })
+        this.emit('status', {
+          ...this.state(def.id),
+          status: 'error',
+          errorMessage: message,
+          ...(errorInfo ? { errorInfo } : {}),
+        })
+        resolve({ ok: false, error: message, ...(errorInfo ? { errorInfo } : {}) })
       }
       running.http.once('error', (err: NodeJS.ErrnoException) => {
-        fail(listenErrorMessage(err, def.host, def.port))
+        const failure = listenFailure(err, def.host, def.port)
+        fail(failure.error, failure.errorInfo)
       })
       try {
         running.http.listen(def.port, def.host, () => {
@@ -278,7 +289,7 @@ class MockMcpServerManager extends EventEmitter {
   }
 
   /** Another running Mock MCP server bound to `def.port`; `null` = none. */
-  private heldByOtherMock(def: MockMcpServerDef): string | null {
+  private heldByOtherMock(def: MockMcpServerDef): ListenFailure | null {
     for (const [otherId, s] of this.servers) {
       if (
         otherId !== def.id &&
@@ -286,7 +297,11 @@ class MockMcpServerManager extends EventEmitter {
         s.boundPort === def.port &&
         (s.status === 'running' || s.status === 'starting')
       ) {
-        return `Port ${def.port} is already in use by mock MCP server "${s.def.name}". Stop it or use a different port.`
+        return heldByMock(
+          def,
+          s.def.name,
+          `Port ${def.port} is already in use by mock MCP server "${s.def.name}". Stop it or use a different port.`,
+        )
       }
     }
     return null
@@ -371,10 +386,13 @@ class MockMcpServerManager extends EventEmitter {
    */
   private async moveTo(cur: RunningServer, def: MockMcpServerDef): Promise<MockMcpStartResult> {
     const held = this.heldByOtherMock(def)
-    if (held) return { ok: false, error: held }
-    if (cur.def.port !== def.port) {
+    if (held) return { ok: false, ...held }
+    // Port 0 means "any": compare with the port the OS gave the listener, so
+    // pinning a port-0 server to that port never probes its own listener.
+    const bound = cur.boundPort ?? cur.def.port
+    if (bound !== def.port) {
       const busy = await probeListen(def.host, def.port)
-      if (busy) return { ok: false, error: busy }
+      if (busy) return { ok: false, ...busy }
     }
     const previous = cur.def
     const r = await this.start(def)

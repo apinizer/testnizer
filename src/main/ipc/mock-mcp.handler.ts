@@ -24,6 +24,7 @@ import {
   type UpdateMockMcpServerInput,
 } from '../db/mock-mcp.repo'
 import { mockMcpServerManager } from '../mock-mcp/server'
+import type { ListenErrorInfo } from '../../shared/listen-error'
 import type { MockMcpNotifyKind, MockMcpServerConfig, MockMcpServerDef } from '../mock-mcp/types'
 
 const NOTIFY_KINDS: readonly MockMcpNotifyKind[] = ['tools', 'resources', 'prompts']
@@ -36,6 +37,14 @@ function ok<T>(data: T): Result<T> {
 
 function fail(error: unknown): Result<never> {
   return { success: false, error: error instanceof Error ? error.message : String(error) }
+}
+
+/** A failed start / move; a bind failure also carries the structured reason (EN/TR in the UI). */
+function failStart(r: {
+  error: string
+  errorInfo?: ListenErrorInfo
+}): Result<never> & { errorInfo?: ListenErrorInfo } {
+  return { success: false, error: r.error, ...(r.errorInfo ? { errorInfo: r.errorInfo } : {}) }
 }
 
 function broadcast(channel: string, payload: unknown): void {
@@ -126,7 +135,7 @@ export function registerMockMcpHandlers(): void {
           const moved = await mockMcpServerManager.update(
             buildMockMcpDef({ ...before, host, port }),
           )
-          if (!moved.ok) return fail(moved.error)
+          if (!moved.ok) return failStart(moved)
         }
         let cfg: MockMcpServerConfig | null
         try {
@@ -142,7 +151,7 @@ export function registerMockMcpHandlers(): void {
         // on the same port.
         if (running) {
           const r = await mockMcpServerManager.update(buildMockMcpDef(cfg))
-          if (!r.ok) return fail(r.error)
+          if (!r.ok) return failStart(r)
         }
         return ok(cfg)
       } catch (e) {
@@ -166,7 +175,7 @@ export function registerMockMcpHandlers(): void {
       const cfg = getMockMcpServer(id)
       if (!cfg) return fail('Mock MCP server not found')
       const r = await mockMcpServerManager.start(buildMockMcpDef(cfg))
-      return r.ok ? ok(r.state) : fail(r.error)
+      return r.ok ? ok(r.state) : failStart(r)
     } catch (e) {
       return fail(e)
     }

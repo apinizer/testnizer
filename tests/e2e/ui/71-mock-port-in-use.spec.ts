@@ -24,6 +24,7 @@ import {
   startMockServer,
 } from '../helpers/ui/mock-flow'
 import { getActiveProjectId } from '../helpers/ui/assert-ipc'
+import { restoreEnglishLocale } from '../helpers/ui/locale'
 
 const SCREENS = 'test-results/screens'
 const uid = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -158,6 +159,9 @@ uiTest.describe('Tester finding 11 — mock port changed to a busy port', () => 
   uiTest.beforeEach(async ({ window }) => {
     await dismissOverlays(window)
     await ensureCanonicalProject(window)
+    // The assertions read the English toast: put the shared window on EN
+    // (an earlier spec in this worker may have left it on Turkish).
+    await restoreEnglishLocale(window)
   })
 
   uiTest(

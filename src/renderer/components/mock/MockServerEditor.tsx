@@ -1236,9 +1236,11 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
     const stored = useMockStore.getState().servers.find((s) => s.id === server.id) ?? server
     setDraft((d) => ({ ...d, [k]: stored[k] }))
     const running = useMockStore.getState().statusByServer[server.id] === 'running'
+    const refusedKey =
+      k === 'port' ? 'mock.portChangeRefused' : k === 'host' ? 'mock.hostChangeRefused' : null
     toast.error(
-      (k === 'port' || k === 'host') && running
-        ? t('mock.addressChangeRefused')
+      refusedKey && running
+        ? t(refusedKey)
             .replace('{address}', `${stored.host}:${stored.port}`)
             .replace('{detail}', err)
         : t('mock.settingSaveFailed').replace('{detail}', err),

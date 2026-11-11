@@ -337,3 +337,102 @@ describe('Mock MCP: changing a running server to a busy port', () => {
     expect(await toolsList(state.url as string)).toContain('"name":"echo"')
   })
 })
+
+/*
+ * Review follow-up (P2): a server started on port 0 gets a port P from the OS.
+ * Pinning the port to P and saving compared against the configured 0, probed
+ * P — its own listener — and refused. The old code stopped and rebound P.
+ */
+describe('pinning a port-0 server to the port it was given', () => {
+  it('Mock MCP: port 0 → its bound port is accepted and keeps serving there', async () => {
+    const created = await ok<McpConfig>('mockMcp:server:create', { projectId, name: 'Z', port: 0 })
+    const started = await ok<McpState>('mockMcp:server:start', created.id)
+    const bound = started.port as number
+
+    const r = await invoke<McpConfig>('mockMcp:server:update', created.id, { port: bound })
+
+    expect(r.error).toBeUndefined()
+    expect(r.success).toBe(true)
+    expect((await ok<McpConfig>('mockMcp:server:get', created.id)).port).toBe(bound)
+    const state = await ok<McpState>('mockMcp:server:status', created.id)
+    expect(state.status).toBe('running')
+    expect(state.port).toBe(bound)
+  })
+
+  it('HTTP mock: port 0 → its bound port is accepted and keeps serving there', async () => {
+    const srv = await ok<ServerView>('mock:server:create', { projectId, name: 'Z', port: 0 })
+    const ep = await ok<{ id: string }>('mock:endpoint:create', {
+      serverId: srv.id,
+      method: 'GET',
+      path: '/z',
+    })
+    await ok('mock:response:create', {
+      endpointId: ep.id,
+      statusCode: 200,
+      bodyType: 'text',
+      body: 'Z',
+    })
+    await ok('mock:server:start', srv.id)
+    const bound = mockServerManager.boundPort(srv.id) as number
+    expect(bound).toBeGreaterThan(0)
+
+    const r = await invoke<ServerView>('mock:server:update', srv.id, { port: bound })
+
+    expect(r.error).toBeUndefined()
+    expect(r.success).toBe(true)
+    expect(mockServerManager.status(srv.id)).toBe('running')
+    expect(await get(bound, '/z')).toEqual({ status: 200, body: 'Z' })
+  })
+})
+
+/*
+ * Review follow-up (P2, i18n): the refusal travels structured, so the renderer
+ * words it in the user's language instead of showing main's English text.
+ */
+describe('refusals carry a structured errorInfo', () => {
+  it('another mock: kind in-use + the mock that holds it', async () => {
+    const a = await startMock('A', '/a', 'A')
+    const b = await startMock('B', '/b', 'B')
+
+    const r = (await invoke('mock:server:update', a.id, { port: b.port })) as Envelope<unknown> & {
+      errorInfo?: unknown
+    }
+
+    expect(r.errorInfo).toEqual({ kind: 'in-use', host: '127.0.0.1', port: b.port, by: 'B' })
+  })
+
+  it('another application: kind in-use, no mock name; Start says the same', async () => {
+    const a = await startMock('A', '/a', 'A')
+    const busy = await holdPortElsewhere()
+
+    const r = (await invoke('mock:server:update', a.id, { port: busy })) as Envelope<unknown> & {
+      errorInfo?: unknown
+    }
+    expect(r.errorInfo).toEqual({ kind: 'in-use', host: '127.0.0.1', port: busy })
+
+    await ok('mock:server:stop', a.id)
+    await ok('mock:server:update', a.id, { port: busy })
+    const start = (await invoke('mock:server:start', a.id)) as Envelope<unknown> & {
+      errorInfo?: unknown
+    }
+    expect(start.errorInfo).toEqual({ kind: 'in-use', host: '127.0.0.1', port: busy })
+  })
+
+  it('Mock MCP: another application on the new port → kind in-use', async () => {
+    const created = await ok<McpConfig>('mockMcp:server:create', {
+      projectId,
+      name: 'M',
+      port: await freePort(),
+    })
+    await ok('mockMcp:server:start', created.id)
+    const busy = await holdPortElsewhere()
+
+    const r = (await invoke('mockMcp:server:update', created.id, {
+      port: busy,
+    })) as Envelope<unknown> & {
+      errorInfo?: unknown
+    }
+
+    expect(r.errorInfo).toEqual({ kind: 'in-use', host: '127.0.0.1', port: busy })
+  })
+})

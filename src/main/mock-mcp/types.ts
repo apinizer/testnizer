@@ -12,6 +12,8 @@
  * these shapes for its editor.
  */
 
+import type { ListenErrorInfo } from '../../shared/listen-error'
+
 /** A JSON Schema object as authored by the user. Passed to clients VERBATIM. */
 export type JsonSchemaObject = Record<string, unknown>
 
@@ -204,6 +206,8 @@ export type MockMcpServerStatus = 'stopped' | 'starting' | 'running' | 'error'
 export interface MockMcpServerState {
   serverId: string
   status: MockMcpServerStatus
+  /** Why the last start / move failed to bind, when it did (EN/TR in the UI). */
+  errorInfo?: ListenErrorInfo
   /** Bound port while running (differs from the configured one when that is 0). */
   port: number | null
   /** Streamable HTTP URL while running. */
