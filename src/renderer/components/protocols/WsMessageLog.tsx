@@ -18,6 +18,7 @@ const SYSTEM_KEYS: Record<string, string> = {
   error: 'ws.system.error',
   reconnecting: 'ws.system.reconnecting',
   reconnected: 'ws.system.reconnected',
+  dropped: 'ws.system.dropped',
 }
 
 const kindOf = (m: WsMessage): LogKind => m.direction
