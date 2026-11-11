@@ -481,6 +481,10 @@ export function EndpointTabBar() {
    */
   function handleTabKeyDown(e: React.KeyboardEvent<HTMLDivElement>, tabId: string) {
     if (e.target !== e.currentTarget) return
+    // A modified key is a global shortcut, not the strip's: Mod+Enter on a
+    // focused but inactive tab must run the ACTIVE tab's request — activating
+    // the focused one here first made the chord send that tab's instead.
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
       handleSwitchTab(tabId)
