@@ -181,7 +181,7 @@ describe('Run results on a suite run', () => {
         onNewRun: () => {},
         onViewAllRuns: () => {},
         onRunAgain: () => {},
-        selectedResultId: null,
+        selectedResultKey: null,
         onSelectResult: () => {},
         onReveal: (id: string) => void revealRunResult('suite', id),
         revealIn: revealTargetFor('suite'),

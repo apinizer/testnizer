@@ -97,7 +97,7 @@ function renderTab(results: EndpointRunResult[], rep: RunnerReport | null = repo
       onNewRun={noop}
       onRunAgain={noop}
       onViewAllRuns={noop}
-      selectedResultId={null}
+      selectedResultKey={null}
       onSelectResult={noop}
     />,
   )

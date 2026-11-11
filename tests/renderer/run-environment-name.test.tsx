@@ -83,7 +83,7 @@ function renderResults(rep: RunnerReport | null) {
       onNewRun={noop}
       onRunAgain={noop}
       onViewAllRuns={noop}
-      selectedResultId={null}
+      selectedResultKey={null}
       onSelectResult={noop}
     />,
   )
