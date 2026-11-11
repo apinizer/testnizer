@@ -30,9 +30,29 @@ export function isMockMcpSaving(serverId: string): boolean {
   return inFlight.has(serverId)
 }
 
+/**
+ * The tab's dirty dot follows the draft: dirty while one is left. The editor's
+ * `useMockMcpTabDirty` does the same, but only while the editor is mounted —
+ * a save from a dialog (the project tab's ×, with the editor tab in the
+ * background or the project hidden) left the tab dirty after a successful
+ * save, and the project close then refused to close. A draft typed while the
+ * save was in flight is kept, so the tab stays dirty for it.
+ */
+function syncTabDirty(serverId: string): void {
+  const tabs = useTabsStore.getState()
+  const tabId = mockMcpTabId(serverId)
+  const dirty = useMockMcpStore.getState().drafts[serverId] !== undefined
+  const tab = tabs.tabs.find((x) => x.id === tabId)
+  if (tab && !!tab.isDirty !== dirty) tabs.markDirty(tabId, dirty)
+}
+
 export async function saveMockMcpDraft(serverId: string): Promise<MockMcpSaveResult> {
   const snapshot = useMockMcpStore.getState().drafts[serverId]
-  if (!snapshot) return { ok: true, saved: false }
+  if (!snapshot) {
+    // Nothing to save (e.g. the dirty flag survived a restart, drafts do not).
+    syncTabDirty(serverId)
+    return { ok: true, saved: false }
+  }
   const built = draftToPatch(snapshot)
   if (!built.patch) {
     const p = built.problem
@@ -52,6 +72,7 @@ export async function saveMockMcpDraft(serverId: string): Promise<MockMcpSaveRes
   const store = useMockMcpStore.getState()
   // Keep edits typed while the save was in flight.
   if (store.drafts[serverId] === snapshot) store.discardDraft(serverId)
+  syncTabDirty(serverId)
   // A rename shows up in the Workbench tab strip too.
   const tabs = useTabsStore.getState()
   const tabId = mockMcpTabId(serverId)

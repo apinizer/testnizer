@@ -27,6 +27,7 @@ import { fillUrl, saveRequestToTree } from '../helpers/ui/request-flow'
 import { getActiveProjectId, listEndpointsByProject } from '../helpers/ui/assert-ipc'
 import { createProject, openProject } from '../helpers/ui/workspace-flow'
 import { deleteProject } from '../helpers/ui/db-flow'
+import { updateProjectIpc } from '../helpers/ui/db-extra'
 
 const uid = (): string => `${Date.now()}`.slice(-7)
 const headerTab = (page: Page, title: string) =>
@@ -161,11 +162,28 @@ uiTest.describe('Header project tabs — unsaved requests and many projects', ()
           await window.getByTestId('header-home').click()
           await createProject(window, name)
           created.push(await getActiveProjectId(window, name))
+          // The first one is a git project, so the header also renders Pull
+          // and Push (`save_mode` git|both) — the widest right-hand group. The
+          // next `createProject` re-reads the project list, so the header sees
+          // the new mode without a reload.
+          if (i === 1) await updateProjectIpc(window, created[0], { save_mode: 'git' })
         }
-        await headerTab(window, E2E_PROJECT_NAME).first().click()
         await expect(window.getByTestId('header-project-tab')).toHaveCount(7, { timeout: 10_000 })
+        const gitTab = window.locator(
+          `[data-testid="header-project-tab"][data-project-id="${created[0]}"]`,
+        )
+        await gitTab.click()
+        await expect(gitTab).toHaveAttribute('data-active', 'true')
+        await expect(window.getByTestId('header-pull')).toHaveCount(1)
+        await expect(window.getByTestId('header-push')).toHaveCount(1)
 
-        for (const id of ['header-save', 'branch-pill', 'user-menu-trigger']) {
+        for (const id of [
+          'header-pull',
+          'header-push',
+          'header-save',
+          'branch-pill',
+          'user-menu-trigger',
+        ]) {
           await expect(window.getByTestId(id).first()).toBeInViewport({ ratio: 1 })
         }
         const viewport = await window.evaluate(() => document.documentElement.clientWidth)
@@ -196,6 +214,7 @@ uiTest.describe('Header project tabs — unsaved requests and many projects', ()
         await expect(last).toHaveAttribute('data-active', 'true')
         await expect(last).toBeInViewport()
         await expect(window.getByTestId('header-save')).toBeInViewport({ ratio: 1 })
+        await expect(window.getByTestId('user-menu-trigger')).toBeInViewport({ ratio: 1 })
       } finally {
         await dismissOverlays(window)
         // These projects hold no edits: × closes them with no dialog.

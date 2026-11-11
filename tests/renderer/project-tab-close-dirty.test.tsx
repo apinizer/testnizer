@@ -45,7 +45,7 @@ const permissive: unknown = new Proxy(
 )
 ;(globalThis as unknown as { window: { api: unknown } }).window.api = permissive
 
-import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
+import { useWorkspaceStore, projectOpenTabs } from '../../src/renderer/stores/workspace.store'
 import { useEnvironmentStore } from '../../src/renderer/stores/environment.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useRequestStore } from '../../src/renderer/stores/request.store'
@@ -53,6 +53,10 @@ import { useUIStore } from '../../src/renderer/stores/ui.store'
 import { activateTabStores } from '../../src/renderer/lib/activate-tab'
 import HeaderProjectTabs from '../../src/renderer/components/layout/HeaderProjectTabs'
 import { deleteProjectReleasingTabs } from '../../src/renderer/lib/close-project-tab'
+import { useMockMcpStore } from '../../src/renderer/stores/mock-mcp.store'
+import { serverToDraft } from '../../src/renderer/components/mock-mcp/mock-mcp-draft'
+import { mockMcpTabId } from '../../src/renderer/components/mock-mcp/mock-mcp-tabs'
+import { sampleServer } from './mock-mcp-bridge-stub'
 import type { Project, Tab } from '../../src/renderer/types'
 
 const projects = [
@@ -61,6 +65,7 @@ const projects = [
 ] as unknown as Project[]
 
 const s = () => useWorkspaceStore.getState()
+const projectTabsOf = (id: string) => projectOpenTabs(id)
 
 function tab(id: string, extra: Partial<Tab> = {}): Omit<Tab, 'isDirty' | 'isLoading'> {
   return { id, name: id, protocol: 'http', method: 'GET', url: '', ...extra } as Omit<
@@ -231,5 +236,111 @@ describe('sibling path: deleting a project', () => {
     expect(useRequestStore.getState()._tabStates.has('a-clean')).toBe(false)
     // The project the user is in is untouched.
     expect(useRequestStore.getState()._currentTabId).toBe('b1')
+  })
+})
+
+describe('Save on a project with several kinds of dirty tab', () => {
+  it('a Mock MCP tab whose editor is not mounted: saved, marked clean, project closes', async () => {
+    // GPT review P2: the editor hook that mirrors draft → tab dirty only runs
+    // while the editor is mounted, so after a save from the project dialog the
+    // tab stayed dirty and the close was refused.
+    const server = sampleServer({ id: 'srv-a', projectId: 'A' })
+    const saved: string[] = []
+    useMockMcpStore.setState({
+      servers: [server],
+      drafts: { 'srv-a': { ...serverToDraft(server), name: 'Echo MCP edited' } },
+      updateServer: async (id: string) => {
+        saved.push(id)
+        return null
+      },
+    } as never)
+    const mockTab = mockMcpTabId('srv-a')
+    await s().setActiveProject('A')
+    useTabsStore
+      .getState()
+      .openTab(
+        tab(mockTab, { protocol: 'mockMcpServer', mockMcpServerId: 'srv-a', name: 'Echo MCP' }),
+      )
+    useTabsStore.getState().markDirty(mockTab, true)
+    // Leave it for an HTTP tab, then for project B: the editor unmounts.
+    useTabsStore.getState().openTab(tab('a-http', { endpointId: 'e1' }))
+    await s().setActiveProject('B')
+
+    render(<HeaderProjectTabs />)
+    fireEvent.click(screen.getByTestId('header-project-tab-close-A'))
+    fireEvent.click(await screen.findByTestId('unsaved-save-btn'))
+    await waitFor(() => expect(s().openProjectIds).not.toContain('A'))
+    expect(saved).toEqual(['srv-a'])
+    expect(screen.queryByTestId('unsaved-changes-dialog')).toBeNull()
+    expect(s().activeProjectId).toBe('B')
+  })
+
+  it('a Mock MCP edit typed while its save is in flight keeps the tab dirty and the project open', async () => {
+    const server = sampleServer({ id: 'srv-b', projectId: 'A' })
+    useMockMcpStore.setState({
+      servers: [server],
+      drafts: { 'srv-b': { ...serverToDraft(server), name: 'first edit' } },
+      updateServer: async () => {
+        // The user keeps typing while the update is on the wire.
+        useMockMcpStore
+          .getState()
+          .setDraft('srv-b', { ...serverToDraft(server), name: 'second edit' })
+        return null
+      },
+    } as never)
+    const mockTab = mockMcpTabId('srv-b')
+    await s().setActiveProject('A')
+    useTabsStore
+      .getState()
+      .openTab(
+        tab(mockTab, { protocol: 'mockMcpServer', mockMcpServerId: 'srv-b', name: 'Echo MCP' }),
+      )
+    useTabsStore.getState().markDirty(mockTab, true)
+    await s().setActiveProject('B')
+    render(<HeaderProjectTabs />)
+    fireEvent.click(screen.getByTestId('header-project-tab-close-A'))
+    fireEvent.click(await screen.findByTestId('unsaved-save-btn'))
+    await waitFor(() => expect(s().activeProjectId).toBe('A'))
+    expect(s().openProjectIds).toContain('A')
+    expect(useMockMcpStore.getState().drafts['srv-b']?.name).toBe('second edit')
+    expect(projectTabsOf('A').find((x) => x.id === mockTab)?.isDirty).toBe(true)
+    expect(screen.getByTestId('unsaved-changes-dialog')).toBeTruthy()
+  })
+
+  it('two dirty request tabs: both are written, then the project closes', async () => {
+    await s().setActiveProject('A')
+    useTabsStore.getState().openTab(tab('a-one', { endpointId: 'e1', name: 'One' }))
+    useTabsStore.getState().openTab(tab('a-two', { endpointId: 'e2', name: 'Two' }))
+    useTabsStore.getState().markDirty('a-one', true)
+    useTabsStore.getState().markDirty('a-two', true)
+    await s().setActiveProject('B')
+    render(<HeaderProjectTabs />)
+    fireEvent.click(screen.getByTestId('header-project-tab-close-A'))
+    const dialog = await screen.findByTestId('unsaved-changes-dialog')
+    expect(dialog.textContent).toContain('One')
+    expect(dialog.textContent).toContain('Two')
+    fireEvent.click(screen.getByTestId('unsaved-save-btn'))
+    await waitFor(() => expect(s().openProjectIds).not.toContain('A'))
+    expect(saveMock.calls).toEqual(['a-one', 'a-two'])
+  })
+
+  it('the second save fails: the dialog and the project stay open, the first stays saved', async () => {
+    await s().setActiveProject('A')
+    useTabsStore.getState().openTab(tab('a-one', { endpointId: 'e1', name: 'One' }))
+    useTabsStore.getState().openTab(tab('a-two', { endpointId: 'e2', name: 'Two' }))
+    useTabsStore.getState().markDirty('a-one', true)
+    useTabsStore.getState().markDirty('a-two', true)
+    await s().setActiveProject('B')
+    saveMock.result = (id) =>
+      id === 'a-two' ? { success: false, error: 'disk full' } : { success: true }
+    render(<HeaderProjectTabs />)
+    fireEvent.click(screen.getByTestId('header-project-tab-close-A'))
+    fireEvent.click(await screen.findByTestId('unsaved-save-btn'))
+    await waitFor(() => expect(saveMock.calls).toEqual(['a-one', 'a-two']))
+    expect(screen.getByTestId('unsaved-changes-dialog')).toBeTruthy()
+    expect(s().openProjectIds).toContain('A')
+    const tabsNow = projectTabsOf('A')
+    expect(tabsNow.find((x) => x.id === 'a-one')?.isDirty).toBe(false)
+    expect(tabsNow.find((x) => x.id === 'a-two')?.isDirty).toBe(true)
   })
 })
