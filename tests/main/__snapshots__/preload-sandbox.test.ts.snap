@@ -132,6 +132,7 @@ exports[`preload under the renderer sandbox (issue #294) > window.api surface is
   "grpc.serverStream (function)",
   "history.add (function)",
   "history.clear (function)",
+  "history.count (function)",
   "history.delete (function)",
   "history.get (function)",
   "history.list (function)",

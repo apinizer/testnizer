@@ -29,7 +29,7 @@ import type { Environment, GlobalVariable, HistoryEntry } from '../../src/render
 
 const ENV = { id: 'e1', project_id: 'p1', name: 'Staging', is_active: false } as Environment
 const GLOBAL = { id: 'g1', key: 'token', value: 'x' } as GlobalVariable
-const ENTRY = { id: 'h1', method: 'GET', url: 'https://x.test' } as HistoryEntry
+const ENTRY = { id: 'h1', project_id: 'p1', method: 'GET', url: 'https://x.test' } as HistoryEntry
 
 beforeEach(() => {
   envDelete.mockReset()
@@ -75,7 +75,7 @@ describe('a refused delete leaves the record listed', () => {
   it('keeps history entries when clear is refused', async () => {
     historyClear.mockResolvedValue({ success: false, error: 'SQLITE_BUSY' })
 
-    await useHistoryStore.getState().clear('w1')
+    await useHistoryStore.getState().clear('p1')
 
     expect(useHistoryStore.getState().entries).toHaveLength(1)
   })
@@ -118,7 +118,7 @@ describe('a confirmed delete removes the record', () => {
   it('empties the history list', async () => {
     historyClear.mockResolvedValue({ success: true, data: true })
 
-    await useHistoryStore.getState().clear('w1')
+    await useHistoryStore.getState().clear('p1')
 
     expect(useHistoryStore.getState().entries).toEqual([])
   })

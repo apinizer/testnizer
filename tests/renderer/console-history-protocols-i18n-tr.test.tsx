@@ -590,7 +590,7 @@ describe('issue #248 follow-up — English stays byte-identical', () => {
     const h = render(<HistorySidebar />)
     expect(screen.getAllByText('History').length).toBe(2)
     expect(screen.getByPlaceholderText('Filter history...')).toBeTruthy()
-    expect(screen.getByTitle('Clear all history')).toBeTruthy()
+    expect(screen.getByTitle("Clear this project's history")).toBeTruthy()
     expect(screen.getByText('Today')).toBeTruthy()
     expect(screen.getByRole('button', { name: /Commits/ })).toBeTruthy()
     h.unmount()

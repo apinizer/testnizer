@@ -69,6 +69,18 @@ export function registerHistoryHandlers(): void {
     },
   )
 
+  ipcMain.handle(
+    'history:count',
+    async (_event, scope?: string | { workspace_id?: string; project_id?: string }) => {
+      try {
+        const data = historyRepo.countHistory(scope)
+        return { success: true, data }
+      } catch (e) {
+        return { success: false, error: (e as Error).message }
+      }
+    },
+  )
+
   ipcMain.handle('history:delete', async (_event, id: string) => {
     try {
       const data = historyRepo.deleteHistoryEntry(id)

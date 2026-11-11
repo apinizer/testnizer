@@ -86,6 +86,44 @@ describe('history:get + delete + clear + prune', () => {
     expect(del.success).toBe(true)
   })
 
+  it('history:count reports exactly what history:clear then deletes (same scope rule)', async () => {
+    const otherProject = seedProject(testDb, workspaceId, 'Project 2')
+    const add = (project_id: string | undefined, ws: string | undefined) =>
+      harness.invoke('history:add', {
+        workspace_id: ws,
+        project_id,
+        protocol: 'http',
+        method: 'GET',
+        url: 'https://example.com',
+        request_snapshot: '{}',
+      })
+    await add(projectId, workspaceId)
+    await add(projectId, workspaceId)
+    await add(otherProject, workspaceId)
+    await add(undefined, undefined) // no workspace: only an unscoped clear removes it
+
+    const count = (scope?: unknown) =>
+      harness.invoke('history:count', scope) as Promise<{ success: boolean; data: number }>
+
+    expect((await count({ project_id: projectId })).data).toBe(2)
+    // A bare workspace id string is the sidebar's call — every project in it.
+    expect((await count(workspaceId)).data).toBe(3)
+    expect((await count()).data).toBe(4)
+
+    // The History sidebar + Settings → Data scope: one project; the other keeps its row.
+    const byProject = (await harness.invoke('history:clear', { project_id: projectId })) as {
+      data: number
+    }
+    expect(byProject.data).toBe(2)
+    expect((await count({ project_id: projectId })).data).toBe(0)
+    expect((await count({ project_id: otherProject })).data).toBe(1)
+
+    const cleared = (await harness.invoke('history:clear', workspaceId)) as { data: number }
+    expect(cleared.data).toBe(1)
+    expect((await count(workspaceId)).data).toBe(0)
+    expect((await count()).data).toBe(1)
+  })
+
   it('clears and prunes without throwing', async () => {
     const clear = (await harness.invoke('history:clear', { workspace_id: workspaceId })) as {
       success: boolean

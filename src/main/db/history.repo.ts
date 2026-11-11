@@ -111,22 +111,35 @@ export function addHistory(data: {
   return getHistoryById(id)!
 }
 
-export function clearHistory(
-  scope?: string | { workspace_id?: string; project_id?: string },
-): number {
-  const db = getDb()
+type HistoryScope = string | { workspace_id?: string; project_id?: string }
+
+/**
+ * The ONE scope rule `clearHistory` and `countHistory` share, so the History
+ * Clear confirmation can never announce a different number than it deletes.
+ * Project wins over workspace; neither = every row.
+ */
+function historyScopeWhere(scope?: HistoryScope): { where: string; params: string[] } {
   // Back-compat: allow passing a workspaceId string directly
   const opts = typeof scope === 'string' ? { workspace_id: scope } : scope || {}
-  if (opts.project_id) {
-    const result = db.prepare('DELETE FROM history WHERE project_id = ?').run(opts.project_id)
-    return result.changes
-  }
-  if (opts.workspace_id) {
-    const result = db.prepare('DELETE FROM history WHERE workspace_id = ?').run(opts.workspace_id)
-    return result.changes
-  }
-  const result = db.prepare('DELETE FROM history').run()
-  return result.changes
+  if (opts.project_id) return { where: 'WHERE project_id = ?', params: [opts.project_id] }
+  if (opts.workspace_id) return { where: 'WHERE workspace_id = ?', params: [opts.workspace_id] }
+  return { where: '', params: [] }
+}
+
+export function clearHistory(scope?: HistoryScope): number {
+  const db = getDb()
+  const { where, params } = historyScopeWhere(scope)
+  return db.prepare(`DELETE FROM history ${where}`).run(...params).changes
+}
+
+/** How many rows `clearHistory(scope)` would delete. */
+export function countHistory(scope?: HistoryScope): number {
+  const db = getDb()
+  const { where, params } = historyScopeWhere(scope)
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM history ${where}`).get(...params) as
+    | { n: number }
+    | undefined
+  return row?.n ?? 0
 }
 
 export function deleteHistoryEntry(id: string): boolean {

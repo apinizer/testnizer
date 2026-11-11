@@ -1136,6 +1136,9 @@ function SuiteNode({
         {hovered && !isRenaming && (
           <button
             type="button"
+            data-testid="suite-row-more"
+            aria-label={t('common.moreActions')}
+            title={t('common.moreActions')}
             onClick={(e) => {
               e.stopPropagation()
               onContextMenu(e)
@@ -1143,7 +1146,7 @@ function SuiteNode({
             className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
             style={{ color: T.ghost }}
           >
-            <MoreHorizontal size={14} />
+            <MoreHorizontal size={14} aria-hidden="true" />
           </button>
         )}
       </div>
@@ -1474,6 +1477,8 @@ function SuiteContentsTree({
             {/* More actions (new request / subfolder / rename / delete) */}
             <button
               type="button"
+              data-testid="suite-folder-more"
+              aria-label={t('testsPanel.folderActions')}
               title={t('testsPanel.folderActions')}
               className="flex-shrink-0 opacity-0 group-hover:opacity-100"
               style={{
@@ -1488,12 +1493,14 @@ function SuiteContentsTree({
                 setFolderMenu({ folder, x: e.clientX, y: e.clientY })
               }}
             >
-              <MoreHorizontal size={12} />
+              <MoreHorizontal size={12} aria-hidden="true" />
             </button>
             {/* Folder auth + cascade scripts (imported setup/teardown lands here). */}
             <button
               type="button"
-              title="Folder settings (auth + scripts)"
+              data-testid="suite-folder-settings"
+              aria-label={t('folderSettings.title')}
+              title={t('folderSettings.title')}
               className="flex-shrink-0 opacity-0 group-hover:opacity-100"
               style={{
                 background: 'transparent',
@@ -1507,7 +1514,7 @@ function SuiteContentsTree({
                 setSettingsFolder({ id: folder.id, name: folder.name })
               }}
             >
-              <Settings size={12} />
+              <Settings size={12} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -1767,10 +1774,12 @@ function SuiteItemRow({
               onRemove()
             }}
             className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
+            data-testid="suite-item-remove"
+            aria-label={t('testsPanel.removeFromSuite')}
             title={t('testsPanel.removeFromSuite')}
             style={{ color: '#cc2200' }}
           >
-            <Trash2 size={12} />
+            <Trash2 size={12} aria-hidden="true" />
           </button>
         )}
       </div>

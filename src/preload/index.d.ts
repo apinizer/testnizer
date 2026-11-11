@@ -392,6 +392,8 @@ interface HistoryApi {
     response_snapshot?: string
   }): Promise<IpcResult<HistoryEntry>>
   clear(scope?: string | { workspace_id?: string; project_id?: string }): Promise<IpcResult<number>>
+  /** How many rows `clear(scope)` would delete (same scope rule). */
+  count(scope?: string | { workspace_id?: string; project_id?: string }): Promise<IpcResult<number>>
   delete(id: string): Promise<IpcResult<boolean>>
   prune(limit: number, workspaceId?: string): Promise<IpcResult<number>>
 }
