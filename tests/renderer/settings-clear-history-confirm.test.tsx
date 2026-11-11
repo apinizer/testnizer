@@ -74,6 +74,15 @@ describe('Settings → Data → Clear history asks first', () => {
     await waitFor(() => expect(toastMock.error).toHaveBeenCalledWith('SQLITE_BUSY'))
   })
 
+  it('switching to another project closes the open confirmation; nothing deleted', async () => {
+    const view = render(<DataPane projectId="p1" onOpenImport={() => {}} />)
+    clickClear()
+    await screen.findByTestId('delete-confirm-btn')
+    view.rerender(<DataPane projectId="p2" onOpenImport={() => {}} />)
+    await waitFor(() => expect(screen.queryByTestId('delete-confirm-btn')).toBeNull())
+    expect(clear).not.toHaveBeenCalled()
+  })
+
   it('no history → says so, opens no dialog', async () => {
     stored = 0
     render(<DataPane projectId="p1" onOpenImport={() => {}} />)

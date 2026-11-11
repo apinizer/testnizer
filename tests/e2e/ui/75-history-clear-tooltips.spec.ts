@@ -14,7 +14,7 @@
  * Electron instance — the behaviour under test. Specs after this one send
  * their own requests before reading History.
  *
- * Cleanup: the folder and the other project's seeded History row are deleted
+ * Cleanup: the IPC-created folder and the other project's seeded History row are deleted
  * via IPC, the tree filter and tabs are reset.
  */
 import { expect, type Page } from '@playwright/test'
@@ -22,14 +22,14 @@ import { uiTest } from './_setup'
 import {
   closeAllTabs,
   dismissOverlays,
-  E2E_PROJECT_NAME,
   ensureCanonicalProject,
   navigateSidebar,
   openHttpRequestTab,
 } from '../helpers/ui/bootstrap'
 import { fillUrl, sendAndWaitResponse } from '../helpers/ui/request-flow'
-import { getActiveProjectId } from '../helpers/ui/assert-ipc'
-import { treeAddFolder, treeClearSearch, treeSearch } from '../helpers/ui/tree'
+import { createFolder, getActiveProjectId } from '../helpers/ui/assert-ipc'
+import { refreshWorkspaceTree } from '../helpers/ui/import-flow'
+import { treeClearSearch, treeSearch } from '../helpers/ui/tree'
 import { localHttpBin } from '../helpers/test-servers'
 
 const uid = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
@@ -121,12 +121,20 @@ uiTest.describe('History — Clear asks first, rows show their full URL (finding
   })
 
   uiTest('APIs tree "···" is labelled "More actions"', async ({ window }) => {
+    // Independent of what earlier specs left in the shared instance (a tree
+    // filter, a collapsed root, a long virtualised tree): the folder is created
+    // via IPC, the tree is rebuilt from the DB and filtered on its unique name
+    // — a self-matching folder is always rendered (spec 36's pattern).
     const name = `Labels ${uid()}`
     const projectId = await getActiveProjectId(window)
+    let folderId: string | null = null
     try {
-      await treeAddFolder(window, E2E_PROJECT_NAME, name)
+      await treeClearSearch(window)
+      folderId = await createFolder(window, projectId, name)
+      await refreshWorkspaceTree(window)
       await treeSearch(window, name)
       const node = window.getByTestId('tree-node').filter({ hasText: name }).first()
+      await expect(node).toBeVisible({ timeout: 10_000 })
       await node.hover()
       const more = node.getByTestId('tree-node-more')
       await expect(more).toBeVisible()
@@ -134,25 +142,55 @@ uiTest.describe('History — Clear asks first, rows show their full URL (finding
       await expect(more).toHaveAttribute('title', 'More actions')
     } finally {
       await treeClearSearch(window).catch(() => {})
-      await window
-        .evaluate(
-          async ({ pid, n }) => {
+      if (folderId) {
+        await window
+          .evaluate(async (id) => {
             const w = window as unknown as Window & {
-              api: {
-                folder: {
-                  list: (p: string) => Promise<{ data?: Array<{ id: string; name: string }> }>
-                  delete: (id: string) => Promise<unknown>
-                }
-              }
+              api: { folder: { delete: (id: string) => Promise<unknown> } }
             }
-            const res = await w.api.folder.list(pid)
-            for (const f of res.data ?? []) if (f.name === n) await w.api.folder.delete(f.id)
-          },
-          { pid: projectId, n: name },
-        )
-        .catch(() => {})
+            await w.api.folder.delete(id)
+          }, folderId)
+          .catch(() => {})
+        await refreshWorkspaceTree(window).catch(() => {})
+      }
     }
   })
+
+  uiTest(
+    'Settings → Data → Clear history asks first; Cancel keeps the rows',
+    async ({ window }) => {
+      const marker = `settings-${uid()}`
+      try {
+        await openHttpRequestTab(window)
+        await fillUrl(window, `${localHttpBin()}/get?${marker}=1`)
+        await sendAndWaitResponse(window)
+
+        await window.getByTestId('nav-settings').click()
+        await expect(window.getByTestId('project-detail-modal')).toBeVisible({ timeout: 8_000 })
+        await window.getByTestId('project-detail-tab-data').click()
+        await window.getByTestId('data-clear-history-btn').click()
+
+        // The History sidebar's dialog: same title, the project's count from main.
+        await expect(window.getByText('Delete project history')).toBeVisible()
+        await expect(window.getByText(/this project's \d+ history entr(y|ies)/)).toBeVisible()
+        await shot(window, 'settings-confirm-dialog')
+        await window.getByTestId('delete-cancel-btn').click()
+        await expect(window.getByTestId('delete-confirm-btn')).toHaveCount(0)
+
+        await window.keyboard.press('Escape')
+        await expect(window.getByTestId('project-detail-modal')).toBeHidden({ timeout: 5_000 })
+        await navigateSidebar(window, 'history')
+        await filter(window).fill(marker)
+        await expect(entries(window)).toHaveCount(1, { timeout: 10_000 })
+      } finally {
+        await dismissOverlays(window).catch(() => {})
+        await filter(window)
+          .fill('')
+          .catch(() => {})
+        await closeAllTabs(window).catch(() => {})
+      }
+    },
+  )
 
   uiTest(
     'Clear confirms; Cancel keeps rows, Confirm deletes, empty list disables it',
