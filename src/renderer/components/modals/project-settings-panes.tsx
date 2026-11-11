@@ -2114,6 +2114,7 @@ export function ProxyPane({
             <div>
               <Label text={t('proxy.proxyType')} />
               <select
+                data-testid="project-proxy-type"
                 value={proxy.proxyType || 'http'}
                 onChange={(e) => update({ proxyType: e.target.value as ProjectProxy['proxyType'] })}
                 style={{ ...BASE_INP, cursor: 'pointer' }}
