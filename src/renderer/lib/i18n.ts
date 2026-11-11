@@ -399,6 +399,21 @@ const translations: Record<Locale, Record<string, string>> = {
     'shell.dragToResize': 'Drag to resize',
     'shell.loading': 'Loading...',
     'header.closeProjectTab': 'Close project tab',
+    'header.projectTabs': 'Open projects',
+    // Unsaved-changes dialog — closing a request tab or a project tab
+    'unsaved.title': 'Unsaved changes',
+    'unsaved.tabQuestion': 'Save your changes before closing this tab?',
+    'unsaved.projectQuestion': 'Save your changes before closing this project?',
+    'unsaved.tabBody': '{name} has unsaved changes. They will be lost if you close without saving.',
+    'unsaved.projectBodyOne':
+      '{name} has {count} unsaved request. It will be lost if you close the project without saving.',
+    'unsaved.projectBody':
+      '{name} has {count} unsaved requests. They will be lost if you close the project without saving.',
+    'unsaved.moreNames': '+{count} more',
+    'unsaved.cancel': 'Cancel',
+    'unsaved.discard': 'Discard',
+    'unsaved.saveAndClose': 'Save & Close',
+    'unsaved.saving': 'Saving…',
     'header.saveProjectHint': 'Save Project',
     'urlBar.sendAndDownload': 'Send and Download',
     'rightPanel.variables': 'Variables',
@@ -5051,6 +5066,21 @@ const translations: Record<Locale, Record<string, string>> = {
     'shell.dragToResize': 'Boyutlandırmak için sürükleyin',
     'shell.loading': 'Yükleniyor...',
     'header.closeProjectTab': 'Proje sekmesini kapat',
+    'header.projectTabs': 'Açık projeler',
+    'unsaved.title': 'Kaydedilmemiş değişiklikler',
+    'unsaved.tabQuestion': 'Sekmeyi kapatmadan önce değişiklikler kaydedilsin mi?',
+    'unsaved.projectQuestion': 'Projeyi kapatmadan önce değişiklikler kaydedilsin mi?',
+    'unsaved.tabBody':
+      '{name} kaydedilmemiş değişiklikler içeriyor. Kaydetmeden kapatırsanız kaybolacak.',
+    'unsaved.projectBodyOne':
+      '{name} projesinde kaydedilmemiş {count} istek var. Projeyi kaydetmeden kapatırsanız kaybolacak.',
+    'unsaved.projectBody':
+      '{name} projesinde kaydedilmemiş {count} istek var. Projeyi kaydetmeden kapatırsanız kaybolacaklar.',
+    'unsaved.moreNames': '+{count} istek daha',
+    'unsaved.cancel': 'İptal',
+    'unsaved.discard': 'Değişiklikleri at',
+    'unsaved.saveAndClose': 'Kaydet ve kapat',
+    'unsaved.saving': 'Kaydediliyor…',
     'header.saveProjectHint': 'Projeyi Kaydet',
     'urlBar.sendAndDownload': 'Gönder ve İndir',
     'rightPanel.variables': 'Değişkenler',

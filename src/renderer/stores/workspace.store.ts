@@ -85,6 +85,22 @@ export function stashedProjectTabIds(): string[] {
 }
 
 /**
+ * The tabs a project has open right now: the live strip when it is the active
+ * project, else its stashed snapshot (a hidden project's tabs live ONLY there).
+ */
+export function projectOpenTabs(projectId: string): Tab[] {
+  if (useWorkspaceStore.getState().activeProjectId === projectId) {
+    return useTabsStore.getState().tabs
+  }
+  return tabsByProject.get(projectId)?.tabs ?? []
+}
+
+/** The project's tabs holding unsaved edits — see `closeProjectTab`. */
+export function projectDirtyTabs(projectId: string): Tab[] {
+  return projectOpenTabs(projectId).filter((t) => t.isDirty)
+}
+
+/**
  * Per-project APIs-tree state (issue #123): the sidebar search box and the
  * expanded-folder set used to be global — a search typed in project A kept
  * filtering project B after a header-tab switch, and `setActiveProject`
@@ -297,7 +313,14 @@ interface WorkspaceStore {
   deleteProject: (id: string) => Promise<void>
   /** Close a project's header tab (#1): drops its tab snapshot and, if it was
    *  active, falls back to another open project or Home. */
-  closeProjectTab: (id: string) => void
+  /**
+   * Close a project's header tab, forgetting its open tabs. Refuses — returns
+   * `false` and changes nothing — while any of them holds unsaved edits, unless
+   * `discardUnsaved` says the user chose to throw them away (a dirty tab never
+   * closes silently: issues #9, #259, #269). The header asks first through
+   * `lib/close-project-tab.ts`, which also releases the tabs' editor state.
+   */
+  closeProjectTab: (id: string, opts?: { discardUnsaved?: boolean }) => boolean
   goHome: () => void
   /** Reload tree data from DB for active project */
   refreshTree: () => Promise<void>
@@ -979,7 +1002,8 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     useTabsStore.getState().replaceAllTabs([], null)
   },
 
-  closeProjectTab: (id) => {
+  closeProjectTab: (id, opts) => {
+    if (!opts?.discardUnsaved && projectDirtyTabs(id).length > 0) return false
     tabsByProject.delete(id)
     persistTabsByProject()
     treeStateByProject.delete(id)
@@ -997,6 +1021,7 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
         useTabsStore.getState().replaceAllTabs([], null)
       }
     }
+    return true
   },
 
   syncAfterGit: async (projectId) => {
