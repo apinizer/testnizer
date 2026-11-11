@@ -49,6 +49,8 @@ import {
   resolveProxy,
   resolveSslVerification,
   withCriticalFlag,
+  withProxyCredentials,
+  type ProxySetting,
 } from '../../shared/request-settings'
 import { NotFoundError, ipcResult } from '../lib/ipc-helpers'
 import { resolveTlsPayload } from '../lib/tls-presets'
@@ -309,21 +311,23 @@ export function inheritedNetworkFor(
     sslVerification: { project: project?.sslVerification, app: app.sslVerification },
     followRedirects: { project: project?.followRedirects, app: app.followRedirects },
     tls: resolveTlsPayload(project?.tls),
-    proxy:
-      proxy && proxy.mode
-        ? {
-            mode: proxy.mode,
-            host: proxy.host,
-            port: proxy.port,
-            auth: proxy.auth
-              ? {
-                  username: proxy.auth.username,
-                  password: decryptSecret(proxy.auth.password) ?? '',
-                }
-              : undefined,
-          }
-        : undefined,
+    proxy: proxy ? decryptedProxy(proxy) : undefined,
   }
+}
+
+/**
+ * The resolved proxy as Send receives it from `settings:get`: every key kept
+ * (`bypass`, `proxyType` — tester report 2026-11-11: a field-by-field rebuild
+ * dropped both, so Run proxied a bypassed host and used a SOCKS proxy as HTTP),
+ * only the password decrypted, and the login normalised again after decryption
+ * (a password this keychain cannot open decrypts to `''`).
+ */
+function decryptedProxy(proxy: ProxySetting): ProxySetting {
+  if (!proxy.auth) return proxy
+  return withProxyCredentials({
+    ...proxy,
+    auth: { ...proxy.auth, password: decryptSecret(proxy.auth.password) ?? '' },
+  })
 }
 
 function isSavedGraphqlSubscription(requestSchema: string | null): boolean {

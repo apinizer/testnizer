@@ -1,5 +1,6 @@
 import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios'
 import { SOCKS_PROXY_UNSUPPORTED, isProxyBypassed, isSocksProxy } from '../../shared/proxy-bypass'
+import { proxyCredentials, type ProxySetting } from '../../shared/request-settings'
 import { NtlmClient } from 'axios-ntlm'
 import { CookieJar } from 'tough-cookie'
 import { randomUUID } from 'crypto'
@@ -76,14 +77,8 @@ interface AuthConfig {
   awsSignature?: { accessKey: string; secretKey: string; region: string; service: string }
 }
 
-interface ProxyConfig {
-  mode: 'system' | 'none' | 'custom'
-  host?: string
-  port?: number
-  bypass?: string
-  proxyType?: 'http' | 'https' | 'socks'
-  auth?: { username: string; password: string }
-}
+/** The project / app proxy setting — one type from Send's payload to Run's (`ProxySetting`). */
+type ProxyConfig = ProxySetting
 
 interface ResponseCookie {
   name: string
@@ -1260,15 +1255,13 @@ export async function executeHttpRequest(options: HttpRequestOptions): Promise<A
     ) {
       config.proxy = false
     } else if (options.proxy && options.proxy.mode === 'custom' && options.proxy.host) {
+      // Cleared credentials are no login (`proxyCredentials`): axios throws
+      // "Invalid proxy authorization" on an `{username:'', password:''}`.
+      const login = proxyCredentials(options.proxy.auth)
       config.proxy = {
         host: options.proxy.host,
         port: options.proxy.port ?? 8080,
-        auth: options.proxy.auth
-          ? {
-              username: options.proxy.auth.username,
-              password: options.proxy.auth.password,
-            }
-          : undefined,
+        ...(login ? { auth: login } : {}),
       }
     } else if (options.proxy && options.proxy.mode === 'none') {
       config.proxy = false

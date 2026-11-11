@@ -218,16 +218,48 @@ export function isActiveProxy(p: ProxySetting | null | undefined): boolean {
  * (`renderer/lib/network-settings.ts` `networkPayload`) and Run
  * (`runner.handler.ts` `inheritedNetworkFor`): the project's own proxy when it
  * configures one, else the app Settings proxy, else none (`undefined` = the
- * engine default, i.e. the system proxy). Returns the chosen object as is, so
- * the caller holds the resolved proxy (password included) in one place.
+ * engine default, i.e. the system proxy). Returns the chosen setting with
+ * every key (`bypass`, `proxyType`, …) and its login normalised
+ * (`withProxyCredentials`), so the caller holds the resolved proxy (password
+ * included) in one place.
  */
-export function resolveProxy<T extends ProxySetting>(
-  project: T | null | undefined,
-  app: T | null | undefined,
-): T | undefined {
-  if (project && isActiveProxy(project)) return project
-  if (app && isActiveProxy(app)) return app
+export function resolveProxy(
+  project: ProxySetting | null | undefined,
+  app: ProxySetting | null | undefined,
+): ProxySetting | undefined {
+  if (project && isActiveProxy(project)) return withProxyCredentials(project)
+  if (app && isActiveProxy(app)) return withProxyCredentials(app)
   return undefined
+}
+
+/**
+ * The proxy login a setting carries — ONE rule for HTTP Send / Run (axios and
+ * the curl sidecar) and the realtime CONNECT tunnel (tester report
+ * 2026-11-11): both fields empty is NO login. A name and password typed into
+ * the Proxy pane and then cleared left `{username:'', password:''}` behind,
+ * which axios refuses ("Invalid proxy authorization") — every request failed.
+ *
+ * One field filled IS a login, the other half `''`: a password-only proxy
+ * login is real (Basic `:secret`), and the app Settings form has always saved
+ * it. A missing or non-string half reads as `''` — the settings handler stores
+ * a cleared password as `null` (`encryptSecret('')`), which the tunnel and
+ * curl used to send as the text "null".
+ */
+export function proxyCredentials(
+  auth: unknown,
+): { username: string; password: string } | undefined {
+  if (!auth || typeof auth !== 'object') return undefined
+  const { username, password } = auth as Record<string, unknown>
+  const user = typeof username === 'string' ? username : ''
+  const pass = typeof password === 'string' ? password : ''
+  return user || pass ? { username: user, password: pass } : undefined
+}
+
+/** The setting with its login normalised by {@link proxyCredentials}; every other key as is. */
+export function withProxyCredentials(proxy: ProxySetting): ProxySetting {
+  const { auth, ...rest } = proxy
+  const login = proxyCredentials(auth)
+  return login ? { ...rest, auth: login } : rest
 }
 
 // ─── HTTP timeout chain ─────────────────────────────────────────────────────

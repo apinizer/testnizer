@@ -14,7 +14,11 @@ import {
   TOGGLE_CONSOLE_SHORTCUT,
 } from '../../lib/shortcut-format'
 import { useNumberDraft } from '../../lib/number-draft'
-import { isActiveProxy, type ProxySetting } from '../../../shared/request-settings'
+import {
+  isActiveProxy,
+  withProxyCredentials,
+  type ProxySetting,
+} from '../../../shared/request-settings'
 import { AppearanceLinkPane, ProjectTimeoutInput, SettingScopeNote } from './SettingScopeNote'
 import { describeProxy, onOff } from '../../lib/settings-scope'
 import { toast } from '../../lib/toast'
@@ -2048,6 +2052,15 @@ export function ProxyPane({
   function update(patch: Partial<ProjectProxy>) {
     onChange({ proxy: { ...proxy, ...patch } })
   }
+  // Both fields cleared = no login (`withProxyCredentials`): an empty
+  // `{username:'', password:''}` made every request fail (tester report 2026-11-11).
+  const setLogin = (username: string, password: string): void =>
+    onChange({
+      proxy: {
+        ...withProxyCredentials({ ...proxy, auth: { username, password } }),
+        mode: proxy.mode,
+      },
+    })
   const followApp = (): void => onChange({ proxy: null })
   // Draft-backed: clearing the box wrote port 0, which is not a port.
   const portDraft = useNumberDraft({
@@ -2101,6 +2114,7 @@ export function ProxyPane({
             <div>
               <Label text={t('proxy.proxyType')} />
               <select
+                data-testid="project-proxy-type"
                 value={proxy.proxyType || 'http'}
                 onChange={(e) => update({ proxyType: e.target.value as ProjectProxy['proxyType'] })}
                 style={{ ...BASE_INP, cursor: 'pointer' }}
@@ -2116,6 +2130,7 @@ export function ProxyPane({
               <div>
                 <Label text={t('proxy.host')} />
                 <input
+                  data-testid="project-proxy-host"
                   value={proxy.host || ''}
                   onChange={(e) => update({ host: e.target.value })}
                   placeholder="127.0.0.1"
@@ -2126,6 +2141,7 @@ export function ProxyPane({
                 <Label text={t('proxy.port')} />
                 <input
                   type="number"
+                  data-testid="project-proxy-port"
                   {...portDraft.inputProps}
                   style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
                 />
@@ -2134,6 +2150,7 @@ export function ProxyPane({
             <div className="mt-3">
               <Label text={t('proxy.bypass')} />
               <input
+                data-testid="project-proxy-bypass"
                 value={proxy.bypass || ''}
                 onChange={(e) => update({ bypass: e.target.value })}
                 placeholder={t('proxy.bypassPlaceholder')}
@@ -2150,12 +2167,9 @@ export function ProxyPane({
               <div>
                 <Label text={t('proxy.username')} />
                 <input
+                  data-testid="project-proxy-username"
                   value={proxy.auth?.username || ''}
-                  onChange={(e) =>
-                    update({
-                      auth: { username: e.target.value, password: proxy.auth?.password || '' },
-                    })
-                  }
+                  onChange={(e) => setLogin(e.target.value, proxy.auth?.password || '')}
                   style={BASE_INP}
                 />
               </div>
@@ -2163,12 +2177,9 @@ export function ProxyPane({
                 <Label text={t('proxy.password')} />
                 <input
                   type="password"
+                  data-testid="project-proxy-password"
                   value={proxy.auth?.password || ''}
-                  onChange={(e) =>
-                    update({
-                      auth: { username: proxy.auth?.username || '', password: e.target.value },
-                    })
-                  }
+                  onChange={(e) => setLogin(proxy.auth?.username || '', e.target.value)}
                   style={BASE_INP}
                 />
               </div>
