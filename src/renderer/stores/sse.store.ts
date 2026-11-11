@@ -8,6 +8,7 @@ import { loadTabbedState, attachTabbedPersist } from '../lib/persist-helpers'
 import { reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { patchTabSlice, readTabSlice, updateTabSlice, withoutTab } from '../lib/tab-slice'
+import { pinnedEvents } from '../lib/pinned-events'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 import {
   credentialRows,
@@ -36,6 +37,9 @@ export type SseBodyType = 'json' | 'text'
 function getSseApi() {
   return window.api?.sse
 }
+
+/** One `sse:event` payload, as the bridge types it. */
+type SseEvt = Parameters<Parameters<NonNullable<ReturnType<typeof getSseApi>>['onEvent']>[0]>[0]
 
 /** Snapshot of SSE state for per-tab caching. */
 interface TabSseState extends WithheldState {
@@ -303,25 +307,23 @@ export const useSseStore = create<SseStore>((set, get) => ({
       return current.connectionState
     }
 
-    const getOwnerConnectionId = (): string | null => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) return current.connectionId
-      if (ownerTabId !== null) {
-        return current._tabStates.get(ownerTabId)?.connectionId ?? null
-      }
-      return current.connectionId
-    }
-
     // Subscribe BEFORE awaiting connect — main fires the 'open' event from
-    // inside `connect()`, attaching after would race against the event.
+    // inside `connect()`, attaching after would race against the event. The
+    // listener is pinned to the id the connect answers (tester finding 13):
+    // until then events wait, so another tab's stream never lands here while
+    // this one is still connecting.
     const prevUnsub = get()._unsubscribe
     if (prevUnsub) prevUnsub()
-    /** Set once a terminal close has settled this connection's final state. */
-    let closedByServer = false
-    const unsub = sse.onEvent((evt) => {
-      const expected = getOwnerConnectionId()
-      if (expected && evt.connectionId !== expected) return
-
+    const pinned = pinnedEvents<SseEvt>(
+      (evt) => evt.connectionId,
+      (evt) => onOwnEvent(evt),
+    )
+    const offEvent = sse.onEvent((evt) => pinned.receive(evt))
+    const unsub = (): void => {
+      pinned.drop()
+      offEvent()
+    }
+    const onOwnEvent = (evt: SseEvt): void => {
       switch (evt.type) {
         case 'open':
           applyToOwner({
@@ -344,7 +346,6 @@ export const useSseStore = create<SseStore>((set, get) => ({
           // A 204 (SSE spec: "stop reconnecting") or a clean end of stream is
           // the server finishing → disconnected; any other failure → error.
           if (evt.closed && getOwnerConnectionState() === 'connected') {
-            closedByServer = true
             unsub()
             const ended = evt.closed === 'ended'
             applyToOwner({
@@ -391,14 +392,14 @@ export const useSseStore = create<SseStore>((set, get) => ({
           }
           break
       }
-    })
+    }
     set({ _unsubscribe: unsub })
 
     try {
       const wsStore = useWorkspaceStore.getState()
       const proxy = await connectionProxy(wsStore.activeProjectId)
       // Given up while the settings loaded (Cancel, the tab closed, its project left).
-      if (ownerSlice()?._pendingConnectId !== pendingConnectId) return
+      if (ownerSlice()?._pendingConnectId !== pendingConnectId) return unsub()
       const result = await sse.connect({
         ...proxy,
         url: resolvedUrl,
@@ -426,26 +427,22 @@ export const useSseStore = create<SseStore>((set, get) => ({
           },
         },
       })
-      if (closedByServer) {
-        // The stream already opened AND ended (a short finite stream can beat
-        // this IPC reply) — the close handler set the final state.
-      } else if (
-        result?.success &&
-        result.data &&
-        ownerSlice()?._pendingConnectId !== pendingConnectId
-      ) {
+      if (result?.success && result.data && ownerSlice()?._pendingConnectId !== pendingConnectId) {
         // The handshake finished just as it was given up (Cancel, the tab
         // closed): close the connection nobody owns.
         unsub()
         void sse.disconnect(result.data.connectionId).catch(() => {})
       } else if (result?.success && result.data) {
+        // The id goes into the slice first, then the held events apply on top
+        // of it: a short finite stream that already opened AND ended before
+        // this reply settles its final state here, not overwritten after.
         applyToOwner({
           connectionId: result.data.connectionId,
-          // Keep the state set by the 'open' event when it has already fired.
           connectionState:
             ownerSlice()?.connectionState === 'connected' ? 'connected' : 'connecting',
           _pendingConnectId: undefined,
         })
+        pinned.pin(result.data.connectionId)
       } else {
         unsub()
         applyToOwner({

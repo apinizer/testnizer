@@ -10,6 +10,7 @@ import { t } from '../lib/i18n'
 import { notifySendDroppedTabChanged, reloadedOnSameTab } from '../lib/withheld-before-send'
 import { cloneTabSlice } from '../lib/tab-clone'
 import { patchTabSlice, readTabSlice, withoutTab } from '../lib/tab-slice'
+import { pinnedEvents } from '../lib/pinned-events'
 import {
   credentialRows,
   trackCredentialEdits,
@@ -744,22 +745,69 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       })
     }
 
-    const getOwnerActiveStreamId = (): string | null => {
-      const current = get()
-      if (current._currentTabId === ownerTabId) return current.activeStreamId
-      if (ownerTabId !== null) {
-        return current._tabStates.get(ownerTabId)?.activeStreamId ?? null
+    // Streaming paths subscribe before invoking so events that arrive before
+    // the start reply are not lost. The listener is pinned to the stream id
+    // the start answers (tester finding 13): until then events wait, after it
+    // only that stream's land, and `end` / `error` remove it. Reading the id
+    // back from the slice let every later stream in once `end` cleared it.
+    const pinned = pinnedEvents<GrpcStreamPayload>(
+      (evt) => evt.streamId,
+      (evt) => onOwnStreamEvent(evt),
+    )
+    let offStream: (() => void) | null = null
+    const unsubscribe = (): void => {
+      pinned.drop()
+      offStream?.()
+      offStream = null
+    }
+    const settleStream = (patch: Partial<TabGrpcState>): void => {
+      unsubscribe()
+      applyToOwner({
+        ...patch,
+        isStreaming: false,
+        isLoading: false,
+        activeStreamId: null,
+        halfClosed: false,
+        streamUnsubscribe: null,
+      })
+      responseStore.setLoading(false, activeTabId)
+      if (activeTabId) tabsStore.markLoading(activeTabId, false)
+    }
+    const onOwnStreamEvent = (evt: GrpcStreamPayload): void => {
+      if (evt.type === 'data' && evt.data) {
+        appendStreamEventToOwner({
+          id: makeId(),
+          data: evt.data,
+          timestamp: evt.timestamp,
+          index: 0, // overwritten by appendStreamEventToOwner
+        })
+      } else if (evt.type === 'end') {
+        settleStream({})
+      } else if (evt.type === 'error') {
+        settleStream({ errorMessage: evt.error ?? 'gRPC stream error' })
       }
-      return current.activeStreamId
+    }
+    /** A start that failed: its listener goes with it. */
+    const failStart = (error: string | undefined): void => {
+      unsubscribe()
+      applyToOwner({
+        isStreaming: false,
+        isLoading: false,
+        errorMessage: error,
+        streamUnsubscribe: null,
+      })
     }
 
     /** False when the tab closed before main answered: the stream has no owner. */
     const adoptStream = (streamId: string): boolean => {
       if (!readTabSlice<TabGrpcState, GrpcStore>(useGrpcStore, ownerTabId)) {
+        unsubscribe()
         void grpcApi.cancelStream(streamId).catch(() => {})
         return false
       }
+      // The id goes into the slice first, then the held events apply on top.
       applyToOwner({ activeStreamId: streamId })
+      pinned.pin(streamId)
       return true
     }
 
@@ -801,39 +849,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         return
       }
 
-      // Streaming paths — subscribe before invoking so 'data' events that arrive
-      // before our await resolves are not lost.
-      const unsubscribe = grpcApi.onStreamEvent((evt: GrpcStreamPayload) => {
-        const expected = getOwnerActiveStreamId()
-        if (expected && evt.streamId !== expected) return
-        if (evt.type === 'data' && evt.data) {
-          appendStreamEventToOwner({
-            id: makeId(),
-            data: evt.data,
-            timestamp: evt.timestamp,
-            index: 0, // overwritten by appendStreamEventToOwner
-          })
-        } else if (evt.type === 'end') {
-          applyToOwner({
-            isStreaming: false,
-            isLoading: false,
-            activeStreamId: null,
-            halfClosed: false,
-          })
-          responseStore.setLoading(false, activeTabId)
-          if (activeTabId) tabsStore.markLoading(activeTabId, false)
-        } else if (evt.type === 'error') {
-          applyToOwner({
-            isStreaming: false,
-            isLoading: false,
-            errorMessage: evt.error ?? 'gRPC stream error',
-            activeStreamId: null,
-            halfClosed: false,
-          })
-          responseStore.setLoading(false, activeTabId)
-          if (activeTabId) tabsStore.markLoading(activeTabId, false)
-        }
-      })
+      offStream = grpcApi.onStreamEvent((evt: GrpcStreamPayload) => pinned.receive(evt))
       applyToOwner({ streamUnsubscribe: unsubscribe })
 
       if (method?.type === 'server_streaming') {
@@ -844,7 +860,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         if (result.success && result.data) {
           adoptStream(result.data.streamId)
         } else {
-          applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
+          failStart(result.error)
         }
       } else if (method?.type === 'client_streaming') {
         // Reuse the bidi IPC channel — the engine branches on `responseStream`
@@ -862,7 +878,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
             await writeToStream(result.data.streamId, resolvedBody, applyToOwner)
           }
         } else {
-          applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
+          failStart(result.error)
         }
       } else if (method?.type === 'bidi_streaming') {
         const result = await grpcApi.bidiStream({
@@ -876,10 +892,11 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
             await writeToStream(result.data.streamId, resolvedBody, applyToOwner)
           }
         } else {
-          applyToOwner({ isStreaming: false, isLoading: false, errorMessage: result.error })
+          failStart(result.error)
         }
       }
     } catch (err) {
+      unsubscribe()
       const errResp: ApiResponse = {
         requestId: makeId(),
         protocol: 'grpc',
@@ -891,6 +908,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         isLoading: false,
         isStreaming: false,
         errorMessage: errResp.error ?? null,
+        streamUnsubscribe: null,
       })
       responseStore.setResponse(errResp, activeTabId)
       responseStore.setLoading(false, activeTabId)
