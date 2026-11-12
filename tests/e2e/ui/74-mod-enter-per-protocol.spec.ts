@@ -15,7 +15,9 @@
  * HTTP body, the SOAP envelope (HTTP echo `/post`), the WebSocket composer
  * (ws-echo; the chord first connects from the URL field, then sends without
  * disconnecting) and the gRPC message (local EchoService.UnaryEcho). No editor
- * gains a line from Monaco's own Ctrl/Cmd+Enter.
+ * gains a line from Monaco's own Ctrl/Cmd+Enter — counted on the model
+ * (`monacoModelLines`), not as visual lines, which word wrap splits in a
+ * narrow window (CI's xvfb wrapped the one-line SOAP envelope into two).
  */
 import { expect, type Page } from '@playwright/test'
 import { uiTest } from './_setup'
@@ -31,7 +33,7 @@ import {
   openNewDropdownItem,
 } from '../helpers/ui/bootstrap'
 import { getTestServerUrls, localHttpBin } from '../helpers/test-servers'
-import { fillMonaco, monacoEditor } from '../helpers/ui/monaco'
+import { fillMonaco, monacoEditor, monacoModelLines } from '../helpers/ui/monaco'
 import { modKey, pressModShortcut } from '../helpers/ui/keyboard'
 import { setBodyType, setHttpMethod } from '../helpers/ui/request-flow'
 
@@ -97,7 +99,7 @@ uiTest.describe('Tester finding 10 — Cmd/Ctrl+Enter runs the active protocol',
     await expect(gqlResponse(window)).toContainText('Hello Chord', { timeout: 15_000 })
     await expect(gqlResponse(window)).not.toContainText('echo')
     // Monaco's own Ctrl/Cmd+Enter (insert line below) did not run as well.
-    await expect(monacoEditor(window, 'graphql-query-editor').locator('.view-line')).toHaveCount(1)
+    await expect(monacoModelLines(monacoEditor(window, 'graphql-query-editor'))).toHaveCount(1)
     // No HTTP send of a stale slice: an HTTP response pane never appeared.
     await expect(window.getByTestId('res-tab-body')).toHaveCount(0)
     await window.screenshot({ path: `${SHOTS}/74-graphql-mod-enter.png` })
@@ -142,11 +144,11 @@ uiTest.describe('Tester finding 10 — Cmd/Ctrl+Enter runs the active protocol',
     await setHttpMethod(window, 'POST')
     await setBodyType(window, 'json', '{"probe":"body-chord"}')
     const editor = monacoEditor(window, 'body-raw-editor')
-    await expect(editor.locator('.view-line')).toHaveCount(1)
+    await expect(monacoModelLines(editor)).toHaveCount(1)
 
     await chordInEditor(window, editor)
     await expectResponse(window, 'body-chord')
-    await expect(editor.locator('.view-line')).toHaveCount(1)
+    await expect(monacoModelLines(editor)).toHaveCount(1)
     await window.screenshot({ path: `${SHOTS}/74-http-body-mod-enter.png` })
     await expectNoErrorBoundary(window)
   })
@@ -166,11 +168,11 @@ uiTest.describe('Tester finding 10 — Cmd/Ctrl+Enter runs the active protocol',
     await window.keyboard.insertText(
       '<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><t>soap-chord</t></soap:Body></soap:Envelope>',
     )
-    await expect(editor.locator('.view-line')).toHaveCount(1)
+    await expect(monacoModelLines(editor)).toHaveCount(1)
 
     await chordInEditor(window, editor)
     await expectResponse(window, 'soap-chord')
-    await expect(editor.locator('.view-line')).toHaveCount(1)
+    await expect(monacoModelLines(editor)).toHaveCount(1)
     await window.screenshot({ path: `${SHOTS}/74-soap-mod-enter.png` })
     await expectNoErrorBoundary(window)
   })
@@ -205,7 +207,7 @@ uiTest.describe('Tester finding 10 — Cmd/Ctrl+Enter runs the active protocol',
         ).toHaveCount(1)
         // The send key never disconnects, and the composer gained no line.
         await expect(window.getByTestId('ws-disconnect')).toBeVisible()
-        await expect(editor.locator('.view-line')).toHaveCount(1)
+        await expect(monacoModelLines(editor)).toHaveCount(1)
         await window.screenshot({ path: `${SHOTS}/74-ws-send.png` })
       } finally {
         await window
@@ -232,7 +234,7 @@ uiTest.describe('Tester finding 10 — Cmd/Ctrl+Enter runs the active protocol',
     await expect(window.getByTestId('grpc-response-body')).toContainText('echo: grpc-chord', {
       timeout: 15_000,
     })
-    await expect(editor.locator('.view-line')).toHaveCount(1)
+    await expect(monacoModelLines(editor)).toHaveCount(1)
     await window.screenshot({ path: `${SHOTS}/74-grpc-mod-enter.png` })
     await expectNoErrorBoundary(window)
   })

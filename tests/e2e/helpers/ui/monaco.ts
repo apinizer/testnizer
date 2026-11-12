@@ -58,3 +58,17 @@ export async function readMonaco(page: Page, testId: string): Promise<string> {
     return textarea?.value ?? el.textContent ?? ''
   })
 }
+
+/**
+ * The MODEL lines of a Monaco editor, for `toHaveCount(n)`.
+ *
+ * Not `.view-line`: that is one per VISUAL line, and with word wrap on (the
+ * MonacoWrapper default) one long line becomes two in a narrow window — CI's
+ * xvfb window wraps a 130-character SOAP envelope that fits on a 1400 px
+ * screen. The gutter numbers only a model line's first visual line, so the
+ * numbered gutter cells are the model lines. Needs line numbers on (the
+ * default) and a document that fits the viewport (the gutter is virtualized).
+ */
+export function monacoModelLines(editor: Locator): Locator {
+  return editor.locator('.margin-view-overlays .line-numbers').filter({ hasText: /\d/ })
+}
