@@ -369,11 +369,16 @@ function criticalField(json: string | null | undefined): { critical?: true } {
     : {}
 }
 
-async function buildTreeFromDB(projectId: string, projectName: string): Promise<TreeNode[]> {
+/**
+ * Branch scope (#8): null on the default branch (shows shared content), else
+ * the active branch name (shows shared + that branch's content).
+ */
+async function buildTreeFromDB(
+  projectId: string,
+  projectName: string,
+  branchScope: string | null,
+): Promise<TreeNode[]> {
   try {
-    // Branch scope (#8): null on the default branch (shows shared content),
-    // else the active branch name (shows shared + that branch's content).
-    const branchScope = useBranchStore.getState().getActiveBranchScope()
     // Four independent IPC calls — fan out in parallel. Examples come as ONE
     // per-project list (never one `savedResponse:list` per request row) and
     // are bound under their owner rows below.
@@ -551,6 +556,56 @@ async function buildTreeFromDB(projectId: string, projectName: string): Promise<
     return emptyTree()
   }
 }
+
+/**
+ * Tree builds are async (four IPC reads) and can overlap: a refresh still in
+ * flight while the user switches project or branch, or two refreshes of the
+ * same project finishing out of order. Each build takes a number on the line
+ * that reads its data; a build may write the tree only if no build that
+ * started later has written already, and only while the same project and
+ * branch scope are still active. A build of an older number that lands after
+ * a newer one is dropped, so `await refreshTree()` still returns a tree at
+ * least as new as the caller's change (the newer build read after it).
+ */
+let treeBuildSeq = 0
+let treeWrittenSeq = 0
+/** Up to this many rebuilds when the branch scope changes during a build. */
+const MAX_TREE_REBUILDS = 3
+
+/**
+ * Build `projectId`'s tree and hand it to `commit` — synchronously with the
+ * staleness check, so no other build can write in between. `newest` is false
+ * when a build that started later has already written the tree. Not called
+ * when the project is no longer active. A branch scope change mid-build
+ * rebuilds with the new scope: on a project switch the branch store loads the
+ * new project's branch while its tree is being built, and dropping that
+ * build would leave the previous project's tree in the sidebar.
+ */
+async function buildActiveTree(
+  projectId: string,
+  projectName: string,
+  commit: (tree: TreeNode[], newest: boolean, seq: number) => void,
+): Promise<void> {
+  for (let attempt = 0; attempt <= MAX_TREE_REBUILDS; attempt++) {
+    const seq = ++treeBuildSeq
+    const scope = useBranchStore.getState().getActiveBranchScope()
+    const tree = await buildTreeFromDB(projectId, projectName, scope)
+    if (useWorkspaceStore.getState().activeProjectId !== projectId) return
+    if (useBranchStore.getState().getActiveBranchScope() !== scope) continue
+    const newest = seq > treeWrittenSeq
+    if (newest) treeWrittenSeq = seq
+    commit(tree, newest, seq)
+    return
+  }
+}
+
+/**
+ * Same rule for the per-project expansion + search restored on project entry
+ * (issue #123): once a later `setActiveProject` build restored them, an older
+ * one landing after it must not undo that. A plain `refreshTree` never
+ * restores, so it does not count here.
+ */
+let treeRestoredSeq = 0
 
 function emptyTree(): TreeNode[] {
   return [
@@ -730,6 +785,10 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     }
     // Reload environments/globals for the new scope
     await useEnvironmentStore.getState().setCurrentProject(id)
+    // The user moved on during the await: that newer switch writes its own
+    // tree and accent — an empty tree or this project's colour from here
+    // would land on top of it.
+    if (get().activeProjectId !== id) return
     if (!id) {
       set({ treeData: emptyTree() })
       // Reset accent color to default
@@ -748,20 +807,30 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       document.documentElement.style.setProperty('--accent-text', project.icon_color)
     }
 
-    const tree = await buildTreeFromDB(id, projectName)
-    // Per-project search + expansion (issue #123): restore what the user had
-    // in this project, or defaults (root + first-level folders, empty search).
-    const restored = restoreProjectTreeState(id, tree)
-    if (prevId === id) {
-      // Same-project re-entry (branch switch, git pull): the tree content
-      // changed under us — keep the user's expansion but also open any NEW
-      // first-level folders, as the pre-#123 code always did.
-      for (const n of computeDefaultOpenIds(tree)) restored.openNodeIds.add(n)
-    }
-    set({ treeData: tree, ...restored })
+    await buildActiveTree(id, projectName, (tree, newest, seq) => {
+      // A refresh that started later may already have written this project's
+      // tree: keep that tree, but this entry's expansion + search still apply.
+      const restore = seq > treeRestoredSeq
+      if (!newest && !restore) return
+      if (restore) treeRestoredSeq = seq
+      // Per-project search + expansion (issue #123): restore what the user had
+      // in this project, or defaults (root + first-level folders, empty search).
+      const restored = restoreProjectTreeState(id, tree)
+      if (prevId === id) {
+        // Same-project re-entry (branch switch, git pull): the tree content
+        // changed under us — keep the user's expansion but also open any NEW
+        // first-level folders, as the pre-#123 code always did.
+        for (const n of computeDefaultOpenIds(tree)) restored.openNodeIds.add(n)
+      }
+      set({ ...(newest ? { treeData: tree } : {}), ...(restore ? restored : {}) })
+    })
   },
 
-  setTreeData: (data) => set({ treeData: data }),
+  setTreeData: (data) => {
+    // A direct write is newer than any build still in flight.
+    treeWrittenSeq = ++treeBuildSeq
+    set({ treeData: data })
+  },
 
   toggleNode: (id) =>
     set((state) => {
@@ -1043,9 +1112,11 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
     // rename made via the project hub shows up immediately on the next tree
     // refresh, not just on a full reload (B4).
     const projectName = project?.display_name || project?.name || 'Project'
-    const tree = await buildTreeFromDB(projectId, projectName)
-    // Preserve existing openNodeIds
-    set({ treeData: tree })
+    // Preserve existing openNodeIds. Dropped when the user switched project
+    // or branch meanwhile, or a refresh that started later already wrote.
+    await buildActiveTree(projectId, projectName, (tree, newest) => {
+      if (newest) set({ treeData: tree })
+    })
   },
 }))
 
