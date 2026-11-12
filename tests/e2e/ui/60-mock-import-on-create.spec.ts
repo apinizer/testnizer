@@ -55,6 +55,8 @@ const removeServers = (page: Page, projectId: string, port: number) =>
 async function openImportOption(page: Page, port: number): Promise<void> {
   await navigateSidebar(page, 'mocks')
   await page.getByTestId('mock-new').click()
+  // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
+  await page.getByTestId('mock-new-option-http').click()
   await expect(page.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
   await page.getByTestId('mock-new-type-http').click()
   await page.getByTestId('mock-new-preset-import').click()

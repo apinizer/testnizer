@@ -49,6 +49,8 @@ async function createServer(
 ): Promise<string> {
   await navigateSidebar(page, 'mocks')
   await page.getByTestId('mock-new').click()
+  // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
+  await page.getByTestId('mock-new-option-http').click()
   const dialog = page.getByTestId('mock-new-dialog')
   await expect(dialog).toBeVisible({ timeout: 10_000 })
   await dialog.getByTestId(`mock-new-type-${opts.kind}`).click()

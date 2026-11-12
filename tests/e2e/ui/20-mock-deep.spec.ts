@@ -14,6 +14,8 @@ uiTest.describe('Mock servers (deep)', () => {
     // By testid: with no server yet the Mocks page centre has a second
     // "New mock server" button (empty state, issue #226).
     await window.getByTestId('mock-new').click()
+    // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
+    await window.getByTestId('mock-new-option-http').click()
     await expect(window.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
     await expect(window.getByTestId('mock-new-type-http')).toHaveAttribute('aria-checked', 'true')
     await window.getByTestId('mock-new-name').fill('E2E Mock')

@@ -3,7 +3,8 @@ import { Plus } from 'lucide-react'
 /**
  * Group header of the Mocks panel ("HTTP SERVERS" / "MCP SERVERS", issue
  * #140): title, server count and a small "+" that opens the New mock server
- * dialog with this group's type preselected.
+ * dialog with this group's type preselected. The "+" shows on hover (or
+ * keyboard focus) only, so the panel is not a column of "+" buttons.
  */
 export default function MockGroupHeader({
   title,
@@ -23,7 +24,7 @@ export default function MockGroupHeader({
   addTestId: string
 }) {
   return (
-    <div className="flex h-9 items-center gap-2 px-3">
+    <div className="group flex h-9 items-center gap-2 px-3">
       <span
         data-testid={testId}
         className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]"
@@ -45,7 +46,7 @@ export default function MockGroupHeader({
           aria-label={addLabel}
           disabled={disabled}
           onClick={onAdd}
-          className="flex h-5 w-5 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-transparent text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--accent-text)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-5 w-5 cursor-pointer items-center justify-center rounded border border-[var(--border)] bg-transparent text-[var(--muted)] opacity-0 transition-opacity hover:border-[var(--accent)] hover:text-[var(--accent-text)] focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:group-hover:opacity-40"
         >
           <Plus size={12} strokeWidth={2.5} />
         </button>

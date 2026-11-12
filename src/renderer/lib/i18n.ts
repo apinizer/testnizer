@@ -1469,7 +1469,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'sidebar.history': 'History',
     'sidebar.tools': 'Tools',
     'sidebar.security': 'Security',
-    'security.tools': 'Tools',
     // Issue #229 — Security-page door to the MCP request tab's Security scan.
     'security.mcpScan.title': 'MCP Security Scan',
     'security.mcpScan.hint':
@@ -2863,6 +2862,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.searchServers': 'Search servers…',
     'mock.noServersYet': 'No mock servers yet — click + to create one.',
     'mock.noMatches': 'No matches.',
+    'mock.panelEmptyTitle': 'No mock servers yet',
+    'mock.panelEmptyCreate': '+ Create Mock Server',
     'mock.create': 'Create',
     'mock.cancel': 'Cancel',
     'mock.start': 'Start',
@@ -6098,7 +6099,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'sidebar.history': 'Geçmiş',
     'sidebar.tools': 'Araçlar',
     'sidebar.security': 'Güvenlik',
-    'security.tools': 'Araçlar',
     'security.mcpScan.title': 'MCP Güvenlik Taraması',
     'security.mcpScan.hint':
       'Bir MCP sunucusunu A–F notuyla tarar: taşıma, yetkilendirme, protokol uyumu, istem enjeksiyonu ve araç zehirleme, bilgi ifşası, CORS ve güvenlik başlıkları',
@@ -7502,6 +7502,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.searchServers': 'Sunucu ara…',
     'mock.noServersYet': 'Henüz mock sunucu yok — oluşturmak için + tıklayın.',
     'mock.noMatches': 'Eşleşme yok.',
+    'mock.panelEmptyTitle': 'Henüz mock sunucu yok',
+    'mock.panelEmptyCreate': '+ Mock Sunucu Oluştur',
     'mock.create': 'Oluştur',
     'mock.cancel': 'İptal',
     'mock.start': 'Başlat',

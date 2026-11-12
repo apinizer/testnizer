@@ -526,6 +526,8 @@ async function createMockViaDialog(
 ): Promise<void> {
   await navigateSidebar(w, 'mocks')
   await w.getByTestId('mock-new').click()
+  // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
+  await w.getByTestId('mock-new-option-http').click()
   const dialog = w.getByTestId('mock-new-dialog')
   await expect(dialog).toBeVisible({ timeout: 10_000 })
   await dialog.getByTestId(`mock-new-type-${kind}`).click()
@@ -1427,6 +1429,8 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     await shot(w, { id: 440, area: 'mocks', screen: 'new-dialog' }, async () => {
       await navigateSidebar(w, 'mocks')
       await w.getByTestId('mock-new').click()
+      // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
+      await w.getByTestId('mock-new-option-http').click()
       await expect(w.getByTestId('mock-new-dialog')).toBeVisible()
     })
     await dismissOverlays(w)
@@ -1437,6 +1441,8 @@ tourTest.describe('Screen tour (TESTNIZER_SCREEN_TOUR=1)', () => {
     await shot(w, { ...portSpec, id: 441 }, async () => {
       await navigateSidebar(w, 'mocks')
       await w.getByTestId('mock-new').click()
+      // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
+      await w.getByTestId('mock-new-option-http').click()
       await expect(w.getByTestId('mock-new-dialog')).toBeVisible()
       await w.getByTestId('mock-new-port').fill(String(ordersPort))
       await expect(w.getByTestId('mock-new-port-warning')).toBeVisible()

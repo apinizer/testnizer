@@ -68,20 +68,16 @@ export default function MockMcpServersSection({
         testId="mock-mcp-section-title"
         addTestId="mock-group-add-mcp"
       />
-      {filtered.length === 0 ? (
-        <div className="px-4 pb-4 pt-1 text-center text-[12px] text-[var(--muted)]">
-          {servers.length === 0 ? t('mockMcp.empty') : t('mock.noMatches')}
-        </div>
-      ) : (
-        filtered.map((s) => (
-          <MockMcpServerRow
-            key={s.id}
-            server={s}
-            onOpen={openMockMcpServerTab}
-            onDelete={setDeleteTarget}
-          />
-        ))
-      )}
+      {/* An empty group (or one the search empties) is just its header line:
+       *  the panel shows one empty state / one "No matches" for all groups. */}
+      {filtered.map((s) => (
+        <MockMcpServerRow
+          key={s.id}
+          server={s}
+          onOpen={openMockMcpServerTab}
+          onDelete={setDeleteTarget}
+        />
+      ))}
       <DeleteConfirmDialog
         open={deleteTarget !== null}
         itemName={deleteTarget?.name ?? ''}

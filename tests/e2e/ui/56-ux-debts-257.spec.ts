@@ -94,6 +94,8 @@ uiTest.describe('Issue #257 — UX debts', () => {
       try {
         await navigateSidebar(window, 'mocks')
         await window.getByTestId('mock-new').click()
+        // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
+        await window.getByTestId('mock-new-option-http').click()
         await expect(window.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
         const port = window.getByTestId('mock-new-port')
 
