@@ -116,6 +116,22 @@ function renderHtml(
         )}</p>`
   const criticalBadge =
     '<span data-critical="true" style="padding:2px 6px;border-radius:4px;border:1px solid #cc2200;color:#cc2200;font-size:11px;font-weight:600">Critical</span>'
+  // Which iteration a row belongs to — only when the run had more than one, so
+  // three runs of one request are no longer three identical rows. The same rule
+  // as the in-app results (RunnerResults: some main row has iteration > 1; a
+  // row without the field reads as iteration 1). Setup / teardown rows bracket
+  // the whole run and belong to no iteration (a NOT_RUN teardown row still
+  // carries `iteration: 1`, so the phase decides, not the field). A single-
+  // iteration run's HTML is byte-identical to before: the label is ''.
+  const isMainRow = (r: EndpointRunResult): boolean => (r.phase ?? 'main') === 'main'
+  const iterationOf = (r: EndpointRunResult): number =>
+    typeof r.iteration === 'number' && r.iteration > 0 ? r.iteration : 1
+  const multiIteration = results.some((r) => isMainRow(r) && iterationOf(r) > 1)
+  const iterationLabel = (r: EndpointRunResult): string => {
+    if (!multiIteration || !isMainRow(r)) return ''
+    const n = iterationOf(r)
+    return `<span data-iteration="${n}" style="padding:2px 6px;border-radius:4px;background:#eef1f6;color:#2D5FA0;font-size:11px;font-weight:600;white-space:nowrap">${escapeHtml(`Iteration ${n}`)}</span>`
+  }
 
   const renderRows = (list: EndpointRunResult[]): string =>
     list
@@ -161,9 +177,10 @@ function renderHtml(
           ? `<span style="font-weight:600;font-size:13px">${escapeHtml(r.endpointName)}</span>`
           : ''
         const isScriptRow = !r.method && !r.url
+        const iteration = iterationLabel(r)
         const headline = isScriptRow
-          ? `${name}<span style="flex:1"></span>`
-          : `${name}
+          ? `${iteration}${name}<span style="flex:1"></span>`
+          : `${iteration}${name}
           <span style="font-weight:600;color:${statusColor};min-width:60px">${escapeHtml(r.method)}</span>
           <span style="flex:1;font-family:monospace;font-size:13px">${escapeHtml(r.url)}</span>`
 
