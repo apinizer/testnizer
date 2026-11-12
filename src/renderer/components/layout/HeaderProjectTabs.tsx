@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { useWorkspaceStore, projectDirtyTabs } from '../../stores/workspace.store'
+import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 import { useScrollStrip } from '../../lib/use-scroll-strip'
 import {
+  projectUnsavedNames,
   requestCloseProjectTab,
   discardAndCloseProjectTab,
   saveAndCloseProjectTab,
@@ -41,6 +43,13 @@ export default function HeaderProjectTabs() {
   const stripRef = useScrollStrip<HTMLDivElement>(activeProjectId)
   const [pending, setPending] = useState<PendingClose | null>(null)
   const [saving, setSaving] = useState(false)
+  // Dirty dot. The active project's tabs are the live strip — subscribe to its
+  // dirty count (a number, so no re-render loop). A hidden project's tabs are
+  // its `tabsByProject` snapshot, which only changes while that project is
+  // active or when its header tab closes / it is deleted — each of those also
+  // changes `activeProjectId` / `openProjectIds` / the live strip, which this
+  // component already subscribes to, so reading it at render stays current.
+  const liveDirtyCount = useTabsStore((s) => s.tabs.filter((tab) => tab.isDirty).length)
 
   const openProjects = openProjectIds
     .map((id) => projects.find((p) => p.id === id))
@@ -48,7 +57,7 @@ export default function HeaderProjectTabs() {
 
   function handleClose(projectId: string, projectName: string) {
     if (requestCloseProjectTab(projectId) === 'closed') return
-    const unsavedNames = projectDirtyTabs(projectId).map((tab) => tab.name)
+    const unsavedNames = projectUnsavedNames(projectId)
     setPending({ projectId, projectName, unsavedNames })
   }
 
@@ -79,11 +88,13 @@ export default function HeaderProjectTabs() {
         {openProjects.map((proj) => {
           const isActive = proj.id === activeProjectId
           const name = proj.display_name || proj.name
+          const isDirty = isActive ? liveDirtyCount > 0 : projectDirtyTabs(proj.id).length > 0
           return (
             <div
               key={proj.id}
               data-testid="header-project-tab"
               data-active={isActive ? 'true' : 'false'}
+              data-dirty={isDirty ? 'true' : 'false'}
               data-project-id={proj.id}
               title={name}
               onClick={() => setActiveProject(proj.id)}
@@ -100,19 +111,33 @@ export default function HeaderProjectTabs() {
                 size={18}
               />
               <span className="min-w-0 flex-1 truncate">{name}</span>
-              <button
-                type="button"
-                data-testid={`header-project-tab-close-${proj.id}`}
-                aria-label={`${t('header.closeProjectTab')}: ${name}`}
-                title={t('header.closeProjectTab')}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleClose(proj.id, name)
-                }}
-                className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--hint)] opacity-0 hover:bg-[var(--border)] hover:text-[var(--text)] focus-visible:opacity-100 group-hover:opacity-100"
-              >
-                <X size={12} aria-hidden="true" />
-              </button>
+              {/* The request tab strip's slot (Workbench): the × and the
+                dirty dot share one fixed box, so the tab never changes width
+                and the label keeps its truncation. The dot holds the slot
+                until hover / keyboard focus shows the ×. */}
+              <span className="relative inline-flex h-5 w-5 shrink-0 items-center justify-center">
+                {isDirty && (
+                  <span
+                    data-testid="project-tab-dirty"
+                    role="img"
+                    aria-label={t('unsaved.title')}
+                    className="pointer-events-none absolute h-1.5 w-1.5 rounded-full bg-[var(--accent)] group-hover:opacity-0 group-has-[:focus-visible]:opacity-0"
+                  />
+                )}
+                <button
+                  type="button"
+                  data-testid={`header-project-tab-close-${proj.id}`}
+                  aria-label={`${t('header.closeProjectTab')}: ${name}`}
+                  title={t('header.closeProjectTab')}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleClose(proj.id, name)
+                  }}
+                  className="flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded text-[var(--hint)] opacity-0 hover:bg-[var(--border)] hover:text-[var(--text)] focus-visible:opacity-100 group-hover:opacity-100"
+                >
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </span>
             </div>
           )
         })}
