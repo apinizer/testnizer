@@ -4,6 +4,8 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useTranslation } from '../../lib/i18n'
 import { isModEnterChord } from '../../lib/shortcut-chords'
+import { withRunShortcut } from '../../lib/run-shortcut'
+import { editorProtocol } from '../../lib/tab-kind'
 import { useCompactUrlBar } from '../../lib/use-narrow-layout'
 import {
   URL_BAR_COMPACT_METHOD_MIN_PX,
@@ -239,7 +241,15 @@ export default function UrlBar() {
               sendRequest()
             }
           }}
-          title={isLoading ? t('urlBar.cancel') : undefined}
+          // The chord sends only on an HTTP tab (`run-active-request.ts`), and
+          // never cancels — so Cancel does not name it.
+          title={
+            isLoading
+              ? t('urlBar.cancel')
+              : activeTab && editorProtocol(activeTab) === 'http'
+                ? withRunShortcut(t('urlBar.send'))
+                : undefined
+          }
           style={{
             ...BTN_P,
             height: 32,

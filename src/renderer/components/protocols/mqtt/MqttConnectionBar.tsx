@@ -3,6 +3,7 @@ import { Plug, Shuffle, Unplug, X } from 'lucide-react'
 import { useMqttStore } from '../../../stores/mqtt.store'
 import { useTranslation } from '../../../lib/i18n'
 import { isModEnterChord } from '../../../lib/shortcut-chords'
+import { withRunShortcut } from '../../../lib/run-shortcut'
 import { MQTT_VERSIONS, randomMqttClientId, type MqttVersion } from '../../../../shared/mqtt'
 import McpStatusPill from '../mcp/McpStatusPill'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
@@ -84,6 +85,7 @@ export default function MqttConnectionBar() {
             type="button"
             onClick={() => void (busy ? disconnect() : connect())}
             disabled={!busy && !url.trim()}
+            title={!busy && url.trim() ? withRunShortcut(t('mcp.connect')) : undefined}
             data-testid="mqtt-connect"
             className={cbPrimaryButton(busy)}
           >

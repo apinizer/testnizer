@@ -1,6 +1,7 @@
 import { Plug, Unplug, X } from 'lucide-react'
 import { useSocketIOStore } from '../../../stores/socketio.store'
 import { useTranslation } from '../../../lib/i18n'
+import { withRunShortcut } from '../../../lib/run-shortcut'
 import McpStatusPill from '../mcp/McpStatusPill'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import {
@@ -55,6 +56,7 @@ export default function SocketIOConnectionBar() {
             type="button"
             onClick={() => void (busy ? disconnect() : connect())}
             disabled={!busy && !url.trim()}
+            title={!busy && url.trim() ? withRunShortcut(t('mcp.connect')) : undefined}
             data-testid="socketio-connect"
             className={cbPrimaryButton(busy)}
           >

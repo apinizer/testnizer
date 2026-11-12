@@ -3,6 +3,7 @@ import { Save, Send, Wand2 } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import { useTranslation } from '../../lib/i18n'
+import { withRunShortcut } from '../../lib/run-shortcut'
 import { WS_CONTENT_TYPES, isBinaryContentType } from '../../../shared/realtime'
 import { RT_MONACO_LANGUAGE, beautify, canBeautify } from '../../lib/realtime-format'
 import { GhostButton, PrimaryButton } from '../mock-mcp/ui'
@@ -77,6 +78,8 @@ export default function WsComposer() {
             <PrimaryButton
               onClick={() => void send()}
               disabled={!connected || !content.trim()}
+              // While disconnected the chord connects instead (`run-active-request.ts`).
+              title={connected && content.trim() ? withRunShortcut(t('ws.sendMessage')) : undefined}
               data-testid="ws-send"
               className="h-8"
             >
