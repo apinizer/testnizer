@@ -71,8 +71,8 @@ async function deleteEnvViaUi(page: Page, name: string): Promise<void> {
   if ((await row.count()) > 0) {
     await selectEnvironmentInModal(page, name)
     await page.getByTestId('env-delete').click()
-    const confirmInput = page.getByTestId('delete-confirm-input')
-    if (await confirmInput.isVisible().catch(() => false)) await confirmInput.fill('delete')
+    // EnvironmentModal's delete dialog has no typed confirmation (no `requireTyping`).
+    await expect(page.getByTestId('delete-confirm-input')).toHaveCount(0)
     await page.getByTestId('delete-confirm-btn').click()
     await expect(row).toHaveCount(0, { timeout: 8_000 })
   }
