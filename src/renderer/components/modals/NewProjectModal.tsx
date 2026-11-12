@@ -349,7 +349,7 @@ export default function NewProjectModal() {
             | undefined
           if (local?.success && local.data) {
             const visible = local.data.display_name?.trim() || local.data.name || ''
-            setCloneError(t('newProject.git.alreadyLinked').replace('{name}', visible))
+            setCloneError(t('newProject.git.alreadyLinked', { name: visible }))
             setCloning(false)
             return
           }

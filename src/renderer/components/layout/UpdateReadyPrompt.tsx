@@ -37,7 +37,7 @@ export default function UpdateReadyPrompt() {
   }
   const skip = (): void => {
     skipVersion()
-    toast.info(t('update.skippedToast').replace('{version}', v))
+    toast.info(t('update.skippedToast', { version: v }))
   }
   const details = (): void => {
     setReadyPromptOpen(false)
@@ -57,7 +57,7 @@ export default function UpdateReadyPrompt() {
           <Download size={18} aria-hidden="true" />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="font-semibold">{t('update.readyTitle').replace('{version}', v)}</div>
+          <div className="font-semibold">{t('update.readyTitle', { version: v })}</div>
           <div className="mt-1 text-[12px] leading-relaxed text-[var(--muted)]">
             {t('update.readyBody')}
           </div>

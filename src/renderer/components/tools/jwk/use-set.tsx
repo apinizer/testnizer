@@ -138,19 +138,19 @@ export function useSetMode(
       </div>
 
       <div className="space-y-1 px-3 py-2 text-[11px]" style={{ color: 'var(--muted)' }}>
-        <div>{t('tools.jwk.setKeys').replace('{n}', String(built.jwks.keys.length))}</div>
+        <div>{t('tools.jwk.setKeys', { n: String(built.jwks.keys.length) })}</div>
         {built.stripped > 0 ? (
           <div style={{ color: GREEN }}>
-            {t('tools.jwk.stripped').replace('{n}', String(built.stripped))}
+            {t('tools.jwk.stripped', { n: String(built.stripped) })}
           </div>
         ) : null}
         {built.omittedOct > 0 ? (
           <div style={{ color: RED }}>
-            {t('tools.jwk.omittedOct').replace('{n}', String(built.omittedOct))}
+            {t('tools.jwk.omittedOct', { n: String(built.omittedOct) })}
           </div>
         ) : null}
         {built.deduped > 0 ? (
-          <div>{t('tools.jwk.deduped').replace('{n}', String(built.deduped))}</div>
+          <div>{t('tools.jwk.deduped', { n: String(built.deduped) })}</div>
         ) : null}
         <div style={{ color: acceptable.ok ? GREEN : RED }}>
           {acceptable.ok ? t('tools.jwk.acceptable') : t('tools.jwk.notAcceptable')}

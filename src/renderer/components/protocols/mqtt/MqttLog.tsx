@@ -9,6 +9,7 @@ import RealtimeLogToolbar from '../realtime/RealtimeLogToolbar'
 import RealtimeLogRow from '../realtime/RealtimeLogRow'
 import MessageView from '../realtime/MessageView'
 import { useRealtimeLog, type LogFilter, type LogKind } from '../realtime/use-realtime-log'
+import { fillTemplate } from '../../../../shared/fill-template'
 
 const FILTERS: readonly LogFilter[] = ['all', 'sent', 'received', 'system']
 const SYSTEM_KEYS: Record<string, string> = {
@@ -109,10 +110,7 @@ export default function MqttLog() {
                   system
                     ? undefined
                     : () =>
-                        saveLogged(
-                          r.id,
-                          t('rt.saved.defaultName').replace('{n}', String(savedCount + 1)),
-                        )
+                        saveLogged(r.id, t('rt.saved.defaultName', { n: String(savedCount + 1) }))
                 }
                 selected={log.selected.includes(r.id)}
                 onToggleSelect={() => log.toggleSelect(r.id)}
@@ -143,9 +141,10 @@ export default function MqttLog() {
       </div>
       <div className="flex shrink-0 items-center border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]" data-testid="mqtt-message-counts">
-          {formatCount(traffic.length, t('ws.countsOne'), t('ws.countsOther'))
-            .replace('{sent}', String(sent))
-            .replace('{received}', String(traffic.length - sent))}
+          {fillTemplate(formatCount(traffic.length, t('ws.countsOne'), t('ws.countsOther')), {
+            sent: String(sent),
+            received: String(traffic.length - sent),
+          })}
         </span>
       </div>
     </div>

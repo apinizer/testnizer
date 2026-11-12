@@ -53,10 +53,11 @@ export default function CommitChangesPicker({
         )}
         <span>
           {state === 'all' || !hasChanges
-            ? t('gitCommit.changesHeading').replace('{count}', String(items.length))
-            : t('gitCommit.changesHeadingSelected')
-                .replace('{selected}', String(count))
-                .replace('{count}', String(items.length))}
+            ? t('gitCommit.changesHeading', { count: String(items.length) })
+            : t('gitCommit.changesHeadingSelected', {
+                selected: String(count),
+                count: String(items.length),
+              })}
         </span>
       </div>
       <div className="min-h-[64px] flex-1 overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--surface)] p-2">

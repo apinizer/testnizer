@@ -99,7 +99,7 @@ function UnaryView({
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--white)] p-4">
         <span className="font-medium text-red-500">
           {typeof response.status === 'number'
-            ? t('grpc.response.errorCode').replace('{code}', String(response.status))
+            ? t('grpc.response.errorCode', { code: String(response.status) })
             : t('grpc.response.error')}
         </span>
         <span className="max-w-[600px] text-center text-[var(--muted)]">{response.error}</span>
@@ -130,7 +130,7 @@ function UnaryView({
           >
             {response.status === 0
               ? 'OK'
-              : t('grpc.response.code').replace('{code}', String(response.status))}
+              : t('grpc.response.code', { code: String(response.status) })}
           </span>
         )}
         <span className="text-[var(--muted)]">{response.timing.total}ms</span>

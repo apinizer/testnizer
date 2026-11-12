@@ -52,15 +52,11 @@ export default function JwkTool() {
     (jwk, origin) => {
       setEntries((list) => {
         if (list.some((e) => sameJwk(e.jwk, jwk))) {
-          toast.info(t('tools.jwk.alreadyInSet').replace('{name}', describe(jwk)))
+          toast.info(t('tools.jwk.alreadyInSet', { name: describe(jwk) }))
           return list
         }
         const next = [...list, { id: nextId(), jwk, origin, label: describe(jwk) }]
-        toast.success(
-          t('tools.jwk.addedToSet')
-            .replace('{name}', describe(jwk))
-            .replace('{n}', String(next.length)),
-        )
+        toast.success(t('tools.jwk.addedToSet', { name: describe(jwk), n: String(next.length) }))
         return next
       })
     },

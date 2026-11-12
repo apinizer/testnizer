@@ -62,7 +62,7 @@ export default function MockServerTypeField({ server }: { server: MockServer }) 
       toast.error(t('mock.serverTypeFailed'))
       return
     }
-    toast.success(t('mock.serverTypeChanged').replace('{kind}', KIND_BADGE[kind]))
+    toast.success(t('mock.serverTypeChanged', { kind: KIND_BADGE[kind] }))
   }
 
   async function choose(kind: MockServerKind): Promise<void> {
@@ -113,7 +113,7 @@ function ConfirmTypeChange({
 }) {
   const { t } = useTranslation()
   const kind = KIND_BADGE[pending.kind]
-  const title = t('mock.serverTypeConfirmTitle').replace('{kind}', kind)
+  const title = t('mock.serverTypeConfirmTitle', { kind })
   const body = serverTypeConfirmBody(t, { count: pending.count, kind, types: pending.types })
   return (
     <Modal

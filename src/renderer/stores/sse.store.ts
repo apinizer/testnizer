@@ -366,7 +366,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
               _pendingConnectId: undefined,
               errorMessage:
                 evt.httpStatus === 204
-                  ? t('sse.closedByServerStatus').replace('{status}', '204')
+                  ? t('sse.closedByServerStatus', { status: '204' })
                   : ended
                     ? t('sse.closedByServer')
                     : connectErrorText(

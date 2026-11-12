@@ -58,7 +58,7 @@ export default function SioTimeline() {
 
   const titleOf = (e: SocketIOEvent): string => {
     if (e.direction === 'system') return t(SYSTEM_KEYS[e.event] ?? 'socketio.system.event')
-    if (e.direction === 'ack') return t('socketio.ackRow').replace('{event}', e.event)
+    if (e.direction === 'ack') return t('socketio.ackRow', { event: e.event })
     return e.event
   }
 

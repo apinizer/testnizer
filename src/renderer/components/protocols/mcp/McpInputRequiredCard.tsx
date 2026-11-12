@@ -30,7 +30,7 @@ export default function McpInputRequiredCard({ pending }: { pending: McpPendingI
         <MessageSquareMore size={14} />
         {t('mcp.input.title')}
         <span className="text-[11px] font-normal text-[var(--muted)]">
-          {pending.toolName} · {t('mcp.input.round').replace('{n}', String(pending.round))}
+          {pending.toolName} · {t('mcp.input.round', { n: String(pending.round) })}
         </span>
       </div>
       {views.length === 0 && (

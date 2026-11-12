@@ -434,10 +434,9 @@ async function loadSavedUrlProto(): Promise<boolean> {
   if (!known) {
     patchOwner({
       ...loaded,
-      errorMessage: t('grpc.savedMethodMissing').replace(
-        '{method}',
-        `${selectedService}/${selectedMethod}`,
-      ),
+      errorMessage: t('grpc.savedMethodMissing', {
+        method: `${selectedService}/${selectedMethod}`,
+      }),
     })
     return false
   }

@@ -13,7 +13,7 @@ async function message(key: string, vars: Record<string, string>): Promise<strin
   const { t } = await import('./i18n')
   // `{shortcut}` = the save chord in the platform's notation (⌘S / Ctrl+S).
   const all: Record<string, string> = { shortcut: formatShortcut(['Mod', 'S']), ...vars }
-  return Object.entries(all).reduce((text, [k, v]) => text.replace(`{${k}}`, v), t(key))
+  return t(key, all)
 }
 
 /**

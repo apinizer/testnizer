@@ -47,7 +47,7 @@ export function findMockClientTab(key: string): string | null {
 
 /** "Chat API · client" / "Chat API · istemci" — never the editor tab's bare name. */
 export function mockClientTabName(name: string): string {
-  return t('mock.clientTabName').replace('{name}', name)
+  return t('mock.clientTabName', { name })
 }
 
 /** Focus the open tab for `key` (stores first, then the tab). Its id, or null when none is open. */

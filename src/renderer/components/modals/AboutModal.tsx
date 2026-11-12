@@ -180,9 +180,10 @@ export default function AboutModal() {
             </div>
             {consentValid && consentState.acceptedAt > 0 && (
               <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                {t('about.consentAccepted')
-                  .replace('{date}', formatDate(consentState.acceptedAt, locale))
-                  .replace('{version}', consentState.acceptedVersion || '—')}
+                {t('about.consentAccepted', {
+                  date: formatDate(consentState.acceptedAt, locale),
+                  version: consentState.acceptedVersion || '—',
+                })}
               </div>
             )}
           </div>

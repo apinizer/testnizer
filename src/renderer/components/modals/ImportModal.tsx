@@ -322,9 +322,7 @@ export default function ImportModal() {
       const mismatch = checkTypeMismatch(selectedFormat.id, detected)
       if (mismatch) {
         setImportError(
-          t('import.typeMismatch')
-            .replace('{expected}', mismatch.expected)
-            .replace('{detected}', mismatch.detected),
+          t('import.typeMismatch', { expected: mismatch.expected, detected: mismatch.detected }),
         )
         setImportLoading(false)
         return
@@ -408,9 +406,10 @@ export default function ImportModal() {
             const mismatch = checkTypeMismatch(selectedFormat.id, detected)
             if (mismatch) {
               setImportError(
-                t('import.typeMismatch')
-                  .replace('{expected}', mismatch.expected)
-                  .replace('{detected}', mismatch.detected),
+                t('import.typeMismatch', {
+                  expected: mismatch.expected,
+                  detected: mismatch.detected,
+                }),
               )
               setImportLoading(false)
               return
@@ -476,9 +475,7 @@ export default function ImportModal() {
       const mismatch = checkTypeMismatch(selectedFormat.id, detected)
       if (mismatch) {
         setImportError(
-          t('import.typeMismatch')
-            .replace('{expected}', mismatch.expected)
-            .replace('{detected}', mismatch.detected),
+          t('import.typeMismatch', { expected: mismatch.expected, detected: mismatch.detected }),
         )
         setImportLoading(false)
         return
@@ -1174,14 +1171,13 @@ export default function ImportModal() {
                   className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-[var(--text)]"
                 >
                   <div className="font-semibold">
-                    {t('import.envNote.title').replace(
-                      '{kind}',
-                      t(
+                    {t('import.envNote.title', {
+                      kind: t(
                         postmanKind === 'globals'
                           ? 'import.envNote.globals'
                           : 'import.envNote.environment',
                       ),
-                    )}
+                    })}
                   </div>
                   <div className="text-[var(--sub)]">
                     {t(

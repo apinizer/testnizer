@@ -137,7 +137,7 @@ export default function ExampleView({ tabId, savedResponseId }: ExampleViewProps
         <span className="text-[var(--muted)]">·</span>
         <span className="text-[var(--muted)]">{t('example.banner')}</span>
         <span className="ml-auto text-[var(--muted)]">
-          {t('example.savedAt').replace('{date}', formatDateTime(item.created_at, locale))}
+          {t('example.savedAt', { date: formatDateTime(item.created_at, locale) })}
         </span>
       </div>
 

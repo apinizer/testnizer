@@ -12,6 +12,7 @@
 import { normalizeMockServerKind, type MockServerKind } from '../../../shared/mock-kind'
 import type { MockBodyType, MockServer } from '../../types'
 import { formatCount } from '../../lib/plural'
+import { fillTemplate } from '../../../shared/fill-template'
 
 const BODY_TYPES: Record<MockServerKind, readonly MockBodyType[]> = {
   http: ['json', 'xml', 'text', 'html'],
@@ -72,9 +73,10 @@ export function serverTypeConfirmBody(
   t: (key: string) => string,
   o: { count: number; kind: string; types: readonly MockBodyType[] },
 ): string {
-  return formatCount(o.count, t('mock.serverTypeConfirmBodyOne'), t('mock.serverTypeConfirmBody'))
-    .replace('{kind}', o.kind)
-    .replace('{types}', o.types.map((b) => bodyTypeLabel(t, b)).join(', '))
+  return fillTemplate(
+    formatCount(o.count, t('mock.serverTypeConfirmBodyOne'), t('mock.serverTypeConfirmBody')),
+    { kind: o.kind, types: o.types.map((b) => bodyTypeLabel(t, b)).join(', ') },
+  )
 }
 
 /** OpenAPI / Postman import and "Serve JWKS" only make sense on an HTTP server. */

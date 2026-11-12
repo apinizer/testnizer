@@ -18,6 +18,7 @@ import RenameAliasDialog from './keystore/RenameAliasDialog'
 import SetEntryPasswordDialog from './keystore/SetEntryPasswordDialog'
 import { LabeledInput, LabeledSelect, Modal, ModalActions } from './keystore/dialog-ui'
 import { formatCount } from '../../lib/plural'
+import { fillTemplate } from '../../../shared/fill-template'
 
 type PasswordPrompt =
   | { kind: 'file'; pick: KeystorePickFileResult }
@@ -174,7 +175,7 @@ export default function KeystoreTool() {
   async function handleSaveAs(): Promise<void> {
     const result = await s.saveAs({ suggestedName: s.fileName ?? undefined })
     if (result && 'path' in result) {
-      toast.success(t('tools.keystore.savedTo').replace('{path}', result.path))
+      toast.success(t('tools.keystore.savedTo', { path: result.path }))
     }
   }
 
@@ -360,8 +361,7 @@ export default function KeystoreTool() {
             const ok = await s.setEntryPassword(o)
             // The alias table has no column for entry-password state, so the
             // dialog closing was the ONLY signal that anything happened.
-            if (ok)
-              toast.success(t('tools.keystore.toast.entryPwChanged').replace('{alias}', o.alias))
+            if (ok) toast.success(t('tools.keystore.toast.entryPwChanged', { alias: o.alias }))
             return ok
           }}
           onClose={() => setRowDialog(null)}
@@ -375,7 +375,7 @@ export default function KeystoreTool() {
           onExport={async (o) => {
             const result = await s.exportCertificate(o)
             if (result && 'path' in result) {
-              toast.success(t('tools.keystore.export.saved').replace('{path}', result.path))
+              toast.success(t('tools.keystore.export.saved', { path: result.path }))
             }
             return result
           }}
@@ -386,7 +386,7 @@ export default function KeystoreTool() {
       {rowDialog?.kind === 'delete' && (
         <ConfirmDialog
           title={t('tools.keystore.deleteConfirm.title')}
-          message={t('tools.keystore.deleteConfirm.message').replace('{alias}', rowDialog.alias)}
+          message={t('tools.keystore.deleteConfirm.message', { alias: rowDialog.alias })}
           confirmLabel={t('tools.keystore.deleteConfirm.confirm')}
           danger
           onCancel={() => setRowDialog(null)}
@@ -422,15 +422,18 @@ export default function KeystoreTool() {
               // "…use Save As" is part of the message on purpose: convert
               // produces a DIRTY in-memory session, and the type pill flipping
               // is easy to read as "already written to disk".
-              toast.success(t('tools.keystore.toast.converted').replace('{type}', o.targetType))
+              toast.success(t('tools.keystore.toast.converted', { type: o.targetType }))
               const skipped = useKeystoreStore.getState().convertSkipped
               if (skipped.length > 0) {
                 toast.warning(
-                  formatCount(
-                    skipped.length,
-                    t('tools.keystore.toast.convertSkippedOne'),
-                    t('tools.keystore.toast.convertSkipped'),
-                  ).replace('{aliases}', skipped.join(', ')),
+                  fillTemplate(
+                    formatCount(
+                      skipped.length,
+                      t('tools.keystore.toast.convertSkippedOne'),
+                      t('tools.keystore.toast.convertSkipped'),
+                    ),
+                    { aliases: skipped.join(', ') },
+                  ),
                 )
               }
             }
@@ -684,10 +687,7 @@ function EmptyState({
       {pendingDeleteId && (
         <ConfirmDialog
           title={t('tools.keystore.libraryDeleteConfirm.title')}
-          message={t('tools.keystore.libraryDeleteConfirm.message').replace(
-            '{name}',
-            pendingDeleteName,
-          )}
+          message={t('tools.keystore.libraryDeleteConfirm.message', { name: pendingDeleteName })}
           confirmLabel={t('tools.keystore.libraryDeleteConfirm.confirm')}
           danger
           onCancel={() => setPendingDeleteId(null)}

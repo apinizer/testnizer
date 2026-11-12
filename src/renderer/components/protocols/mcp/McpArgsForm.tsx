@@ -48,7 +48,7 @@ function Leaf({
   const shown = sameValue(leafValue(field, draft), value) ? draft : external
   const placeholder =
     value === undefined && field.default !== undefined
-      ? t('mcp.args.defaultHint').replace('{value}', String(field.default))
+      ? t('mcp.args.defaultHint', { value: String(field.default) })
       : undefined
   return (
     <McpElicitField

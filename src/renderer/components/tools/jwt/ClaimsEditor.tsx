@@ -56,10 +56,9 @@ export default function ClaimsEditor({
   const expiryText =
     expiry.state === 'none'
       ? t('tools.jwt.noExpiry')
-      : t(expiry.state === 'expired' ? 'tools.jwt.expiredAgo' : 'tools.jwt.expiresIn').replace(
-          '{d}',
-          duration,
-        )
+      : t(expiry.state === 'expired' ? 'tools.jwt.expiredAgo' : 'tools.jwt.expiresIn', {
+          d: duration,
+        })
 
   const set = (patch: Partial<ClaimEdits>): void => onChange({ ...edits, ...patch })
 

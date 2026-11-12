@@ -24,6 +24,7 @@ import { displayRunEnvironment, displayTaskEnvironment } from '../../lib/run-env
 import { useTranslation } from '../../lib/i18n'
 import { runScriptsAllowed } from '../../lib/script-trust-gate'
 import { formatDate, formatTime } from '../../lib/format-datetime'
+import { fillTemplate } from '../../../shared/fill-template'
 
 type ScheduleType = 'interval' | 'daily' | 'weekly' | 'cron'
 
@@ -114,7 +115,7 @@ function describeSchedule(task: ScheduledTask, t: (key: string) => string): stri
   const type: ScheduleType = task.schedule_type || 'interval'
   const time = task.schedule_time ?? ''
   if (type === 'daily' && task.schedule_time) {
-    return t('scheduledTasks.dailyAt').replace('{time}', time)
+    return fillTemplate(t('scheduledTasks.dailyAt'), { time })
   }
   if (type === 'weekly' && task.schedule_time && task.schedule_days) {
     try {
@@ -123,20 +124,19 @@ function describeSchedule(task: ScheduledTask, t: (key: string) => string): stri
         .map((d) => weekdays[d])
         .filter(Boolean)
         .join(', ')
-      return t('scheduledTasks.daysAt')
-        .replace('{days}', days || '—')
-        .replace('{time}', time)
+      return fillTemplate(t('scheduledTasks.daysAt'), { days: days || '—', time })
     } catch {
-      return t('scheduledTasks.weeklyAt').replace('{time}', time)
+      return fillTemplate(t('scheduledTasks.weeklyAt'), { time })
     }
   }
   if (type === 'cron' && task.schedule_cron) {
-    return t('scheduledTasks.cron').replace('{expr}', task.schedule_cron)
+    return fillTemplate(t('scheduledTasks.cron'), { expr: task.schedule_cron })
   }
   const unitKey = INTERVAL_UNIT_KEY[task.interval_unit]
-  return t('scheduledTasks.every')
-    .replace('{value}', String(task.interval_value))
-    .replace('{unit}', unitKey ? t(unitKey) : task.interval_unit)
+  return fillTemplate(t('scheduledTasks.every'), {
+    value: String(task.interval_value),
+    unit: unitKey ? t(unitKey) : task.interval_unit,
+  })
 }
 
 interface TestSuiteRow {
@@ -247,7 +247,7 @@ export default function ScheduledTasksView({ onBack }: ScheduledTasksViewProps) 
     const d = new Date(ts)
     const now = new Date()
     const isToday = d.toDateString() === now.toDateString()
-    if (isToday) return t('scheduledTasks.today').replace('{time}', formatTime(ts, locale))
+    if (isToday) return fillTemplate(t('scheduledTasks.today'), { time: formatTime(ts, locale) })
     return `${formatDate(ts, locale, { year: false })}, ${formatTime(ts, locale)}`
   }
 
@@ -523,7 +523,7 @@ function TaskRow({
           <div style={{ color: 'var(--muted)', marginTop: 2 }}>{describeSchedule(task, t)}</div>
           {task.last_run_at && (
             <div style={{ color: 'var(--hint)', marginTop: 2 }}>
-              {t('scheduledTasks.lastRun').replace('{date}', formatDate(task.last_run_at))}
+              {fillTemplate(t('scheduledTasks.lastRun'), { date: formatDate(task.last_run_at) })}
             </div>
           )}
         </td>

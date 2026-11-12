@@ -159,7 +159,7 @@ export default function MockMcpElicitSection({
               data-testid="mock-mcp-tool-elicit-duplicate"
               className="text-[11px] text-[var(--red)]"
             >
-              {t('mockMcp.elicit.duplicate').replace('{name}', duplicate)}
+              {t('mockMcp.elicit.duplicate', { name: duplicate })}
             </div>
           )}
           <div>

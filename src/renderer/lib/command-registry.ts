@@ -266,7 +266,7 @@ export function useCommandActions(): CommandAction[] {
       const toolName = t(tool.labelKey)
       actions.push({
         id: `tool.${tool.protocol}`,
-        label: t('command.action.openTool').replace('{name}', toolName),
+        label: t('command.action.openTool', { name: toolName }),
         group: 'tools',
         icon: tool.Icon,
         keywords: ['tool', toolName.toLowerCase()],
@@ -328,7 +328,7 @@ export function useCommandActions(): CommandAction[] {
     for (const env of environments) {
       actions.push({
         id: `project.env.${env.id}`,
-        label: t('command.action.switchEnvironment').replace('{name}', env.name),
+        label: t('command.action.switchEnvironment', { name: env.name }),
         group: 'project',
         icon: ArrowLeftRight,
         keywords: ['environment', 'switch', env.name.toLowerCase()],

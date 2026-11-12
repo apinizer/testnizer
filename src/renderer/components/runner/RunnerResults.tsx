@@ -308,20 +308,20 @@ export default function RunnerResults({
    */
   const ranAtLine = (ts: number | null): string => {
     const time = formatTime(ts)
-    if (!ts) return t('runResults.ranTodayAt').replace('{time}', time)
+    if (!ts) return t('runResults.ranTodayAt', { time })
     const started = new Date(ts)
     const now = new Date()
     const sameDay =
       started.getFullYear() === now.getFullYear() &&
       started.getMonth() === now.getMonth() &&
       started.getDate() === now.getDate()
-    if (sameDay) return t('runResults.ranTodayAt').replace('{time}', time)
+    if (sameDay) return t('runResults.ranTodayAt', { time })
     const date = started.toLocaleDateString(locale === 'tr' ? 'tr-TR' : [], {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     })
-    return t('runResults.ranOnAt').replace('{date}', date).replace('{time}', time)
+    return t('runResults.ranOnAt', { date, time })
   }
 
   const formatDuration = (ms: number) => {
@@ -348,7 +348,7 @@ export default function RunnerResults({
   }
 
   const progressLine = (key: string): string =>
-    t(key).replace('{current}', String(currentIndex)).replace('{total}', String(totalCount))
+    t(key, { current: String(currentIndex), total: String(totalCount) })
 
   return (
     <div className="flex flex-1 overflow-hidden" lang={locale}>
@@ -521,7 +521,7 @@ export default function RunnerResults({
                     data-testid="runner-stop-critical"
                     style={{ color: '#cc2200', fontWeight: 600 }}
                   >
-                    {t('runLifecycle.stoppedCritical').replace('{name}', criticalStop.endpointName)}
+                    {t('runLifecycle.stoppedCritical', { name: criticalStop.endpointName })}
                   </span>
                 )}
                 {report?.stopReason && report.stopReason !== 'criticalFailed' && (
@@ -758,7 +758,7 @@ export default function RunnerResults({
                     aria-expanded={!collapsed}
                   >
                     {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                    <span>{t('runResults.iteration').replace('{n}', String(iter))}</span>
+                    <span>{t('runResults.iteration', { n: String(iter) })}</span>
                     <span style={{ color: 'var(--hint)', fontWeight: 400, marginLeft: 6 }}>
                       (
                       {formatCount(
@@ -766,11 +766,9 @@ export default function RunnerResults({
                         t('runResults.requestsOne'),
                         t('runResults.requestsOther'),
                       )}
-                      {failed > 0
-                        ? t('runResults.failedSuffix').replace('{count}', String(failed))
-                        : ''}
+                      {failed > 0 ? t('runResults.failedSuffix', { count: String(failed) }) : ''}
                       {passed > 0 && failed === 0
-                        ? t('runResults.passedSuffix').replace('{count}', String(passed))
+                        ? t('runResults.passedSuffix', { count: String(passed) })
                         : ''}
                       )
                     </span>
@@ -845,14 +843,13 @@ export default function RunnerResults({
                 data-testid="runner-result-detail-iteration"
                 className="shrink-0 text-xs text-[var(--muted)]"
               >
-                {t('runResults.iteration').replace(
-                  '{n}',
-                  String(
+                {t('runResults.iteration', {
+                  n: String(
                     selectedResult.iteration && selectedResult.iteration > 0
                       ? selectedResult.iteration
                       : 1,
                   ),
-                )}
+                })}
               </span>
             )}
             {onOpenEndpoint && (

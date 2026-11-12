@@ -145,7 +145,7 @@ export default function WsSecurityTool() {
         setOutput(JSON.stringify(r, null, 2))
         setStatusLine(
           r.valid
-            ? t('tools.wsse.signatureValid').replace('{n}', String(r.signedReferences.length))
+            ? t('tools.wsse.signatureValid', { n: String(r.signedReferences.length) })
             : `${t('tools.wsse.signatureInvalid')}${r.reason ? ' — ' + r.reason : ''}`,
         )
       } else if (mode === 'decrypt') {

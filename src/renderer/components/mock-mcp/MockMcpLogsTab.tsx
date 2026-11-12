@@ -56,7 +56,7 @@ export default function MockMcpLogsTab({ serverId }: { serverId: string }) {
     <div data-testid="mock-mcp-logs" className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--white)] px-3">
         <span className="text-[12px] text-[var(--muted)]">
-          {t('mockMcp.logs.count').replace('{count}', String(logs.length))}
+          {t('mockMcp.logs.count', { count: String(logs.length) })}
         </span>
         <GhostButton
           data-testid="mock-mcp-logs-clear"

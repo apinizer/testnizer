@@ -29,7 +29,7 @@ export default function SioArgRow({
   const { t } = useTranslation()
   const updateArg = useSocketIOStore((s) => s.updateArg)
   const removeArg = useSocketIOStore((s) => s.removeArg)
-  const label = t('socketio.argLabel').replace('{n}', String(index + 1))
+  const label = t('socketio.argLabel', { n: String(index + 1) })
   return (
     <div data-testid="socketio-arg" className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
@@ -39,13 +39,13 @@ export default function SioArgRow({
           options={SIO_ARG_CONTENT_TYPES}
           onChange={(contentType) => updateArg(arg.id, { contentType })}
           testId="socketio-arg-format"
-          ariaLabel={t('socketio.argFormat').replace('{n}', String(index + 1))}
+          ariaLabel={t('socketio.argFormat', { n: String(index + 1) })}
         />
         {removable && (
           <button
             type="button"
             onClick={() => removeArg(arg.id)}
-            aria-label={t('socketio.removeArg').replace('{n}', String(index + 1))}
+            aria-label={t('socketio.removeArg', { n: String(index + 1) })}
             data-testid="socketio-arg-remove"
             className="ml-auto flex h-6 w-6 cursor-pointer items-center justify-center rounded border-none bg-transparent text-[var(--muted)] hover:text-[var(--red)]"
           >

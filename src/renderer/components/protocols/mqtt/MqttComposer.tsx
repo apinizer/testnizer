@@ -39,7 +39,7 @@ export default function MqttComposer() {
   const deleteSaved = useMqttStore((s) => s.deleteSavedMessage)
   const [beautifyError, setBeautifyError] = useState<string | null>(null)
   const [showProps, setShowProps] = useState(false)
-  const nextName = t('rt.saved.defaultName').replace('{n}', String(saved.length + 1))
+  const nextName = t('rt.saved.defaultName', { n: String(saved.length + 1) })
 
   const runBeautify = (): void => {
     const res = beautify(c.content, c.contentType)
@@ -135,7 +135,7 @@ export default function MqttComposer() {
             data-testid="mqtt-beautify-error"
             className="m-0 text-[12px] text-[var(--red)]"
           >
-            {t('ws.beautifyFailed').replace('{error}', beautifyError)}
+            {t('ws.beautifyFailed', { error: beautifyError })}
           </p>
         )}
         {v5 && showProps && (

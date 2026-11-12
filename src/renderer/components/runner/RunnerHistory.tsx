@@ -322,7 +322,7 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
           <div className="py-8 text-center text-[var(--hint)]">{t('testsHome.loading')}</div>
         ) : loadError ? (
           <div className="py-8 text-center" style={{ color: 'var(--red, #cc2200)' }}>
-            {t('runnerHistory.loadFailed').replace('{error}', loadError)}
+            {t('runnerHistory.loadFailed', { error: loadError })}
             <div className="mt-2">
               <button
                 type="button"
@@ -418,10 +418,11 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
       {!loading && total > PAGE_SIZE && (
         <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] px-5 py-2">
           <span style={{ color: 'var(--muted)', fontSize: 13 }}>
-            {t('runnerHistory.showing')
-              .replace('{from}', String(page * PAGE_SIZE + 1))
-              .replace('{to}', String(Math.min((page + 1) * PAGE_SIZE, total)))
-              .replace('{total}', String(total))}
+            {t('runnerHistory.showing', {
+              from: String(page * PAGE_SIZE + 1),
+              to: String(Math.min((page + 1) * PAGE_SIZE, total)),
+              total: String(total),
+            })}
           </span>
           <div className="flex items-center gap-1">
             <button
@@ -440,9 +441,10 @@ export default function RunnerHistory({ onBack, onNewRun, onViewReport }: Runner
               {t('runnerHistory.prev')}
             </button>
             <span style={{ color: 'var(--muted)', fontSize: 13, padding: '0 8px' }}>
-              {t('runnerHistory.page')
-                .replace('{page}', String(page + 1))
-                .replace('{pages}', String(Math.max(1, Math.ceil(total / PAGE_SIZE))))}
+              {t('runnerHistory.page', {
+                page: String(page + 1),
+                pages: String(Math.max(1, Math.ceil(total / PAGE_SIZE))),
+              })}
             </span>
             <button
               type="button"

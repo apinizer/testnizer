@@ -230,7 +230,7 @@ export default function GrpcRequestPane() {
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
             <p className="mb-1 font-semibold text-[var(--text)]">{t('grpc.guide.title')}</p>
             <ol className="list-inside list-decimal space-y-1">
-              <li>{t('grpc.guide.step1').replace('{address}', 'demo.connectrpc.com:443')}</li>
+              <li>{t('grpc.guide.step1', { address: 'demo.connectrpc.com:443' })}</li>
               <li>{t('grpc.guide.step2')}</li>
               <li>{t('grpc.guide.step3')}</li>
               <li>{t('grpc.guide.step4')}</li>

@@ -110,7 +110,7 @@ export default function UnsavedChangesDialog({
               ))}
               {count > MAX_LISTED && (
                 <li className="list-none text-[var(--muted)]">
-                  {t('unsaved.moreNames').replace('{count}', String(count - MAX_LISTED))}
+                  {t('unsaved.moreNames', { count: String(count - MAX_LISTED) })}
                 </li>
               )}
             </ul>

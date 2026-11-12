@@ -217,7 +217,7 @@ export default function NewMockServerModal({
               data-testid="mock-new-port-warning"
               className="-mt-2 text-[11px] text-[var(--orange)]"
             >
-              {t('mockNew.portTaken').replace('{port}', String(portNum))}
+              {t('mockNew.portTaken', { port: String(portNum) })}
             </p>
           )}
           {error && (

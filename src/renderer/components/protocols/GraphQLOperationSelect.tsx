@@ -21,9 +21,10 @@ export default function GraphQLOperationSelect() {
 
   if (operations.length === 0) return null
 
-  const staleText = t('graphql.operation.stale')
-    .replace('{name}', staleSelection ?? '')
-    .replace('{used}', operationName ?? '')
+  const staleText = t('graphql.operation.stale', {
+    name: staleSelection ?? '',
+    used: operationName ?? '',
+  })
 
   return (
     <div className="ml-auto flex min-w-0 items-center gap-2" data-testid="graphql-operation">

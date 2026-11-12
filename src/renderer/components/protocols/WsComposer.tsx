@@ -33,7 +33,7 @@ export default function WsComposer() {
   const renameSaved = useWebSocketStore((s) => s.renameSavedMessage)
   const deleteSaved = useWebSocketStore((s) => s.deleteSavedMessage)
   const [beautifyError, setBeautifyError] = useState<string | null>(null)
-  const nextName = t('rt.saved.defaultName').replace('{n}', String(saved.length + 1))
+  const nextName = t('rt.saved.defaultName', { n: String(saved.length + 1) })
 
   const runBeautify = (): void => {
     const res = beautify(content, mode)
@@ -96,7 +96,7 @@ export default function WsComposer() {
             role="alert"
             className="m-0 text-[12px] text-[var(--red)]"
           >
-            {t('ws.beautifyFailed').replace('{error}', beautifyError)}
+            {t('ws.beautifyFailed', { error: beautifyError })}
           </p>
         )}
         <div data-testid="ws-composer" className="min-h-0">

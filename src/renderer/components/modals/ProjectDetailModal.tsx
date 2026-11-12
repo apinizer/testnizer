@@ -390,10 +390,9 @@ export default function ProjectDetailModal() {
     setProjSettings((s) => ({ ...s, ...patch }))
   }
 
-  const dialogTitle = t('settingsScope.projectTitle').replace(
-    '{name}',
-    activeProject.display_name || activeProject.name,
-  )
+  const dialogTitle = t('settingsScope.projectTitle', {
+    name: activeProject.display_name || activeProject.name,
+  })
 
   return (
     <Modal

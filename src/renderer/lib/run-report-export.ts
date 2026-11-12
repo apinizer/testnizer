@@ -25,7 +25,7 @@ export function runReportFileName(format: RunReportFormat, at: Date = new Date()
 }
 
 function reportFailure(error: string): false {
-  toast.error(t('runner.exportFailed').replace('{error}', error))
+  toast.error(t('runner.exportFailed', { error }))
   return false
 }
 
@@ -55,7 +55,7 @@ export async function exportRunReport(
     const saved = await save(built.data, runReportFileName(format))
     if (!saved?.success) return reportFailure(saved?.error ?? 'save failed')
     if (!saved.data) return false // dialog dismissed
-    toast.success(t('runner.exportSaved').replace('{path}', saved.data))
+    toast.success(t('runner.exportSaved', { path: saved.data }))
     return true
   } catch (e) {
     return reportFailure(e instanceof Error ? e.message : String(e))

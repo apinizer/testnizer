@@ -56,7 +56,7 @@ export async function saveMockMcpDraft(serverId: string): Promise<MockMcpSaveRes
   const built = draftToPatch(snapshot)
   if (!built.patch) {
     const p = built.problem
-    return { ok: false, error: t(p.key).replace('{tool}', p.tool).replace('{detail}', p.detail) }
+    return { ok: false, error: t(p.key, { tool: p.tool, detail: p.detail }) }
   }
   if (inFlight.has(serverId)) return { ok: false, error: null }
   inFlight.add(serverId)

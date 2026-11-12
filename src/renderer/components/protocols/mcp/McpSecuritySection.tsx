@@ -22,9 +22,7 @@ function Progress({ done, total, current }: { done: number; total: number; curre
         <div className="h-full bg-[var(--accent)] transition-all" style={{ width: `${pct}%` }} />
       </div>
       <span className="text-[11px] text-[var(--muted)]">
-        {t('mcp.security.progress')
-          .replace('{done}', String(done))
-          .replace('{total}', String(total))}
+        {t('mcp.security.progress', { done: String(done), total: String(total) })}
         {current ? ` · ${current}` : ''}
       </span>
     </div>

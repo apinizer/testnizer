@@ -738,7 +738,7 @@ export default function TreeNodeComponent({
           action: () => onCreateTestSuite(node),
           disabledReason: isRunnableProtocol(node.protocol)
             ? undefined
-            : t('tree.suiteUnsupportedProtocol').replace('{protocol}', protocolName),
+            : t('tree.suiteUnsupportedProtocol', { protocol: protocolName }),
         })
       }
       if (onCreateMockServer && !isExample) {
@@ -749,7 +749,7 @@ export default function TreeNodeComponent({
           action: () => onCreateMockServer(node),
           disabledReason: isHttpMockableProtocol(node.protocol)
             ? undefined
-            : t('tree.mockUnsupportedProtocol').replace('{protocol}', protocolName),
+            : t('tree.mockUnsupportedProtocol', { protocol: protocolName }),
         })
       }
       if (onDuplicate && !isExample) {

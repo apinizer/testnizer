@@ -108,9 +108,10 @@ export default function SseEventLog() {
             ))}
           </select>
           <span className="text-[var(--hint)]">
-            {t('sse.filterCount')
-              .replace('{shown}', String(filteredEvents.length))
-              .replace('{total}', String(events.length))}
+            {t('sse.filterCount', {
+              shown: String(filteredEvents.length),
+              total: String(events.length),
+            })}
           </span>
         </div>
       )}
