@@ -364,6 +364,33 @@ describe('tabs without a request to run', () => {
     runActiveRequest()
     expect(sendRequest).toHaveBeenCalledTimes(1)
   })
+
+  it('HTTP in flight: Mod+Enter does not start a second send (the button is Cancel)', () => {
+    renderHook(() => useKeyboardShortcuts())
+    activate('http')
+    act(() => pressModEnter())
+    expect(sendRequest).toHaveBeenCalledTimes(1)
+    // The active tab's request is now running — the slice that turns Send into Cancel.
+    useResponseStore.setState({ isLoading: true } as never)
+    act(() => pressModEnter())
+    expect(sendRequest).toHaveBeenCalledTimes(1)
+    // Done: the chord sends again.
+    useResponseStore.setState({ isLoading: false } as never)
+    act(() => pressModEnter())
+    expect(sendRequest).toHaveBeenCalledTimes(2)
+  })
+
+  it.each([
+    ['empty', ''],
+    ['missing', undefined],
+  ])('a tab whose protocol is %s is HTTP, like the Workbench shows it', (_label, protocol) => {
+    useTabsStore.setState({
+      tabs: [{ id: 'old', name: 'Old', protocol, url: 'http://x', isDirty: false } as Tab],
+      activeTabId: 'old',
+    })
+    runActiveRequest()
+    expect(sendRequest).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('the chord and the palette', () => {

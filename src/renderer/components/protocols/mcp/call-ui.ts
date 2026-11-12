@@ -2,7 +2,7 @@
  * Small pure helpers for the MCP call UI (issues #164, #165). No React.
  */
 import { asCallToolResult } from './mcp-content'
-import { shortcutLabel } from '../../../lib/command-registry'
+import { withRunShortcut } from '../../../lib/run-shortcut'
 import type { ContentProblemReason } from '../../../lib/mcp-elicitation'
 
 const pretty = (v: unknown): string => {
@@ -45,7 +45,7 @@ export const prettyJson = pretty
 
 /** "Invoke (Cmd+Enter)" — the run button's tooltip names the chord (issue #165). */
 export function withChord(label: string): string {
-  return `${label} (${shortcutLabel('Enter')})`
+  return withRunShortcut(label)
 }
 
 /** i18n keys of the input / argument problems (shared by both forms). */

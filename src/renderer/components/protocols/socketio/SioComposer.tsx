@@ -2,6 +2,7 @@ import { Plus, Save, Send } from 'lucide-react'
 import { useSocketIOStore } from '../../../stores/socketio.store'
 import { useTranslation } from '../../../lib/i18n'
 import { isModEnterChord } from '../../../lib/shortcut-chords'
+import { withRunShortcut } from '../../../lib/run-shortcut'
 import { formatCount } from '../../../lib/plural'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { Checkbox, GhostButton, PrimaryButton } from '../../mock-mcp/ui'
@@ -58,6 +59,8 @@ export default function SioComposer() {
           <PrimaryButton
             onClick={() => void emit()}
             disabled={!connected}
+            // While disconnected the chord connects instead (`run-active-request.ts`).
+            title={connected ? withRunShortcut(t('socketio.emit')) : undefined}
             data-testid="socketio-emit"
             className="h-8"
           >

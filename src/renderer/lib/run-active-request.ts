@@ -27,7 +27,7 @@ import { useSocketIOStore } from '../stores/socketio.store'
 import { useMqttStore } from '../stores/mqtt.store'
 import { useSseStore } from '../stores/sse.store'
 import { chooseGraphqlOperation } from '../../shared/graphql-row'
-import { isBlankScratchTab } from './tab-kind'
+import { editorProtocol, isBlankScratchTab } from './tab-kind'
 
 type Dispatch = void | Promise<void>
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
@@ -86,8 +86,10 @@ export function runActiveRequest(): Dispatch {
   const active = tabs.find((t) => t.id === activeTabId)
   // No tab, or the protocol picker of a blank tab: there is no Send on screen.
   if (!active || isBlankScratchTab(active)) return
-  switch (active.protocol) {
+  switch (editorProtocol(active)) {
     case 'http':
+      // In flight the Send button is Cancel — the chord never starts a second send.
+      if (useResponseStore.getState().isLoading) return
       return useRequestStore.getState().sendRequest()
     case 'mcp':
       useMcpStore.getState().runPrimaryAction()

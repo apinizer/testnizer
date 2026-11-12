@@ -16,6 +16,7 @@ import type { GrpcMethodType } from '../../stores/grpc.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import { useTranslation } from '../../lib/i18n'
+import { withRunShortcut } from '../../lib/run-shortcut'
 import CredentialRowsHint from '../shared/CredentialRowsHint'
 
 const METHOD_TYPE_COLORS: Record<GrpcMethodType, { bg: string; color: string; label: string }> = {
@@ -358,7 +359,14 @@ export default function GrpcRequestPane() {
                     type="button"
                     onClick={execute}
                     disabled={!selectedService || !selectedMethod || halfClosed}
-                    title={halfClosed ? t('grpc.streamHalfClosed') : undefined}
+                    title={
+                      halfClosed
+                        ? t('grpc.streamHalfClosed')
+                        : selectedService && selectedMethod
+                          ? withRunShortcut(t('grpc.send'))
+                          : undefined
+                    }
+                    data-testid="grpc-stream-send"
                     className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: 'var(--accent)', border: 'none' }}
                   >
@@ -402,6 +410,11 @@ export default function GrpcRequestPane() {
                 type="button"
                 onClick={() => (isLoading ? cancelUnary() : execute())}
                 disabled={!isLoading && (!selectedService || !selectedMethod)}
+                title={
+                  !isLoading && selectedService && selectedMethod
+                    ? withRunShortcut(t('grpc.execute'))
+                    : undefined
+                }
                 data-testid="grpc-execute"
                 className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                 style={{

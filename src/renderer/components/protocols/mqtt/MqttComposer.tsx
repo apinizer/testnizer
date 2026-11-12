@@ -4,6 +4,7 @@ import { useMqttStore } from '../../../stores/mqtt.store'
 import MonacoWrapper from '../../shared/MonacoWrapper'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { useTranslation } from '../../../lib/i18n'
+import { withRunShortcut } from '../../../lib/run-shortcut'
 import { MQTT_CONTENT_TYPES } from '../../../../shared/mqtt'
 import { isBinaryContentType } from '../../../../shared/realtime'
 import { RT_MONACO_LANGUAGE, beautify, canBeautify } from '../../../lib/realtime-format'
@@ -116,6 +117,8 @@ export default function MqttComposer() {
             <PrimaryButton
               onClick={() => void publish()}
               disabled={!connected || !c.topic.trim()}
+              // While disconnected the chord connects instead (`run-active-request.ts`).
+              title={connected && c.topic.trim() ? withRunShortcut(t('mqtt.publish')) : undefined}
               data-testid="mqtt-publish"
               className="h-8"
             >

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from '../../lib/i18n'
+import { withRunShortcut } from '../../lib/run-shortcut'
 import { Send } from 'lucide-react'
 import { useSoapStore, type SoapMode } from '../../stores/soap.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -185,6 +186,11 @@ export default function SoapEditor() {
               type="button"
               onClick={() => (isLoading ? cancelSoap() : sendSoap())}
               disabled={!isLoading && mode === 'wsdl' && !!parsedWsdl && !selectedOperation}
+              title={
+                !isLoading && !(mode === 'wsdl' && parsedWsdl && !selectedOperation)
+                  ? withRunShortcut(t('soap.send'))
+                  : undefined
+              }
               data-testid="soap-send"
               className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}

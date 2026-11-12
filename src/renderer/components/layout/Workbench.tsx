@@ -5,7 +5,7 @@ import { formatShortcut } from '../../lib/shortcut-format'
 import { isCloseTabKey } from '../../lib/shortcut-chords'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
-import { isBlankScratchTab } from '../../lib/tab-kind'
+import { editorProtocol, isBlankScratchTab } from '../../lib/tab-kind'
 import { defaultRequestTabName } from '../../lib/endpoint-name'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import { activateTabStores, cloneTabStores, switchActiveTab } from '../../lib/activate-tab'
@@ -1049,7 +1049,7 @@ export default function Workbench() {
   // selected (the page only controls the left panel). PageWelcome shows only
   // when there is no active tab at all.
   const activeTab = tabs.find((t) => t.id === activeTabId)
-  const protocol = activeTab?.protocol || 'http'
+  const protocol = activeTab ? editorProtocol(activeTab) : 'http'
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
   // Global tab keyboard shortcuts (mirror the labels shown in the tab

@@ -14,6 +14,7 @@ import GraphQLOperationSelect from './GraphQLOperationSelect'
 import { chooseGraphqlOperation } from '../../../shared/graphql-row'
 import { runGraphqlPrimaryAction } from '../../lib/run-active-request'
 import { isModEnterChord } from '../../lib/shortcut-chords'
+import { withRunShortcut } from '../../lib/run-shortcut'
 
 export default function GraphQLQueryPane() {
   const { t, locale } = useTranslation()
@@ -92,6 +93,10 @@ export default function GraphQLQueryPane() {
             type="button"
             onClick={isSubscribing ? unsubscribe : subscribe}
             disabled={!isSubscribing && !url.trim()}
+            // Ctrl/Cmd+Enter subscribes, never unsubscribes (`run-active-request.ts`).
+            title={
+              !isSubscribing && url.trim() ? withRunShortcut(t('graphql.subscribe')) : undefined
+            }
             data-testid="graphql-subscribe"
             data-state={subscriptionState}
             className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border-none px-3.5 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -114,6 +119,7 @@ export default function GraphQLQueryPane() {
             type="button"
             onClick={() => (isLoading ? cancelQuery() : executeQuery())}
             disabled={!url.trim()}
+            title={!isLoading && url.trim() ? withRunShortcut(t('graphql.run')) : undefined}
             data-testid="graphql-run"
             className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-3.5 py-2 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             style={{ background: isLoading ? 'var(--red)' : 'var(--accent)', border: 'none' }}
