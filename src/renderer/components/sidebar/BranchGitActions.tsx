@@ -82,9 +82,7 @@ export default function BranchGitActions({
             data-testid="branch-sync-counts"
             title={
               changes.hasUpstream
-                ? t('gitCommit.syncCounts')
-                    .replace('{behind}', String(behind))
-                    .replace('{ahead}', String(ahead))
+                ? t('gitCommit.syncCounts', { behind: String(behind), ahead: String(ahead) })
                 : t('gitCommit.noUpstream')
             }
             className="ml-auto font-mono text-[12px] text-[var(--hint)]"

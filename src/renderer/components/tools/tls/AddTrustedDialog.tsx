@@ -104,10 +104,9 @@ export default function AddTrustedDialog({
         {sessionId ? (
           <>
             <p className="text-xs" style={{ color: 'var(--text)' }}>
-              {t('tools.tlsInspect.trustIntoOpen').replace(
-                '{name}',
-                fileName ?? t('tools.tlsInspect.untitledStore'),
-              )}
+              {t('tools.tlsInspect.trustIntoOpen', {
+                name: fileName ?? t('tools.tlsInspect.untitledStore'),
+              })}
             </p>
             <div className="flex justify-end gap-2">
               <DialogBtn onClick={onClose}>{t('tools.common.cancel')}</DialogBtn>

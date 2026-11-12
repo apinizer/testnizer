@@ -33,7 +33,7 @@ export default function CurlPasteToast({
       <div className="flex items-start gap-2">
         <Terminal size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-[var(--accent)]" />
         <span className="flex-1 text-sm font-medium">
-          {t('curlPaste.applied').replace('{dialect}', t(`curlPaste.dialect.${dialect}`))}
+          {t('curlPaste.applied', { dialect: t(`curlPaste.dialect.${dialect}`) })}
         </span>
         <button
           type="button"
@@ -66,10 +66,7 @@ export default function CurlPasteToast({
           ))}
           {warnings.length > MAX_WARNINGS && (
             <li>
-              {t('curlPaste.moreWarnings').replace(
-                '{count}',
-                String(warnings.length - MAX_WARNINGS),
-              )}
+              {t('curlPaste.moreWarnings', { count: String(warnings.length - MAX_WARNINGS) })}
             </li>
           )}
         </ul>

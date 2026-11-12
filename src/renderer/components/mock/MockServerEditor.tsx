@@ -1338,7 +1338,7 @@ function SettingsTab({ server, kind }: { server: MockServer; kind: MockServerKin
               style={{ color: 'var(--muted)' }}
               data-testid="mock-settings-ai-hint"
             >
-              {t('mock.aiSettingsHint').replace('{url}', mockSdkBaseUrl(server))}
+              {t('mock.aiSettingsHint', { url: mockSdkBaseUrl(server) })}
             </div>
           )}
         </Field>

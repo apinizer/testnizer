@@ -62,7 +62,7 @@ function EmbeddedResource({ resource }: { resource: McpResourceContents }) {
             )}
             <div className="flex items-center gap-2 text-[12px] text-[var(--muted)]">
               <span data-testid="mcp-resource-binary">
-                {t('mcp.result.binary').replace('{bytes}', String(base64ByteLength(resource.blob)))}
+                {t('mcp.result.binary', { bytes: String(base64ByteLength(resource.blob)) })}
               </span>
               <button
                 type="button"

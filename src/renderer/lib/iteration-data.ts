@@ -9,6 +9,7 @@
  * `pm.iterationData.get('user').id` works, and `{{user}}` writes the JSON text.
  */
 import { parse as parseCsv } from 'csv-parse/sync'
+import { fillTemplate } from '../../shared/fill-template'
 
 type Translate = (key: string) => string
 
@@ -23,10 +24,9 @@ const DELIMITERS = [',', ';', '\t']
 export function assertIterationFileSize(size: number, t: Translate): void {
   if (size > MAX_ITERATION_FILE_BYTES) {
     throw new Error(
-      t('runnerConfig.dataTooLarge').replace(
-        '{max}',
-        String(MAX_ITERATION_FILE_BYTES / (1024 * 1024)),
-      ),
+      fillTemplate(t('runnerConfig.dataTooLarge'), {
+        max: String(MAX_ITERATION_FILE_BYTES / (1024 * 1024)),
+      }),
     )
   }
 }
@@ -45,7 +45,9 @@ export function parseIterationData(
   const body = text.startsWith(BOM) ? text.slice(1) : text
   const rows = isJson ? parseJsonRows(body, t) : parseCsvRows(body, t)
   if (rows.length > MAX_ITERATION_ROWS) {
-    throw new Error(t('runnerConfig.dataTooManyRows').replace('{max}', String(MAX_ITERATION_ROWS)))
+    throw new Error(
+      fillTemplate(t('runnerConfig.dataTooManyRows'), { max: String(MAX_ITERATION_ROWS) }),
+    )
   }
   return rows
 }
@@ -55,13 +57,13 @@ function parseJsonRows(body: string, t: Translate): Record<string, unknown>[] {
   try {
     parsed = JSON.parse(body)
   } catch (e) {
-    throw new Error(t('runnerConfig.jsonInvalid').replace('{detail}', (e as Error).message))
+    throw new Error(fillTemplate(t('runnerConfig.jsonInvalid'), { detail: (e as Error).message }))
   }
   if (!Array.isArray(parsed)) throw new Error(t('runnerConfig.dataNotArray'))
   if (parsed.length === 0) throw new Error(t('runnerConfig.dataEmpty'))
   return parsed.map((row: unknown, i) => {
     if (!row || typeof row !== 'object' || Array.isArray(row)) {
-      throw new Error(t('runnerConfig.dataRowNotObject').replace('{index}', String(i + 1)))
+      throw new Error(fillTemplate(t('runnerConfig.dataRowNotObject'), { index: String(i + 1) }))
     }
     return row as Record<string, unknown>
   })
@@ -79,7 +81,7 @@ function parseCsvRows(body: string, t: Translate): Record<string, string>[] {
       skip_records_with_empty_values: true,
     }) as string[][]
   } catch (e) {
-    throw new Error(t('runnerConfig.csvInvalid').replace('{detail}', (e as Error).message))
+    throw new Error(fillTemplate(t('runnerConfig.csvInvalid'), { detail: (e as Error).message }))
   }
   const [headers = [], ...rows] = records
   // A trailing delimiter makes an unnamed column; it cannot be a variable.

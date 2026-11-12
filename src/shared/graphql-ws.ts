@@ -16,6 +16,7 @@
  * `gqlWsFailureDetail` and `gqlWsCloseText` take the lookup, so both sides
  * compose a sentence the same way.
  */
+import { fillTemplate } from './fill-template'
 
 export const GRAPHQL_TRANSPORT_WS = 'graphql-transport-ws'
 export const GRAPHQL_WS_LEGACY = 'graphql-ws'
@@ -130,10 +131,9 @@ export function gqlWsCloseText(
 
 /** The sentence that names what went wrong, in the lookup's language. */
 export function gqlWsFailureDetail(failure: GqlWsFailure, text: (key: string) => string): string {
-  const what = text(`graphql.sub.failure.${failure.reason}`).replace(
-    '{seconds}',
-    String(failure.ackTimeoutSeconds ?? ''),
-  )
+  const what = fillTemplate(text(`graphql.sub.failure.${failure.reason}`), {
+    seconds: String(failure.ackTimeoutSeconds ?? ''),
+  })
   if (failure.reason === 'closed') {
     return `${what} (${gqlWsCloseText(failure.closeCode, failure.serverText, text)})`
   }

@@ -821,7 +821,7 @@ export function EndpointTabBar() {
                 <button
                   type="button"
                   data-testid="tab-close"
-                  aria-label={t('tabStrip.closeTabNamed').replace('{name}', () => tab.name)}
+                  aria-label={t('tabStrip.closeTabNamed', { name: tab.name })}
                   title={t('tabStrip.close')}
                   tabIndex={isActive ? 0 : -1}
                   draggable={false}

@@ -49,9 +49,6 @@ export function subscriptionEndText(end: SubscriptionEnd): string {
     case 'projectLeft':
       return t('graphql.sub.end.projectLeft')
     case 'closed':
-      return t('graphql.sub.end.closed').replace(
-        '{detail}',
-        gqlWsCloseText(end.code, end.reason, t),
-      )
+      return t('graphql.sub.end.closed', { detail: gqlWsCloseText(end.code, end.reason, t) })
   }
 }

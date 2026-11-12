@@ -71,7 +71,7 @@ export default function SioEventsTab() {
                 type="checkbox"
                 checked={l.listen}
                 onChange={(e) => updateListener(l.id, { listen: e.target.checked })}
-                aria-label={t('socketio.listenToggle').replace('{name}', l.name)}
+                aria-label={t('socketio.listenToggle', { name: l.name })}
                 data-testid="socketio-listener-listen"
                 className="h-3.5 w-3.5 shrink-0 accent-[var(--accent)]"
               />
@@ -95,7 +95,7 @@ export default function SioEventsTab() {
               <button
                 type="button"
                 onClick={() => removeListener(l.id)}
-                aria-label={t('socketio.removeListener').replace('{name}', l.name)}
+                aria-label={t('socketio.removeListener', { name: l.name })}
                 data-testid="socketio-listener-remove"
                 className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-[var(--muted)] hover:text-[var(--red)]"
               >

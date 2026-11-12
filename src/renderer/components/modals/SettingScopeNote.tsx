@@ -33,9 +33,7 @@ export function SettingScopeNote({
         data-scope={own ? 'project' : 'app'}
         className={own ? 'text-[var(--accent-text)]' : 'text-[var(--hint)]'}
       >
-        {own
-          ? t('settingsScope.overridesApp')
-          : t('general.inheritsAppValue').replace('{value}', appValue)}
+        {own ? t('settingsScope.overridesApp') : t('general.inheritsAppValue', { value: appValue })}
       </span>
       {own && (
         <button

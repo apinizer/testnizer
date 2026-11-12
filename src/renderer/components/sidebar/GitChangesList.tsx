@@ -80,7 +80,7 @@ export default function GitChangesList({
                   data-key={key}
                   title={
                     needs.length > 0
-                      ? t('gitCommit.requires').replace('{names}', needs.join(', '))
+                      ? t('gitCommit.requires', { names: needs.join(', ') })
                       : undefined
                   }
                   className="flex items-center gap-2 rounded px-1 py-0.5 text-sm text-[var(--text)]"

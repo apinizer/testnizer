@@ -51,10 +51,11 @@ export function PostmanFolderSource({ loading, onPick }: { loading: boolean; onP
 /** Step 3: what the picked folder holds. */
 export function PostmanFolderSummary({ pick }: { pick: PostmanFolderPickInfo }) {
   const { t } = useTranslation()
-  const summary = t('import.postmanFolder.summary')
-    .replace('{collections}', String(pick.collections.length))
-    .replace('{requests}', String(pick.requestCount))
-    .replace('{environments}', String(pick.environmentCount))
+  const summary = t('import.postmanFolder.summary', {
+    collections: String(pick.collections.length),
+    requests: String(pick.requestCount),
+    environments: String(pick.environmentCount),
+  })
   return (
     <div
       data-testid="import-postman-folder-summary"

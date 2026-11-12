@@ -63,7 +63,7 @@ export default function DeleteConfirmDialog({
 
   // EN reads "Delete {type}", TR "{type} silinsin mi?" — the type can lead the
   // sentence, so capitalise whatever comes first (with the locale's casing).
-  const headingRaw = t('deleteConfirm.heading').replace('{type}', typeLabel ?? itemType)
+  const headingRaw = t('deleteConfirm.heading', { type: typeLabel ?? itemType })
   const heading = headingRaw.charAt(0).toLocaleUpperCase(locale) + headingRaw.slice(1)
   const [questionBefore, questionAfter = ''] = t('deleteConfirm.question').split('{name}')
   const [typeBefore, typeAfter = ''] = t('deleteConfirm.typeToConfirm').split('{word}')

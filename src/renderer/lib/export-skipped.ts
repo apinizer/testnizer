@@ -9,6 +9,7 @@ import {
   type CollectionExportFormat,
   type ExportSkippedItem,
 } from '../../shared/collection-export'
+import { fillTemplate } from '../../shared/fill-template'
 
 /** Names listed before the rest collapse into "+N more". */
 const MAX_LISTED = 5
@@ -25,10 +26,11 @@ export function formatExportSkipped(
     .map((s) => `${s.name} (${exportProtocolLabel(s.protocol)})`)
     .join(', ')
   if (skipped.length > MAX_LISTED) {
-    names += ` ${t('export.skippedMore').replace('{count}', String(skipped.length - MAX_LISTED))}`
+    names += ` ${fillTemplate(t('export.skippedMore'), { count: String(skipped.length - MAX_LISTED) })}`
   }
-  return t('export.skipped')
-    .replace('{count}', String(skipped.length))
-    .replace('{format}', collectionExportFormatLabel(format))
-    .replace('{names}', names)
+  return fillTemplate(t('export.skipped'), {
+    count: String(skipped.length),
+    format: collectionExportFormatLabel(format),
+    names,
+  })
 }

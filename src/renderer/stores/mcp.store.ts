@@ -1160,9 +1160,7 @@ async function preScriptsAllow(
     ctx.tabId,
     kind,
     callId,
-    pre.skipped
-      ? t('mcp.script.skipped')
-      : t('mcp.script.preError').replace('{error}', pre.message),
+    pre.skipped ? t('mcp.script.skipped') : t('mcp.script.preError', { error: pre.message }),
   )
   flushMcpScriptLogs(ctx, '')
   return false
@@ -2036,10 +2034,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     )
     if (missing.length > 0) {
       set({
-        promptError: t('mcp.error.promptMissingArg').replace(
-          '{names}',
-          missing.map((a) => a.name).join(', '),
-        ),
+        promptError: t('mcp.error.promptMissingArg', {
+          names: missing.map((a) => a.name).join(', '),
+        }),
       })
       return
     }

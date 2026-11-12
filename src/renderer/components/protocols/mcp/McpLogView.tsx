@@ -73,7 +73,7 @@ export default function McpLogView<T extends LogEntry>({
     }
     const res = await save(JSON.stringify(visible, null, 2), `${exportName}-${stamp()}.json`)
     if (!res.success) toast.error(`${t('mcp.messages.exportFailed')}: ${res.error ?? ''}`)
-    else if (res.data) toast.success(t('mcp.messages.exported').replace('{path}', res.data))
+    else if (res.data) toast.success(t('mcp.messages.exported', { path: res.data }))
     // `data: null` = the user cancelled the dialog — nothing to say.
   }
 

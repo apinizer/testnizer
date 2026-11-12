@@ -244,6 +244,16 @@ describe('create mock server from a folder', () => {
     expect(responses.map((o) => o.name)).toEqual(['default'])
   })
 
+  it('a warning names the example and request as typed, `$&` and `{name}` included', async () => {
+    const { api } = bridge({ a: { name: '$&', path: '/logo' } }, {}, [], {
+      'endpoint:a': [savedExample({ name: '{name}', body: 'AAAA' }, { bodyEncoding: 'base64' })],
+    })
+
+    const r = await createMockFromRequests(api as never, { projectId: 'p', name: 'x', ids: ['a'] })
+
+    expect(r.warnings).toEqual(['Example "{name}" of "$&" has a binary body and was skipped.'])
+  })
+
   it('an unreadable example does not stop the import', () => {
     const response = exampleToMockResponse({
       name: 'x',

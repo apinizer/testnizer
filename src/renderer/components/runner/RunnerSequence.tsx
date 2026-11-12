@@ -7,6 +7,7 @@ import { ChevronRight, ChevronDown, FolderClosed, FolderOpen } from 'lucide-reac
 import type { RunPhase } from '../../../shared/runner-verdict'
 import { useTranslation } from '../../lib/i18n'
 import type { RunnerEndpointItem, RunnerFolderGroup } from './RunnerTab'
+import { fillTemplate } from '../../../shared/fill-template'
 
 interface RunnerSequenceProps {
   endpoints: RunnerEndpointItem[]
@@ -327,9 +328,10 @@ function FolderRow({
         type="button"
         onClick={onToggleCollapse}
         aria-expanded={!collapsed}
-        aria-label={t(
-          collapsed ? 'runSequence.expandFolder' : 'runSequence.collapseFolder',
-        ).replace('{name}', node.group.label)}
+        aria-label={fillTemplate(
+          t(collapsed ? 'runSequence.expandFolder' : 'runSequence.collapseFolder'),
+          { name: node.group.label },
+        )}
         className="flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0"
         style={{ color: 'var(--muted)' }}
       >
@@ -350,7 +352,7 @@ function FolderRow({
           // labelled "Phase: <request>" / "Phase — <folder>", and specs address
           // them with `/: <name>$/`; a checkbox labelled "…: <name>" matches the
           // same pattern and turns one locator into two elements.
-          aria-label={t('runSequence.selectFolder').replace('{name}', node.group.label)}
+          aria-label={fillTemplate(t('runSequence.selectFolder'), { name: node.group.label })}
           className="h-[15px] w-[15px] shrink-0 cursor-pointer accent-[var(--accent)]"
         />
       )}
@@ -514,7 +516,7 @@ function EndpointRow({
         onChange={onToggle}
         // See the folder checkbox: no colon, so this cannot collide with the
         // "Phase: <request>" locator convention.
-        aria-label={t('runSequence.selectRequest').replace('{name}', endpoint.name)}
+        aria-label={fillTemplate(t('runSequence.selectRequest'), { name: endpoint.name })}
         className="h-[15px] w-[15px] shrink-0 cursor-pointer accent-[var(--accent)]"
       />
 

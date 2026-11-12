@@ -84,7 +84,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     const name = newName.trim()
     const ok = await createBranch(activeProjectId, name, currentBranch)
     if (ok) {
-      toast.success(t('toast.branchCreated').replace('{name}', name))
+      toast.success(t('toast.branchCreated', { name }))
       // Match VS Code / IntelliJ / GitKraken: a fresh branch you just asked
       // for is the one you want to be on. Without this auto-switch v1.3.1 left
       // the indicator on the source branch and forced a second click — B7.
@@ -111,7 +111,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setGitLoading(t('git.switching', { name: branchName }))
     const ok = await switchBranch(activeProjectId, branchName)
     if (ok) {
-      toast.success(t('toast.branchSwitched').replace('{name}', branchName))
+      toast.success(t('toast.branchSwitched', { name: branchName }))
       // Full refresh after branch switch
       await syncAfterGit(activeProjectId)
     } else {
@@ -128,11 +128,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setGitLoading(t('git.merging', { name: sourceBranch }))
     const result = await mergeBranch(activeProjectId, sourceBranch)
     if (result.success) {
-      toast.success(
-        t('toast.branchMerged')
-          .replace('{source}', sourceBranch)
-          .replace('{target}', currentBranch),
-      )
+      toast.success(t('toast.branchMerged', { source: sourceBranch, target: currentBranch }))
       await syncAfterGit(activeProjectId)
     } else if ('error' in result) {
       // Real failure — surface to user. Conflicts surface via the modal
@@ -205,7 +201,7 @@ export default function BranchDropdown({ pill }: { pill?: boolean } = {}) {
     setBusy(true)
     const result = await deleteBranch(activeProjectId, target)
     if (result.success) {
-      toast.success(t('toast.branchDeleted').replace('{name}', target))
+      toast.success(t('toast.branchDeleted', { name: target }))
     } else {
       toast.error(result.error || t('toast.branchDeleteFailed'))
     }

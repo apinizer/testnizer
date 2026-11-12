@@ -43,9 +43,7 @@ export default function McpElicitationCard({
     >
       <div className="flex items-center gap-2 text-sm font-semibold text-[var(--accent-text)]">
         <MessageSquareMore size={14} />
-        <span data-testid="mcp-elicitation-server">
-          {t('mcp.elicit.from').replace('{server}', server)}
-        </span>
+        <span data-testid="mcp-elicitation-server">{t('mcp.elicit.from', { server })}</span>
       </div>
       <McpInputForm
         views={views}

@@ -12,6 +12,7 @@ import type { McpFrame, McpSubscriptionView } from '../../../types/mcp'
 import { describeSubscriptionFilter } from '../../../lib/mcp-protocol'
 import { useMessagesPaneLayout } from './use-messages-pane-layout'
 import McpLogView from './McpLogView'
+import { fillTemplate } from '../../../../shared/fill-template'
 
 type SubTab = 'notifications' | 'frames'
 
@@ -31,7 +32,7 @@ function frameDetail(f: McpFrame, note: string): unknown {
   if (!info) return f.message
   const envelope = { ...(f.message as Record<string, unknown>) }
   delete envelope._truncated
-  return `${JSON.stringify(envelope, null, 2)}\n\n${note.replace('{chars}', String(info.chars))}\n\n${info.preview}`
+  return `${JSON.stringify(envelope, null, 2)}\n\n${fillTemplate(note, { chars: String(info.chars) })}\n\n${info.preview}`
 }
 
 /**

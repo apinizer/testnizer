@@ -198,9 +198,7 @@ export function toastMockImportResult(result: MockImportResult): void {
     t('mock.importResponseCountOne'),
     t('mock.importResponseCount'),
   )
-  const summary = t('mock.importDone')
-    .replace('{endpoints}', endpoints)
-    .replace('{responses}', responses)
+  const summary = t('mock.importDone', { endpoints, responses })
   if (result.warnings.length === 0) {
     toast.success(summary)
     return

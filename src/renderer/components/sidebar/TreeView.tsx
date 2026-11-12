@@ -1208,14 +1208,14 @@ export default function TreeView() {
           ids,
         })
         if (!result.ok) {
-          toast.error(t('mock.fromFolderFailed').replace('{error}', result.error ?? ''))
+          toast.error(t('mock.fromFolderFailed', { error: result.error ?? '' }))
           return
         }
         toastMockImportResult(result)
         setActiveSidebarPage('mocks')
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err)
-        toast.error(t('mock.fromFolderFailed').replace('{error}', error))
+        toast.error(t('mock.fromFolderFailed', { error }))
       }
     },
     [activeProjectId],

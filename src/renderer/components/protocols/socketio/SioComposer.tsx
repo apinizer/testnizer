@@ -107,7 +107,7 @@ export default function SioComposer() {
           onLoad={loadSaved}
           onRename={renameSaved}
           onDelete={deleteSaved}
-          onAdd={() => addSaved(t('rt.saved.defaultName').replace('{n}', String(saved.length + 1)))}
+          onAdd={() => addSaved(t('rt.saved.defaultName', { n: String(saved.length + 1) }))}
           testIdPrefix="socketio"
         />
       </div>

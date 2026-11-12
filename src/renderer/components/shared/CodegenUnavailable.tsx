@@ -22,7 +22,7 @@ export default function CodegenUnavailable({ protocol }: { protocol: string }) {
           subscription
             ? t('codeGen.unavailableSubscription')
             : name
-              ? t('codeGen.unavailableTitle').replace('{protocol}', name)
+              ? t('codeGen.unavailableTitle', { protocol: name })
               : t('codeGen.unavailableTab')
         }
         description={t(
