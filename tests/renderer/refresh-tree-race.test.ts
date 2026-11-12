@@ -213,6 +213,21 @@ describe('APIs tree build race', () => {
     expect(s().openNodeIds.has('a-folder')).toBe(true)
   })
 
+  it('re-entry superseded by a refresh with a NEW first-level folder opens it in the kept tree', async () => {
+    await enterA()
+    const reenter = s().setActiveProject('A') // same-project re-entry (pull / switch)
+    const reenterCall = await call(0)
+    const refresh = s().refreshTree()
+    const refreshCall = await call(1)
+    refreshCall.resolve([...folder('a-initial'), ...folder('a-new-on-branch')])
+    await refresh
+
+    reenterCall.resolve(folder('a-initial'))
+    await reenter
+    expect(shown()).toEqual(['project-A', 'a-initial', 'a-new-on-branch'])
+    expect(s().openNodeIds.has('a-new-on-branch')).toBe(true)
+  })
+
   it('an older entry landing after a newer one does not undo the expansion + search', async () => {
     const older = s().setActiveProject('A')
     const olderCall = await call(0)

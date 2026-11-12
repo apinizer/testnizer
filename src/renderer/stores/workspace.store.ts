@@ -566,6 +566,10 @@ async function buildTreeFromDB(
  * branch scope are still active. A build of an older number that lands after
  * a newer one is dropped, so `await refreshTree()` still returns a tree at
  * least as new as the caller's change (the newer build read after it).
+ * Deliberately not "latest started wins" (dropping a build as soon as a later
+ * one starts): callers that `await refreshTree()` and then read the tree —
+ * TreeView's new-folder reveal (`revealNode` right after the await) — would
+ * find their own change missing while the later build is still in flight.
  */
 let treeBuildSeq = 0
 let treeWrittenSeq = 0
@@ -813,14 +817,18 @@ export const useWorkspaceStore = create<WorkspaceStore>((set, get) => ({
       const restore = seq > treeRestoredSeq
       if (!newest && !restore) return
       if (restore) treeRestoredSeq = seq
+      // The restore is computed from the tree that stays on screen: when a
+      // later refresh already wrote, that newer tree may have first-level
+      // folders this build never saw.
+      const kept = newest ? tree : get().treeData
       // Per-project search + expansion (issue #123): restore what the user had
       // in this project, or defaults (root + first-level folders, empty search).
-      const restored = restoreProjectTreeState(id, tree)
+      const restored = restoreProjectTreeState(id, kept)
       if (prevId === id) {
         // Same-project re-entry (branch switch, git pull): the tree content
         // changed under us — keep the user's expansion but also open any NEW
         // first-level folders, as the pre-#123 code always did.
-        for (const n of computeDefaultOpenIds(tree)) restored.openNodeIds.add(n)
+        for (const n of computeDefaultOpenIds(kept)) restored.openNodeIds.add(n)
       }
       set({ ...(newest ? { treeData: tree } : {}), ...(restore ? restored : {}) })
     })
