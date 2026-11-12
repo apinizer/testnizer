@@ -15,7 +15,7 @@ import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate } from '../../lib/format-datetime'
 import { toast } from '../../lib/toast'
-import { deleteProjectReleasingTabs } from '../../lib/close-project-tab'
+import { deleteProjectReleasingTabs, projectUnsavedNames } from '../../lib/close-project-tab'
 import { isMac } from '../../lib/platform'
 import { useProjectExportStore } from '../../stores/project-export.store'
 import type { Project } from '../../types'
@@ -60,6 +60,7 @@ export default function ProjectHome() {
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
+  const [deleteUnsavedNames, setDeleteUnsavedNames] = useState<string[]>([])
 
   // Close context menu on outside click
   useEffect(() => {
@@ -85,6 +86,8 @@ export default function ProjectHome() {
 
   function handleDeleteProject(project: Project) {
     setContextMenuId(null)
+    // Read now: the delete drops the snapshot these names come from.
+    setDeleteUnsavedNames(projectUnsavedNames(project.id))
     setDeleteTarget(project)
   }
 
@@ -92,6 +95,7 @@ export default function ProjectHome() {
     if (!deleteTarget) return
     await deleteProjectReleasingTabs(deleteTarget.id)
     setDeleteTarget(null)
+    setDeleteUnsavedNames([])
   }
 
   function handleStartRename(project: Project) {
@@ -392,6 +396,7 @@ export default function ProjectHome() {
               <div className="relative">
                 <button
                   type="button"
+                  data-testid="home-card-menu"
                   onClick={(e) => {
                     e.stopPropagation()
                     setContextMenuId(contextMenuId === project.id ? null : project.id)
@@ -484,6 +489,7 @@ export default function ProjectHome() {
                     </button>
                     <button
                       type="button"
+                      data-testid="home-card-delete"
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDeleteProject(project)
@@ -557,8 +563,12 @@ export default function ProjectHome() {
         itemType={t('home.projectLabel')}
         requireTyping
         description={t('home.deleteProjectDesc')}
+        unsavedNames={deleteUnsavedNames}
         onConfirm={confirmDeleteProject}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={() => {
+          setDeleteTarget(null)
+          setDeleteUnsavedNames([])
+        }}
       />
     </div>
   )

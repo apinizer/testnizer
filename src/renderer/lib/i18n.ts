@@ -249,6 +249,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'deleteConfirm.question': 'Are you sure you want to delete {name}?',
     'deleteConfirm.folderDesc': 'This will permanently delete the folder and all its contents.',
     'deleteConfirm.cannotUndo': 'This action cannot be undone.',
+    'deleteConfirm.unsavedLostOne': '{count} unsaved request will be lost:',
+    'deleteConfirm.unsavedLost': '{count} unsaved requests will be lost:',
     'deleteConfirm.typeToConfirm': 'Type {word} to confirm:',
     // Item-type names shown in the heading ("Delete {type}"); the raw
     // `itemType` prop stays for logic (e.g. the folder check).
@@ -5178,6 +5180,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'deleteConfirm.question': '{name} silinecek. Emin misiniz?',
     'deleteConfirm.folderDesc': 'Klasör ve tüm içeriği kalıcı olarak silinecek.',
     'deleteConfirm.cannotUndo': 'Bu işlem geri alınamaz.',
+    'deleteConfirm.unsavedLostOne': 'Kaydedilmemiş {count} istek kaybolacak:',
+    'deleteConfirm.unsavedLost': 'Kaydedilmemiş {count} istek kaybolacak:',
     'deleteConfirm.typeToConfirm': 'Onaylamak için {word} yazın:',
     'deleteConfirm.type.module': 'modül',
     'deleteConfirm.type.folder': 'klasör',

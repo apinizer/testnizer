@@ -3,9 +3,7 @@ import { AlertTriangle } from 'lucide-react'
 import Modal from '../shared/Modal'
 import { useTranslation } from '../../lib/i18n'
 import { formatCount } from '../../lib/plural'
-
-/** How many unsaved request names a project close lists before "+N more". */
-const MAX_LISTED = 5
+import UnsavedNamesList from './UnsavedNamesList'
 
 interface UnsavedChangesDialogProps {
   open: boolean
@@ -100,21 +98,7 @@ export default function UnsavedChangesDialog({
             <strong>{itemName}</strong>
             {afterName}
           </p>
-          {isProject && count > 0 && (
-            <ul
-              data-testid="unsaved-names"
-              className="mt-2 list-disc pl-5 text-sm text-[var(--sub)] [overflow-wrap:anywhere]"
-            >
-              {unsavedNames.slice(0, MAX_LISTED).map((name, i) => (
-                <li key={`${i}-${name}`}>{name}</li>
-              ))}
-              {count > MAX_LISTED && (
-                <li className="list-none text-[var(--muted)]">
-                  {t('unsaved.moreNames', { count: String(count - MAX_LISTED) })}
-                </li>
-              )}
-            </ul>
-          )}
+          {isProject && <UnsavedNamesList names={unsavedNames} />}
         </div>
 
         {/* Footer */}

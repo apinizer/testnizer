@@ -23,6 +23,15 @@ import { releaseTabState } from './cleanup-tab-state'
 import { switchActiveTab } from './activate-tab'
 import { saveTabForClose } from './save-tab-for-close'
 
+/**
+ * The names of a project's unsaved requests — what the project-close dialog
+ * and the project-delete confirm list. Read when the dialog opens: a delete
+ * drops the snapshot these come from.
+ */
+export function projectUnsavedNames(projectId: string): string[] {
+  return projectDirtyTabs(projectId).map((tab) => tab.name)
+}
+
 /** Close + release. `false` (nothing changed) while a tab is still dirty. */
 function closeAndRelease(projectId: string, discardUnsaved: boolean): boolean {
   const tabs = projectOpenTabs(projectId)
@@ -70,7 +79,8 @@ export async function saveAndCloseProjectTab(projectId: string): Promise<Project
 }
 
 /**
- * Deleting a project (Project Home, behind its own confirm): its rows are
+ * Deleting a project (Project Home, behind its own confirm — which lists the
+ * unsaved requests from `projectUnsavedNames`, since they are lost): its rows are
  * gone, so there is nothing to save its open tabs into — but their editor
  * state and live connections are released like any closed tab's, instead of
  * being left behind with the dropped snapshot.
