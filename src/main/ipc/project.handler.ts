@@ -170,9 +170,14 @@ export function registerProjectHandlers(): void {
     }
   })
 
-  ipcMain.handle('folder:duplicate', async (_event, id: string) => {
+  // `name`: the copy's name, worded by the renderer in the UI language
+  // (`lib/copy-name.ts`); without one the English suffix is the fallback.
+  ipcMain.handle('folder:duplicate', async (_event, id: string, name?: string) => {
     try {
-      const data = duplicateFolderDeep(id)
+      const data = duplicateFolderDeep(
+        id,
+        typeof name === 'string' && name.trim() ? name : undefined,
+      )
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -187,7 +192,7 @@ export function registerProjectHandlers(): void {
  * a mid-flight failure can't leave half a copy behind. v1.3.1 B5: this is
  * what the silent "Duplicate" menu was supposed to do.
  */
-function duplicateFolderDeep(rootFolderId: string): { newFolderId: string } {
+function duplicateFolderDeep(rootFolderId: string, copyName?: string): { newFolderId: string } {
   const db = getDb()
   const now = Date.now()
 
@@ -235,7 +240,7 @@ function duplicateFolderDeep(rootFolderId: string): { newFolderId: string } {
       const newId = folderIdMap.get(f.id)!
       const newParent =
         f.id === rootFolderId ? f.parent_id : folderIdMap.get(f.parent_id ?? '') || null
-      const newName = f.id === rootFolderId ? `${f.name} (copy)` : f.name
+      const newName = f.id === rootFolderId ? (copyName ?? `${f.name} (copy)`) : f.name
       db.prepare(
         `INSERT INTO folders (id, project_id, parent_id, name, sort_order)
          VALUES (?, ?, ?, ?, ?)`,

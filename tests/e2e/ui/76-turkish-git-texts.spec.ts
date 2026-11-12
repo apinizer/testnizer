@@ -10,6 +10,11 @@
  * Screenshots: set `TESTNIZER_SHOT_DIR` to a folder and every step saves one
  * there (`76-<step>.png`).
  *
+ * A duplicate's name (issue: Turkish UI sweep) is data written in the UI
+ * language when the copy is made: the project copy and a tree request copy
+ * end in " (kopya)" in TR, and keep it after switching back to English.
+ * Screenshot `test-results/screens/76-copy-name-tr.png`.
+ *
  * Cleanup (shared Electron, `finally`, each step on its own): the canonical
  * project opened first, then back to English, the git settings of
  * the spec's project cleared, the project and its duplicate deleted, the
@@ -26,9 +31,11 @@ import {
   ensureCanonicalProject,
   openCommandPalette,
 } from '../helpers/ui/bootstrap'
-import { getActiveProjectId } from '../helpers/ui/assert-ipc'
+import { getActiveProjectId, listSavedRequestsByProject } from '../helpers/ui/assert-ipc'
 import { createProject, goToProjectHome } from '../helpers/ui/workspace-flow'
-import { deleteProject } from '../helpers/ui/db-flow'
+import { createSavedRequestIpc, deleteProject } from '../helpers/ui/db-flow'
+import { refreshWorkspaceTree } from '../helpers/ui/import-flow'
+import { treeClearSearch, treeContextAction, treeSearch } from '../helpers/ui/tree'
 import { persistedLocale, restoreEnglishLocale } from '../helpers/ui/locale'
 
 type Win = Window & {
@@ -36,18 +43,37 @@ type Win = Window & {
     settings?: { set: (k: string, v: unknown) => Promise<{ success: boolean; error?: string }> }
     project?: {
       update: (id: string, p: unknown) => Promise<{ success: boolean; error?: string }>
-      list: (wsId: string) => Promise<{ success: boolean; data?: Array<{ id: string }> }>
+      list: (wsId: string) => Promise<{
+        success: boolean
+        data?: Array<{ id: string; name: string; display_name?: string | null }>
+      }>
     }
+    savedRequest?: { delete: (id: string) => Promise<{ success: boolean; error?: string }> }
     workspace?: { list: () => Promise<{ success: boolean; data?: Array<{ id: string }> }> }
   }
 }
 
 const SHOT_DIR = process.env.TESTNIZER_SHOT_DIR
+const SCREENS = 'test-results/screens'
 
 async function shot(page: Page, step: string): Promise<void> {
   if (!SHOT_DIR) return
   fs.mkdirSync(SHOT_DIR, { recursive: true })
   await page.screenshot({ path: path.join(SHOT_DIR, `76-${step}.png`) })
+}
+
+/** The shown name (display name, else name) of each project id given. */
+async function projectNames(page: Page, ids: string[]): Promise<string[]> {
+  return page.evaluate(async (wanted) => {
+    const w = window as unknown as Win
+    const out: string[] = []
+    for (const ws of (await w.api?.workspace?.list())?.data ?? []) {
+      for (const p of (await w.api?.project?.list(ws.id))?.data ?? []) {
+        if (wanted.includes(p.id)) out.push(p.display_name || p.name)
+      }
+    }
+    return out
+  }, ids)
 }
 
 /** Every project id in every workspace — to find the Duplicate's copy afterwards. */
@@ -88,6 +114,7 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
 
       const cleanupErrors: string[] = []
       let copies: string[] = []
+      let copyNamesInEnglish: string[] = []
       let owned: string[] = []
       let projectId: string | null = null
       let before: string[] = []
@@ -122,7 +149,7 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
         // header below sees `save_mode: 'git'` — a user action, no store poke.
         before = await allProjectIds(window)
         await goToProjectHome(window)
-        // Exact name: the copy's card ("… (copy)") contains the name too.
+        // Exact name: the copy's card ("… (kopya)" in TR) contains the name too.
         const card = window
           .getByTestId('project-card')
           .filter({ has: window.getByText(name, { exact: true }) })
@@ -136,6 +163,13 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
         await expect(
           window.locator('[data-sonner-toast]').filter({ hasText: /Duplicated/ }),
         ).toHaveCount(0)
+        // The copy is named in the UI language: "<name> (kopya)", never "(copy)".
+        await expect(
+          window
+            .getByTestId('project-card')
+            .filter({ has: window.getByText(`${name} (kopya)`, { exact: true }) }),
+        ).toHaveCount(1, { timeout: 10_000 })
+        await expect(window.getByText(`${name} (copy)`, { exact: true })).toHaveCount(0)
         await shot(window, 'duplicate-toast')
         // The copy is in the list now, so the list was re-fetched.
         await expect
@@ -204,6 +238,8 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
         await step('find the copy', async () => {
           if (before.length) {
             copies = (await allProjectIds(window)).filter((id) => !before.includes(id))
+            // Read back in English: the name is data, it is not re-translated.
+            copyNamesInEnglish = await projectNames(window, copies)
           }
         })
         owned = [...copies, ...(projectId ? [projectId] : [])]
@@ -228,9 +264,90 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
       // Reached only when the body passed: the cleanup left the shared window clean.
       expect(cleanupErrors).toEqual([])
       expect(copies.length).toBeGreaterThan(0)
+      expect(copyNamesInEnglish).toEqual([`${name} (kopya)`])
       expect(await persistedLocale(window)).toBe('en')
       const remaining = await allProjectIds(window)
       for (const id of owned) expect(remaining).not.toContain(id)
+    },
+  )
+
+  uiTest(
+    'a tree request copied in Turkish is named "(kopya)" and keeps it in English',
+    async ({ window }) => {
+      uiTest.setTimeout(90_000)
+      await dismissOverlays(window)
+      await ensureCanonicalProject(window)
+      const projectId = await getActiveProjectId(window)
+      const reqName = `TR Copy ${`${Date.now()}`.slice(-7)}`
+      const copy = `${reqName} (kopya)`
+      const namesNow = async (): Promise<string[]> =>
+        ((await listSavedRequestsByProject(window, projectId)) as Array<{ name: string }>)
+          .map((r) => r.name)
+          .filter((n) => n.startsWith(reqName))
+          .sort()
+
+      const cleanupErrors: string[] = []
+      try {
+        // Set-up in English through IPC: one saved request in the tree.
+        await createSavedRequestIpc(window, {
+          projectId,
+          name: reqName,
+          url: 'http://127.0.0.1:9/copy-name',
+        })
+        await refreshWorkspaceTree(window)
+
+        await switchToTurkish(window)
+        await dismissOverlays(window)
+        await treeSearch(window, reqName)
+        await treeContextAction(window, reqName, /^Çoğalt$/)
+
+        // The copy is in the DB and on screen with the Turkish suffix.
+        await expect.poll(namesNow, { timeout: 10_000 }).toEqual([reqName, copy])
+        const copyNode = window.getByTestId('tree-node').filter({ hasText: copy })
+        await expect(copyNode).toHaveCount(1, { timeout: 10_000 })
+        await expect(
+          window.getByTestId('tree-node').filter({ hasText: `${reqName} (copy)` }),
+        ).toHaveCount(0)
+        fs.mkdirSync(SCREENS, { recursive: true })
+        await window.screenshot({ path: `${SCREENS}/76-copy-name-tr.png` })
+
+        // Back to English: the existing copy is data, it keeps "(kopya)".
+        await restoreEnglishLocale(window)
+        await treeSearch(window, reqName)
+        await expect(copyNode).toHaveCount(1, { timeout: 10_000 })
+        expect(await namesNow()).toEqual([reqName, copy])
+      } finally {
+        const step = async (label: string, fn: () => Promise<unknown>): Promise<void> => {
+          try {
+            await fn()
+          } catch (e) {
+            cleanupErrors.push(`${label}: ${(e as Error).message}`)
+          }
+        }
+        await step('dismiss overlays', () => dismissOverlays(window))
+        await step('restore English', () => restoreEnglishLocale(window))
+        await step('delete the requests', async () => {
+          const rows = (
+            (await listSavedRequestsByProject(window, projectId)) as Array<{
+              id: string
+              name: string
+            }>
+          ).filter((r) => r.name.startsWith(reqName))
+          for (const r of rows) {
+            await window.evaluate(async (id) => {
+              const res = await (window as unknown as Win).api?.savedRequest?.delete(id)
+              if (!res?.success) throw new Error(res?.error ?? 'delete failed')
+            }, r.id)
+          }
+        })
+        await step('clear tree search', () => treeClearSearch(window))
+        await step('refresh tree', () => refreshWorkspaceTree(window))
+      }
+
+      // Reached only when the body passed: the cleanup left the shared window clean.
+      expect(cleanupErrors).toEqual([])
+      expect(await persistedLocale(window)).toBe('en')
+      expect(await namesNow()).toEqual([])
     },
   )
 })

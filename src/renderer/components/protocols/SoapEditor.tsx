@@ -52,11 +52,11 @@ export default function SoapEditor() {
   }, [activeTabId])
 
   const detailTabs: { key: SoapDetailTab; label: string }[] = [
-    { key: 'body', label: 'Body' },
-    { key: 'auth', label: 'Auth' },
-    { key: 'headers', label: 'Headers' },
+    { key: 'body', label: t('request.body') },
+    { key: 'auth', label: t('soap.tabAuth') },
+    { key: 'headers', label: t('request.headers') },
     // Run settings (issue #304) — the HTTP Settings tab's Critical switch.
-    { key: 'settings', label: 'Settings' },
+    { key: 'settings', label: t('request.settings') },
   ]
 
   return (

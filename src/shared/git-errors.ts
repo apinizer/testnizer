@@ -45,6 +45,8 @@ export const GIT_ERROR_TEXT = {
   GIT_REMOTE_UNREACHABLE: 'Could not reach the remote repository: {detail}',
   GIT_FOREIGN_REPO:
     '{path} is already a git repository connected to another remote ({remote}). In Project Settings → Storage, pick an empty folder or one that belongs to this repository.',
+  // `git:resolveConflict` got a side other than ours / theirs (`{side}`).
+  GIT_INVALID_CONFLICT_SIDE: 'Invalid conflict side: {side}',
   BRANCH_NOT_FOUND: 'Branch not found',
   BRANCH_DEFAULT_UNDELETABLE: 'Cannot delete default branch',
 } as const

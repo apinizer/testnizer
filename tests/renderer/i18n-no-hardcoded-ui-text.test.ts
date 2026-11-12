@@ -12,7 +12,12 @@
  *   - `title` / `aria-label` / `placeholder` / `alt` / `label` attributes and
  *     the text props of our own components (`text`, `description`, `hint` …),
  *   - the first argument of the user-facing sinks: `toast.*`, `confirm`,
- *     `alert`, `setGitLoading`, `setStatusMsg`.
+ *     `alert`, `setGitLoading`, `setStatusMsg`,
+ *   - in `components/`, object-literal properties named `label` / `title` /
+ *     `placeholder` / `description` / `tooltip` (option, tab and menu tables
+ *     such as `const TABS = [{ key: 'body', label: 'Body' }]`). Store a key
+ *     (`labelKey: 'request.body'`) and call `t()` where it renders — never
+ *     `t()` at module scope, which freezes the import-time locale.
  * A string is followed through `?:`, `||`, `??`, `+` and the static parts of a
  * template literal (so `cond ? 'Pull' : 'Push'` and `` `Duplicated "${x}"` ``
  * are both seen). A call result (`t('…')`, `formatCount(…)`) is never text.
@@ -30,9 +35,11 @@
  * matches anything (it was translated or moved) fails too, so it is removed.
  *
  * Known limits (deliberate, not worth the false positives they would bring):
- *   - Labels in object literals (`const TABS = [{ label: 'Open' }]`) are not
- *     scanned: a key named `label` is just as often an identifier or a value
- *     sent to main. Check such tables by eye when adding one.
+ *   - Object-literal labels are scanned in `components/` only. In `stores/`
+ *     and `lib/` a key named `label` / `description` is as often a brand
+ *     name, a value sent to main or tool reference text with its own TR twin
+ *     (`lib/tools/http-status-tr.ts`); check such tables by eye. Seed-data
+ *     files under `components/` are listed in SEED_DATA_FILES with why.
  *   - A word with an inner `-` or `'` counts as code (`sign-in`, `don't`).
  *   - Sinks match the callee text exactly, so `useUIStore.getState()
  *     .setGitLoading('…')` is not seen; call the store action directly.
@@ -62,6 +69,27 @@ const WATCHED_ATTRS = new Set([
   'subtitle',
   'tooltip',
 ])
+/** Object-literal property names whose string value is UI text (in `components/`). */
+const WATCHED_PROPS = new Set(['label', 'title', 'placeholder', 'description', 'tooltip'])
+const OBJECT_LABEL_DIR = 'components/'
+
+/**
+ * Files under `components/` whose object literals are not UI text, with why.
+ * The object-literal rule skips them; JSX / attribute / sink rules still apply.
+ */
+const SEED_DATA_FILES: Readonly<Record<string, string>> = {
+  // Preset content written into a NEW mock server (server / endpoint
+  // description), editable by the user and saved with the project like the
+  // response bodies next to it — the same in every locale.
+  'components/mock/mock-http-presets.ts': 'mock server seed content',
+  'components/mock/mock-sse-presets.ts': 'mock server seed content',
+  'components/mock/mock-ai-presets.ts': 'mock server seed content',
+  // MCP tool / prompt / schema definitions the Mock MCP server sends to
+  // clients and LLMs over the protocol (`title`, `description` are MCP
+  // fields), plus the preset server descriptions saved with them.
+  'components/mock-mcp/mock-mcp-presets.ts': 'MCP protocol payload seed',
+}
+
 const SINK_CALLS = new Set([
   'toast.success',
   'toast.error',
@@ -210,8 +238,17 @@ const KNOWN_UNTRANSLATED: readonly string[] = [
   'components/request/AuthTab.tsx|Password Credentials',
   'components/request/AuthTab.tsx|Implicit',
   'components/protocols/GrpcResponsePane.tsx|OK',
+  // gRPC RPC kinds (spec names), deliberately untranslated like JSON / XML
+  // (see shell-i18n-tr.test.tsx).
+  'components/protocols/GrpcRequestPane.tsx|Unary',
+  'components/protocols/GrpcRequestPane.tsx|Server Stream',
+  'components/protocols/GrpcRequestPane.tsx|Client Stream',
+  'components/protocols/GrpcRequestPane.tsx|Bidi Stream',
   'components/tools/WsSecurityTool.tsx|Created',
   'components/protocols/SoapManualForm.tsx|Echo',
+  // `info.title` of the sample OpenAPI document the YAML ⇄ JSON tool loads:
+  // document content the user converts, not a label.
+  'components/tools/YamlJsonTool.tsx|Pet store',
 ]
 
 const ENTITIES: Record<string, string> = {
@@ -325,11 +362,23 @@ function scanFile(full: string): Hit[] {
       if (SINK_CALLS.has(n.expression.getText(sf))) {
         for (const s of literalTexts(n.arguments[0])) add(n, s)
       }
+    } else if (objectLabels && isWatchedProp(n)) {
+      for (const s of literalTexts(n.initializer)) add(n, s)
     }
     ts.forEachChild(n, visit)
   }
+  const objectLabels = file.startsWith(OBJECT_LABEL_DIR) && !(file in SEED_DATA_FILES)
   visit(sf)
   return hits
+}
+
+/** `{ label: '…' }` — a watched property assigned in an object literal. */
+function isWatchedProp(n: ts.Node): n is ts.PropertyAssignment {
+  return (
+    ts.isPropertyAssignment(n) &&
+    (ts.isIdentifier(n.name) || ts.isStringLiteral(n.name)) &&
+    WATCHED_PROPS.has(n.name.text)
+  )
 }
 
 function scanRenderer(): Hit[] {
@@ -373,6 +422,17 @@ describe('i18n — no hard-coded UI text in the renderer', () => {
     ).toEqual([])
   })
 
+  it('every seed-data exclusion is an existing file', () => {
+    const missing = Object.keys(SEED_DATA_FILES).filter((f) => {
+      try {
+        return !statSync(join(RENDERER, f)).isFile()
+      } catch {
+        return true
+      }
+    })
+    expect(missing, `Moved or deleted — update SEED_DATA_FILES:\n${missing.join('\n')}`).toEqual([])
+  })
+
   it('catches the shapes that slipped through in finding 6', () => {
     const probe = (code: string): string[] => {
       const sf = ts.createSourceFile('p.tsx', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
@@ -383,6 +443,8 @@ describe('i18n — no hard-coded UI text in the renderer', () => {
           for (const s of literalTexts(n.expression)) out.push(...naturalWords(s))
         } else if (ts.isCallExpression(n) && SINK_CALLS.has(n.expression.getText(sf))) {
           for (const s of literalTexts(n.arguments[0])) out.push(...naturalWords(s))
+        } else if (isWatchedProp(n)) {
+          for (const s of literalTexts(n.initializer)) out.push(...naturalWords(s))
         }
         ts.forEachChild(n, visit)
       }
@@ -396,6 +458,14 @@ describe('i18n — no hard-coded UI text in the renderer', () => {
     expect(probe('toast.success(`Duplicated "${name}"`)')).toEqual(['Duplicated'])
     expect(probe(`setGitLoading('Pulling from remote...')`)).toEqual(['Pulling', 'from', 'remote'])
     expect(probe(`const a = <div>URL PREVIEW</div>`)).toEqual(['PREVIEW'])
+    // Option / tab tables: the label is UI text, the key and value are not.
+    expect(probe(`const TABS = [{ key: 'body', label: 'Body', value: 'raw text' }]`)).toEqual([
+      'Body',
+    ])
+    expect(
+      probe(`const O = [{ id: 'TLSv1.2', label: 'TLS 1.2', title: x ? 'Old' : 'New' }]`),
+    ).toEqual(['Old', 'New'])
+    expect(probe(`const TABS = [{ key: 'body', labelKey: 'request.body' }]`)).toEqual([])
     // Not text: translated calls, code-like values, technical names, units.
     expect(probe(`const a = <span>{t('x.y')} · 142 ms · JSON</span>`)).toEqual([])
     expect(probe(`const a = <span>{'{{baseUrl}}/users'}</span>`)).toEqual([])

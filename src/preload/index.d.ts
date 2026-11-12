@@ -211,7 +211,8 @@ interface FolderApi {
     },
   ): Promise<IpcResult<Folder | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
-  duplicate(id: string): Promise<IpcResult<{ newFolderId: string }>>
+  /** `name`: the copy's name in the UI language (`lib/copy-name.ts`); main's English suffix otherwise. */
+  duplicate(id: string, name?: string): Promise<IpcResult<{ newFolderId: string }>>
 }
 
 interface EndpointApi {
@@ -2528,7 +2529,8 @@ interface TestSuiteApi {
   create(payload: CreateTestSuitePayload): Promise<IpcResult<TestSuiteRow>>
   update(id: string, payload: UpdateTestSuitePayload): Promise<IpcResult<TestSuiteRow | undefined>>
   delete(id: string): Promise<IpcResult<boolean>>
-  duplicate(id: string): Promise<IpcResult<TestSuiteRow>>
+  /** `name`: the copy's name in the UI language (`lib/copy-name.ts`); main's English suffix otherwise. */
+  duplicate(id: string, name?: string): Promise<IpcResult<TestSuiteRow>>
   /** Returns `{ items, folders }` — both arrays of repo rows. */
   listEndpoints(suiteId: string): Promise<IpcResult<TestSuiteContents>>
   /** Snapshots endpoints from APIs tree and writes them as suite items. */

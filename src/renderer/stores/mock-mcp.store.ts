@@ -22,6 +22,7 @@ import type {
   MockMcpServerPatch,
   MockMcpServerState,
 } from '../types/mock-mcp'
+import { t } from '../lib/i18n'
 
 /** Same cap as the main-process ring buffer. */
 export const MOCK_MCP_LOG_LIMIT = 500
@@ -68,7 +69,8 @@ export interface MockMcpStoreState {
   discardDraft: (id: string) => void
 }
 
-const UNAVAILABLE = 'Mock MCP bridge unavailable'
+/** Read when the failure happens, so it is worded in the current UI language. */
+const unavailable = (): string => t('common.bridgeUnavailable', { name: 'Mock MCP' })
 
 /** The failure's reason; a bind failure (busy port…) is worded in the user's language. */
 function errorOf(
@@ -114,9 +116,9 @@ export const useMockMcpStore = create<MockMcpStoreState>((set, get) => ({
 
   createServer: async (input) => {
     const api = getMockMcpApi()
-    if (!api) return { error: UNAVAILABLE }
+    if (!api) return { error: unavailable() }
     const r = await api.server.create(input)
-    if (!r.success || !r.data) return { error: errorOf(r, 'Create failed') }
+    if (!r.success || !r.data) return { error: errorOf(r, t('mockMcp.error.createFailed')) }
     const server = r.data
     set((s) => ({ servers: [...s.servers, server] }))
     return { server }
@@ -124,9 +126,9 @@ export const useMockMcpStore = create<MockMcpStoreState>((set, get) => ({
 
   updateServer: async (id, patch) => {
     const api = getMockMcpApi()
-    if (!api) return UNAVAILABLE
+    if (!api) return unavailable()
     const r = await api.server.update(id, patch)
-    if (!r.success || !r.data) return errorOf(r, 'Save failed')
+    if (!r.success || !r.data) return errorOf(r, t('mockMcp.error.saveFailed'))
     const updated = r.data
     set((s) => ({ servers: s.servers.map((x) => (x.id === id ? updated : x)) }))
     return null
@@ -134,9 +136,9 @@ export const useMockMcpStore = create<MockMcpStoreState>((set, get) => ({
 
   deleteServer: async (id) => {
     const api = getMockMcpApi()
-    if (!api) return UNAVAILABLE
+    if (!api) return unavailable()
     const r = await api.server.delete(id)
-    if (!r.success) return errorOf(r, 'Delete failed')
+    if (!r.success) return errorOf(r, t('mockMcp.error.deleteFailed'))
     set((s) => ({
       servers: s.servers.filter((x) => x.id !== id),
       stateByServer: omit(s.stateByServer, id),
@@ -148,11 +150,11 @@ export const useMockMcpStore = create<MockMcpStoreState>((set, get) => ({
 
   startServer: async (id) => {
     const api = getMockMcpApi()
-    if (!api) return UNAVAILABLE
+    if (!api) return unavailable()
     setState(id, { ...currentState(id), status: 'starting', errorMessage: null })
     const r = await api.server.start(id)
     if (!r.success || !r.data) {
-      const error = errorOf(r, 'Start failed')
+      const error = errorOf(r, t('mockMcp.error.startFailed'))
       setState(id, { ...stoppedState(id), status: 'error', errorMessage: error })
       return error
     }
@@ -162,9 +164,9 @@ export const useMockMcpStore = create<MockMcpStoreState>((set, get) => ({
 
   stopServer: async (id) => {
     const api = getMockMcpApi()
-    if (!api) return UNAVAILABLE
+    if (!api) return unavailable()
     const r = await api.server.stop(id)
-    if (!r.success) return errorOf(r, 'Stop failed')
+    if (!r.success) return errorOf(r, t('mockMcp.error.stopFailed'))
     setState(id, r.data ?? stoppedState(id))
     return null
   },

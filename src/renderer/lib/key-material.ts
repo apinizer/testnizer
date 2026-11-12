@@ -1,4 +1,5 @@
 import type { MaterialSource, WsSecurityConfig } from '../types'
+import { t } from './i18n'
 
 /**
  * Renderer-side helpers for the Key Material Provider (#60).
@@ -77,12 +78,12 @@ export function describeSource(
     }
     case 'certRow': {
       const host = resolve?.certHost?.(source.certificateId)
-      return `certificate ${host ?? source.certificateId}`
+      return t('keyMaterial.certLabel', { host: host ?? source.certificateId })
     }
     case 'file':
-      return source.pfxPath || source.certPath || 'file'
+      return source.pfxPath || source.certPath || t('keyMaterial.fileLabel')
     case 'inline':
-      return 'pasted PEM'
+      return t('keyMaterial.pastedPem')
     default:
       return ''
   }

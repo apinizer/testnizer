@@ -81,6 +81,7 @@ import { saveTabForClose } from '../../lib/save-tab-for-close'
 import { ensureWithheldCredentialsLoaded } from '../../lib/withheld-credentials'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
 import { EditorVisibilityProvider } from '../../lib/editor-visibility'
+import { copyName } from '../../lib/copy-name'
 
 // Tool-tab protocol → component. The Workbench renders EVERY open tool tab and
 // toggles visibility (rather than mounting only the active one) so a tool's
@@ -289,7 +290,7 @@ export function EndpointTabBar() {
         suite_id: item.suite_id,
         folder_id: item.folder_id,
         protocol: item.protocol,
-        name: `${item.name} (copy)`,
+        name: copyName(item.name),
         method: item.method,
         url: item.url,
         request_schema: item.request_schema,
@@ -315,7 +316,7 @@ export function EndpointTabBar() {
      * returns before this point.
      */
     if (src.endpointId || src.savedRequestId) {
-      const copyName = `${src.name} (copy)`
+      const nameOfCopy = copyName(src.name)
       let createdId: string | undefined
 
       if (src.savedRequestId) {
@@ -326,7 +327,7 @@ export function EndpointTabBar() {
         if (!res?.success || !res.data) return
         const created = (await window.api?.savedRequest?.create({
           ...(res.data as Record<string, unknown>),
-          name: copyName,
+          name: nameOfCopy,
         } as Parameters<typeof window.api.savedRequest.create>[0])) as {
           success: boolean
           data?: { id: string }
@@ -341,7 +342,7 @@ export function EndpointTabBar() {
         if (!res?.success || !res.data) return
         const created = (await window.api?.endpoint?.create({
           ...(res.data as Record<string, unknown>),
-          name: copyName,
+          name: nameOfCopy,
         } as Parameters<typeof window.api.endpoint.create>[0])) as {
           success: boolean
           data?: { id: string }
@@ -365,7 +366,7 @@ export function EndpointTabBar() {
     // tab. No ids means `openTab` has nothing to deduplicate on.
     openTab({
       id: newId,
-      name: `${src.name} (copy)`,
+      name: copyName(src.name),
       protocol: src.protocol,
       method: src.method,
       url: src.url,

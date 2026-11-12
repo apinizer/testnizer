@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ApiResponse } from '../types'
 import { HISTORY_MASK } from '../../shared/credential-headers'
+import { t } from '../lib/i18n'
 
 // ─────────────────────────────────────────────────────────────
 // Postman-style detailed console log model.
@@ -220,7 +221,11 @@ export const useConsoleStore = create<ConsoleStore>((set) => ({
       tabId: req.tabId,
       method: req.method,
       url: req.url,
-      message: `Script logs (${res.consoleLogs.length}) — ${req.method} ${req.url}`,
+      message: t('console.scriptLogsEntry', {
+        count: res.consoleLogs.length,
+        method: req.method,
+        url: req.url,
+      }),
       scriptLogs: res.consoleLogs.map((l) => ({
         level: l.level,
         message: l.message,

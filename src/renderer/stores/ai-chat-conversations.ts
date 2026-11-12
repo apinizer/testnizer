@@ -21,6 +21,7 @@ import {
   type AiUserTurn,
 } from '../../shared/ai-chat-types'
 import type { Tab } from '../types'
+import { t } from '../lib/i18n'
 
 /** The owner id of a tab's conversations (same precedence as the in-place save). */
 export function aiOwnerIdOf(
@@ -67,7 +68,7 @@ const api = () => window.api?.aiChat?.conversations
 /** Default name: the first prompt, one line, ≤ 60 chars. */
 export function conversationNameFrom(prompt: string): string {
   const line = prompt.replace(/\s+/g, ' ').trim()
-  return line.length > 60 ? `${line.slice(0, 57)}…` : line || 'New conversation'
+  return line.length > 60 ? `${line.slice(0, 57)}…` : line || t('aiChat.conversations.new')
 }
 
 /** One write queue per tab: a fast second answer must not create a second conversation. */

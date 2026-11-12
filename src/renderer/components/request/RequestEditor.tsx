@@ -12,18 +12,18 @@ import SettingsTab from './SettingsTab'
 
 type ReqTabKey = 'params' | 'headers' | 'auth' | 'body' | 'scripts' | 'tests' | 'settings'
 
-const REQ_TABS: { key: ReqTabKey; label: string; i18n: string }[] = [
-  { key: 'params', label: 'Params', i18n: 'request.params' },
-  { key: 'headers', label: 'Headers', i18n: 'request.headers' },
-  { key: 'auth', label: 'Authorization', i18n: 'request.auth' },
-  { key: 'body', label: 'Body', i18n: 'request.body' },
-  { key: 'scripts', label: 'Scripts', i18n: 'request.scripts' },
+const REQ_TABS: { key: ReqTabKey; i18n: string }[] = [
+  { key: 'params', i18n: 'request.params' },
+  { key: 'headers', i18n: 'request.headers' },
+  { key: 'auth', i18n: 'request.auth' },
+  { key: 'body', i18n: 'request.body' },
+  { key: 'scripts', i18n: 'request.scripts' },
   // TestsTab hosts the visual assertion builder (status / body / headers /
   // performance checks). It was implemented in `TestsTab.tsx` but never
   // surfaced in the tab strip — users had no way to add assertions
   // without writing JS in the Scripts tab.
-  { key: 'tests', label: 'Tests', i18n: 'request.tests' },
-  { key: 'settings', label: 'Settings', i18n: 'request.settings' },
+  { key: 'tests', i18n: 'request.tests' },
+  { key: 'settings', i18n: 'request.settings' },
 ]
 
 const REQ_TAB_KEYS: readonly ReqTabKey[] = REQ_TABS.map((tab) => tab.key)

@@ -308,7 +308,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
       const ws = getWsApi()
       if (!ws) {
-        set({ connectionState: 'error', errorMessage: 'WebSocket bridge unavailable' })
+        set({
+          connectionState: 'error',
+          errorMessage: t('common.bridgeUnavailable', { name: 'WebSocket' }),
+        })
         return
       }
 
@@ -474,7 +477,7 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
           // The handshake's `error` event waited unpinned and is gone with the
           // listener: its row is written here. A user Cancel cleared the
           // pending id first and gets no error row.
-          const text = connectErrorText(result, 'Connection failed')
+          const text = connectErrorText(result, t('connError.unknown.what'))
           patchOwner((sl) => ({
             _unsubscribe: undefined,
             _pendingConnectId: undefined,

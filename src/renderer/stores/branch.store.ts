@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { SaveHistoryEntry } from '../types'
 import type { GitChangesSummary, GitPushOpts } from '../../shared/git-changes'
 import { gitErrorText } from '../lib/git-error-text'
+import { t } from '../lib/i18n'
 
 interface GitBranch {
   /** DB row id (UUID) for legacy non-git branches. Absent for synthetic
@@ -412,7 +413,7 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
 
   resolveConflict: async (file, side, commitMessage) => {
     const conflict = get().pendingConflict
-    if (!conflict) return { success: false, error: 'No conflict in progress', complete: false }
+    if (!conflict) return { success: false, error: t('branch.error.noConflict'), complete: false }
     try {
       const result = await api().git.resolveConflict({
         projectId: conflict.projectId,
@@ -473,8 +474,8 @@ export const useBranchStore = create<BranchStore>((set, get) => ({
         // ignored the failed result and returned success anyway, so the UI
         // showed "deleted" while the branch stayed (issue #35).
         const br = get().branches.find((b) => b.name === branchName)
-        if (!br) return { success: false, error: 'Branch not found' }
-        if (!br.id) return { success: false, error: 'Cannot delete this branch' }
+        if (!br) return { success: false, error: t('gitError.BRANCH_NOT_FOUND') }
+        if (!br.id) return { success: false, error: t('branch.error.cannotDelete') }
         const res = (await api().branch.delete(br.id)) as { success: boolean; error?: string }
         if (res && res.success === false) {
           return { success: false, error: gitErrorText(res) }

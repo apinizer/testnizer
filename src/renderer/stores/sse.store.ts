@@ -285,7 +285,10 @@ export const useSseStore = create<SseStore>((set, get) => ({
 
     const sse = getSseApi()
     if (!sse) {
-      set({ connectionState: 'error', errorMessage: 'SSE bridge unavailable' })
+      set({
+        connectionState: 'error',
+        errorMessage: t('common.bridgeUnavailable', { name: 'SSE' }),
+      })
       return
     }
 
@@ -459,7 +462,7 @@ export const useSseStore = create<SseStore>((set, get) => ({
           _unsubscribe: undefined,
           _pendingConnectId: undefined,
           connectionState: 'error',
-          errorMessage: connectErrorText(result, 'SSE connection failed'),
+          errorMessage: connectErrorText(result, t('sse.error.connectFailed')),
         })
       }
     } catch (e) {

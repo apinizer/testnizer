@@ -59,6 +59,7 @@ import { applyPathVariables, syncPathVariables } from '../../shared/path-variabl
 // is consistent across request types (issue #8). Aliased to keep the existing
 // `markActiveDirty()` call sites unchanged.
 import { markActiveTabDirty as markActiveDirty } from '../lib/mark-dirty'
+import { t } from '../lib/i18n'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -557,7 +558,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         ...state.assertions,
         {
           id: makeId(),
-          name: 'New assertion',
+          name: t('testsTab.newAssertionName'),
           type: 'status_equals',
           enabled: true,
           expected: 200,
@@ -899,7 +900,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
     // pm.execution.skipRequest() — abort the actual HTTP send. Surface the
     // skip in console + tab spinner cleanup so the user knows it ran.
     if (preScriptSkippedRequest) {
-      const skipMsg = 'Request skipped by pm.execution.skipRequest() in pre-request script'
+      const skipMsg = t('request.skippedByScript')
       preScriptLogs.push({ level: 'warn', message: skipMsg, timestamp: Date.now() })
       const reqName = tabsStore.tabs.find((tt) => tt.id === activeTabId)?.name ?? ''
       addMaskedEntry({
@@ -1132,7 +1133,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         const errResp: ApiResponse = {
           requestId: makeId(),
           protocol: 'http',
-          error: result?.error || 'Request failed',
+          error: result?.error || t('request.error.failed'),
           timing: { total: 0 },
         }
         responseStore.setResponse(errResp, activeTabId)
@@ -1142,7 +1143,7 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
       const errResp: ApiResponse = {
         requestId: makeId(),
         protocol: 'http',
-        error: 'Request failed — IPC not available',
+        error: t('request.error.ipcUnavailable'),
         timing: { total: 0 },
       }
       responseStore.setResponse(errResp, activeTabId)
@@ -1154,9 +1155,9 @@ export const useRequestStore = create<RequestStore>((set, get) => ({
         category: 'response',
         method,
         url,
-        message: 'Request failed — IPC not available',
+        message: t('request.error.ipcUnavailable'),
         tabId: activeTabId || undefined,
-        details: { error: { message: 'Request failed — IPC not available' } },
+        details: { error: { message: t('request.error.ipcUnavailable') } },
       })
     } finally {
       responseStore.setLoading(false, activeTabId)

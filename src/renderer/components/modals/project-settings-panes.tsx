@@ -1508,15 +1508,13 @@ export function CertificatesPane({
     { id: '', label: t('tls.auto') },
     {
       id: 'TLSv1',
-      label: 'TLS 1.0 (legacy — via system curl)',
-      title:
-        'TLS 1.0 is deprecated (RFC 8996). Selecting it routes this request through the system curl binary, which can still negotiate legacy protocols.',
+      label: t('tls.legacyLabel', { version: '1.0' }),
+      title: t('tls.legacyHint', { version: '1.0' }),
     },
     {
       id: 'TLSv1.1',
-      label: 'TLS 1.1 (legacy — via system curl)',
-      title:
-        'TLS 1.1 is deprecated (RFC 8996). Selecting it routes this request through the system curl binary, which can still negotiate legacy protocols.',
+      label: t('tls.legacyLabel', { version: '1.1' }),
+      title: t('tls.legacyHint', { version: '1.1' }),
     },
     { id: 'TLSv1.2', label: 'TLS 1.2' },
     { id: 'TLSv1.3', label: 'TLS 1.3' },
