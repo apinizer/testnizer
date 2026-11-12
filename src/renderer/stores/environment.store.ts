@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Environment, GlobalVariable, EnvironmentVariable } from '../types'
 import { useWorkspaceStore } from './workspace.store'
+import { t } from '../lib/i18n'
 
 /**
  * Did a delete actually happen?
@@ -409,7 +410,7 @@ export const useEnvironmentStore = create<EnvironmentStore>((set, get) => ({
     const res = (await window.api?.environment?.moveToProjectVariables(id)) as
       | { success: boolean; data?: { moved: string[]; conflicts: string[] }; error?: string }
       | undefined
-    if (!res?.success || !res.data) throw new Error(res?.error || 'The variables were not moved')
+    if (!res?.success || !res.data) throw new Error(res?.error || t('env.moveToGlobalsFailed'))
     await get().fetchGlobalVariables()
     return res.data
   },

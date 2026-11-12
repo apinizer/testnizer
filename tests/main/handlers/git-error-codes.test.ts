@@ -116,6 +116,27 @@ describe('git handlers without a git config', () => {
   })
 })
 
+describe('git:resolveConflict input check', () => {
+  it('an unknown side answers GIT_INVALID_CONFLICT_SIDE, worded in both locales', async () => {
+    const res = (await harness.invoke('git:resolveConflict', {
+      projectId,
+      file: 'p.json',
+      side: 'mine',
+    })) as Envelope & { errorParams?: Record<string, string> }
+    expect(res).toMatchObject({
+      success: false,
+      errorCode: 'GIT_INVALID_CONFLICT_SIDE',
+      error: 'Invalid conflict side: mine',
+      errorParams: { side: 'mine' },
+    })
+    const { gitErrorText } = await import('../../../src/renderer/lib/git-error-text')
+    setLocale('tr')
+    expect(gitErrorText(res)).toBe('Geçersiz çakışma tarafı: mine')
+    setLocale('en')
+    expect(gitErrorText(res)).toBe('Invalid conflict side: mine')
+  })
+})
+
 describe('branch handlers', () => {
   it('branch:rename of a missing row answers BRANCH_NOT_FOUND', async () => {
     const res = (await harness.invoke('branch:rename', 'no-such-id', 'x')) as Envelope

@@ -413,19 +413,19 @@ async function loadSavedUrlProto(): Promise<boolean> {
     return false
   }
   const grpcApi = window.api?.grpc
-  if (!grpcApi?.loadProtoFromUrl) return fail('gRPC bridge not available')
+  if (!grpcApi?.loadProtoFromUrl) return fail(t('common.bridgeNotAvailable', { name: 'gRPC' }))
 
   useGrpcStore.setState({ isLoading: true, errorMessage: null })
   let loaded: Partial<TabGrpcState>
   try {
     const result = await grpcApi.loadProtoFromUrl(protoUrl.trim())
     if (!result.success || !result.data) {
-      return fail(result.error || 'Failed to download proto from URL')
+      return fail(result.error || t('grpc.error.protoDownloadFailed'))
     }
     loaded = loadedProtoPatch(result.data)
     await warnIfSavedCopy(result.data)
   } catch (e) {
-    return fail((e as Error).message || 'Failed to download proto from URL')
+    return fail((e as Error).message || t('grpc.error.protoDownloadFailed'))
   }
 
   const known = loaded.services
@@ -496,7 +496,10 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
     const grpcApi = window.api?.grpc
     if (!grpcApi?.loadProto) {
-      patchOwner({ isLoading: false, errorMessage: 'gRPC bridge not available' })
+      patchOwner({
+        isLoading: false,
+        errorMessage: t('common.bridgeNotAvailable', { name: 'gRPC' }),
+      })
       return
     }
     try {
@@ -505,7 +508,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         patchOwner(loadedProtoPatch(result.data))
       } else if (result && !result.success) {
         patchOwner({
-          errorMessage: result.error || 'Failed to load proto file',
+          errorMessage: result.error || t('grpc.error.protoLoadFailed'),
           isLoading: false,
         })
       } else {
@@ -514,7 +517,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       }
     } catch (e) {
       patchOwner({
-        errorMessage: (e as Error).message || 'Failed to load proto file',
+        errorMessage: (e as Error).message || t('grpc.error.protoLoadFailed'),
         isLoading: false,
       })
     }
@@ -523,7 +526,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   loadProtoFromUrl: async () => {
     const { protoUrl } = get()
     if (!protoUrl.trim()) {
-      set({ errorMessage: 'URL is required' })
+      set({ errorMessage: t('grpc.error.urlRequired') })
       return
     }
     const patchOwner = ownerPatcher(get()._currentTabId)
@@ -531,7 +534,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
     const grpcApi = window.api?.grpc
     if (!grpcApi?.loadProtoFromUrl) {
-      set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
+      set({ isLoading: false, errorMessage: t('common.bridgeNotAvailable', { name: 'gRPC' }) })
       return
     }
     try {
@@ -541,13 +544,13 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         await warnIfSavedCopy(result.data)
       } else {
         patchOwner({
-          errorMessage: result.error || 'Failed to download proto from URL',
+          errorMessage: result.error || t('grpc.error.protoDownloadFailed'),
           isLoading: false,
         })
       }
     } catch (e) {
       patchOwner({
-        errorMessage: (e as Error).message || 'Failed to download proto from URL',
+        errorMessage: (e as Error).message || t('grpc.error.protoDownloadFailed'),
         isLoading: false,
       })
     }
@@ -556,7 +559,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
   loadFromReflection: async () => {
     const { address, useTls } = get()
     if (!address.trim()) {
-      set({ errorMessage: 'Server address is required' })
+      set({ errorMessage: t('grpc.error.serverRequired') })
       return
     }
     const patchOwner = ownerPatcher(get()._currentTabId)
@@ -564,7 +567,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
 
     const grpcApi = window.api?.grpc
     if (!grpcApi?.reflect) {
-      set({ isLoading: false, errorMessage: 'gRPC bridge not available' })
+      set({ isLoading: false, errorMessage: t('common.bridgeNotAvailable', { name: 'gRPC' }) })
       return
     }
     try {
@@ -573,13 +576,13 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
         patchOwner(loadedProtoPatch(result.data))
       } else {
         patchOwner({
-          errorMessage: result.error || 'Server reflection failed',
+          errorMessage: result.error || t('grpc.error.reflectionFailed'),
           isLoading: false,
         })
       }
     } catch (e) {
       patchOwner({
-        errorMessage: (e as Error).message || 'Server reflection failed',
+        errorMessage: (e as Error).message || t('grpc.error.reflectionFailed'),
         isLoading: false,
       })
     }
@@ -694,7 +697,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
       const errResp: ApiResponse = {
         requestId: makeId(),
         protocol: 'grpc',
-        error: 'gRPC bridge unavailable',
+        error: t('common.bridgeUnavailable', { name: 'gRPC' }),
         timing: { total: 0 },
       }
       set({
@@ -847,7 +850,7 @@ export const useGrpcStore = create<GrpcStore>((set, get) => ({
             finishUnary({
               requestId: makeId(),
               protocol: 'grpc',
-              error: result.error || 'gRPC call failed',
+              error: result.error || t('grpc.error.callFailed'),
               timing: { total: 0 },
             })
           }

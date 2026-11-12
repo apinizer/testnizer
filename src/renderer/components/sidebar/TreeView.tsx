@@ -47,6 +47,7 @@ import {
   readPathVariablesJson,
   type PathVariableLike,
 } from '../../../shared/path-variables'
+import { copyName } from '../../lib/copy-name'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -878,7 +879,7 @@ export default function TreeView() {
             const sr = result.data as Record<string, unknown> & { name: string; url: string }
             await window.api?.savedRequest?.create({
               ...sr,
-              name: `${sr.name} (copy)`,
+              name: copyName(sr.name),
             } as Parameters<typeof window.api.savedRequest.create>[0])
           }
         } else if (node.type === 'endpoint') {
@@ -894,13 +895,13 @@ export default function TreeView() {
             }
             await window.api?.endpoint?.create({
               ...ep,
-              name: `${ep.name} (copy)`,
+              name: copyName(ep.name),
             } as Parameters<typeof window.api.endpoint.create>[0])
           }
         } else if (node.type === 'folder') {
           // Server-side deep clone — single transaction inside
           // project.handler.ts duplicateFolderDeep().
-          const result = (await window.api?.folder?.duplicate(node.id)) as
+          const result = (await window.api?.folder?.duplicate(node.id, copyName(node.label))) as
             | { success: boolean; error?: string; data?: { newFolderId: string } }
             | undefined
           if (!result?.success) {

@@ -10,6 +10,7 @@ import type { MockServerKind } from '../../shared/mock-kind'
 import { collapseStreamLogs, mergeStreamLog } from '../lib/mock-log-streams'
 import { ensureScriptsAllowed } from '../lib/script-trust-gate'
 import { describeListenError, mockIpcErrorText } from '../lib/listen-error-text'
+import { t } from '../lib/i18n'
 
 const api = window.api.mock
 
@@ -146,7 +147,7 @@ export const useMockStore = create<MockState>((set, get) => ({
 
   updateServer: async (id, patch) => {
     const r = await api.server.update(id, patch)
-    if (!r.success || !r.data) return mockIpcErrorText(r, 'Unknown error')
+    if (!r.success || !r.data) return mockIpcErrorText(r, t('common.unknownError'))
     const updated = r.data
     set((s) => ({ servers: s.servers.map((sv) => (sv.id === id ? updated : sv)) }))
     return null
@@ -174,7 +175,7 @@ export const useMockStore = create<MockState>((set, get) => ({
     const r = await api.server.start(id)
     if (!r.success) {
       // A busy port arrives structured: worded in the user's language.
-      const error = mockIpcErrorText(r, 'Unknown error')
+      const error = mockIpcErrorText(r, t('common.unknownError'))
       set((s) => ({
         statusByServer: { ...s.statusByServer, [id]: 'error' },
         errorByServer: { ...s.errorByServer, [id]: error },
@@ -265,7 +266,7 @@ export const useMockStore = create<MockState>((set, get) => ({
 
   updateResponse: async (id, patch) => {
     const r = await api.response.update(id, patch)
-    if (!r.success || !r.data) return r.error ?? 'Update failed'
+    if (!r.success || !r.data) return r.error ?? t('mock.error.updateFailed')
     const resp = r.data
     set((s) => ({
       responsesByEndpoint: {

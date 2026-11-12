@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { t } from '../lib/i18n'
 
 const SESSION_TOKEN_KEY = 'testnizer_session_token'
 const GUEST_MODE_KEY = 'testnizer_guest_mode'
@@ -137,7 +138,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         set({ user: result.data.user, isAuthenticated: true, isLoading: false, error: null })
         return true
       } else {
-        set({ isLoading: false, error: result?.error || 'Login failed' })
+        set({ isLoading: false, error: result?.error || t('toast.loginFailed') })
         return false
       }
     } catch (e) {
@@ -165,7 +166,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         markWelcomeDone()
         return true
       } else {
-        set({ isLoading: false, error: result?.error || 'Failed to set password' })
+        set({ isLoading: false, error: result?.error || t('auth.error.setPasswordFailed') })
         return false
       }
     } catch (e) {
@@ -190,7 +191,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         markWelcomeDone()
         return { success: true }
       }
-      return { success: false, error: result?.error || 'Failed to set password' }
+      return { success: false, error: result?.error || t('auth.error.setPasswordFailed') }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -225,7 +226,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   changePassword: async (currentPassword: string, newPassword: string) => {
     const { user } = get()
-    if (!user) return { success: false, error: 'Not logged in' }
+    if (!user) return { success: false, error: t('auth.error.notLoggedIn') }
     try {
       const result = await window.api.auth.changePassword({
         userId: user.id,
@@ -235,7 +236,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if (result?.success) {
         return { success: true }
       }
-      return { success: false, error: result?.error || 'Password change failed' }
+      return { success: false, error: result?.error || t('toast.passwordChangeFailed') }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -243,7 +244,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   disablePassword: async (currentPassword: string) => {
     const { user } = get()
-    if (!user) return { success: false, error: 'Not logged in' }
+    if (!user) return { success: false, error: t('auth.error.notLoggedIn') }
     try {
       const result = await window.api.auth.disablePassword({
         userId: user.id,
@@ -259,7 +260,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         markWelcomeDone()
         return { success: true }
       }
-      return { success: false, error: result?.error || 'Failed to disable password' }
+      return { success: false, error: result?.error || t('auth.error.disablePasswordFailed') }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }
@@ -284,7 +285,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         return { success: true }
       }
       set({ isLoading: false })
-      return { success: false, error: result?.error || 'Recovery failed' }
+      return { success: false, error: result?.error || t('toast.recoveryFailed') }
     } catch (e) {
       set({ isLoading: false })
       return { success: false, error: (e as Error).message }

@@ -122,7 +122,7 @@ uiTest.describe('Turkish UI — git and duplicate texts [tester finding 6]', () 
         // header below sees `save_mode: 'git'` — a user action, no store poke.
         before = await allProjectIds(window)
         await goToProjectHome(window)
-        // Exact name: the copy's card ("… (copy)") contains the name too.
+        // Exact name: the copy's card ("… (kopya)" in TR) contains the name too.
         const card = window
           .getByTestId('project-card')
           .filter({ has: window.getByText(name, { exact: true }) })

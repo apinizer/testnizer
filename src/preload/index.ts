@@ -156,7 +156,8 @@ const api = {
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('folder:update', id, payload),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('folder:delete', id),
-    duplicate: (id: string): Promise<unknown> => ipcRenderer.invoke('folder:duplicate', id),
+    duplicate: (id: string, name?: string): Promise<unknown> =>
+      ipcRenderer.invoke('folder:duplicate', id, name),
   },
 
   // ─── Endpoint ────────────────────────────────────────────
@@ -465,7 +466,8 @@ const api = {
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:update', id, payload),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:delete', id),
-    duplicate: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:duplicate', id),
+    duplicate: (id: string, name?: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:duplicate', id, name),
     listEndpoints: (suiteId: string): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:listEndpoints', suiteId),
     importEndpoints: (payload: unknown): Promise<unknown> =>

@@ -6,6 +6,7 @@ import type {
   KeystorePickFileResult,
   KeystoreWriteResult,
 } from '../types'
+import { t } from '../lib/i18n'
 
 /**
  * Keystore Studio renderer store (Faz B1 — read-only viewer + Model B library).
@@ -28,7 +29,8 @@ function ks(): typeof window.api.keystore | undefined {
   return window.api?.keystore
 }
 
-const BRIDGE_UNAVAILABLE = 'keystore bridge unavailable'
+/** Read when the failure happens, so it is worded in the current UI language. */
+const bridgeUnavailable = (): string => t('common.bridgeUnavailable', { name: 'keystore' })
 
 async function unwrap<T>(p: Promise<{ success: boolean; data?: T; error?: string }>): Promise<T> {
   const r = await p
@@ -360,7 +362,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
   pickFile: async () => {
     const bridge = ks()
     if (!bridge) {
-      set({ error: BRIDGE_UNAVAILABLE })
+      set({ error: bridgeUnavailable() })
       return null
     }
     try {
@@ -379,7 +381,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   openFile: async ({ path, fileName, password, type, aliasEntryPasswords }) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { sessionId, meta } = await unwrap(
@@ -467,7 +469,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   createNew: async (payload) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { sessionId, meta } = await unwrap(bridge.createNew(payload ?? {}))
@@ -489,9 +491,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   generateKeyPair: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       // Generate MUTATES the current session; the response carries the same
@@ -515,9 +517,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   generateSecretKey: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       // entryPassword DROPPED (see generateKeyPair) — the secret entry is
@@ -533,9 +535,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   importPkcs12: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       // Import MUTATES the current session; the response carries only refreshed
@@ -550,9 +552,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   importKeyMaterial: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       // Main runs the deterministic key-cert match gate before mutating — a
@@ -567,9 +569,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   importPem: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.importPem({ sessionId, ...opts }))
@@ -582,9 +584,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   importTrustedCert: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.importTrustedCert({ sessionId, ...opts }))
@@ -597,9 +599,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   renameAlias: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.renameAlias({ sessionId, ...opts }))
@@ -612,9 +614,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   changeStorePassword: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.changeStorePassword({ sessionId, ...opts }))
@@ -627,9 +629,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   setEntryPassword: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.setEntryPassword({ sessionId, ...opts }))
@@ -642,9 +644,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   deleteEntry: async (alias) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { meta } = await unwrap(bridge.deleteEntry({ sessionId, alias }))
@@ -665,12 +667,12 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
   exportCertificate: async (opts) => {
     const bridge = ks()
     if (!bridge) {
-      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      fail(set, new Error(bridgeUnavailable()))
       return null
     }
     const sessionId = get().sessionId
     if (!sessionId) {
-      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      fail(set, new Error(bridgeUnavailable()))
       return null
     }
     try {
@@ -688,9 +690,9 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   convert: async (opts) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
-    if (!sessionId) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!sessionId) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       // Convert returns a NEW session (original untouched in main). Swap to it;
@@ -726,12 +728,12 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
   saveAs: async (opts) => {
     const bridge = ks()
     if (!bridge) {
-      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      fail(set, new Error(bridgeUnavailable()))
       return null
     }
     const sessionId = get().sessionId
     if (!sessionId) {
-      fail(set, new Error(BRIDGE_UNAVAILABLE))
+      fail(set, new Error(bridgeUnavailable()))
       return null
     }
     try {
@@ -747,7 +749,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   openFromLibrary: async ({ id, name, password }) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     set({ loading: true, error: null })
     try {
       const { sessionId, meta } = await unwrap(bridge.libraryOpen({ id, password }))
@@ -769,7 +771,7 @@ export const useKeystoreStore = create<KeystoreState>((set, get) => ({
 
   saveToLibrary: async ({ name, rememberPassword }) => {
     const bridge = ks()
-    if (!bridge) return fail(set, new Error(BRIDGE_UNAVAILABLE))
+    if (!bridge) return fail(set, new Error(bridgeUnavailable()))
     const sessionId = get().sessionId
     if (!sessionId) return false
     try {

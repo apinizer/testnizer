@@ -17,6 +17,7 @@ import { loadJson, saveJson } from '../lib/persist-helpers'
 import { scrubTabCredentials } from '../lib/credential-text'
 import { readRequestSettingsJson } from '../../shared/request-settings'
 import { orderTreeLevel } from '../../shared/tree-order'
+import { t } from '../lib/i18n'
 
 /**
  * Did a write actually land?
@@ -557,7 +558,7 @@ function emptyTree(): TreeNode[] {
     {
       id: 'default-module',
       type: 'module',
-      label: 'Default module',
+      label: t('tree.defaultModule'),
       icon: 'module',
       children: [],
     },

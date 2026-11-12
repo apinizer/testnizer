@@ -70,7 +70,7 @@ export default function AiChatSettingsSection({
           style={{ fontSize: 12 }}
         >
           <ProviderAvatar info={providerInfo} size={14} />
-          {providerInfo.label} · {model || '—'}
+          {providerInfo.labelKey ? t(providerInfo.labelKey) : providerInfo.label} · {model || '—'}
         </span>
       </button>
       {expanded && (

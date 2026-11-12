@@ -1115,14 +1115,17 @@ export function registerGitHandlers(): void {
       },
     ) => {
       try {
+        // Defence-in-depth: the side string is built into a CLI flag via
+        // template literal; reject anything that's not the expected literal.
+        // Checked first: it is input validation, independent of the config.
+        if (payload.side !== 'ours' && payload.side !== 'theirs') {
+          return gitErrorResult('GIT_INVALID_CONFLICT_SIDE', undefined, {
+            side: String(payload.side),
+          })
+        }
         const config = await getProjectGitConfig(payload.projectId)
         if (!config?.localPath) {
           return gitErrorResult('GIT_CONFIG_MISSING')
-        }
-        // Defence-in-depth: the side string is built into a CLI flag via
-        // template literal; reject anything that's not the expected literal.
-        if (payload.side !== 'ours' && payload.side !== 'theirs') {
-          return { success: false, error: `Invalid side: ${payload.side}` }
         }
         const git = await openRepo(config)
 

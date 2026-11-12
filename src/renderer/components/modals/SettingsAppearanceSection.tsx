@@ -133,7 +133,7 @@ export default function SettingsAppearanceSection({
                     : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text)]'
                 }`}
               >
-                {p.label}
+                {p.labelKey ? t(p.labelKey) : p.label}
               </button>
             )
           })}

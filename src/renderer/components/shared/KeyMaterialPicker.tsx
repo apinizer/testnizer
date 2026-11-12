@@ -191,7 +191,7 @@ export default function KeyMaterialPicker({
   function confirmCertRow(row: CertRowLite): void {
     onSelect({
       source: { kind: 'certRow', certificateId: row.id },
-      label: `certificate ${row.host || '*'}`,
+      label: t('keyMaterial.certLabel', { host: row.host || '*' }),
     })
     close()
   }

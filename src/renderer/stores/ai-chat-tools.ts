@@ -22,6 +22,7 @@ import {
   type AiStdioTrustDecision,
   type AiToolCallPart,
 } from '../../shared/ai-chat-types'
+import { t } from '../lib/i18n'
 
 function setServers(fn: (list: AiToolServerConfig[]) => AiToolServerConfig[]): void {
   useAiChatStore.setState((s) => ({ toolServers: fn(s.toolServers ?? []) }))
@@ -155,7 +156,7 @@ function applyToolsResult(
   res: Awaited<ReturnType<Window['api']['aiChat']['listServerTools']>> | undefined,
 ): void {
   if (!res?.success || !res.data) {
-    setEntry({ error: res?.error ?? 'Could not list tools' })
+    setEntry({ error: res?.error ?? t('aiChat.tools.listFailed') })
     return
   }
   if (res.data.untrusted) setEntry({ untrusted: res.data.untrusted })

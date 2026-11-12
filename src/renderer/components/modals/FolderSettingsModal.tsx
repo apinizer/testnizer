@@ -16,12 +16,14 @@ import type { AuthConfig, AuthType, Folder } from '../../types'
  * (NULL when 'inherit', so it stays transparent up the chain).
  */
 
-const FOLDER_AUTH_TYPES: { value: AuthType; label: string }[] = [
-  { value: 'inherit', label: 'Inherit from parent' },
-  { value: 'none', label: 'No Auth' },
-  { value: 'bearer', label: 'Bearer Token' },
-  { value: 'basic', label: 'Basic Auth' },
-  { value: 'api-key', label: 'API Key' },
+// `labelKey` is translated where the option renders (not here: module scope
+// would freeze the import-time locale).
+const FOLDER_AUTH_TYPES: { value: AuthType; labelKey: string }[] = [
+  { value: 'inherit', labelKey: 'authPane.inherit' },
+  { value: 'none', labelKey: 'auth.noAuth' },
+  { value: 'bearer', labelKey: 'auth.bearerToken' },
+  { value: 'basic', labelKey: 'auth.basicAuth' },
+  { value: 'api-key', labelKey: 'auth.apiKey' },
 ]
 
 const INPUT =
@@ -209,7 +211,7 @@ export default function FolderSettingsModal({
                 >
                   {FOLDER_AUTH_TYPES.map((o) => (
                     <option key={o.value} value={o.value}>
-                      {o.label}
+                      {t(o.labelKey)}
                     </option>
                   ))}
                 </select>

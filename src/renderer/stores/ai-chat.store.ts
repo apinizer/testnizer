@@ -50,6 +50,7 @@ import {
   persistFinishedTurn,
   pruneOrphanTabConversations,
 } from './ai-chat-conversations'
+import { t } from '../lib/i18n'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -91,7 +92,10 @@ export type AiProvider =
 
 export interface AiProviderInfo {
   id: AiProvider
+  /** Brand name, shown as-is in every locale. */
   label: string
+  /** Set when the name is an ordinary word: translated where it renders. */
+  labelKey?: string
   /** Avatar background color (brand-ish). */
   color: string
   /** Single-letter avatar fallback. */
@@ -117,7 +121,13 @@ export const AI_PROVIDERS: AiProviderInfo[] = [
   { id: 'deepinfra', label: 'DeepInfra', color: '#5C46E1', letter: 'D' },
   { id: 'together', label: 'Together', color: '#0F6FFF', letter: 'T' },
   { id: 'openrouter', label: 'OpenRouter', color: '#6E56CF', letter: 'R' },
-  { id: 'custom', label: 'Custom', color: '#8A8FA3', letter: '⚙' },
+  {
+    id: 'custom',
+    label: 'Custom',
+    labelKey: 'aiChat.providerCustom',
+    color: '#8A8FA3',
+    letter: '⚙',
+  },
 ]
 
 /**
@@ -736,7 +746,7 @@ export const useAiChatStore = create<AiChatStore>((set, get) => ({
       })) as { success: boolean; data?: { messageId: string }; error?: string }
 
       if (!result?.success || !result.data?.messageId) {
-        fail(result?.error ?? 'Failed to start chat')
+        fail(result?.error ?? t('aiChat.error.startFailed'))
         return
       }
       const messageId = result.data.messageId

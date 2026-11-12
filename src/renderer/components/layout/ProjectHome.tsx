@@ -22,6 +22,7 @@ import type { Project } from '../../types'
 import ProjectIcon from '../shared/ProjectIcon'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import appIcon from '../../assets/icon.png'
+import { copyName } from '../../lib/copy-name'
 
 export default function ProjectHome() {
   const projects = useWorkspaceStore((s) => s.projects)
@@ -118,6 +119,7 @@ export default function ProjectHome() {
       const result = (await window.api?.project?.duplicate({
         projectId: project.id,
         workspaceId: wsId,
+        name: copyName(project.display_name || project.name),
       })) as { success: boolean; error?: string; data?: { projectId: string } } | undefined
       if (!result?.success) {
         toast.error(result?.error || t('home.duplicateFailed'))
