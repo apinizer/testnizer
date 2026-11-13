@@ -18,7 +18,7 @@ import * as React from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import HistoryListPanel from '../../src/renderer/components/sidebar/HistoryListPanel'
-import { useHistoryStore } from '../../src/renderer/stores/history.store'
+import { EMPTY_FILTERS, useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
 import { setLocale } from '../../src/renderer/lib/i18n'
@@ -102,7 +102,7 @@ beforeEach(() => {
       delete: () => Promise.resolve({ success: true, data: true }),
     },
   }
-  useHistoryStore.setState({ entries: [], searchTerm: '' })
+  useHistoryStore.setState({ entries: [], filters: EMPTY_FILTERS })
   useWorkspaceStore.setState({
     ...useWorkspaceStore.getState(),
     activeProjectId: 'p1',

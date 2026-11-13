@@ -118,6 +118,52 @@ export function historyTabUrl(entry: Row): string {
   return cutMask(url)
 }
 
+/** Protocols whose tab shows a method badge in the tab strip (Workbench). */
+const BADGED_TAB_PROTOCOLS = new Set(['http', 'soap'])
+
+/**
+ * The NAME a reopened (non-MCP) history row's tab gets: `host/path`, with the
+ * method in front only for protocols whose tab has no method badge — an HTTP
+ * tab read "GET GET api.site.com/users" (badge + name). One rule for the
+ * History sidebar, the History page's table and the new-request page's Recent
+ * list.
+ */
+export function historyTabName(entry: Pick<HistoryEntry, 'url' | 'method' | 'protocol'>): string {
+  const target = shortHistoryUrl(entry.url ?? '')
+  const protocol = entry.protocol || 'http'
+  if (BADGED_TAB_PROTOCOLS.has(protocol)) return target
+  return entry.method ? `${entry.method} ${target}` : target
+}
+
+/** An explicit `scheme://` — without it `new URL()` reads `localhost:` as one. */
+const SCHEME_PREFIX = /^[a-z][a-z0-9+.-]*:\/\//i
+
+/**
+ * `host/path` of a URL — no scheme, userinfo, query or fragment.
+ * The ONE copy: the History row label (`shared/history-row-label`) re-exports it.
+ *
+ * Only a `scheme://` URL goes through `new URL()`: a gRPC address
+ * (`localhost:50051/pkg.Svc/Method`) parses "fine" with `localhost:` as the
+ * scheme and lost its host. Scheme-less, template (`{{baseUrl}}/x`) and
+ * unparseable URLs are cut by hand, so a template stays readable and userinfo
+ * never reaches the label.
+ */
+export function shortHistoryUrl(url: string): string {
+  if (SCHEME_PREFIX.test(url)) {
+    try {
+      const u = new URL(url)
+      return u.host + u.pathname
+    } catch {
+      // a template host (`https://{{host}}:{{port}}/x`) — cut below
+    }
+  }
+  const rest = url.replace(SCHEME_PREFIX, '').split(/[?#]/, 1)[0]
+  const slash = rest.indexOf('/')
+  const authority = slash < 0 ? rest : rest.slice(0, slash)
+  const at = authority.lastIndexOf('@')
+  return at < 0 ? rest : rest.slice(at + 1)
+}
+
 /**
  * A mask cut out of a longer string. A masked URL userinfo
  * (`https://••••••@host`) goes with its `@` — `https://@host` is not a URL

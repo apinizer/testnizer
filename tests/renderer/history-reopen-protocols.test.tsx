@@ -14,7 +14,7 @@ import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import HistoryListPanel from '../../src/renderer/components/sidebar/HistoryListPanel'
 import NewRequestWelcome from '../../src/renderer/components/layout/NewRequestWelcome'
-import { useHistoryStore } from '../../src/renderer/stores/history.store'
+import { EMPTY_FILTERS, useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useRequestStore } from '../../src/renderer/stores/request.store'
 import { useWebSocketStore } from '../../src/renderer/stores/websocket.store'
@@ -112,7 +112,7 @@ function installApi(): void {
 function openRow(entry: HistoryEntry): void {
   useHistoryStore.setState({
     entries: [entry],
-    searchTerm: '',
+    filters: EMPTY_FILTERS,
     fetch: vi.fn(async () => undefined),
   } as never)
   render(<HistoryListPanel />)
@@ -342,7 +342,7 @@ describe('WebSocket / gRPC / GraphQL reopen (issue #182)', () => {
           request_snapshot: { url: 'wss://recent.test/ws', headers: { 'X-A': 'one' } } as never,
         }),
       ],
-      searchTerm: '',
+      filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
     render(<NewRequestWelcome />)

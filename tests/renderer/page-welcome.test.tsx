@@ -16,6 +16,10 @@ vi.mock('../../src/renderer/components/layout/ProjectWelcome', () => ({
 vi.mock('../../src/renderer/components/mock/MocksWelcome', () => ({
   default: () => <div data-testid="mocks-welcome" />,
 }))
+// HistoryHome reads the history store; its own suite is history-home.test.tsx.
+vi.mock('../../src/renderer/components/history/HistoryHome', () => ({
+  default: () => <div data-testid="history-home" />,
+}))
 vi.mock('../../src/renderer/components/runner/TestsHome', () => ({
   default: (props: { onNewRun?: () => void }) => (
     <div data-testid="tests-home" data-has-actions={Boolean(props.onNewRun)} />
@@ -55,7 +59,12 @@ describe('PageWelcome', () => {
     expect(screen.getByTestId('mocks-welcome')).toBeInTheDocument()
   })
 
-  it.each(['history', 'tools', 'docs', 'settings'] as const)(
+  it('renders HistoryHome on the History page', () => {
+    render(<PageWelcome page="history" />)
+    expect(screen.getByTestId('history-home')).toBeInTheDocument()
+  })
+
+  it.each(['tools', 'docs', 'settings'] as const)(
     'renders an EmptyState on the %s page',
     (page) => {
       render(<PageWelcome page={page} />)

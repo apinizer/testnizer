@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import NewRequestWelcome from '../../src/renderer/components/layout/NewRequestWelcome'
 import HistoryListPanel from '../../src/renderer/components/sidebar/HistoryListPanel'
-import { useHistoryStore } from '../../src/renderer/stores/history.store'
+import { EMPTY_FILTERS, useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
 import { setLocale } from '../../src/renderer/lib/i18n'
@@ -128,7 +128,7 @@ describe('Recent endpoints (new-request page) and the History sidebar', () => {
       const entries = [row('mq', 'mqtt', -1, 'connect ECONNREFUSED'), row('ok', 'http', 200)]
       useHistoryStore.setState({
         entries,
-        searchTerm: '',
+        filters: EMPTY_FILTERS,
         fetch: vi.fn(async () => undefined),
       } as never)
 
