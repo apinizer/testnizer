@@ -24,8 +24,12 @@ uiTest.describe('Mock servers (deep)', () => {
     await expect(window.getByText('E2E Mock').first()).toBeVisible({ timeout: 10_000 })
   })
 
-  uiTest('group "+" preselects the type; a preset fills the name', async ({ window }) => {
-    await window.getByTestId('mock-group-add-mcp').click()
+  uiTest('type menu preselects the type; a preset fills the name', async ({ window }) => {
+    // Header "+" → MCP, not the MCP group's "+": the groups are hidden behind
+    // the empty state while the project has no mock server.
+    await window.getByTestId('mock-new').click()
+    await window.getByTestId('mock-new-option-mcp').click()
+    await expect(window.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
     await expect(window.getByTestId('mock-new-type-mcp')).toHaveAttribute('aria-checked', 'true')
     await expect(window.getByTestId('mock-new-preset-echo')).toHaveAttribute('aria-checked', 'true')
     await window.getByTestId('mock-new-type-http').click()

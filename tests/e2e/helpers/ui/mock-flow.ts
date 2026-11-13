@@ -24,7 +24,9 @@ export function randomMockPort(): number {
  */
 export async function createMockServer(page: Page, name: string, port: number): Promise<void> {
   await navigateSidebar(page, 'mocks')
+  // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
   await page.getByTestId('mock-new').click()
+  await page.getByTestId('mock-new-option-http').click()
   await expect(page.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
   await page.getByTestId('mock-new-type-http').click()
   await page.getByTestId('mock-new-preset-blank').click()

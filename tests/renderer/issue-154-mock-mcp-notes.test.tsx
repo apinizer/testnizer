@@ -51,13 +51,13 @@ describe('editor notes', () => {
     expect(screen.queryByTestId('mock-mcp-exposed-warning')).toBeNull()
   })
 
-  it('the bearer token input carries the "saved in the project file" note', () => {
+  it('the bearer token input says the token stays on this computer (issue #177)', () => {
     render(<MockMcpServerEditor serverId="a" />)
     fireEvent.click(screen.getByTestId('mock-mcp-tab-scenarios'))
     expect(screen.queryByTestId('mock-mcp-token-note')).toBeNull()
     fireEvent.change(screen.getByTestId('mock-mcp-auth-mode'), { target: { value: 'bearer' } })
     expect(screen.getByTestId('mock-mcp-token-note')).toHaveTextContent(
-      'Saved in the project file — Push shares it with the repository.',
+      'Stays on this computer — not written to the project file or Git. Teammates enter their own token.',
     )
   })
 })

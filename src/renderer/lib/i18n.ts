@@ -2990,7 +2990,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.newServer': 'New mock server',
     'mock.namePlaceholder': 'Server name',
     'mock.searchServers': 'Search servers…',
-    'mock.noServersYet': 'No mock servers yet — click + to create one.',
     'mock.noMatches': 'No matches.',
     'mock.panelEmptyTitle': 'No mock servers yet',
     'mock.panelEmptyCreate': '+ Create Mock Server',
@@ -3872,7 +3871,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.new': 'New Mock MCP server',
     'mockMcp.newShort': 'New',
     'mockMcp.presets': 'Start from a preset',
-    'mockMcp.empty': 'No Mock MCP servers yet',
     'mockMcp.itemType': 'Mock MCP server',
     'mockMcp.createFailed': 'Could not create the Mock MCP server',
     'mockMcp.copyUrl': 'Copy URL',
@@ -3942,7 +3940,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.scenarios.token': 'Token',
     'mockMcp.scenarios.generate': 'Generate',
     'mockMcp.scenarios.tokenNote':
-      'Saved in the project file — Push shares it with the repository.',
+      'Stays on this computer — not written to the project file or Git. Teammates enter their own token.',
     'mockMcp.exposedWarning':
       'Reachable from other machines without authentication — set a bearer token or bind to 127.0.0.1.',
     'mockMcp.scenarios.authHint':
@@ -4275,7 +4273,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.portTaken': 'Another mock server in this project already uses port {port}.',
     'mockNew.portPrivileged': 'Ports below 1024 may need elevated permissions on this computer.',
     'mockNew.addHttp': 'New HTTP mock server',
-    'mockNew.httpEmpty': 'No HTTP mock servers yet',
     'mockNew.httpItemType': 'HTTP mock server',
     'mockHttp.preset.blank': 'Blank',
     'mockHttp.preset.blankHint': 'No endpoints — start from scratch',
@@ -4295,10 +4292,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.typeSseHint':
       'A Server-Sent Events stream: timed events with ids, reconnect and heartbeat behaviour. Open it in the SSE tab or in a browser.',
     'mockNew.addSse': 'New SSE mock server',
-    'mockNew.sseEmpty': 'No SSE mock servers yet',
     'mockNew.sseItemType': 'SSE mock server',
     'mockNew.addAi': 'New AI mock server',
-    'mockNew.aiEmpty': 'No AI mock servers yet',
     'mockNew.aiItemType': 'AI mock server',
     'mockSse.sectionTitle': 'SSE servers',
     'mockAi.sectionTitle': 'AI servers',
@@ -8004,7 +7999,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'mock.newServer': 'Yeni mock sunucu',
     'mock.namePlaceholder': 'Sunucu adı',
     'mock.searchServers': 'Sunucu ara…',
-    'mock.noServersYet': 'Henüz mock sunucu yok — oluşturmak için + tıklayın.',
     'mock.noMatches': 'Eşleşme yok.',
     'mock.panelEmptyTitle': 'Henüz mock sunucu yok',
     'mock.panelEmptyCreate': '+ Mock Sunucu Oluştur',
@@ -8882,7 +8876,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.new': 'Yeni Mock MCP sunucusu',
     'mockMcp.newShort': 'Yeni',
     'mockMcp.presets': 'Hazır şablondan başla',
-    'mockMcp.empty': 'Henüz Mock MCP sunucusu yok',
     'mockMcp.itemType': 'Mock MCP sunucusu',
     'mockMcp.createFailed': 'Mock MCP sunucusu oluşturulamadı',
     'mockMcp.copyUrl': 'URL’yi kopyala',
@@ -8951,7 +8944,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockMcp.scenarios.token': 'Token',
     'mockMcp.scenarios.generate': 'Üret',
     'mockMcp.scenarios.tokenNote':
-      'Proje dosyasına kaydedilir — Gönder (push) ile depoyla paylaşılır.',
+      'Bu bilgisayarda kalır — proje dosyasına ve Git’e yazılmaz. Ekip arkadaşları kendi token’larını girer.',
     'mockMcp.exposedWarning':
       "Kimlik doğrulama olmadan başka makinelerden erişilebilir — bir bearer token belirleyin ya da 127.0.0.1'e bağlayın.",
     'mockMcp.scenarios.authHint':
@@ -9292,7 +9285,6 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.portPrivileged':
       '1024 altındaki portlar bu bilgisayarda yönetici izni gerektirebilir.',
     'mockNew.addHttp': 'Yeni HTTP mock sunucusu',
-    'mockNew.httpEmpty': 'Henüz HTTP mock sunucusu yok',
     'mockNew.httpItemType': 'HTTP mock sunucusu',
     'mockHttp.preset.blank': 'Boş',
     'mockHttp.preset.blankHint': 'Uç nokta yok — sıfırdan başlayın',
@@ -9312,10 +9304,8 @@ const translations: Record<Locale, Record<string, string>> = {
     'mockNew.typeSseHint':
       'Server-Sent Events akışı: kimlikli, zamanlı olaylar; yeniden bağlanma ve heartbeat davranışı. SSE sekmesinde ya da tarayıcıda açın.',
     'mockNew.addSse': 'Yeni SSE mock sunucusu',
-    'mockNew.sseEmpty': 'Henüz SSE mock sunucusu yok',
     'mockNew.sseItemType': 'SSE mock sunucusu',
     'mockNew.addAi': 'Yeni AI mock sunucusu',
-    'mockNew.aiEmpty': 'Henüz AI mock sunucusu yok',
     'mockNew.aiItemType': 'AI mock sunucusu',
     'mockSse.sectionTitle': 'SSE sunucuları',
     'mockAi.sectionTitle': 'AI sunucuları',

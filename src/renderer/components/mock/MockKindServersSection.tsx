@@ -20,26 +20,23 @@ import { closeMockServerTab, mockServerUrl, openMockServerTab } from './mock-htt
 /** Per-kind wording and testid prefix — literal keys for the key-coverage test. */
 const SECTION: Record<
   MockServerKind,
-  { titleKey: string; addKey: string; emptyKey: string; itemTypeKey: string; prefix: string }
+  { titleKey: string; addKey: string; itemTypeKey: string; prefix: string }
 > = {
   http: {
     titleKey: 'mockMcp.httpSectionTitle',
     addKey: 'mockNew.addHttp',
-    emptyKey: 'mockNew.httpEmpty',
     itemTypeKey: 'mockNew.httpItemType',
     prefix: 'mock-http',
   },
   sse: {
     titleKey: 'mockSse.sectionTitle',
     addKey: 'mockNew.addSse',
-    emptyKey: 'mockNew.sseEmpty',
     itemTypeKey: 'mockNew.sseItemType',
     prefix: 'mock-sse',
   },
   ai: {
     titleKey: 'mockAi.sectionTitle',
     addKey: 'mockNew.addAi',
-    emptyKey: 'mockNew.aiEmpty',
     itemTypeKey: 'mockNew.aiItemType',
     prefix: 'mock-ai',
   },

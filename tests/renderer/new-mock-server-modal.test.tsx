@@ -491,6 +491,45 @@ describe('Mocks panel — both groups, one row design', () => {
     expect(screen.queryByTestId('mock-new-dialog')).toBeNull()
   })
 
+  it('the type menu is keyboard usable: focus moves in, arrows wrap, Enter picks', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-a')
+    const option = (k: string): HTMLElement => screen.getByTestId(`mock-new-option-${k}`)
+    fireEvent.click(screen.getByTestId('mock-new'))
+    const menu = screen.getByTestId('mock-new-menu')
+    await waitFor(() => expect(option('http')).toHaveFocus())
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(option('mcp')).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    expect(option('ai')).toHaveFocus() // wrapped past the first entry
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(option('http')).toHaveFocus() // and back past the last
+    fireEvent.keyDown(menu, { key: 'End' })
+    expect(option('ai')).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'Home' })
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(option('sse')).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'Enter' })
+    expect(screen.queryByTestId('mock-new-menu')).toBeNull()
+    await screen.findByTestId('mock-new-dialog')
+    expect(screen.getByTestId('mock-new-type-sse')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('ArrowDown on the "+" opens the menu; Escape closes it and returns focus to the "+"', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-a')
+    const plus = screen.getByTestId('mock-new')
+    plus.focus()
+    fireEvent.keyDown(plus, { key: 'ArrowDown' })
+    await waitFor(() => expect(screen.getByTestId('mock-new-option-http')).toHaveFocus())
+    fireEvent.keyDown(screen.getByTestId('mock-new-option-http'), { key: 'Escape' })
+    expect(screen.queryByTestId('mock-new-menu')).toBeNull()
+    expect(plus).toHaveFocus()
+    expect(screen.queryByTestId('mock-new-dialog')).toBeNull()
+  })
+
   it('a search that matches nothing shows one "No matches." for the whole panel', async () => {
     render(<MockServersPanel />)
     await screen.findByTestId('mock-mcp-row-a')
@@ -556,6 +595,53 @@ describe('Mocks panel — no server at all', () => {
     useMockMcpStore.setState({ servers: [], projectId: null })
     render(<MockServersPanel />)
     await screen.findByTestId('mock-mcp-row-only')
+    expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
+    expect(screen.getByTestId('mock-http-section').closest('[hidden]')).toBeNull()
+  })
+
+  /** Holds the next HTTP `server.list` answer until `resolve` is called. */
+  type ListAnswer = { success: true; data: ReturnType<typeof httpServer>[] }
+  function holdHttpList(): (servers: ReturnType<typeof httpServer>[]) => Promise<void> {
+    let release: (v: ListAnswer) => void = () => {}
+    httpBridge.server.list.mockImplementationOnce(
+      () =>
+        new Promise<ListAnswer>((r) => {
+          release = r
+        }),
+    )
+    return async (servers) => {
+      await act(async () => {
+        release({ success: true, data: servers })
+      })
+    }
+  }
+
+  it('no "No mock servers yet" flash while the lists load; the hidden MCP group still loads', async () => {
+    useMockStore.setState({ servers: [], projectId: null })
+    useMockMcpStore.setState({ servers: [], projectId: null })
+    mcp.bridge.server.list.mockClear()
+    const resolveHttp = holdHttpList()
+    render(<MockServersPanel />)
+    // MCP lands, HTTP is still pending: not "empty" yet, and no groups either.
+    await waitFor(() => expect(useMockMcpStore.getState().projectId).toBe('p-1'))
+    expect(mcp.bridge.server.list).toHaveBeenCalledWith('p-1')
+    expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
+    expect(screen.getByTestId('mock-http-section').closest('[hidden]')).not.toBeNull()
+    await resolveHttp([])
+    expect(await screen.findByTestId('mock-panel-empty')).toBeInTheDocument()
+  })
+
+  it("never decides \"empty\" from the previous project's lists", async () => {
+    // Both stores still hold project p-0's (empty) lists; p-1's HTTP list is pending.
+    useMockStore.setState({ servers: [], projectId: 'p-0' })
+    useMockMcpStore.setState({ servers: [], projectId: 'p-0' })
+    resetHttpBridge([httpServer({ id: 'p1-http', name: 'P1 API', port: 3001 })])
+    const resolveHttp = holdHttpList()
+    render(<MockServersPanel />)
+    await waitFor(() => expect(useMockMcpStore.getState().projectId).toBe('p-1'))
+    expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
+    await resolveHttp([httpServer({ id: 'p1-http', name: 'P1 API', port: 3001 })])
+    await screen.findByTestId('mock-http-row-p1-http')
     expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
     expect(screen.getByTestId('mock-http-section').closest('[hidden]')).toBeNull()
   })
