@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import React from 'react'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import HistoryListPanel from '../../src/renderer/components/sidebar/HistoryListPanel'
-import { useHistoryStore } from '../../src/renderer/stores/history.store'
+import { EMPTY_FILTERS, useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useTabsStore } from '../../src/renderer/stores/tabs.store'
 import { useMcpStore } from '../../src/renderer/stores/mcp.store'
 import {
@@ -146,6 +146,7 @@ describe('HistoryListPanel — MCP rows (issue #166)', () => {
     useHistoryStore.setState({
       entries: [TOOL_ROW],
       searchTerm: '',
+      filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
   })
@@ -180,7 +181,8 @@ describe('HistoryListPanel — MCP rows (issue #166)', () => {
   it('search matches the tool name', () => {
     useHistoryStore.setState({
       entries: [TOOL_ROW, row({ id: 'h2', protocol: 'http', method: 'GET', url: 'http://api/x' })],
-      searchTerm: 'echo',
+      // The sidebar search is the shared History filter's query.
+      filters: { ...EMPTY_FILTERS, query: 'echo' },
     } as never)
     render(<HistoryListPanel />)
     expect(screen.getAllByTestId('history-entry')).toHaveLength(1)
@@ -246,6 +248,7 @@ describe('review item 1b: a masked History value is never re-sent', () => {
     useHistoryStore.setState({
       entries: [MASKED_ROW],
       searchTerm: '',
+      filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
     const { setLocale } = await import('../../src/renderer/lib/i18n')
@@ -256,9 +259,8 @@ describe('review item 1b: a masked History value is never re-sent', () => {
     expect(JSON.parse(s.toolArgs).api_key).toBe('')
     expect(s.hiddenArgs).toEqual(['api_key', 'auth.token'])
     cleanup()
-    const { default: McpHiddenArgsNote } = await import(
-      '../../src/renderer/components/protocols/mcp/McpHiddenArgsNote'
-    )
+    const { default: McpHiddenArgsNote } =
+      await import('../../src/renderer/components/protocols/mcp/McpHiddenArgsNote')
     render(<McpHiddenArgsNote />)
     expect(screen.getByTestId('mcp-hidden-args').textContent).toContain(
       'This value was hidden in History — enter it again',
@@ -291,6 +293,7 @@ describe('review item 10: MCP rows read as the call, not "MCP host/mcp"', () => 
     useHistoryStore.setState({
       entries: [TOOL_ROW],
       searchTerm: '',
+      filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
     render(<HistoryListPanel />)
@@ -300,9 +303,8 @@ describe('review item 10: MCP rows read as the call, not "MCP host/mcp"', () => 
   })
 
   it('welcome recent list: labelled by call, distinct calls on one server not merged, restores the call', async () => {
-    const { default: NewRequestWelcome } = await import(
-      '../../src/renderer/components/layout/NewRequestWelcome'
-    )
+    const { default: NewRequestWelcome } =
+      await import('../../src/renderer/components/layout/NewRequestWelcome')
     const second = row({
       id: 'h-res',
       method: 'READ_RESOURCE',

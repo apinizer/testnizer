@@ -24,7 +24,7 @@ import RequestBadge from '../shared/RequestBadge'
 import { mcpHistoryRestore, mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
 import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
 import { openHistoryEntryInTab } from '../../lib/history-open'
-import { historyTabUrl } from '../../lib/history-restore'
+import { historyTabName, historyTabUrl } from '../../lib/history-restore'
 import type { HistoryEntry } from '../../types'
 
 /** What a recent row reads as: MCP rows by their call (tool / prompt / URI), the rest by URL. */
@@ -94,7 +94,7 @@ export default function NewRequestWelcome() {
     }
     openTab({
       id: tabId,
-      name: `${entry.method || 'GET'} ${entry.url.split('?')[0].slice(0, 50)}`,
+      name: historyTabName(entry),
       protocol,
       method: entry.method,
       url: historyTabUrl(entry),

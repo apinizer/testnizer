@@ -39,7 +39,10 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
   // change-password / sign-out; there is no editable display-name field (and the
   // entry avatar lives only on ProjectHome without a testid). Visible skip
   // (feature request), not a soft pass.
-  uiTest.skip('MST-201 profile display name persist — Profile modal has no editable display name (feature request)', async () => {})
+  uiTest.skip(
+    'MST-201 profile display name persist — Profile modal has no editable display name (feature request)',
+    async () => {},
+  )
 
   // -------------------------------------------------------------------------
   // MST-202 — About modal: version number and EULA link
@@ -58,7 +61,9 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
     await expect(modal.getByText(/(Version|Sürüm)\s+\d+\.\d+\.\d+/)).toBeVisible({ timeout: 5_000 })
 
     // EULA button opens the read-only legal document modal.
-    await modal.getByRole('button', { name: /End User License Agreement|Son Kullanıcı Lisans Sözleşmesi/i }).click()
+    await modal
+      .getByRole('button', { name: /End User License Agreement|Son Kullanıcı Lisans Sözleşmesi/i })
+      .click()
     const legal = window
       .getByRole('dialog')
       .filter({ hasText: /End User License Agreement|Son Kullanıcı Lisans Sözleşmesi/i })
@@ -129,7 +134,9 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
     // The APIs-tree divider (EdgeResizeHandle target="left"): a role=separator with
     // the "Drag to resize" title, persisted under `ui.leftPanelWidth` on mouse-up.
     const leftPanel = window.getByTestId('left-panel')
-    const divider = window.getByRole('separator', { name: /Drag to resize|Boyutlandırmak için sürükleyin/i }).first()
+    const divider = window
+      .getByRole('separator', { name: /Drag to resize|Boyutlandırmak için sürükleyin/i })
+      .first()
     await expect(divider).toBeVisible()
 
     const before = (await leftPanel.boundingBox())!.width
@@ -155,7 +162,9 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
     try {
       await drag(80)
       await expect
-        .poll(async () => Math.round((await leftPanel.boundingBox())!.width - before), { timeout: 5_000 })
+        .poll(async () => Math.round((await leftPanel.boundingBox())!.width - before), {
+          timeout: 5_000,
+        })
         .toBe(80)
       // Committed on mouse-up, so it survives a restart.
       await expect.poll(persistedWidth, { timeout: 5_000 }).toBe(Math.round(before) + 80)
@@ -169,7 +178,9 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
       await window.mouse.move(nowX - 80, y, { steps: 4 })
       await window.mouse.up()
       await expect
-        .poll(async () => Math.round((await leftPanel.boundingBox())!.width - before), { timeout: 5_000 })
+        .poll(async () => Math.round((await leftPanel.boundingBox())!.width - before), {
+          timeout: 5_000,
+        })
         .toBe(0)
     }
   })
@@ -204,42 +215,45 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
   // -------------------------------------------------------------------------
   // MST-210 — Tab strip 15+ overflow scroll (P2)
   // -------------------------------------------------------------------------
-  uiTest('MST-210 15+ tabs render without crash and tab strip is scrollable', async ({ window }) => {
-    const TAB_COUNT = 15
-    const tabs = window.getByTestId('endpoint-tab')
-    const before = await tabs.count()
-    try {
-      for (let i = 0; i < TAB_COUNT; i++) {
-        await openHttpRequestTab(window)
+  uiTest(
+    'MST-210 15+ tabs render without crash and tab strip is scrollable',
+    async ({ window }) => {
+      const TAB_COUNT = 15
+      const tabs = window.getByTestId('endpoint-tab')
+      const before = await tabs.count()
+      try {
+        for (let i = 0; i < TAB_COUNT; i++) {
+          await openHttpRequestTab(window)
+        }
+        await expect(tabs).toHaveCount(before + TAB_COUNT, { timeout: 10_000 })
+
+        // The strip has no scroll buttons (issue #241: wheel scrolls sideways) — the
+        // overflowing tabs must be reachable by scrolling the strip, with the active
+        // (newest) tab kept in view.
+        const strip = window.getByTestId('tab-strip')
+        const metrics = await strip.evaluate((el) => ({
+          scrollWidth: el.scrollWidth,
+          clientWidth: el.clientWidth,
+        }))
+        expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth)
+
+        const stripBox = (await strip.boundingBox())!
+        const lastBox = (await tabs.last().boundingBox())!
+        expect(lastBox.x + lastBox.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 1)
+        expect(lastBox.x).toBeGreaterThanOrEqual(stripBox.x - 1)
+
+        // Wheel scroll moves the strip back to the first tab.
+        await strip.hover()
+        await window.mouse.wheel(-5000, 0)
+        await expect.poll(() => strip.evaluate((el) => el.scrollLeft), { timeout: 5_000 }).toBe(0)
+      } finally {
+        await closeAllTabs(window)
       }
-      await expect(tabs).toHaveCount(before + TAB_COUNT, { timeout: 10_000 })
 
-      // The strip has no scroll buttons (issue #241: wheel scrolls sideways) — the
-      // overflowing tabs must be reachable by scrolling the strip, with the active
-      // (newest) tab kept in view.
-      const strip = window.getByTestId('tab-strip')
-      const metrics = await strip.evaluate((el) => ({
-        scrollWidth: el.scrollWidth,
-        clientWidth: el.clientWidth,
-      }))
-      expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth)
-
-      const stripBox = (await strip.boundingBox())!
-      const lastBox = (await tabs.last().boundingBox())!
-      expect(lastBox.x + lastBox.width).toBeLessThanOrEqual(stripBox.x + stripBox.width + 1)
-      expect(lastBox.x).toBeGreaterThanOrEqual(stripBox.x - 1)
-
-      // Wheel scroll moves the strip back to the first tab.
-      await strip.hover()
-      await window.mouse.wheel(-5000, 0)
-      await expect.poll(() => strip.evaluate((el) => el.scrollLeft), { timeout: 5_000 }).toBe(0)
-    } finally {
-      await closeAllTabs(window)
-    }
-
-    // App must remain responsive.
-    await expect(window.getByTestId('workbench')).toBeVisible()
-  })
+      // App must remain responsive.
+      await expect(window.getByTestId('workbench')).toBeVisible()
+    },
+  )
 
   // -------------------------------------------------------------------------
   // MST-211 — Empty states (tree/history/mock)
@@ -251,7 +265,10 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
     await createProject(window, `Empty ${uid()}`)
     try {
       await navigateSidebar(window, 'history')
-      await expect(window.getByText('No history yet.')).toBeVisible({ timeout: 8_000 })
+      // The History page's overview shows the same empty text in the workbench.
+      await expect(window.getByTestId('left-panel').getByText('No history yet.')).toBeVisible({
+        timeout: 8_000,
+      })
       await expect(window.getByTestId('history-entry')).toHaveCount(0)
 
       await navigateSidebar(window, 'mocks')
@@ -288,9 +305,7 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
     const menuItems = await app.evaluate(async ({ Menu }) => {
       const menu = Menu.getApplicationMenu()
       if (!menu) return []
-      const fileMenu = menu.items.find(
-        (m) => m.label === 'File' || m.label === 'Dosya',
-      )
+      const fileMenu = menu.items.find((m) => m.label === 'File' || m.label === 'Dosya')
       if (!fileMenu?.submenu) return []
       return fileMenu.submenu.items.map((i) => ({ label: i.label, type: i.type }))
     })
@@ -300,8 +315,14 @@ uiTest.describe('Tur1 — UI/UX Misc [MST-201..214]', () => {
     const labels = menuItems.map((m: { label: string }) => m.label)
     const newTabItem = menuItems.find((m: { label: string }) => /New Tab/i.test(m.label))
     expect(newTabItem, `File menu has "New Tab" (items: ${labels.join(' | ')})`).toBeTruthy()
-    expect(labels.some((l: string) => /Import/i.test(l)), 'File menu has Import').toBe(true)
-    expect(labels.some((l: string) => /^Save\b/i.test(l)), 'File menu has Save').toBe(true)
+    expect(
+      labels.some((l: string) => /Import/i.test(l)),
+      'File menu has Import',
+    ).toBe(true)
+    expect(
+      labels.some((l: string) => /^Save\b/i.test(l)),
+      'File menu has Save',
+    ).toBe(true)
 
     // Click the New Tab item via the main process (same path as a user click:
     // menu → `menu:newTab` IPC → renderer opens a tab).

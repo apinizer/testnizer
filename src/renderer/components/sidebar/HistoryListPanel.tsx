@@ -1,24 +1,30 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Search, Trash2, Clock, History as HistoryIcon } from 'lucide-react'
-import { useHistoryStore } from '../../stores/history.store'
-import { useWorkspaceStore } from '../../stores/workspace.store'
-import { useResponseStore } from '../../stores/response.store'
-import { useTabsStore } from '../../stores/tabs.store'
-import { useSoapStore } from '../../stores/soap.store'
-import { useUIStore } from '../../stores/ui.store'
+import { Trash2, Clock, History as HistoryIcon } from 'lucide-react'
 import {
-  mcpHistoryRestore,
-  mcpHistoryRowLabel,
-  mcpHistorySearchText,
-} from '../protocols/mcp/history-restore'
-import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
-import { openHistoryEntryInTab } from '../../lib/history-open'
-import { historyTabUrl, unmaskHistoryValue } from '../../lib/history-restore'
-import { useHistoryHiddenStore } from '../../stores/history-hidden.store'
+  HISTORY_LIST_LIMIT,
+  useHistoryStore,
+  type HistoryRange,
+  type HistoryStatusClass,
+  type HistoryTarget,
+} from '../../stores/history.store'
+import { useWorkspaceStore } from '../../stores/workspace.store'
+import { mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
+import HistoryFilterSelect from '../history/HistoryFilterSelect'
+import { useMockAddresses } from '../history/use-mock-addresses'
+import {
+  filterHistory,
+  hasActiveFilters,
+  historyProtocolName,
+  protocolStats,
+  rangeOptions,
+  statusOptions,
+  targetOptions,
+} from '../history/history-overview'
+import { openHistoryEntry } from './open-history-entry'
 import RequestBadge from '../shared/RequestBadge'
 import EmptyState from '../shared/EmptyState'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
-import type { HistoryEntry, ApiResponse } from '../../types'
+import type { HistoryEntry } from '../../types'
 import { useTranslation } from '../../lib/i18n'
 import { historyStatusDisplay } from '../../lib/history-status'
 
@@ -34,17 +40,14 @@ export default function HistoryListPanel() {
   const fetch = useHistoryStore((s) => s.fetch)
   const clear = useHistoryStore((s) => s.clear)
   const deleteEntry = useHistoryStore((s) => s.deleteEntry)
-  const searchTerm = useHistoryStore((s) => s.searchTerm)
-  const setSearchTerm = useHistoryStore((s) => s.setSearchTerm)
+  // Filters (search, date, status, protocol) are shared with the History
+  // page's overview in the workbench — one set, the same rows in both.
+  const filters = useHistoryStore((s) => s.filters)
+  const setFilters = useHistoryStore((s) => s.setFilters)
+  const resetFilters = useHistoryStore((s) => s.resetFilters)
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
-  const openPreviewTab = useTabsStore((s) => s.openPreviewTab)
-  const setResponse = useResponseStore((s) => s.setResponse)
-  const clearResponse = useResponseStore((s) => s.clearResponse)
-  const soapSwitchToTab = useSoapStore((s) => s.switchToTab)
-  const soapLoadFromEndpoint = useSoapStore((s) => s.loadFromEndpoint)
-  const setActiveSidebarPage = useUIStore((s) => s.setActiveSidebarPage)
 
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
@@ -53,200 +56,21 @@ export default function HistoryListPanel() {
     fetch({
       workspaceId: activeWorkspaceId || undefined,
       projectId: activeProjectId || undefined,
-      limit: 200,
+      limit: HISTORY_LIST_LIMIT,
     })
   }, [activeWorkspaceId, activeProjectId, fetch])
 
-  const filtered = useMemo(() => {
-    if (!searchTerm.trim()) return entries
-    const q = searchTerm.toLowerCase()
-    return entries.filter(
-      (e) =>
-        e.url.toLowerCase().includes(q) ||
-        (e.method || '').toLowerCase().includes(q) ||
-        // MCP rows: the tool / prompt name and resource URI too (issue #166).
-        (e.protocol === 'mcp' && mcpHistorySearchText(e).toLowerCase().includes(q)),
-    )
-  }, [entries, searchTerm])
+  const filtering = hasActiveFilters(filters)
+  // The overview's "mock servers" filter applies here too (shared filters).
+  const mocks = useMockAddresses(filters.target !== '')
+  const filtered = useMemo(
+    () => filterHistory(entries, filters, t, mocks),
+    [entries, filters, t, mocks],
+  )
+  // Every protocol in the loaded history, most used first.
+  const protocols = useMemo(() => protocolStats(entries, t).map((s) => s.protocol), [entries, t])
 
   const groups = useMemo(() => groupByDate(filtered, t, locale), [filtered, t, locale])
-
-  function handleOpenInTab(entry: HistoryEntry) {
-    // SOAP reads the snapshot directly: values main masked (issue #195) come
-    // back EMPTY so a re-send never puts the mask on the wire.
-    const soapHidden: string[] = []
-    const snap = unmaskHistoryValue(entry.request_snapshot || {}, '', soapHidden) as Record<
-      string,
-      unknown
-    >
-    const tabId = `tab-hist-${entry.id}`
-    const protocol = entry.protocol || 'http'
-
-    // Opening a history entry is an APIs-workbench action, so flip the left
-    // panel to the APIs tree alongside the request being opened. (The tab is
-    // global and would show on any page; this just lands the user with the
-    // matching tree.)
-    setActiveSidebarPage('apis')
-
-    // MCP rows carry the server + the call in their own shape (issue #166).
-    const mcpRow = protocol === 'mcp' ? mcpHistoryRestore(entry) : null
-
-    openPreviewTab({
-      id: tabId,
-      name: mcpRow
-        ? `${entry.method || 'CALL_TOOL'} ${mcpRow.name || shortUrl(mcpRow.url)}`
-        : `${entry.method || 'GET'} ${shortUrl(entry.url)}`,
-      protocol,
-      method: entry.method,
-      url: mcpRow ? mcpRow.url : historyTabUrl(entry),
-    })
-
-    // openPreviewTab is synchronous — read the resolved active tab id back
-    // out of the store so per-tab state caches key off the right id (a
-    // matching existing preview reuses its original id, not `tabId`).
-    const realTabId = useTabsStore.getState().activeTabId || tabId
-
-    if (mcpRow) {
-      // Open the MCP tab on the server with the call selected; the user then
-      // presses Connect and Run (the shared helper the welcome page uses too).
-      openMcpHistoryRestore(mcpRow, realTabId)
-      return
-    }
-
-    if (protocol === 'soap') {
-      useHistoryHiddenStore.getState().setHidden(realTabId, soapHidden)
-      soapSwitchToTab(realTabId)
-      clearResponse()
-      // SOAP snapshots store wsdl/operation/etc. fields at the top level
-      // (see soap.handler.ts addHistory) — not under a nested `soap` key —
-      // and the request body lives in `envelope`. Map them onto the shape
-      // soapStore.loadFromEndpoint expects so the editor restores wsdl
-      // selection + envelope XML.
-      const envelope = typeof snap.envelope === 'string' ? snap.envelope : ''
-      const hasWsdlSnapshot = Boolean(snap.wsdlUrl || snap.operationName || envelope)
-      if (!hasWsdlSnapshot) {
-        // Manual-mode SOAP sends go through the HTTP path and snapshot
-        // {method,url,headers,body}; fabricating a WSDL from that produced an
-        // "Unknown" operation with an empty body (issue #124 follow-up).
-        const hdrs = (snap.headers as Array<{ key: string; value: string }> | undefined) ?? []
-        const find = (k: string) => hdrs.find((h) => h.key.toLowerCase() === k.toLowerCase())?.value
-        const contentType = find('content-type') ?? ''
-        const soapActionHeader = find('soapaction')
-        const version = /application\/soap\+xml/i.test(contentType) ? 'soap12' : 'soap11'
-        const action =
-          version === 'soap12'
-            ? (/action="([^"]*)"/.exec(contentType)?.[1] ?? '')
-            : (soapActionHeader ?? '').replace(/^"|"$/g, '')
-        const soapStore = useSoapStore.getState()
-        soapLoadFromEndpoint({
-          url: entry.url,
-          body: snap.body as { type: string; content?: string } | undefined,
-          headers: hdrs as Array<{ key: string; value: string; enabled: boolean }>,
-        })
-        soapStore.setMode('manual')
-        soapStore.setManualSoapVersion(version)
-        soapStore.setManualSoapAction(action)
-      } else
-        soapLoadFromEndpoint({
-          url: entry.url,
-          body: envelope ? { type: 'xml', content: envelope } : undefined,
-          headers: snap.headers as
-            | Array<{ key: string; value: string; enabled: boolean }>
-            | undefined,
-          soap: {
-            wsdlUrl: snap.wsdlUrl as string | undefined,
-            endpointUrl: (snap.endpointUrl as string | undefined) || entry.url,
-            operationName: snap.operationName as string | undefined,
-            serviceName: snap.serviceName as string | undefined,
-            portName: snap.portName as string | undefined,
-            soapVersion: snap.soapVersion as 'soap11' | 'soap12' | undefined,
-            exampleRequest: envelope,
-          },
-        })
-    } else {
-      clearResponse()
-      // HTTP, WebSocket, gRPC, GraphQL (issue #182): one restore, shared with
-      // the welcome page's recent list. Rows carrying the `{{var}}` template
-      // reopen from it, so re-sending keeps working auth (issue #195).
-      openHistoryEntryInTab(entry, realTabId)
-    }
-
-    if (entry.response_snapshot) {
-      const r = entry.response_snapshot as Partial<ApiResponse>
-      // Pre-fix history rows (written before the v1.4.4 credential-strip
-      // sweep) may have `actualRequest.url` carrying `user:pass@host`
-      // userinfo. Scrub it on restore so the Actual Request panel never
-      // displays credentials that the rest of the UI already strips.
-      // Modern rows are already clean — this is a no-op for them.
-      const cleanActualRequest = r.actualRequest
-        ? { ...r.actualRequest, url: stripCredentialsInUrl(r.actualRequest.url) ?? '' }
-        : r.actualRequest
-      setResponse({
-        requestId: entry.id,
-        protocol,
-        status: r.status,
-        statusText: r.statusText,
-        headers: r.headers,
-        body: r.body,
-        // Restore the binary flag so an image / PDF body opened from history
-        // previews as the file instead of dumping its base64 as text. Rows
-        // captured before the flag was persisted still carry a valid base64
-        // body, so fall back to inferring it from the content type
-        // (issue #25 follow-up).
-        bodyEncoding: r.bodyEncoding ?? inferBinaryEncoding(r.headers, r.body),
-        bodySize: r.bodySize,
-        timing: r.timing || { total: entry.duration_ms || 0 },
-        error: r.error,
-        // Carry forward the saved test results + console logs so the user
-        // who opens an old run (especially a Test Suite request, where
-        // pm.test()'s output is the whole point) sees the assertion
-        // verdicts and script logs they originally produced. Without
-        // these the Tests / Console sub-panes always rendered as empty
-        // even when the runner had real data on disk (v1.4.4 §12.4).
-        testResults: r.testResults,
-        consoleLogs: r.consoleLogs,
-        actualRequest: cleanActualRequest,
-      })
-    }
-  }
-
-  // History rows written before `bodyEncoding` was persisted still hold a valid
-  // base64 body for binary responses — recover the flag from the content type so
-  // those entries preview instead of showing base64 as text. Mirrors the
-  // engine's isBinaryContentType families (image/audio/video/font + pdf/octet).
-  function inferBinaryEncoding(
-    headers: Record<string, string> | undefined,
-    body: string | undefined,
-  ): 'base64' | undefined {
-    if (!body) return undefined
-    const ct = (headers?.['content-type'] || headers?.['Content-Type'] || '')
-      .split(';')[0]
-      .trim()
-      .toLowerCase()
-    const isBinary =
-      ct.startsWith('image/') ||
-      ct.startsWith('audio/') ||
-      ct.startsWith('video/') ||
-      ct.startsWith('font/') ||
-      ct === 'application/pdf' ||
-      ct === 'application/octet-stream'
-    return isBinary ? 'base64' : undefined
-  }
-
-  function stripCredentialsInUrl(raw: string | undefined): string | undefined {
-    if (!raw) return raw
-    try {
-      const u = new URL(raw)
-      if (u.username || u.password) {
-        u.username = ''
-        u.password = ''
-        return u.toString()
-      }
-      return raw
-    } catch {
-      return raw
-    }
-  }
 
   return (
     <div className="flex h-full flex-col" lang={locale}>
@@ -277,29 +101,126 @@ export default function HistoryListPanel() {
         </button>
       </div>
 
-      {/* Search */}
-      <div className="shrink-0 px-2.5 py-2" style={{ borderBottom: '1px solid var(--border)' }}>
+      {/* Search — the APIs / Mocks panels' box: px sizes (Tailwind rem spacing
+       *  shrinks with the app's root font size), 1.5px border, 13px magnifier. */}
+      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div
-          className="flex items-center gap-1.5 rounded-md px-2 py-1"
           style={{
+            display: 'flex',
+            alignItems: 'center',
             background: 'var(--surface)',
-            border: '1px solid var(--border2)',
+            border: '1.5px solid var(--border2)',
+            borderRadius: 8,
+            padding: '6px 10px',
+            gap: 7,
           }}
         >
-          <Search size={12} style={{ color: 'var(--muted)', flexShrink: 0 }} />
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="var(--hint)"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
           <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            data-testid="history-search"
+            value={filters.query}
+            onChange={(e) => setFilters({ query: e.target.value })}
             placeholder={t('history.filterPlaceholder')}
-            className="w-full border-none bg-transparent outline-none"
-            style={{ color: 'var(--text)', fontSize: 13, fontFamily: 'inherit' }}
+            aria-label={t('history.filterPlaceholder')}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              fontSize: 13,
+              color: 'var(--text)',
+              width: '100%',
+              fontFamily: 'inherit',
+            }}
           />
         </div>
+        {/* Date, status / protocol, mock target — the overview's drop-downs, 2×2 */}
+        <div
+          className="mt-2"
+          style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 }}
+        >
+          <HistoryFilterSelect
+            fill
+            testId="history-side-range"
+            label={t('historyHome.rangeLabel')}
+            value={filters.range}
+            onChange={(v) => setFilters({ range: v as HistoryRange })}
+            options={rangeOptions(t)}
+          />
+          <HistoryFilterSelect
+            fill
+            testId="history-side-status"
+            label={t('historyHome.col.status')}
+            value={filters.status}
+            onChange={(v) => setFilters({ status: v as HistoryStatusClass })}
+            options={statusOptions(t, filters.protocol)}
+          />
+          <HistoryFilterSelect
+            fill
+            testId="history-side-protocol"
+            label={t('historyHome.protocolLabel')}
+            value={filters.protocol ?? ''}
+            onChange={(v) => setFilters({ protocol: v || null })}
+            options={[
+              ['', t('historyHome.protocol.all')],
+              ...protocols.map((p) => [p, historyProtocolName(p)] as [string, string]),
+            ]}
+          />
+          <HistoryFilterSelect
+            fill
+            testId="history-side-target"
+            label={t('historyHome.targetLabel')}
+            value={filters.target}
+            onChange={(v) => setFilters({ target: v as HistoryTarget })}
+            options={targetOptions(t)}
+          />
+        </div>
+        {filtering && (
+          <div
+            className="mt-1.5 flex items-center justify-between"
+            style={{ fontSize: 12, color: 'var(--muted)' }}
+          >
+            <span data-testid="history-side-count">
+              {t('history.filteredCount')
+                .replace('{shown}', String(filtered.length))
+                .replace('{total}', String(entries.length))}
+            </span>
+            <button
+              type="button"
+              data-testid="history-side-reset"
+              onClick={resetFilters}
+              className="cursor-pointer border-none bg-transparent p-0"
+              style={{ color: 'var(--accent)', fontSize: 12 }}
+            >
+              {t('historyHome.reset')}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">
-        {groups.length === 0 && (
+        {/* Filters that match nothing are not an empty history. */}
+        {groups.length === 0 && filtering && (
+          <div
+            data-testid="history-no-matches"
+            className="px-4 py-4 text-center"
+            style={{ color: 'var(--muted)', fontSize: 13 }}
+          >
+            {t('history.noMatches')}
+          </div>
+        )}
+        {groups.length === 0 && !filtering && (
           <EmptyState
             icon={HistoryIcon}
             title={t('history.emptyTitle')}
@@ -327,7 +248,7 @@ export default function HistoryListPanel() {
             {items.map((entry) => (
               <div
                 key={entry.id}
-                onClick={() => handleOpenInTab(entry)}
+                onClick={() => openHistoryEntry(entry)}
                 data-testid="history-entry"
                 className="group flex cursor-pointer items-center gap-1.5 px-3 py-[6px]"
                 style={{

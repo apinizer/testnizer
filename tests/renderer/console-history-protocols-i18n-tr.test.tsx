@@ -329,7 +329,8 @@ describe('issue #248 follow-up — History sidebar in Turkish', () => {
     expect(screen.getByRole('button', { name: /İstekler/ })).toBeTruthy()
     expect(screen.getByText('Temizle')).toBeTruthy()
     expect(screen.getByPlaceholderText('Geçmişte ara...')).toBeTruthy()
-    expect(screen.getByText('Bugün')).toBeTruthy()
+    // The date filter has a "Bugün" option too — this is the date group header.
+    expect(screen.getByText('Bugün', { selector: 'div' })).toBeTruthy()
     expect(screen.getByText('Dün')).toBeTruthy()
   })
 
@@ -591,7 +592,7 @@ describe('issue #248 follow-up — English stays byte-identical', () => {
     expect(screen.getAllByText('History').length).toBe(2)
     expect(screen.getByPlaceholderText('Filter history...')).toBeTruthy()
     expect(screen.getByTitle('Clear all history')).toBeTruthy()
-    expect(screen.getByText('Today')).toBeTruthy()
+    expect(screen.getByText('Today', { selector: 'div' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Commits/ })).toBeTruthy()
     h.unmount()
 

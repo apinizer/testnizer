@@ -118,6 +118,32 @@ export function historyTabUrl(entry: Row): string {
   return cutMask(url)
 }
 
+/** Protocols whose tab shows a method badge in the tab strip (Workbench). */
+const BADGED_TAB_PROTOCOLS = new Set(['http', 'soap'])
+
+/**
+ * The NAME a reopened (non-MCP) history row's tab gets: `host/path`, with the
+ * method in front only for protocols whose tab has no method badge — an HTTP
+ * tab read "GET GET api.site.com/users" (badge + name). One rule for the
+ * History sidebar, the history modal and the new-request page's Recent list.
+ */
+export function historyTabName(entry: Pick<HistoryEntry, 'url' | 'method' | 'protocol'>): string {
+  const target = shortHistoryUrl(entry.url ?? '')
+  const protocol = entry.protocol || 'http'
+  if (BADGED_TAB_PROTOCOLS.has(protocol)) return target
+  return entry.method ? `${entry.method} ${target}` : target
+}
+
+/** `host/path` of a URL — no scheme, query or fragment; unparseable → as is. */
+function shortHistoryUrl(url: string): string {
+  try {
+    const u = new URL(url)
+    return u.host + u.pathname
+  } catch {
+    return url
+  }
+}
+
 /**
  * A mask cut out of a longer string. A masked URL userinfo
  * (`https://••••••@host`) goes with its `@` — `https://@host` is not a URL

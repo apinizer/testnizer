@@ -12,6 +12,7 @@ import { useTabsStore } from '../../stores/tabs.store'
 import RequestBadge from '../shared/RequestBadge'
 import Modal from '../shared/Modal'
 import EmptyState from '../shared/EmptyState'
+import { historyTabName } from '../../lib/history-restore'
 import type {
   HistoryEntry,
   KeyValuePair,
@@ -83,7 +84,7 @@ export default function HistoryPanel() {
     const tabId = `tab-hist-${entry.id}`
     openTab({
       id: tabId,
-      name: `${entry.method || 'GET'} ${shortUrl(entry.url)}`,
+      name: historyTabName(entry),
       protocol: entry.protocol,
       method: entry.method,
       url: entry.url,
