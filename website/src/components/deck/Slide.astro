@@ -1,0 +1,40 @@
+---
+/**
+ * One 1920×1080 slide. `label` is the slide's short name (screen readers and
+ * the live region announce it), `n` its 1-based number, shown in the footer.
+ * `bare` drops the footer (cover and closing slides draw their own).
+ */
+import { langOf, presentations } from '../../lib/presentations'
+
+interface Props {
+  n: number
+  deck: string
+  label: { en: string; tr: string }
+  bare?: boolean
+  class?: string
+}
+
+const { n, deck, label, bare = false, class: cls = '' } = Astro.props
+const lang = langOf(Astro.url.pathname)
+const meta = presentations.find((p) => p.slug === deck)
+const short = meta ? meta.short[lang] : ''
+const pageNo = String(n).padStart(2, '0')
+---
+
+<section
+  class:list={['slide', cls]}
+  id={`slide-${n}`}
+  aria-roledescription={lang === 'tr' ? 'slayt' : 'slide'}
+  aria-label={`${n} / ${meta?.slides ?? ''} — ${label[lang]}`}
+  data-n={n}
+>
+  <div class="slide-canvas">
+    <slot />
+    {!bare && (
+      <div class="chrome" aria-hidden="true">
+        <span class="brand"><i class="logo-img"></i><b>Testnizer</b> · {short}</span>
+        <span class="pageno">{pageNo}</span>
+      </div>
+    )}
+  </div>
+</section>

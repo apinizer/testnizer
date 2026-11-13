@@ -1,0 +1,19 @@
+---
+/**
+ * One string, two languages. The deck pages live under /resources/... (EN) and
+ * /tr/resources/... (TR), so the page URL decides which half is rendered —
+ * slide text is written once, both languages next to each other.
+ * Strings may contain inline HTML (<b>, <code>, <kbd>); they are authored here,
+ * never user input.
+ */
+import { langOf } from '../../lib/presentations'
+
+interface Props {
+  en: string
+  tr: string
+}
+const { en, tr } = Astro.props
+const html = langOf(Astro.url.pathname) === 'tr' ? tr : en
+---
+
+<Fragment set:html={html} />

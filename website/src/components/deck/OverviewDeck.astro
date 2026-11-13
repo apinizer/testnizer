@@ -1,0 +1,508 @@
+---
+/**
+ * Testnizer product overview deck. Every string is written once with its
+ * Turkish twin (<T en tr>); facts come from docs/release-notes/v1.6.0.md,
+ * src/content/docs and the site pages — no customer counts, benchmarks or
+ * rival comparisons. Mock panels are sketches of the app with sample data
+ * (example.com, the Petstore API); they are marked as samples where a number
+ * could be mistaken for a measurement.
+ */
+import DeckLayout from './DeckLayout.astro'
+import Slide from './Slide.astro'
+import T from './T.astro'
+import { icons } from '../icons'
+import { langOf } from '../../lib/presentations'
+
+const deck = 'testnizer-overview'
+const isTr = langOf(Astro.url.pathname) === 'tr'
+const p = (href: string): string => (isTr ? `/tr${href}` : href)
+
+const protocols = [
+  { icon: icons.globe, name: 'HTTP / REST', en: 'Every body mode, path variables, cookies, mTLS, proxy; paste a cURL into the URL bar', tr: 'Tüm gövde modları, path değişkenleri, çerezler, mTLS, proxy; URL çubuğuna cURL yapıştırın' },
+  { icon: icons.fileCode, name: 'SOAP / WSDL', en: 'WSDL import, SOAP 1.1 + 1.2, WS-Security on Send and in the Runner', tr: "WSDL içe aktarma, SOAP 1.1 + 1.2, Send'de ve Runner'da WS-Security" },
+  { icon: icons.network, name: 'GraphQL', en: 'Queries, mutations, schema explorer, subscriptions over WebSocket', tr: 'Sorgular, mutasyonlar, şema gezgini, WebSocket üzerinden abonelikler' },
+  { icon: icons.cpu, name: 'gRPC', en: '.proto import, all four streaming modes, metadata', tr: '.proto içe aktarma, dört akış modu, meta veri' },
+  { icon: icons.radio, name: 'WebSocket', en: 'Text, JSON, XML, Base64, hex; saved messages, searchable log', tr: 'Metin, JSON, XML, Base64, hex; kayıtlı mesajlar, aranabilir günlük' },
+  { icon: icons.arrowsLeftRight, name: 'Socket.IO', en: 'Client v2, v3 or v4, namespaces, acknowledgements', tr: 'v2, v3 veya v4 istemci, namespace, onaylar (ack)' },
+  { icon: icons.repeat, name: 'MQTT', en: 'MQTT 3.1.1 and 5.0 — QoS, retain, last will, TLS', tr: 'MQTT 3.1.1 ve 5.0 — QoS, retain, last will, TLS' },
+  { icon: icons.zap, name: 'Server-Sent Events', en: 'Long-lived streams, custom headers, Last-Event-ID resume', tr: 'Uzun ömürlü akışlar, özel başlıklar, Last-Event-ID ile devam' },
+  { icon: icons.plug, name: 'MCP', en: 'Streamable HTTP, SSE and stdio; tools, resources, prompts', tr: "Streamable HTTP, SSE ve stdio; araçlar, kaynaklar, prompt'lar" },
+  { icon: icons.bot, name: 'AI Chat', en: '14 providers plus a custom URL, streaming, MCP tools', tr: '14 sağlayıcı artı özel URL, akışlı yanıt, MCP araçları' },
+]
+
+const scanCats = [
+  { en: 'Transport security', tr: 'Taşıma güvenliği', v: 100, c: '' },
+  { en: 'Authentication & authorization', tr: 'Kimlik doğrulama ve yetkilendirme', v: 94, c: 'warn' },
+  { en: 'Protocol conformance', tr: 'Protokol uyumu', v: 100, c: '' },
+  { en: 'Prompt injection & tool poisoning', tr: 'İstem enjeksiyonu ve araç zehirleme', v: 89, c: 'warn' },
+  { en: 'Information disclosure', tr: 'Bilgi ifşası', v: 97, c: 'warn' },
+  { en: 'CORS', tr: 'CORS', v: 100, c: '' },
+  { en: 'Security headers', tr: 'Güvenlik başlıkları', v: 77, c: 'bad' },
+  { en: 'Rate limiting', tr: 'Hız sınırlama', v: 0, c: 'skip' },
+]
+
+const tools = [
+  { icon: icons.key, name: 'Keystore Studio', en: 'JKS and PKCS#12 without keytool: open, create, convert, inspect certificates', tr: "keytool'suz JKS ve PKCS#12: açın, oluşturun, dönüştürün, sertifikaları inceleyin" },
+  { icon: icons.fingerprint, name: 'JWT / JOSE', en: 'Decode, sign, verify, encrypt and decrypt — also as pm.jose in scripts', tr: "Çözün, imzalayın, doğrulayın, şifreleyin — script'lerde pm.jose olarak da" },
+  { icon: icons.hash, name: 'JWK / JWKS', en: 'PEM ⇄ JWK, RFC 7638 thumbprints, a JWKS served by the mock server', tr: 'PEM ⇄ JWK, RFC 7638 parmak izleri, mock sunucudan servis edilen JWKS' },
+  { icon: icons.fileCode, name: 'SAML 2.0', en: 'Build, sign and validate — signature wrapping is rejected', tr: 'Oluşturun, imzalayın, doğrulayın — imza sarmalama reddedilir' },
+  { icon: icons.fileText, name: 'WS-Security', en: 'UsernameToken, Timestamp, XML signature and encryption on the SOAP request', tr: 'SOAP isteğinde UsernameToken, Timestamp, XML imza ve şifreleme' },
+  { icon: icons.search, name: 'TLS Inspector', en: 'What a live endpoint presents: chain, protocol, ciphers', tr: 'Canlı bir uç noktanın sunduğu: zincir, protokol, şifre takımları' },
+  { icon: icons.lock, name: isTr ? 'mTLS ve sertifikalar' : 'mTLS & certificates', en: 'Client certificates per host, from PEM, PFX or a keystore entry', tr: 'Host başına istemci sertifikası; PEM, PFX ya da keystore girdisinden' },
+  { icon: icons.calculator, name: isTr ? 'Parola, OTP ve QR' : 'Passwords, OTP, QR', en: 'Plus JSONPath, XPath, XSLT, Jolt, diff, hashes and encoders', tr: 'Ayrıca JSONPath, XPath, XSLT, Jolt, fark, hash ve kodlayıcılar' },
+]
+---
+
+<DeckLayout slug={deck}>
+
+  <!-- 01 · Cover -->
+  <Slide n={1} deck={deck} bare label={{ en: 'Cover', tr: 'Kapak' }} class="cover">
+    <div class="glow-bg"></div>
+    <div class="dots-bg"></div>
+    <div class="pad">
+      <div class="cover-top anim">
+        <span class="wordmark"><i class="logo-img lg"></i>Testnizer</span>
+        <span class="cover-meta"><T en="Product overview · v1.6.0" tr="Ürün tanıtımı · v1.6.0" /></span>
+      </div>
+      <div class="cover-main">
+        <div class="cover-copy">
+          <h1 class="cover-title anim" style="--i:1"><T en="The offline API and AI client that also does <span class='grad'>your security work.</span>" tr="Çevrimdışı API ve yapay zeka istemcisi, <span class='grad'>güvenlik işinizi de yapar.</span>" /></h1>
+          <p class="lead anim" style="--i:2"><T en="Test APIs, MCP servers and LLMs, mock all of them locally, and do the cryptography on your own machine — <b>free, no account, no telemetry.</b>" tr="API'leri, MCP sunucularını ve LLM'leri test edin, hepsini yerelde mock'layın, kriptografiyi kendi makinenizde yapın — <b>ücretsiz, hesap yok, telemetri yok.</b>" /></p>
+        </div>
+        <div class="cover-stack" aria-hidden="true">
+          <div class="win cs1 anim" style="--i:3">
+            <div class="reqbar"><span class="method-sel"><span class="m get">GET</span></span><span class="url"><span class="var">{'{{baseUrl}}'}</span>/pet/42</span><span class="send"><T en="Send" tr="Gönder" /></span></div>
+            <div class="status-row"><span class="chip ok">200 OK</span><span>184 ms</span><span>0.4 KB</span><span class="tag ok" style="margin-left:auto">3/3 <T en="tests passed" tr="test geçti" /></span></div>
+          </div>
+          <div class="win cs2 anim" style="--i:4">
+            <div class="cs-row"><span class="ic sm violet" set:html={icons.plug}></span><div><b>tools/call</b> · <span class="mono">echo</span><small>MCP 2026-07-28 · Streamable HTTP</small></div><span class="chip ok">OK</span></div>
+          </div>
+          <div class="win cs3 anim" style="--i:5">
+            <div class="cs-row"><span class="grade mini">A</span><div><b><T en="MCP security scan" tr="MCP güvenlik taraması" /></b><small><T en="sample report · 92 / 100" tr="örnek rapor · 92 / 100" /></small></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="cover-foot anim" style="--i:6">
+        <div class="pills">
+          {['HTTP', 'SOAP', 'GraphQL', 'gRPC', 'WebSocket', 'Socket.IO', 'MQTT', 'SSE', 'MCP', 'AI Chat'].map((x) => <span class="pill mono">{x}</span>)}
+        </div>
+        <span class="cover-os">macOS · Windows · Linux</span>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 02 · What it is, who it is for -->
+  <Slide n={2} deck={deck} label={{ en: 'What Testnizer is', tr: 'Testnizer nedir' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="What it is" tr="Nedir" /></p>
+      <h2 class="title anim" style="--i:1"><T en="One desktop app for <span class='grad'>the whole API workbench.</span>" tr="Tüm API tezgâhı için <span class='grad'>tek bir masaüstü uygulaması.</span>" /></h2>
+      <p class="lead anim" style="--i:2"><T en="Testnizer is a free desktop client for macOS, Windows and Linux. It runs entirely on your computer: nothing to sign up for, no server to install, no cloud in between." tr="Testnizer; macOS, Windows ve Linux için ücretsiz bir masaüstü istemcisidir. Tamamen bilgisayarınızda çalışır: kayıt olunacak bir şey yok, kurulacak sunucu yok, arada bulut yok." /></p>
+      <div class="content">
+        <div class="grid g3 pillars">
+          <div class="card anim" style="--i:2">
+            <span class="ic" set:html={icons.globe}></span>
+            <span class="kicker pillar-k"><T en="Test" tr="Test edin" /></span>
+            <h3><T en="APIs, MCP servers and LLMs" tr="API'ler, MCP sunucuları ve LLM'ler" /></h3>
+            <p><T en="REST, SOAP, GraphQL, gRPC and real-time protocols, an MCP client, and AI Chat across 14 providers — with scripts, tests and the Runner." tr="REST, SOAP, GraphQL, gRPC ve gerçek zamanlı protokoller, bir MCP istemcisi ve 14 sağlayıcıyla AI Chat — script'ler, testler ve Runner ile." /></p>
+          </div>
+          <div class="card anim" style="--i:3">
+            <span class="ic cyan" set:html={icons.server}></span>
+            <span class="kicker pillar-k"><T en="Mock" tr="Mock'layın" /></span>
+            <h3><T en="Every side of the conversation" tr="Konuşmanın her iki ucu" /></h3>
+            <p><T en="HTTP, SSE, AI (OpenAI and Anthropic APIs) and MCP mock servers on <b>127.0.0.1</b>, with the latency and failures you choose." tr="<b>127.0.0.1</b> üzerinde HTTP, SSE, AI (OpenAI ve Anthropic API'leri) ve MCP mock sunucuları; gecikme ve hatalar sizin seçiminiz." /></p>
+          </div>
+          <div class="card anim" style="--i:4">
+            <span class="ic ok" set:html={icons.shieldCheck}></span>
+            <span class="kicker pillar-k"><T en="Secure" tr="Güvenli kılın" /></span>
+            <h3><T en="The cryptography, on your machine" tr="Kriptografi, kendi makinenizde" /></h3>
+            <p><T en="Keystores, mTLS, JWT / JOSE, JWK, SAML, WS-Security, a TLS inspector and an MCP security scan — the private key never leaves the app." tr="Keystore'lar, mTLS, JWT / JOSE, JWK, SAML, WS-Security, TLS denetçisi ve MCP güvenlik taraması — özel anahtar uygulamadan çıkmaz." /></p>
+          </div>
+        </div>
+      </div>
+      <div class="row who anim" style="--i:5">
+        <div class="who-item"><span class="ic sm" set:html={icons.building}></span><p><T en="<b>Built for regulated teams</b> — banking, government, insurance and healthcare, where production credentials must never leave the machine." tr="<b>Düzenlemeye tabi ekipler için</b> — üretim kimlik bilgilerinin makineden asla çıkmaması gereken bankacılık, kamu, sigorta ve sağlık." /></p></div>
+        <div class="who-item"><span class="ic sm violet" set:html={icons.terminal}></span><p><T en="<b>And for every developer</b> — free, no sign-up, and your Postman collections and scripts come with you." tr="<b>Ve her geliştirici için</b> — ücretsiz, kayıt yok; Postman koleksiyonlarınız ve script'leriniz sizinle gelir." /></p></div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 03 · Why offline -->
+  <Slide n={3} deck={deck} label={{ en: 'Why offline', tr: 'Neden çevrimdışı' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Why offline" tr="Neden çevrimdışı" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Requests go to your targets. <span class='grad'>Nothing goes to us.</span>" tr="İstekler sizin hedeflerinize gider. <span class='grad'>Bize hiçbir şey gelmez.</span>" /></h2>
+      <div class="content" style="gap:56px">
+        <div class="diagram offline-dia anim" style="--i:2" aria-hidden="true">
+          <div class="machine"><span class="machine-label"><T en="Your computer" tr="Sizin bilgisayarınız" /></span></div>
+          <svg class="wires" viewBox="0 0 980 560" preserveAspectRatio="none">
+            <path d="M300 168 L380 250" class="live dash" />
+            <path d="M300 392 L380 310" class="live dash" />
+            <path d="M640 280 C 700 280, 700 110, 760 110" class="ok" />
+            <path d="M640 280 L760 280" class="ok" />
+            <path d="M640 280 C 700 280, 700 450, 760 450" class="ok" />
+          </svg>
+          <div class="node" style="left:34px;top:122px;width:266px"><span class="ic sm" set:html={icons.globe}></span><span><T en="Interface" tr="Arayüz" /><small>CSP connect-src 'self'</small></span></div>
+          <div class="node" style="left:34px;top:346px;width:266px"><span class="ic sm" set:html={icons.hardDrive}></span><span><T en="Local database" tr="Yerel veritabanı" /><small>SQLite · <T en="on your disk" tr="diskinizde" /></small></span></div>
+          <div class="node core" style="left:380px;top:206px;width:260px;height:148px"><span class="ic" set:html={icons.cpu}></span><span><T en="App core" tr="Uygulama çekirdeği" /><small><T en="every network call" tr="tüm ağ çağrıları" /></small></span></div>
+          <div class="node" style="left:760px;top:74px;width:220px"><span><T en="Your APIs" tr="API'leriniz" /></span></div>
+          <div class="node" style="left:760px;top:244px;width:220px"><span><T en="Your MCP servers" tr="MCP sunucularınız" /></span></div>
+          <div class="node" style="left:760px;top:414px;width:220px"><span><T en="Your LLM provider" tr="LLM sağlayıcınız" /></span></div>
+        </div>
+        <div class="col grow" style="gap:18px">
+          <div class="nope anim" style="--i:3"><span class="ic bad sm" set:html={icons.x}></span><span><T en="No account, no cloud login, no sync" tr="Hesap yok, bulut girişi yok, eşitleme yok" /></span></div>
+          <div class="nope anim" style="--i:4"><span class="ic bad sm" set:html={icons.x}></span><span><T en="No telemetry — there is no analytics endpoint" tr="Telemetri yok — bir analitik uç noktası hiç yok" /></span></div>
+          <div class="nope anim" style="--i:5"><span class="ic bad sm" set:html={icons.x}></span><span><T en="No background traffic from the interface" tr="Arayüzden arka planda trafik yok" /></span></div>
+          <p class="body-copy anim" style="--i:6;margin-top:10px"><T en="The interface cannot open a network connection of its own: every request runs in the app core and goes only where you send it. Workspaces, history, certificates and secrets live in one local database. The only request of its own is the update check, which you can turn off — air-gapped networks are supported." tr="Arayüz kendi başına ağ bağlantısı açamaz: her istek uygulama çekirdeğinde çalışır ve yalnız sizin gönderdiğiniz yere gider. Çalışma alanları, geçmiş, sertifikalar ve sırlar tek bir yerel veritabanında durur. Kendi yaptığı tek istek kapatılabilen güncelleme kontrolüdür — hava boşluklu ağlar desteklenir." /></p>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 04 · Protocols -->
+  <Slide n={4} deck={deck} label={{ en: 'Protocols', tr: 'Protokoller' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="One client, every protocol" tr="Tek istemci, tüm protokoller" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Eight API protocols, <span class='grad'>plus MCP and AI Chat.</span>" tr="Sekiz API protokolü, <span class='grad'>üstüne MCP ve AI Chat.</span>" /></h2>
+      <p class="lead anim" style="--i:2"><T en="Each one has its own editor, not a generic HTTP form — and they all share the project's environments and <code>{{variables}}</code> and save with <kbd>Ctrl/Cmd</kbd> <kbd>S</kbd>." tr="Her birinin kendi editörü var, genel bir HTTP formu değil — ve hepsi projenin ortamlarını ve <code>{{değişkenlerini}}</code> paylaşır, <kbd>Ctrl/Cmd</kbd> <kbd>S</kbd> ile kaydedilir." /></p>
+      <div class="content">
+        <div class="grid g5 proto-grid">
+          {protocols.map((pr, i) => (
+            <div class:list={['card tight anim', i >= 8 && 'hl']} style={`--i:${3 + i}`}>
+              <span class:list={['ic sm', i >= 8 && 'violet']} set:html={pr.icon}></span>
+              <h4>{pr.name}</h4>
+              <p>{isTr ? pr.tr : pr.en}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 05 · MCP client -->
+  <Slide n={5} deck={deck} label={{ en: 'MCP client', tr: 'MCP istemcisi' }}>
+    <div class="pad">
+      <div class="row grow" style="gap:60px;min-height:0">
+        <div class="col" style="width:720px;flex:none;gap:0">
+          <p class="eyebrow anim"><T en="AI &amp; MCP · the client" tr="Yapay zeka &amp; MCP · istemci" /></p>
+          <h2 class="title sm anim" style="--i:1"><T en="Everything an MCP server offers, <span class='grad'>in one tab.</span>" tr="Bir MCP sunucusunun sunduğu her şey, <span class='grad'>tek sekmede.</span>" /></h2>
+          <ul class="checks anim" style="--i:2;margin-top:34px">
+            <li><T en="<b>Streamable HTTP, legacy SSE or stdio</b> — for stdio, Testnizer starts the local server" tr="<b>Streamable HTTP, eski SSE ya da stdio</b> — stdio'da yerel sunucuyu Testnizer başlatır" /></li>
+            <li><T en="Protocol <b>2024-10-07 to 2026-07-28</b>: Auto, Legacy or a pinned version" tr="<b>2024-10-07'den 2026-07-28'e</b> protokol: Otomatik, Legacy ya da sabit sürüm" /></li>
+            <li><T en="Tool arguments as a <b>form built from the JSON Schema</b>; resources, prompts, notifications" tr="Araç argümanları <b>JSON Schema'dan üretilen formla</b>; kaynaklar, prompt'lar, bildirimler" /></li>
+            <li><T en="The <b>raw JSON-RPC frames</b>, handshake included" tr="El sıkışma dahil <b>ham JSON-RPC çerçeveleri</b>" /></li>
+            <li><T en="An <b>OAuth 2.1 debugger</b>: metadata, client registration, PKCE, sign-in and token exchange, step by step — tokens stay in the app core" tr="<b>OAuth 2.1 hata ayıklayıcı</b>: metadata, istemci kaydı, PKCE, oturum açma ve token değişimi adım adım — token'lar uygulama çekirdeğinde kalır" /></li>
+            <li><T en="Save calls with tests and scripts (<code>pm.mcp</code>) and run them in the <b>Runner</b>, a Test Suite or a schedule" tr="Çağrıları testler ve script'lerle (<code>pm.mcp</code>) kaydedin; <b>Runner</b>'da, bir Test Paketinde ya da zamanlanmış görevde çalıştırın" /></li>
+          </ul>
+        </div>
+        <div class="win grow anim mcp-win" style="--i:3" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span class="tabname"><span class="m mcp">MCP</span> Petstore MCP</span></div>
+          <div class="reqbar">
+            <span class="method-sel">Streamable HTTP</span>
+            <span class="method-sel"><T en="Auto" tr="Otomatik" /></span>
+            <span class="url">https://mcp.example.com/mcp</span>
+            <span class="send ghost"><T en="Disconnect" tr="Bağlantıyı Kes" /></span>
+          </div>
+          <div class="mcp-meta"><span class="pill accent mini-pill"><span class="dot"></span>MCP 2026-07-28</span><span>petstore-mcp 2.1.0</span></div>
+          <div class="mcp-split">
+            <div class="mcp-list">
+              <div class="tabs"><span class="on"><T en="Tools" tr="Araçlar" /><span class="count">4</span></span><span><T en="Resources" tr="Kaynaklar" /></span><span><T en="Prompts" tr="İstemler" /></span></div>
+              <ul class="tree tool-list">
+                <li class="sel"><span class="m mcp">ƒ</span>find_pet</li>
+                <li><span class="m mcp">ƒ</span>list_pets</li>
+                <li><span class="m mcp">ƒ</span>place_order</li>
+                <li><span class="m mcp">ƒ</span>get_inventory</li>
+              </ul>
+            </div>
+            <div class="mcp-explorer">
+              <div class="mcp-tool"><b>find_pet</b><span class="tag accent"><T en="read-only" tr="salt okunur" /></span></div>
+              <div class="mcp-field"><label>petId <em>integer</em></label><span>42</span></div>
+              <div class="mcp-actions"><span class="btn primary"><T en="Run" tr="Çalıştır" /></span><span class="metrics"><span class="ok">OK</span><span>212 ms</span><span>1.2 KB</span></span></div>
+              <pre class="code"><span class="p">{'{'}</span> <span class="k">"id"</span><span class="p">:</span> <span class="n">42</span><span class="p">,</span> <span class="k">"name"</span><span class="p">:</span> <span class="s">"Rex"</span><span class="p">,</span> <span class="k">"status"</span><span class="p">:</span> <span class="s">"available"</span> <span class="p">{'}'}</span></pre>
+            </div>
+          </div>
+          <div class="mcp-frames">
+            <div class="tabs"><span><T en="Notifications" tr="Bildirimler" /></span><span class="on"><T en="Frames" tr="Çerçeveler" /></span></div>
+            <div class="log frames">
+              <div><span class="t">10:42:07</span><span class="dir out">→</span><span>tools/call <span class="p">{'{'}"name":"find_pet","arguments":{'{'}"petId":42{'}}'}</span></span></div>
+              <div><span class="t">10:42:07</span><span class="dir in">←</span><span>result <span class="p">{'{'}"content":[{'{'}"type":"text",…{'}'}]{'}'}</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 06 · Security scan -->
+  <Slide n={6} deck={deck} label={{ en: 'MCP security scan', tr: 'MCP güvenlik taraması' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="AI &amp; MCP · security scan" tr="Yapay zeka &amp; MCP · güvenlik taraması" /></p>
+      <h2 class="title anim" style="--i:1"><T en="An A–F report on an MCP server, <span class='grad'>every finding with its evidence.</span>" tr="Bir MCP sunucusu için A–F notlu rapor, <span class='grad'>her bulgu kanıtıyla.</span>" /></h2>
+      <div class="content" style="gap:40px">
+        <div class="win anim scan-win" style="--i:2" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span><T en="Security · sample report" tr="Güvenlik · örnek rapor" /></span><span class="right"><span class="btn"><T en="Save HTML report…" tr="HTML raporu kaydet…" /></span></span></div>
+          <div class="scan-head">
+            <span class="grade b">B</span>
+            <div class="col" style="gap:12px;flex:1;min-width:0">
+              <div class="scan-score"><b>86</b><span>/ 100</span><span class="tag violet">MCP 2026-07-28</span></div>
+              <div class="pills scan-counts"><span class="tag ok">27 <T en="passed" tr="başarılı" /></span><span class="tag warn">4 <T en="warnings" tr="uyarı" /></span><span class="tag bad">1 <T en="failed" tr="başarısız" /></span><span class="tag accent">1 <T en="info" tr="bilgi" /></span><span class="tag">2 <T en="skipped" tr="atlandı" /></span></div>
+            </div>
+          </div>
+          <div class="findings">
+            {scanCats.map((c) => (
+              <div>
+                <span>{isTr ? c.tr : c.en}</span>
+                {c.c === 'skip'
+                  ? <span class="tag skip-tag"><T en="active probes off" tr="etkin yoklama kapalı" /></span>
+                  : <span class="bar"><i class:list={['bar-fill', c.c]} style={`width:${c.v}%`}></i></span>}
+                <span class="sc">{c.c === 'skip' ? '—' : c.v}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div class="col grow" style="gap:20px">
+          <div class="row" style="gap:20px">
+            <div class="card tight anim stat" style="--i:3;flex:1"><span class="v">30</span><span class="l"><T en="checks in eight categories" tr="kontrol, sekiz kategoride" /></span></div>
+            <div class="card tight anim stat" style="--i:4;flex:1"><span class="v">+6</span><span class="l"><T en="for servers that speak 2026&#8209;07&#8209;28" tr="2026&#8209;07&#8209;28 konuşan sunucular için" /></span></div>
+          </div>
+          <div class="card tight anim" style="--i:5">
+            <h4><T en="How the grade is computed" tr="Not nasıl hesaplanır" /></h4>
+            <p><T en="The score starts at 100. A failed check subtracts its severity weight (critical 25, high 15, medium 8, low 3); a warning subtracts half." tr="Puan 100'den başlar. Başarısız bir kontrol önem ağırlığını düşer (kritik 25, yüksek 15, orta 8, düşük 3); uyarı bunun yarısını düşer." /></p>
+            <div class="scale" style="margin-top:16px"><span>A<small>≥ 90</small></span><span class="on">B<small>≥ 80</small></span><span>C<small>≥ 65</small></span><span>D<small>≥ 50</small></span><span>F<small>&lt; 50</small></span></div>
+          </div>
+          <div class="note anim" style="--i:6"><span class="ni" set:html={icons.shieldCheck}></span><span><T en="Runs from your computer against the server you point it at; no AI model is involved and credentials are scrubbed from every finding. The report is one self-contained HTML file. <b>Scan only servers you are authorized to test.</b>" tr="Bilgisayarınızdan, yalnız gösterdiğiniz sunucuya karşı çalışır; işin içinde yapay zeka modeli yoktur ve kimlik bilgileri her bulgudan silinir. Rapor tek, kendi kendine yeten bir HTML dosyasıdır. <b>Yalnızca test etmeye yetkili olduğunuz sunucuları tarayın.</b>" /></span></div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 07 · AI Chat with MCP tools -->
+  <Slide n={7} deck={deck} label={{ en: 'AI Chat with MCP tools', tr: 'MCP araçlarıyla AI Chat' }}>
+    <div class="pad">
+      <div class="row grow" style="gap:60px;min-height:0">
+        <div class="win anim chat-win" style="--i:2" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span class="tabname"><span class="m mcp">AI</span> <T en="AI Chat · Anthropic" tr="AI Sohbet · Anthropic" /></span><span class="right"><span class="tag"><T en="Tools: petstore-mcp" tr="Araçlar: petstore-mcp" /></span></span></div>
+          <div class="chat">
+            <div class="bubble user"><T en="Is pet 42 still available? Use the Petstore tools." tr="42 numaralı hayvan hâlâ satışta mı? Petstore araçlarını kullan." /></div>
+            <div class="approval">
+              <div class="t"><span class="ni" set:html={icons.shieldCheck}></span><T en="The model wants to call a tool" tr="Model bir araç çağırmak istiyor" /></div>
+              <div class="approval-meta">petstore-mcp · <b>find_pet</b></div>
+              <div class="args">{'{ "petId": 42 }'}</div>
+              <div class="btns"><span class="btn primary"><T en="Allow once" tr="Bir kez izin ver" /></span><span class="btn"><T en="Allow this tool for this conversation" tr="Bu konuşma boyunca bu araca izin ver" /></span><span class="btn danger"><T en="Deny" tr="Reddet" /></span></div>
+            </div>
+            <div class="bubble bot"><T en="Yes — <b>Rex</b> (id 42) is listed as <b>available</b>." tr="Evet — <b>Rex</b> (id 42) <b>satışta</b> görünüyor." /></div>
+            <div class="metrics"><span class="ok">200</span><span>TTFB 0.41 s</span><span>Total 1.86 s</span><span>tokens 1,240</span><span><T en="2 model calls" tr="2 model çağrısı" /></span></div>
+          </div>
+        </div>
+        <div class="col" style="width:720px;flex:none;gap:0">
+          <p class="eyebrow anim"><T en="AI &amp; MCP · AI Chat" tr="Yapay zeka &amp; MCP · AI Chat" /></p>
+          <h2 class="title sm anim" style="--i:1"><T en="A chat client that calls your MCP tools — <span class='grad'>after you say yes.</span>" tr="MCP araçlarınızı çağıran bir sohbet istemcisi — <span class='grad'>siz evet dedikten sonra.</span>" /></h2>
+          <ul class="checks anim" style="--i:3;margin-top:34px">
+            <li><T en="<b>14 providers</b> plus a custom URL — OpenAI-compatible or Anthropic; Ollama and LM Studio work too" tr="<b>14 sağlayıcı</b> artı özel URL — OpenAI uyumlu ya da Anthropic; Ollama ve LM Studio da çalışır" /></li>
+            <li><T en="<b>Every tool call asks first</b> by default. “Run tools without asking” lasts for the open tab only and is never saved" tr="<b>Her araç çağrısı varsayılan olarak önce sorar.</b> “Araçları sormadan çalıştır” yalnız açık sekme için geçerlidir, asla kaydedilmez" /></li>
+            <li><T en="Each reply shows <b>status, time to first token, duration and token usage</b> — “not reported” when the provider says nothing, never 0" tr="Her yanıt <b>durumu, ilk token süresini, toplam süreyi ve token kullanımını</b> gösterir — sağlayıcı bildirmezse “bildirilmedi”, asla 0" /></li>
+            <li><T en="API keys are <b>encrypted per provider</b> with the operating system's key store" tr="API anahtarları işletim sisteminin anahtar deposuyla <b>sağlayıcı başına şifrelenir</b>" /></li>
+            <li><T en="Conversations stay <b>on this computer</b>, masked when written — never exported or committed" tr="Sohbetler <b>bu bilgisayarda</b> kalır, yazılırken maskelenir — asla dışa aktarılmaz ya da commit edilmez" /></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 08 · Mock servers -->
+  <Slide n={8} deck={deck} label={{ en: 'Mock servers', tr: 'Mock sunucular' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Mock servers" tr="Mock sunucular" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Mock the API, the stream, the model <span class='grad'>and the tools.</span>" tr="API'yi, akışı, modeli <span class='grad'>ve araçları mock'layın.</span>" /></h2>
+      <p class="lead anim" style="--i:2"><T en="Real servers inside the app, on <code>127.0.0.1</code> by default. Build and test a client or an agent <b>without a provider key, without spending tokens and without a network.</b>" tr="Uygulamanın içinde, varsayılan olarak <code>127.0.0.1</code> üzerinde çalışan gerçek sunucular. Bir istemciyi ya da ajanı <b>sağlayıcı anahtarı olmadan, token harcamadan ve ağ olmadan</b> geliştirin ve test edin." /></p>
+      <div class="content mock-content">
+        <div class="mock-clients anim" style="--i:3" aria-hidden="true">
+          <span class="client"><T en="Your frontend" tr="Ön yüzünüz" /></span>
+          <span class="client">curl · SDK</span>
+          <span class="client"><T en="Your agent" tr="Ajanınız" /></span>
+          <span class="client"><T en="Testnizer tabs" tr="Testnizer sekmeleri" /></span>
+        </div>
+        <div class="mock-arrow anim" style="--i:3" aria-hidden="true"><span>127.0.0.1</span></div>
+        <div class="grid g4 grow mock-grid">
+          <div class="card tight anim" style="--i:4"><span class="tag accent">HTTP</span><h4><T en="Rule-based endpoints" tr="Kural tabanlı uç noktalar" /></h4><p><T en="Conditions, templating, scripts, auth, schema validation, failure injection, rate limits, a recording proxy." tr="Koşullar, şablonlar, script'ler, auth, şema doğrulama, hata enjeksiyonu, hız sınırı, kayıt yapan proxy." /></p></div>
+          <div class="card tight anim" style="--i:5"><span class="tag ok">SSE</span><h4><T en="An event stream you define" tr="Tanımladığınız olay akışı" /></h4><p><T en="Interval, heartbeat, loop, <code>Last-Event-ID</code> resume, and an error after N events." tr="Aralık, heartbeat, döngü, <code>Last-Event-ID</code> ile devam ve N olaydan sonra hata." /></p></div>
+          <div class="card tight anim" style="--i:6"><span class="tag violet">AI</span><h4><T en="OpenAI and Anthropic APIs" tr="OpenAI ve Anthropic API'leri" /></h4><p><T en="Streaming, token usage, tool-call round trips, 429 / 500 / 401, Anthropic 529 and failures mid-stream." tr="Akış, token kullanımı, araç çağrısı gidiş-dönüşü, 429 / 500 / 401, Anthropic 529 ve akış ortasında hata." /></p></div>
+          <div class="card tight anim" style="--i:7"><span class="tag warn">MCP</span><h4><T en="A local MCP server" tr="Yerel bir MCP sunucusu" /></h4><p><T en="Tools with JSON Schema, resources, prompts, bearer auth, latency, error scenarios; 2025 and 2026-07-28 clients." tr="JSON Schema'lı araçlar, kaynaklar, prompt'lar, bearer auth, gecikme, hata senaryoları; 2025 ve 2026-07-28 istemcileri." /></p></div>
+        </div>
+      </div>
+      <div class="win anim mock-log" style="--i:8" aria-hidden="true">
+        <div class="log" style="--log-cols:110px 80px 1fr 90px 140px">
+          <div><span class="t">10:51:12</span><span class="m post">POST</span><span>/v1/chat/completions</span><span class="chip ok">200</span><span class="t"><T en="streaming…" tr="akış sürüyor…" /></span></div>
+          <div><span class="t">10:51:09</span><span class="m mcp">RPC</span><span>tools/call · echo</span><span class="chip ok">OK</span><span class="t">3 ms</span></div>
+          <div><span class="t">10:51:04</span><span class="m get">GET</span><span>/v2/pet/42</span><span class="chip bad">500</span><span class="t"><T en="injected" tr="enjekte" /></span></div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 09 · Runner, Test Suites, Scheduler -->
+  <Slide n={9} deck={deck} label={{ en: 'Runner, Test Suites and Scheduler', tr: 'Runner, Test Paketleri ve zamanlanmış görevler' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Automation" tr="Otomasyon" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Run a whole flow, <span class='grad'>clean up after it, keep the report.</span>" tr="Bütün bir akışı çalıştırın, <span class='grad'>ardını toplayın, raporu saklayın.</span>" /></h2>
+      <div class="content" style="gap:48px">
+        <div class="win anim run-win" style="--i:2" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span>Runner · Petstore</span><span class="right"><span class="btn"><T en="Export HTML" tr="HTML Dışarı Aktar" /></span></span></div>
+          <div class="run-summary"><span class="tag ok">4 <T en="passed" tr="başarılı" /></span><span class="tag bad">1 <T en="failed" tr="başarısız" /></span><span class="mono soft">2.3 s</span><span class="mono soft"><T en="env: staging" tr="ortam: staging" /></span></div>
+          <div class="runrow"><span class="ok-i">✓</span><span class="m post">POST</span><span>/auth/login</span><span class="phase">Setup</span><span class="ms">142 ms</span></div>
+          <div class="runrow"><span class="ok-i">✓</span><span class="m get">GET</span><span>/pet/findByStatus</span><span class="phase">Flow</span><span class="ms">208 ms</span></div>
+          <div class="runrow"><span class="ok-i">✓</span><span class="m post">POST</span><span>/store/order</span><span class="phase">Flow</span><span class="ms">231 ms</span></div>
+          <div class="runrow crit"><span class="bad-i">✗</span><span class="m get">GET</span><span>/store/order/<span class="var">{'{{orderId}}'}</span></span><span class="tag bad"><T en="Critical · stopped the run" tr="Kritik · koşuyu durdurdu" /></span><span class="ms">97 ms</span></div>
+          <div class="runrow"><span class="ok-i">✓</span><span class="m del">DELETE</span><span>/store/order/<span class="var">{'{{orderId}}'}</span></span><span class="phase">Teardown</span><span class="ms">88 ms</span></div>
+        </div>
+        <div class="col grow" style="gap:18px">
+          <div class="phases anim" style="--i:3"><span class="ph">Setup</span><span class="ph-arrow">→</span><span class="ph">Flow</span><span class="ph-arrow">→</span><span class="ph tear">Teardown <small><T en="always runs" tr="her zaman koşar" /></small></span></div>
+          <ul class="checks sm anim" style="--i:4">
+            <li><T en="<b>Iterations and data files</b> (CSV, JSON), with variables chained from one request to the next" tr="<b>Yinelemeler ve veri dosyaları</b> (CSV, JSON); değişkenler bir istekten diğerine aktarılır" /></li>
+            <li><T en="A <b>critical request</b> stops the run when it fails; the report names it" tr="<b>Kritik istek</b> başarısız olunca koşu durur; rapor onun adını verir" /></li>
+            <li><T en="<b>HTML and JSON reports</b> — one self-contained file, credentials masked" tr="<b>HTML ve JSON raporları</b> — tek, kendi kendine yeten dosya, kimlik bilgileri maskeli" /></li>
+            <li><T en="<b>Test Suites</b> span several collections and run module by module" tr="<b>Test Paketleri</b> birden çok koleksiyonu kapsar, modül modül koşar" /></li>
+            <li><T en="<b>Scheduled runs</b>: interval, daily, weekly or cron while the app is open; a <b>Run fail script</b> can post the report to a webhook" tr="<b>Zamanlanmış koşular</b>: uygulama açıkken aralık, günlük, haftalık ya da cron; <b>Run fail script</b> raporu bir webhook'a gönderebilir" /></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 10 · Postman compatibility -->
+  <Slide n={10} deck={deck} label={{ en: 'Postman compatibility', tr: 'Postman uyumluluğu' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Bring your work with you" tr="İşinizi yanınızda getirin" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Any Postman export comes in. <span class='grad'>Your project goes back out.</span>" tr="Her Postman dışa aktarımı içeri girer. <span class='grad'>Projeniz geri çıkar.</span>" /></h2>
+      <div class="content" style="flex-direction:column;align-items:stretch;justify-content:center;gap:28px">
+        <div class="io anim" style="--i:2">
+          <div class="io-col">
+            <span class="kicker"><T en="Import — recognised from the file" tr="İçe aktar — dosyadan tanınır" /></span>
+            <div class="pills">
+              {['Postman v1', 'v2.0', 'v2.1', 'v3 JSON', isTr ? 'v3 Native Git klasörü' : 'v3 Native Git folder', isTr ? 'Ortam' : 'Environment', isTr ? 'Globaller' : 'Globals', isTr ? 'Veri dökümü' : 'Data dump', '.zip'].map((x) => <span class="pill mono">{x}</span>)}
+            </div>
+          </div>
+          <div class="io-mid" aria-hidden="true"><span class="io-arrow">→</span><span class="logo-img lg"></span><span class="io-arrow">→</span></div>
+          <div class="io-col">
+            <span class="kicker"><T en="Export" tr="Dışa aktar" /></span>
+            <div class="pills">
+              {['Postman v2.1', 'Postman v3', 'OpenAPI 3', 'Insomnia', 'Testnizer JSON'].map((x) => <span class="pill mono accent">{x}</span>)}
+            </div>
+          </div>
+        </div>
+        <div class="grid g4">
+          <div class="card tight anim stat" style="--i:3"><span class="v sm">pm.*</span><span class="l"><T en="one script runtime — Send and Run behave the same" tr="tek script çalışma zamanı — Send ve Run aynı davranır" /></span></div>
+          <div class="card tight anim stat" style="--i:4"><span class="v">118</span><span class="l"><T en="Postman dynamic variables, <code>{{$randomEmail}}</code> …" tr="Postman dinamik değişkeni, <code>{{$randomEmail}}</code> …" /></span></div>
+          <div class="card tight anim stat" style="--i:5"><span class="v sm">cURL</span><span class="l"><T en="paste into the URL bar — bash, Windows CMD, PowerShell" tr="URL çubuğuna yapıştırın — bash, Windows CMD, PowerShell" /></span></div>
+          <div class="card tight anim stat" style="--i:6"><span class="v">36</span><span class="l"><T en="Generate Code variants" tr="Kod Oluştur varyantı" /></span></div>
+        </div>
+        <p class="body-copy anim" style="--i:7"><T en="Also imports OpenAPI 3.x, Swagger 2.0, Insomnia v4 / v5, WSDL, .proto, RAML 1.0, SoapUI / ReadyAPI and HAR. Every import ends with a report of what was converted, skipped or could not be carried — Kafka and Postman Data requests in a v3 collection are listed as skipped." tr="Ayrıca OpenAPI 3.x, Swagger 2.0, Insomnia v4 / v5, WSDL, .proto, RAML 1.0, SoapUI / ReadyAPI ve HAR içe aktarılır. Her içe aktarma; dönüştürülen, atlanan ve taşınamayanları listeleyen bir raporla biter — v3 koleksiyonundaki Kafka ve Postman Data istekleri atlandı olarak listelenir." /></p>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 11 · Security toolbox -->
+  <Slide n={11} deck={deck} label={{ en: 'Security toolbox', tr: 'Güvenlik araç kutusu' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Security toolbox" tr="Güvenlik araç kutusu" /></p>
+      <h2 class="title anim" style="--i:1"><T en="The crypto work you used to do in a terminal — <span class='grad'>or on a website.</span>" tr="Terminalde ya da bir web sitesinde yaptığınız kriptografi işi, <span class='grad'>artık uygulamanın içinde.</span>" /></h2>
+      <div class="content">
+        <div class="grid g4 tool-grid">
+          {tools.map((tl, i) => (
+            <div class="card tight anim" style={`--i:${2 + i}`}>
+              <span class:list={['ic sm', i % 4 === 1 && 'violet', i % 4 === 2 && 'cyan', i % 4 === 3 && 'ok']} set:html={tl.icon}></span>
+              <h4>{tl.name}</h4>
+              <p>{isTr ? tl.tr : tl.en}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p class="body-copy anim" style="--i:10;margin-top:24px"><T en="Everything runs in the app on your computer. A saved keystore supplies the key for mTLS, WS-Security, JWT and SAML — <b>the private key never leaves the app.</b>" tr="Her şey bilgisayarınızda, uygulamanın içinde çalışır. Kayıtlı bir keystore mTLS, WS-Security, JWT ve SAML için anahtarı sağlar — <b>özel anahtar uygulamadan çıkmaz.</b>" /></p>
+    </div>
+  </Slide>
+
+  <!-- 12 · Git teamwork -->
+  <Slide n={12} deck={deck} label={{ en: 'Teamwork through Git', tr: 'Git ile ekip çalışması' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Teamwork" tr="Ekip çalışması" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Your collections in your Git repo, <span class='grad'>reviewed like code.</span>" tr="Koleksiyonlarınız kendi Git deponuzda, <span class='grad'>kod gibi incelenir.</span>" /></h2>
+      <div class="content" style="gap:48px">
+        <div class="win anim commit-win" style="--i:2" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span><T en="Commit changes" tr="Değişiklikleri commit et" /></span><span class="right"><span class="tag">main · ↑1 ↓0</span></span></div>
+          <div class="commit-list">
+            <div><span class="box"></span><span class="tag ok"><T en="Added" tr="Eklendi" /></span><span><span class="m get">GET</span> /pet/<span class="var">{'{petId}'}</span>/photos</span></div>
+            <div><span class="box"></span><span class="tag warn"><T en="Modified" tr="Değiştirildi" /></span><span><T en="Environment" tr="Ortam" /> · staging</span></div>
+            <div><span class="box"></span><span class="tag warn"><T en="Modified" tr="Değiştirildi" /></span><span><T en="Test suite" tr="Test paketi" /> · Checkout flow</span></div>
+            <div><span class="box off"></span><span class="tag bad"><T en="Deleted" tr="Silindi" /></span><span><span class="m del">DELETE</span> /legacy/cart</span></div>
+          </div>
+          <div class="commit-msg"><T en="Add pet photos endpoint and staging variables" tr="Hayvan fotoğrafları uç noktası ve staging değişkenleri" /></div>
+          <div class="commit-btns"><span class="btn"><T en="Commit" tr="Commit et" /></span><span class="btn primary"><T en="Commit and push" tr="Commit et ve gönder" /></span></div>
+        </div>
+        <div class="col grow" style="gap:20px">
+          <ul class="checks anim" style="--i:3">
+            <li><T en="Each project maps to a <b>branch</b>; switch branches without a terminal" tr="Her proje bir <b>dala</b> karşılık gelir; terminalsiz dal değiştirin" /></li>
+            <li><T en="<b>Commit…, Pull, Push, Merge</b> from the branch menu, with ahead / behind counts" tr="Dal menüsünden <b>Commit et…, Çek, Gönder, Birleştir</b>; ileride / geride sayılarıyla" /></li>
+            <li><T en="A teammate's pull brings the <b>whole project</b>: project auth, scripts and settings" tr="Bir ekip arkadaşının çekmesi <b>tüm projeyi</b> getirir: proje auth'u, script'ler ve ayarlar" /></li>
+            <li><T en="<b>Secret values are written empty</b> in every committed file; a pull says how many are still empty on this machine" tr="<b>Sır değerleri</b> commit edilen her dosyaya <b>boş yazılır</b>; çekme, bu makinede kaç tanesinin hâlâ boş olduğunu söyler" /></li>
+            <li><T en="Scripts in a cloned project <b>do not run until you allow them</b> on this computer" tr="Klonlanan bir projedeki script'ler, bu bilgisayarda <b>siz izin verene kadar çalışmaz</b>" /></li>
+          </ul>
+          <p class="body-copy anim" style="--i:4"><T en="GitHub, GitLab, Bitbucket, Gitea or any Git server over HTTPS or SSH." tr="GitHub, GitLab, Bitbucket, Gitea ya da HTTPS veya SSH üzerinden herhangi bir Git sunucusu." /></p>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 13 · Privacy -->
+  <Slide n={13} deck={deck} label={{ en: 'Privacy', tr: 'Gizlilik' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Privacy" tr="Gizlilik" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Your secrets stay on this machine — <span class='grad'>on disk, in files and on screen.</span>" tr="Sırlarınız bu makinede kalır — <span class='grad'>diskte, dosyalarda ve ekranda.</span>" /></h2>
+      <div class="content" style="flex-direction:column;align-items:stretch;justify-content:center;gap:20px">
+        <div class="layer anim" style="--i:2"><span class="ic" set:html={icons.hardDrive}></span><div><h4><T en="At rest — encrypted" tr="Diskte — şifreli" /></h4><p><T en="Secret variables, mock credentials, certificate passphrases, Git tokens and AI keys are encrypted with the OS keychain (Keychain, DPAPI, libsecret). Where there is none — some Linux setups — they stay unencrypted and the app says so." tr="Gizli değişkenler, mock kimlik bilgileri, sertifika parolaları, Git token'ları ve AI anahtarları işletim sisteminin anahtarlığıyla (Keychain, DPAPI, libsecret) şifrelenir. Anahtarlık olmayan yerde — bazı Linux kurulumları — şifresiz kalır ve uygulama bunu söyler." /></p></div></div>
+        <div class="layer anim" style="--i:3"><span class="ic violet" set:html={icons.fileJson}></span><div><h4><T en="In files — left out" tr="Dosyalarda — dışarıda bırakılır" /></h4><p><T en="Secret values are written empty in every Git commit, project file and export, and a pull or import never overwrites your local value." tr="Sır değerleri her Git commit'inde, proje dosyasında ve dışa aktarımda boş yazılır; çekme ya da içe aktarma yerel değerinizi asla ezmez." /></p></div></div>
+        <div class="layer anim" style="--i:4"><span class="ic ok" set:html={icons.eyeOff}></span><div><h4><T en="On screen and in logs — masked" tr="Ekranda ve günlüklerde — maskeli" /></h4><p><T en="Credential headers, fields and secret values are masked in History, the Console, run reports and mock logs before anything is stored or shown." tr="Kimlik bilgisi başlıkları, alanları ve sır değerleri; Geçmiş'te, Konsol'da, koşu raporlarında ve mock günlüklerinde, saklanmadan ya da gösterilmeden önce maskelenir." /></p></div></div>
+        <div class="pills anim" style="--i:5;margin-top:6px">
+          <span class="pill"><span class="dot"></span><T en="No telemetry" tr="Telemetri yok" /></span>
+          <span class="pill"><span class="dot"></span><T en="No account" tr="Hesap yok" /></span>
+          <span class="pill"><span class="dot"></span><T en="Optional app password — a lock on launch, not database encryption" tr="İsteğe bağlı uygulama parolası — açılışta kilit, veritabanı şifrelemesi değil" /></span>
+          <span class="pill"><span class="dot"></span><T en="A database backup when a new version first starts" tr="Yeni sürüm ilk açıldığında veritabanı yedeği" /></span>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 14 · Platforms -->
+  <Slide n={14} deck={deck} label={{ en: 'Platforms and download', tr: 'Platformlar ve indirme' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="Platforms" tr="Platformlar" /></p>
+      <h2 class="title anim" style="--i:1"><T en="macOS, Windows and Linux. <span class='grad'>Free.</span>" tr="macOS, Windows ve Linux. <span class='grad'>Ücretsiz.</span>" /></h2>
+      <div class="content">
+        <div class="grid g3 os-grid">
+          <div class="card anim" style="--i:2"><span class="ic" set:html={icons.apple}></span><h3>macOS</h3><p><T en="Apple Silicon and Intel. Signed with an Apple Developer ID and notarized. <b>macOS 13 Ventura or later.</b>" tr="Apple Silicon ve Intel. Apple Developer ID ile imzalı ve notarize edilmiş. <b>macOS 13 Ventura veya üstü.</b>" /></p><div class="pills os-pills"><span class="pill mono">arm64</span><span class="pill mono">x64</span></div></div>
+          <div class="card anim" style="--i:3"><span class="ic cyan" set:html={icons.windows}></span><h3>Windows</h3><p><T en="x64 and arm64. The installer is code-signed." tr="x64 ve arm64. Kurulum dosyası kod imzalıdır." /></p><div class="pills os-pills"><span class="pill mono">x64</span><span class="pill mono">arm64</span></div></div>
+          <div class="card anim" style="--i:4"><span class="ic ok" set:html={icons.linux}></span><h3>Linux</h3><p><T en="Debian / Ubuntu packages and AppImage, x64 and arm64." tr="Debian / Ubuntu paketleri ve AppImage, x64 ve arm64." /></p><div class="pills os-pills"><span class="pill mono">deb</span><span class="pill mono">AppImage</span><span class="pill mono">x64</span><span class="pill mono">arm64</span></div></div>
+        </div>
+      </div>
+      <div class="row anim" style="--i:5;gap:24px;align-items:center;margin-top:26px">
+        <a class="cta" href={p('/download')}><span set:html={icons.download}></span><T en="Download Testnizer" tr="Testnizer'ı indirin" /></a>
+        <span class="body-copy"><T en="No account, no subscription. The source code is on GitHub under the MIT License." tr="Hesap yok, abonelik yok. Kaynak kodu MIT Lisansı ile GitHub'da." /></span>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 15 · Closing -->
+  <Slide n={15} deck={deck} bare label={{ en: 'Get started', tr: 'Başlayın' }} class="cover">
+    <div class="glow-bg"></div>
+    <div class="dots-bg"></div>
+    <div class="pad close-pad">
+      <span class="wordmark anim"><i class="logo-img lg"></i>Testnizer</span>
+      <h2 class="cover-title close-title anim" style="--i:1"><T en="The offline API and AI client that also does <span class='grad'>your security work.</span>" tr="Çevrimdışı API ve yapay zeka istemcisi, <span class='grad'>güvenlik işinizi de yapar.</span>" /></h2>
+      <div class="row anim" style="--i:2;gap:18px;flex-wrap:wrap;justify-content:center">
+        <a class="cta" href={p('/download')}><span set:html={icons.download}></span><T en="Download" tr="İndir" /></a>
+        <a class="cta ghost" href={p('/resources/presentations/testnizer-getting-started/')}><T en="Getting started deck" tr="Başlarken sunumu" /><span set:html={icons.arrowRight}></span></a>
+        <a class="cta ghost" href={p('/docs/getting-started')}><T en="Read the docs" tr="Dokümantasyonu okuyun" /><span set:html={icons.arrowRight}></span></a>
+      </div>
+      <p class="close-links anim" style="--i:3"><span class="mono">testnizer.com</span> · <a href="https://github.com/apinizer/testnizer" target="_blank" rel="noopener" class="mono">github.com/apinizer/testnizer</a> · <T en="A free project by Apinizer" tr="Apinizer'ın ücretsiz bir projesi" /></p>
+    </div>
+  </Slide>
+
+</DeckLayout>

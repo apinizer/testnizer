@@ -1,0 +1,592 @@
+---
+/**
+ * Testnizer getting-started (training) deck. Every step slide answers three
+ * questions — what you do, where you click, what you will see — and every
+ * step can be followed as written on a fresh install: the first requests go
+ * to httpbin.org (as in the Getting started guide), and the mock, MCP,
+ * security scan and AI Chat steps run against Testnizer's own local mock
+ * servers, so no provider key, token or third-party server is needed.
+ *
+ * Button names are the app's own labels (src/renderer/lib/i18n.ts) in both
+ * languages. Mock panels are sketches with sample data; the REST example
+ * endpoints are the real preset (components/mock/mock-http-presets.ts).
+ */
+import DeckLayout from './DeckLayout.astro'
+import Slide from './Slide.astro'
+import T from './T.astro'
+import { icons } from '../icons'
+import { langOf } from '../../lib/presentations'
+
+const deck = 'testnizer-getting-started'
+const isTr = langOf(Astro.url.pathname) === 'tr'
+const p = (href: string): string => (isTr ? `/tr${href}` : href)
+const STEPS = 14
+
+const ico = {
+  target: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></svg>`,
+  pointer: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 4 7.07 17 2.51-7.39L21 11.07z"/></svg>`,
+  eye: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>`,
+}
+const K = {
+  do: isTr ? 'Ne yapacaksınız' : 'What you do',
+  click: isTr ? 'Nereye tıklayacaksınız' : 'Where you click',
+  see: isTr ? 'Ne göreceksiniz' : 'What you will see',
+}
+const stepNo = (n: number): string => `${String(n).padStart(2, '0')} / ${STEPS}`
+
+const agenda = [
+  { en: 'Install and create a project', tr: 'Kurun ve proje oluşturun', sen: 'macOS · Windows · Linux', str: 'macOS · Windows · Linux' },
+  { en: 'Send your first request', tr: 'İlk isteğinizi gönderin', sen: 'httpbin.org', str: 'httpbin.org' },
+  { en: 'Environments and {{variables}}', tr: 'Ortamlar ve {{değişkenler}}', sen: 'one value, every request', str: 'tek değer, her istek' },
+  { en: 'Authorization', tr: 'Yetkilendirme', sen: 'Bearer token, inherited', str: 'Bearer token, miras' },
+  { en: 'Scripts and tests', tr: "Script'ler ve testler", sen: 'pm.test, assertions', str: 'pm.test, doğrulamalar' },
+  { en: 'Run a folder, export the report', tr: 'Klasörü çalıştırın, raporu alın', sen: 'Runner · HTML', str: 'Runner · HTML' },
+  { en: 'An HTTP mock server', tr: 'Bir HTTP mock sunucu', sen: '127.0.0.1:3001', str: '127.0.0.1:3001' },
+  { en: 'An MCP mock server, connected', tr: 'Bir MCP mock sunucu, bağlı', sen: 'Echo preset', str: 'Echo hazır ayarı' },
+  { en: 'Call an MCP tool', tr: 'Bir MCP aracı çağırın', sen: 'echo · pm.mcp', str: 'echo · pm.mcp' },
+  { en: 'Scan the MCP server', tr: 'MCP sunucusunu tarayın', sen: 'A–F report', str: 'A–F rapor' },
+  { en: 'AI Chat with MCP tools', tr: 'MCP araçlarıyla AI Chat', sen: 'no API key', str: 'API anahtarı yok' },
+  { en: 'Import from Postman', tr: "Postman'den içe aktarın", sen: 'file, folder or .zip', str: 'dosya, klasör ya da .zip' },
+  { en: 'Work as a team with Git', tr: 'Git ile ekip olarak çalışın', sen: 'commit, push, pull', str: 'commit, push, pull' },
+  { en: 'Shortcuts and tips', tr: 'Kısayollar ve ipuçları', sen: 'Cmd/Ctrl + …', str: 'Cmd/Ctrl + …' },
+]
+
+const shortcuts = [
+  { k: ['Ctrl/Cmd', 'Enter'], en: 'Run the active request', tr: 'Etkin isteği çalıştır' },
+  { k: ['Ctrl/Cmd', 'S'], en: 'Save the request', tr: 'İsteği kaydet' },
+  { k: ['Ctrl/Cmd', 'K'], en: 'Command palette', tr: 'Komut paleti' },
+  { k: ['?'], en: 'Every shortcut, on one sheet', tr: 'Tüm kısayollar tek sayfada' },
+  { k: ['Ctrl/Cmd', 'N'], en: 'New request tab', tr: 'Yeni istek sekmesi' },
+  { k: ['Ctrl/Cmd', 'L'], en: 'Focus the URL bar', tr: 'URL çubuğuna odaklan' },
+  { k: ['Ctrl/Cmd', 'B'], en: 'Show or hide the sidebar', tr: 'Kenar çubuğunu aç / kapat' },
+  { k: ['Ctrl/Cmd', 'Alt', 'C'], en: 'Show or hide the Console', tr: "Konsol'u aç / kapat" },
+  { k: ['Ctrl/Cmd', 'O'], en: 'Import', tr: 'İçeri Aktar' },
+  { k: ['Ctrl/Cmd', ','], en: 'Settings', tr: 'Ayarlar' },
+]
+
+const next = [
+  { href: '/docs/getting-started', icon: icons.fileText, en: 'Getting started', tr: 'Başlarken' },
+  { href: '/docs/variables', icon: icons.hash, en: 'Variables and environments', tr: 'Değişkenler ve ortamlar' },
+  { href: '/docs/scripts', icon: icons.terminal, en: 'Scripts — the pm.* API', tr: "Script'ler — pm.* API'si" },
+  { href: '/docs/cli-and-automation', icon: icons.repeat, en: 'Runner, Test Suites, schedules', tr: 'Runner, Test Paketleri, zamanlama' },
+  { href: '/docs/mock-server', icon: icons.server, en: 'Mock servers', tr: 'Mock sunucular' },
+  { href: '/docs/protocols/mcp', icon: icons.plug, en: 'MCP client and security scan', tr: 'MCP istemcisi ve güvenlik taraması' },
+  { href: '/docs/protocols/ai-chat', icon: icons.bot, en: 'AI Chat', tr: 'AI Chat' },
+  { href: '/docs/import-formats', icon: icons.download, en: 'Import formats', tr: 'İçe aktarma biçimleri' },
+  { href: '/docs/git-branches', icon: icons.gitBranch, en: 'Git and branches', tr: 'Git ve dallar' },
+]
+---
+
+<DeckLayout slug={deck}>
+
+  <!-- 01 · Cover -->
+  <Slide n={1} deck={deck} bare label={{ en: 'Cover', tr: 'Kapak' }} class="cover">
+    <div class="glow-bg"></div>
+    <div class="dots-bg"></div>
+    <div class="pad">
+      <div class="cover-top anim">
+        <span class="wordmark"><i class="logo-img lg"></i>Testnizer</span>
+        <span class="cover-meta"><T en="Training · hands-on · v1.6.0" tr="Eğitim · uygulamalı · v1.6.0" /></span>
+      </div>
+      <div class="cover-main">
+        <div class="cover-copy" style="width:1180px">
+          <p class="eyebrow anim" style="--i:1"><T en="Getting started" tr="Başlarken" /></p>
+          <h1 class="cover-title anim" style="--i:2;margin-top:20px"><T en="From install to your first <span class='grad'>MCP tool call</span> — step by step." tr="Kurulumdan ilk <span class='grad'>MCP araç çağrınıza</span> — adım adım." /></h1>
+          <p class="lead anim" style="--i:3"><T en="Fourteen short steps. Each one says <b>what you do</b>, <b>where you click</b> and <b>what you will see</b>. After the first requests everything runs on your own machine — no account, no API key, no tokens spent." tr="On dört kısa adım. Her biri <b>ne yapacağınızı</b>, <b>nereye tıklayacağınızı</b> ve <b>ne göreceğinizi</b> söyler. İlk isteklerden sonrası tamamen kendi makinenizde çalışır — hesap yok, API anahtarı yok, harcanan token yok." /></p>
+        </div>
+      </div>
+      <div class="cover-foot anim" style="--i:4">
+        <div class="pills">
+          <span class="pill"><T en="≈ 60–90 minutes" tr="≈ 60–90 dakika" /></span>
+          <span class="pill">Testnizer 1.6.0</span>
+          <span class="pill">macOS 13+ · Windows · Linux</span>
+        </div>
+        <span class="cover-os"><T en="Press <kbd>→</kbd> to start" tr="Başlamak için <kbd>→</kbd>" /></span>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 02 · Agenda -->
+  <Slide n={2} deck={deck} label={{ en: 'The fourteen steps', tr: 'On dört adım' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="The plan" tr="Plan" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Fourteen steps, <span class='grad'>each one a few minutes.</span>" tr="On dört adım, <span class='grad'>her biri birkaç dakika.</span>" /></h2>
+      <div class="content">
+        <div class="agenda anim" style="--i:2">
+          {agenda.map((a) => <div><span>{isTr ? a.tr : a.en}<small>{isTr ? a.str : a.sen}</small></span></div>)}
+        </div>
+      </div>
+      <p class="body-copy anim" style="--i:3;margin-top:22px"><T en="You need Testnizer 1.6.0 and an internet connection for steps 2–4 (they call <code>httpbin.org</code>). Everything from step 7 on talks to servers that Testnizer itself runs on <code>127.0.0.1</code>." tr="Testnizer 1.6.0 ve 2–4. adımlar için internet bağlantısı gerekir (<code>httpbin.org</code>'u çağırırlar). 7. adımdan sonrası, Testnizer'ın kendisinin <code>127.0.0.1</code> üzerinde çalıştırdığı sunucularla konuşur." /></p>
+    </div>
+  </Slide>
+
+  <!-- 03 · Step 1 · Install -->
+  <Slide n={3} deck={deck} label={{ en: 'Step 1 — Install and create a project', tr: '1. adım — Kurun ve proje oluşturun' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(1)}</span><T en="Install" tr="Kurulum" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Install Testnizer and create a project." tr="Testnizer'ı kurun ve bir proje oluşturun." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Download the build for your system from <b>testnizer.com/download</b>, install it and open it. Then create the project this training works in." tr="Sisteminize uygun sürümü <b>testnizer.com/download</b> adresinden indirin, kurun ve açın. Sonra bu eğitimin içinde çalışacağı projeyi oluşturun." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="Home" tr="Ana Sayfa" /></span></li><li><span class="ui"><T en="New Project" tr="Yeni Proje" /></span></li><li><span class="ui"><T en="Create New" tr="Yeni Oluştur" /></span></li><li><code>Petstore</code></li><li><span class="ui primary"><T en="Create" tr="Oluştur" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="An empty project. The rail on the left: <b>APIs, Tests, Mocks, History, Tools, Security</b> and <b>Settings</b> at the bottom. No sign-up screen — there is no account." tr="Boş bir proje. Soldaki şerit: <b>API'ler, Testler, Mock'lar, Geçmiş, Araçlar, Güvenlik</b> ve en altta <b>Ayarlar</b>. Kayıt ekranı yok — hesap diye bir şey yok." /></p></div></div>
+        </div>
+        <div class="col grow anim" style="--i:3;gap:22px;justify-content:center">
+          <div class="win" aria-hidden="true">
+            <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span><T en="New Project" tr="Yeni Proje Oluştur" /></span></div>
+            <div class="np-body">
+              <div class="np-sources">
+                <div class="np-src on"><span class="ic sm" set:html={icons.sparkles}></span><b><T en="Create New" tr="Yeni Oluştur" /></b></div>
+                <div class="np-src"><span class="ic sm violet" set:html={icons.gitBranch}></span><b><T en="Clone from Git" tr="Git'ten Klonla" /></b></div>
+                <div class="np-src"><span class="ic sm cyan" set:html={icons.hardDrive}></span><b><T en="Open Local" tr="Yerel Aç" /></b></div>
+              </div>
+              <div class="mcp-field"><label><T en="Project Name *" tr="Proje Adı *" /></label><span>Petstore</span></div>
+              <div class="np-actions"><span class="btn primary"><T en="Create" tr="Oluştur" /></span></div>
+            </div>
+          </div>
+          <div class="card tight">
+            <span class="kicker"><T en="Where your data lives" tr="Verileriniz nerede durur" /></span>
+            <div class="paths">
+              <div><b>macOS</b><code>~/Library/Application Support/Testnizer/</code></div>
+              <div><b>Windows</b><code>%APPDATA%\Testnizer\</code></div>
+              <div><b>Linux</b><code>~/.config/Testnizer/</code></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 04 · Step 2 · First request -->
+  <Slide n={4} deck={deck} label={{ en: 'Step 2 — Send your first request', tr: '2. adım — İlk isteğinizi gönderin' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(2)}</span><T en="First request" tr="İlk istek" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Send your first request." tr="İlk isteğinizi gönderin." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Open an HTTP tab, call a public echo service, read the answer — then save it with <kbd>Ctrl/Cmd</kbd> <kbd>S</kbd> into a new folder called <b>httpbin</b>." tr="Bir HTTP sekmesi açın, herkese açık bir yankı servisini çağırın, yanıtı okuyun — sonra <kbd>Ctrl/Cmd</kbd> <kbd>S</kbd> ile <b>httpbin</b> adlı yeni bir klasöre kaydedin." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui">+ <T en="New" tr="Yeni" /></span></li><li><span class="ui">HTTP</span></li><li><span class="ui">GET</span></li><li><code>https://httpbin.org/get</code></li><li><span class="ui primary"><T en="Send" tr="Gönder" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="Status, time and size above the response, the JSON body and the headers. The <b>Console</b> (<kbd>Ctrl/Cmd</kbd> <kbd>Alt</kbd> <kbd>C</kbd>) shows the raw request and response." tr="Yanıtın üstünde durum, süre ve boyut; JSON gövdesi ve başlıklar. <b>Konsol</b> (<kbd>Ctrl/Cmd</kbd> <kbd>Alt</kbd> <kbd>C</kbd>) ham istek ve yanıtı gösterir." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span class="tabname"><span class="m get">GET</span> httpbin</span></div>
+          <div class="reqbar"><span class="method-sel"><span class="m get">GET</span></span><span class="url">https://httpbin.org/get</span><span class="send"><T en="Send" tr="Gönder" /></span></div>
+          <div class="tabs"><span><T en="Params" tr="Parametreler" /></span><span><T en="Authorization" tr="Yetkilendirme" /></span><span><T en="Headers" tr="Başlıklar" /></span><span><T en="Body" tr="Gövde" /></span><span><T en="Scripts" tr="Betikler" /></span><span><T en="Tests" tr="Testler" /></span></div>
+          <div class="status-row" style="margin-top:8px"><span class="chip ok">200 OK</span><span class="mono">312 ms</span><span class="mono">0.3 KB</span></div>
+          <div class="tabs"><span class="on"><T en="Body" tr="Gövde" /></span><span><T en="Cookies" tr="Çerezler" /></span><span><T en="Headers" tr="Başlıklar" /><span class="count">9</span></span><span><T en="Test Results" tr="Test Sonuçları" /></span></div>
+          <pre class="code"><span class="p">{'{'}</span>
+  <span class="k">"args"</span><span class="p">: {'{}'},</span>
+  <span class="k">"headers"</span><span class="p">: {'{'}</span>
+    <span class="k">"Accept"</span><span class="p">:</span> <span class="s">"*/*"</span><span class="p">,</span>
+    <span class="k">"Host"</span><span class="p">:</span> <span class="s">"httpbin.org"</span><span class="p">,</span>
+    <span class="k">"User-Agent"</span><span class="p">:</span> <span class="s">"Testnizer/1.6.0"</span>
+  <span class="p">{'},'}</span>
+  <span class="k">"url"</span><span class="p">:</span> <span class="s">"https://httpbin.org/get"</span>
+<span class="p">{'}'}</span></pre>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 05 · Step 3 · Environments -->
+  <Slide n={5} deck={deck} label={{ en: 'Step 3 — Environments and variables', tr: '3. adım — Ortamlar ve değişkenler' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(3)}</span><T en="Environments" tr="Ortamlar" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Put the host and the token in an environment." tr="Host'u ve token'ı bir ortama koyun." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Create an environment with <code>baseUrl</code> = <code>https://httpbin.org</code> and <code>token</code> = <code>sk-demo-1234</code> (type <b>secret</b>), make it active, and change the URL to <code>{{baseUrl}}/get</code>." tr="<code>baseUrl</code> = <code>https://httpbin.org</code> ve <code>token</code> = <code>sk-demo-1234</code> (tür: <b>gizli</b>) içeren bir ortam oluşturun, aktif yapın ve URL'yi <code>{{baseUrl}}/get</code> olarak değiştirin." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><T en="environment selector, right end of the tab bar" tr="sekme çubuğunun sağ ucundaki ortam seçici" /></li><li><span class="ui"><T en="Manage Environments" tr="Ortamları Yönet" /></span></li><li><span class="ui"><T en="New Environment" tr="Yeni Ortam" /></span></li><li><span class="ui"><T en="Add Variable" tr="Değişken Ekle" /></span></li><li><span class="ui primary"><T en="Set Active" tr="Aktif Yap" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="The same response as before — the variable is resolved when you send. The secret is masked in History and the Console, encrypted on disk where the OS has a keychain, and left out of Git commits and exports." tr="Öncekiyle aynı yanıt — değişken gönderirken çözülür. Gizli değer Geçmiş'te ve Konsol'da maskelenir, işletim sisteminde anahtarlık varsa diskte şifrelenir; Git commit'lerine ve dışa aktarımlara girmez." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span><T en="Manage Environments" tr="Ortamları Yönet" /></span></div>
+          <div class="env-split">
+            <ul class="tree env-list">
+              <li class="sel"><span class="pill-dot"></span>staging</li>
+              <li><T en="Globals" tr="Globaller" /></li>
+            </ul>
+            <div class="env-main">
+              <div class="env-head"><b>staging</b><span class="tag ok"><T en="Active" tr="Aktif" /></span></div>
+              <div class="kv kv-box" style="--kv-cols:100px 92px 1fr 1fr">
+                <div class="h"><span><T en="Variable" tr="Değişken" /></span><span><T en="Type" tr="Tür" /></span><span><T en="Initial Value" tr="Başlangıç Değeri" /></span><span><T en="Current Value" tr="Geçerli Değer" /></span></div>
+                <div><span>baseUrl</span><span class="soft">default</span><span>https://httpbin.org</span><span>https://httpbin.org</span></div>
+                <div><span>token</span><span class="tag warn" style="justify-self:start"><T en="secret" tr="gizli" /></span><span class="masked">••••••••••</span><span class="masked">••••••••••</span></div>
+              </div>
+              <div class="reqbar" style="padding:22px 0 0"><span class="method-sel"><span class="m get">GET</span></span><span class="url"><span class="var">{'{{baseUrl}}'}</span>/get</span><span class="send"><T en="Send" tr="Gönder" /></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 06 · Step 4 · Auth -->
+  <Slide n={6} deck={deck} label={{ en: 'Step 4 — Authorization', tr: '4. adım — Yetkilendirme' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(4)}</span><T en="Authorization" tr="Yetkilendirme" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Send a bearer token — once, for the whole folder." tr="Bearer token gönderin — bir kez, bütün klasör için." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Set the token on the <b>httpbin</b> folder, then add a request to <code>{{baseUrl}}/bearer</code> in that folder whose auth is <b>Inherit from parent</b>." tr="Token'ı <b>httpbin</b> klasörüne verin; sonra aynı klasöre, yetkilendirmesi <b>Üstten miras al</b> olan <code>{{baseUrl}}/bearer</code> isteğini ekleyin." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><T en="right-click the folder" tr="klasöre sağ tık" /></li><li><span class="ui"><T en="Settings" tr="Ayarlar" /></span></li><li><span class="ui"><T en="Authorization" tr="Yetkilendirme" /></span></li><li><span class="ui">Bearer Token</span></li><li><code>{'{{token}}'}</code></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="<code>200</code> with <code>&quot;authenticated&quot;: true</code>. Remove the token and the same call answers <code>401</code>. The nearest setting wins: request, then folder, then project." tr="<code>200</code> ve <code>&quot;authenticated&quot;: true</code>. Token'ı kaldırın, aynı çağrı <code>401</code> döner. En yakın ayar kazanır: istek, sonra klasör, sonra proje." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span class="tabname"><span class="m get">GET</span> bearer</span></div>
+          <div class="reqbar"><span class="method-sel"><span class="m get">GET</span></span><span class="url"><span class="var">{'{{baseUrl}}'}</span>/bearer</span><span class="send"><T en="Send" tr="Gönder" /></span></div>
+          <div class="tabs"><span><T en="Params" tr="Parametreler" /></span><span class="on"><T en="Authorization" tr="Yetkilendirme" /></span><span><T en="Headers" tr="Başlıklar" /></span><span><T en="Body" tr="Gövde" /></span></div>
+          <div class="auth-box">
+            <div class="mcp-field"><label><T en="Type" tr="Tür" /></label><span><T en="Inherit from parent" tr="Üstten miras al" /></span></div>
+            <div class="inherit-chain"><span class="ic-chip"><T en="This request" tr="Bu istek" /> · <b><T en="Inherit" tr="Miras" /></b></span><span class="soft">→</span><span class="ic-chip on"><T en="Folder" tr="Klasör" /> <b>httpbin</b> · Bearer <span class="var">{'{{token}}'}</span></span><span class="soft">→</span><span class="ic-chip"><T en="Project" tr="Proje" /></span></div>
+          </div>
+          <div class="status-row"><span class="chip ok">200 OK</span><span class="mono">298 ms</span></div>
+          <pre class="code"><span class="p">{'{'}</span>
+  <span class="k">"authenticated"</span><span class="p">:</span> <span class="kw">true</span><span class="p">,</span>
+  <span class="k">"token"</span><span class="p">:</span> <span class="s">"sk-demo-1234"</span>
+<span class="p">{'}'}</span></pre>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 07 · Step 5 · Scripts and tests -->
+  <Slide n={7} deck={deck} label={{ en: 'Step 5 — Scripts and tests', tr: "5. adım — Script'ler ve testler" }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(5)}</span><T en="Scripts and tests" tr="Script'ler ve testler" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Make the request check its own answer." tr="İstek kendi yanıtını denetlesin." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="On the <code>/bearer</code> request, write two <code>pm.test</code> checks — or add them without code as assertions. Postman scripts run as they are." tr="<code>/bearer</code> isteğine iki <code>pm.test</code> kontrolü yazın — ya da kodsuz, doğrulama olarak ekleyin. Postman script'leri olduğu gibi çalışır." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="Scripts" tr="Betikler" /></span></li><li><span class="ui"><T en="Post-response" tr="Yanıt sonrası" /></span></li><li><T en="or" tr="ya da" /></li><li><span class="ui"><T en="Tests" tr="Testler" /></span></li><li><span class="ui"><T en="+ Add Assertion" tr="+ Doğrulama Ekle" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="After <b>Send</b>, the response's <b>Test Results</b> tab lists each check as passed or failed. The same script behaves the same in the Runner." tr="<b>Gönder</b>'den sonra yanıtın <b>Test Sonuçları</b> sekmesi her kontrolü başarılı ya da başarısız olarak listeler. Aynı script Runner'da da aynı davranır." /></p></div></div>
+        </div>
+        <div class="col grow anim" style="--i:3;gap:22px;justify-content:center">
+          <div class="win" aria-hidden="true">
+            <div class="tabs" style="padding-top:6px"><span><T en="Pre-request" tr="Ön istek" /></span><span class="on"><T en="Post-response" tr="Yanıt sonrası" /></span></div>
+            <pre class="code"><span class="ln">1</span><span class="f">pm</span>.<span class="f">test</span>(<span class="s">'status is 200'</span>, () <span class="kw">=&gt;</span> {'{'}
+<span class="ln">2</span>  <span class="f">pm</span>.response.to.have.<span class="f">status</span>(<span class="n">200</span>)
+<span class="ln">3</span>{'}'})
+<span class="ln">4</span><span class="f">pm</span>.<span class="f">test</span>(<span class="s">'token accepted'</span>, () <span class="kw">=&gt;</span> {'{'}
+<span class="ln">5</span>  <span class="f">pm</span>.<span class="f">expect</span>(<span class="f">pm</span>.response.<span class="f">json</span>().authenticated).to.be.<span class="kw">true</span>
+<span class="ln">6</span>{'}'})</pre>
+          </div>
+          <div class="win" aria-hidden="true">
+            <div class="tabs" style="padding-top:6px"><span><T en="Body" tr="Gövde" /></span><span class="on"><T en="Test Results" tr="Test Sonuçları" /><span class="count">2/2</span></span></div>
+            <div class="runrow"><span class="ok-i">✓</span><span class="tag ok">PASS</span><span>status is 200</span><span></span><span class="ms">1 ms</span></div>
+            <div class="runrow"><span class="ok-i">✓</span><span class="tag ok">PASS</span><span>token accepted</span><span></span><span class="ms">0 ms</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 08 · Step 6 · Runner -->
+  <Slide n={8} deck={deck} label={{ en: 'Step 6 — Run the folder', tr: '6. adım — Klasörü çalıştırın' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(6)}</span>Runner</p>
+      <h2 class="title sm anim" style="--i:1"><T en="Run the whole folder and keep the report." tr="Bütün klasörü çalıştırın, raporu saklayın." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Save both requests (<kbd>Ctrl/Cmd</kbd> <kbd>S</kbd>), then run the <b>httpbin</b> folder in one go and export the result as a single HTML file." tr="İki isteği de kaydedin (<kbd>Ctrl/Cmd</kbd> <kbd>S</kbd>), sonra <b>httpbin</b> klasörünü tek seferde çalıştırın ve sonucu tek bir HTML dosyası olarak dışa aktarın." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><T en="right-click the folder" tr="klasöre sağ tık" /></li><li><span class="ui"><T en="Run" tr="Çalıştır" /></span></li><li><span class="ui primary"><T en="Start run" tr="Çalıştırmayı başlat" /></span></li><li><span class="ui"><T en="Export HTML" tr="HTML Dışarı Aktar" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="One row per request with its status, time and tests, a passed / failed total, and a report you can open in any browser — credentials masked. Iterations, data files, Setup and Teardown are on the same screen." tr="Her istek için durum, süre ve testleriyle bir satır, başarılı / başarısız toplamı ve herhangi bir tarayıcıda açılan bir rapor — kimlik bilgileri maskeli. Yinelemeler, veri dosyaları, Setup ve Teardown aynı ekranda." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3;align-self:center" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span>Runner · httpbin</span><span class="right"><span class="btn"><T en="Export HTML" tr="HTML Dışarı Aktar" /></span></span></div>
+          <div class="run-summary"><span class="tag ok">2 <T en="passed" tr="başarılı" /></span><span class="tag">0 <T en="failed" tr="başarısız" /></span><span class="mono soft">0.6 s</span><span class="mono soft"><T en="env: staging" tr="ortam: staging" /></span></div>
+          <div class="runrow"><span class="ok-i">✓</span><span class="m get">GET</span><span><span class="var">{'{{baseUrl}}'}</span>/get</span><span class="tag">200</span><span class="ms">312 ms</span></div>
+          <div class="runrow"><span class="ok-i">✓</span><span class="m get">GET</span><span><span class="var">{'{{baseUrl}}'}</span>/bearer <span class="soft">· 2/2 <T en="tests" tr="test" /></span></span><span class="tag">200</span><span class="ms">298 ms</span></div>
+          <div class="note info" style="margin:22px"><span class="ni" set:html={icons.clock}></span><span><T en="Next: <b>Schedule runs</b> repeats this run on an interval, daily, weekly or with cron — while the app is open." tr="Sonra: <b>Çalıştırmaları planla</b> bu koşuyu aralıkla, günlük, haftalık ya da cron ile tekrarlar — uygulama açıkken." /></span></div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 09 · Step 7 · HTTP mock -->
+  <Slide n={9} deck={deck} label={{ en: 'Step 7 — An HTTP mock server', tr: '7. adım — Bir HTTP mock sunucu' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(7)}</span><T en="Mock server" tr="Mock sunucu" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Start a mock API on your own machine." tr="Kendi makinenizde bir mock API başlatın." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Create an HTTP mock from the ready-made <b>REST example</b> — a small Users API — start it and call it from a request tab." tr="Hazır <b>REST örneği</b>nden — küçük bir Users API — bir HTTP mock oluşturun, başlatın ve bir istek sekmesinden çağırın." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="Mocks" tr="Mock'lar" /></span></li><li><span class="ui"><T en="New mock server" tr="Yeni mock sunucu" /></span></li><li><span class="ui">HTTP</span></li><li><span class="ui"><T en="REST example" tr="REST örneği" /></span></li><li><span class="ui"><T en="Create" tr="Oluştur" /></span></li><li><span class="ui primary"><T en="Start &amp; open in request tab" tr="Başlat ve istek sekmesinde aç" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="The server on <code>http://127.0.0.1:3001</code>. <code>GET /users/2</code> answers a user, <code>/users/7</code> answers <code>404</code>. Every call appears in the mock's <b>Logs</b> tab. A saved folder can become a mock too: right-click → <b>Create Mock Server from this folder</b>." tr="Sunucu <code>http://127.0.0.1:3001</code> üzerinde. <code>GET /users/2</code> bir kullanıcı, <code>/users/7</code> <code>404</code> döner. Her çağrı mock'un <b>Loglar</b> sekmesinde görünür. Kayıtlı bir klasör de mock olabilir: sağ tık → <b>Bu klasörden Mock Sunucu oluştur</b>." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3;align-self:center" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span class="tabname">Users API</span><span class="right"><span class="tag ok"><span class="pill-dot"></span><T en="Running" tr="Çalışıyor" /> · 127.0.0.1:3001</span></span></div>
+          <div class="tabs"><span class="on"><T en="Endpoints" tr="Uç noktalar" /><span class="count">4</span></span><span><T en="Logs" tr="Loglar" /></span></div>
+          <ul class="tree">
+            <li><span class="m get">GET</span>/users<span class="soft ep-d"><T en="List users" tr="Kullanıcıları listele" /></span></li>
+            <li class="sel"><span class="m get">GET</span>/users/:id<span class="soft ep-d"><T en="ids 1–3 exist, others 404" tr="1–3 var, diğerleri 404" /></span></li>
+            <li><span class="m post">POST</span>/users<span class="soft ep-d">201</span></li>
+            <li><span class="m del">DELETE</span>/users/:id<span class="soft ep-d">204</span></li>
+          </ul>
+          <div class="side-head" style="border-top:1px solid var(--border)"><span><T en="Logs" tr="Loglar" /></span></div>
+          <div class="log" style="--log-cols:110px 80px 1fr 70px 90px">
+            <div><span class="t">11:02:15</span><span class="m get">GET</span><span>/users/7</span><span class="chip warn">404</span><span class="t">2 ms</span></div>
+            <div><span class="t">11:02:09</span><span class="m get">GET</span><span>/users/2</span><span class="chip ok">200</span><span class="t">3 ms</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 10 · Step 8 · MCP mock + connect -->
+  <Slide n={10} deck={deck} label={{ en: 'Step 8 — An MCP mock server, connected', tr: '8. adım — Bir MCP mock sunucu, bağlı' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(8)}</span>MCP</p>
+      <h2 class="title sm anim" style="--i:1"><T en="Start an MCP server and connect to it." tr="Bir MCP sunucusu başlatın ve ona bağlanın." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Create an MCP mock from the <b>Echo</b> preset — one <code>echo</code> tool that returns its text — and open it in an MCP tab, already filled in." tr="<b>Echo</b> hazır ayarından bir MCP mock oluşturun — metnini geri döndüren tek bir <code>echo</code> aracı — ve onu dolu hâlde bir MCP sekmesinde açın." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="Mocks" tr="Mock'lar" /></span></li><li><span class="ui"><T en="New mock server" tr="Yeni mock sunucu" /></span></li><li><span class="ui">MCP</span></li><li><span class="ui">Echo</span></li><li><span class="ui"><T en="Start &amp; open in MCP tab" tr="Başlat ve MCP sekmesinde aç" /></span></li><li><span class="ui primary"><T en="Connect" tr="Bağlan" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="Streamable HTTP to <code>http://127.0.0.1:3100/mcp</code>, the negotiated protocol version, the server's name, and the <b>Tools</b> tab with <code>echo</code>. Under Messages, <b>Frames</b> shows the handshake as raw JSON-RPC." tr="<code>http://127.0.0.1:3100/mcp</code> adresine Streamable HTTP, anlaşılan protokol sürümü, sunucunun adı ve <code>echo</code>'yu gösteren <b>Araçlar</b> sekmesi. Mesajlar altında <b>Çerçeveler</b> el sıkışmayı ham JSON-RPC olarak gösterir." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3;align-self:center" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span class="tabname"><span class="m mcp">MCP</span> Echo</span></div>
+          <div class="reqbar"><span class="method-sel">Streamable HTTP</span><span class="url">http://127.0.0.1:3100/mcp</span><span class="send ok"><T en="Connected" tr="Bağlı" /></span></div>
+          <div class="tabs"><span class="on"><T en="Tools" tr="Araçlar" /><span class="count">1</span></span><span><T en="Resources" tr="Kaynaklar" /></span><span><T en="Prompts" tr="İstemler" /></span><span><T en="Security" tr="Güvenlik" /></span></div>
+          <ul class="tree"><li class="sel"><span class="m mcp">ƒ</span>echo<span class="soft ep-d"><T en="returns its text argument" tr="text argümanını geri döndürür" /></span></li></ul>
+          <div class="side-head" style="border-top:1px solid var(--border)"><span><T en="Frames" tr="Çerçeveler" /></span></div>
+          <div class="log frames">
+            <div><span class="t">11:10:02</span><span class="dir out">→</span><span>initialize</span></div>
+            <div><span class="t">11:10:02</span><span class="dir in">←</span><span>result <span class="p">{'{'}"serverInfo":{'{'}"name":…{'}'},"capabilities":{'{'}"tools":…{'}}'}</span></span></div>
+            <div><span class="t">11:10:02</span><span class="dir out">→</span><span>tools/list</span></div>
+            <div><span class="t">11:10:02</span><span class="dir in">←</span><span>result <span class="p">{'{'}"tools":[{'{'}"name":"echo",…{'}'}]{'}'}</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 11 · Step 9 · Tool call -->
+  <Slide n={11} deck={deck} label={{ en: 'Step 9 — Call an MCP tool', tr: '9. adım — Bir MCP aracı çağırın' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(9)}</span><T en="Tool call" tr="Araç çağrısı" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Call the tool, then save the call with a test." tr="Aracı çağırın, sonra çağrıyı bir testle kaydedin." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Fill the <code>text</code> argument from the form Testnizer builds out of the tool's schema, run it, and save the call so it can run again in the Runner." tr="<code>text</code> argümanını Testnizer'ın aracın şemasından kurduğu formdan doldurun, çalıştırın ve çağrıyı Runner'da yeniden koşabilmesi için kaydedin." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="Tools" tr="Araçlar" /></span></li><li><code>echo</code></li><li><code>text: hello</code></li><li><span class="ui primary"><T en="Run" tr="Çalıştır" /></span></li><li><kbd>Ctrl/Cmd</kbd> <kbd>S</kbd></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="The result with <code>hello</code> in its content, the time it took, and a <code>tools/call</code> pair in Frames. A post-response test can read it through <code>pm.mcp</code>." tr="İçeriğinde <code>hello</code> olan sonuç, geçen süre ve Çerçeveler'de bir <code>tools/call</code> çifti. Yanıt sonrası testi bunu <code>pm.mcp</code> ile okuyabilir." /></p></div></div>
+        </div>
+        <div class="col grow anim" style="--i:3;gap:22px;justify-content:center">
+          <div class="win" aria-hidden="true">
+            <div class="mcp-explorer">
+              <div class="mcp-tool"><b>echo</b></div>
+              <div class="mcp-field"><label>text <em>string</em></label><span>hello</span></div>
+              <div class="mcp-actions"><span class="btn primary"><T en="Run" tr="Çalıştır" /></span><span class="metrics"><span class="ok">OK</span><span>4 ms</span></span></div>
+              <pre class="code"><span class="p">{'{'}</span> <span class="k">"content"</span><span class="p">: [{'{'}</span> <span class="k">"type"</span><span class="p">:</span> <span class="s">"text"</span><span class="p">,</span> <span class="k">"text"</span><span class="p">:</span> <span class="s">"hello"</span> <span class="p">{'}'}] {'}'}</span></pre>
+            </div>
+          </div>
+          <div class="win" aria-hidden="true">
+            <div class="tabs" style="padding-top:6px"><span class="on"><T en="Post-response" tr="Yanıt sonrası" /></span></div>
+            <pre class="code"><span class="ln">1</span><span class="f">pm</span>.<span class="f">test</span>(<span class="s">'echo answers'</span>, () <span class="kw">=&gt;</span> {'{'}
+<span class="ln">2</span>  <span class="f">pm</span>.<span class="f">expect</span>(<span class="f">pm</span>.mcp.isError).to.<span class="f">equal</span>(<span class="kw">false</span>)
+<span class="ln">3</span>  <span class="f">pm</span>.<span class="f">expect</span>(<span class="f">pm</span>.mcp.content[<span class="n">0</span>].text).to.<span class="f">equal</span>(<span class="s">'hello'</span>)
+<span class="ln">4</span>{'}'})</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 12 · Step 10 · Security scan -->
+  <Slide n={12} deck={deck} label={{ en: 'Step 10 — Scan the MCP server', tr: '10. adım — MCP sunucusunu tarayın' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(10)}</span><T en="Security scan" tr="Güvenlik taraması" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Scan the server and read the report." tr="Sunucuyu tarayın ve raporu okuyun." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Run the security scan against the Echo server you are connected to. It is your own server on your own machine, so you are allowed to test it." tr="Bağlı olduğunuz Echo sunucusuna güvenlik taramasını çalıştırın. Kendi makinenizdeki kendi sunucunuz; yani test etmeye yetkilisiniz." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="Security" tr="Güvenlik" /></span></li><li><span class="ui primary"><T en="Scan" tr="Tara" /></span></li><li><T en="open a finding" tr="bir bulguyu açın" /></li><li><span class="ui"><T en="Save HTML report…" tr="HTML raporu kaydet…" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="A grade from A to F, a score out of 100 and the checks by category — each with its evidence. Plain HTTP on <code>127.0.0.1</code> is only noted. Rate-limit checks need <b>Include active probes</b>, which is off by default. Your grade depends on the server's settings." tr="A'dan F'ye bir not, 100 üzerinden puan ve kategori kategori kontroller — her biri kanıtıyla. <code>127.0.0.1</code> üzerindeki düz HTTP yalnızca not edilir. Hız sınırı kontrolleri varsayılanı kapalı olan <b>Etkin yoklamaları dahil et</b>'i ister. Notunuz sunucunun ayarlarına bağlıdır." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3;align-self:center" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span><T en="Security · sample" tr="Güvenlik · örnek" /></span><span class="right"><span class="btn"><T en="Save HTML report…" tr="HTML raporu kaydet…" /></span></span></div>
+          <div class="scan-head">
+            <span class="grade pending">A–F</span>
+            <div class="col" style="gap:10px;flex:1;min-width:0">
+              <div class="scan-score"><b>…</b><span>/ 100</span><span class="soft" style="font-size:17px"><T en="your result" tr="sizin sonucunuz" /></span></div>
+              <div class="pills scan-counts"><span class="tag ok"><T en="passed" tr="başarılı" /></span><span class="tag warn"><T en="warnings" tr="uyarı" /></span><span class="tag bad"><T en="failed" tr="başarısız" /></span><span class="tag"><T en="skipped" tr="atlandı" /></span></div>
+            </div>
+          </div>
+          <div class="findings">
+            <div><span><T en="Transport security" tr="Taşıma güvenliği" /></span><span class="tag accent" style="justify-self:start"><T en="loopback · noted" tr="loopback · not edildi" /></span><span class="sc">i</span></div>
+            <div><span><T en="Authentication &amp; authorization" tr="Kimlik doğrulama ve yetkilendirme" /></span><span class="bar"><i class="bar-fill acc" style="width:60%"></i></span><span class="sc">…</span></div>
+            <div><span><T en="Prompt injection &amp; tool poisoning" tr="İstem enjeksiyonu ve araç zehirleme" /></span><span class="bar"><i class="bar-fill acc" style="width:85%"></i></span><span class="sc">…</span></div>
+            <div><span><T en="Rate limiting" tr="Hız sınırlama" /></span><span class="tag" style="justify-self:start"><T en="active probes off" tr="etkin yoklama kapalı" /></span><span class="sc">—</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 13 · Step 11 · AI Chat -->
+  <Slide n={13} deck={deck} label={{ en: 'Step 11 — AI Chat with MCP tools', tr: '11. adım — MCP araçlarıyla AI Chat' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(11)}</span>AI Chat</p>
+      <h2 class="title sm anim" style="--i:1"><T en="Let a model call your tool — and approve it." tr="Bir model aracınızı çağırsın — siz onaylayın." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Start an AI mock with the <b>Tool call round-trip</b> preset — it plays a model that asks for a tool. Give the chat the Echo call you saved in step 9 and send a prompt. No provider key is used." tr="<b>Araç çağrısı gidiş-dönüş</b> hazır ayarıyla bir AI mock başlatın — araç isteyen bir modeli canlandırır. Sohbete 9. adımda kaydettiğiniz Echo çağrısını verin ve bir istem gönderin. Sağlayıcı anahtarı kullanılmaz." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="New mock server" tr="Yeni mock sunucu" /></span></li><li><span class="ui">AI</span></li><li><span class="ui"><T en="Tool call round-trip" tr="Araç çağrısı gidiş-dönüş" /></span></li><li><span class="ui"><T en="Start &amp; open in AI Chat tab" tr="Başlat ve AI Chat sekmesinde aç" /></span></li><li><span class="ui"><T en="Add a saved MCP request…" tr="Kayıtlı bir MCP isteği ekle…" /></span></li><li><span class="ui"><T en="Load tools" tr="Araçları yükle" /></span></li><li><span class="ui primary"><T en="Allow once" tr="Bir kez izin ver" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="An approval card with the tool and its arguments before anything runs — approval is on by default, “Run tools without asking” lasts for this tab only. Then the tool result, the reply and its time and token counts." tr="Herhangi bir şey çalışmadan önce araç ve argümanlarıyla bir onay kartı — onay varsayılan olarak açık, “Araçları sormadan çalıştır” yalnız bu sekme için. Sonra araç sonucu, yanıt ve süre ile token sayıları." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3;align-self:center" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span class="tabname"><span class="m mcp">AI</span> <T en="AI Chat · mock" tr="AI Sohbet · mock" /></span><span class="right"><span class="tag"><T en="Tools: Echo" tr="Araçlar: Echo" /></span></span></div>
+          <div class="chat">
+            <div class="bubble user"><T en="Say hello through the echo tool." tr="echo aracıyla merhaba de." /></div>
+            <div class="approval">
+              <div class="t"><span class="ni" set:html={icons.shieldCheck}></span><T en="The model wants to call a tool" tr="Model bir araç çağırmak istiyor" /></div>
+              <div class="approval-meta">Echo · <b>echo</b></div>
+              <div class="args">{'{ "text": "…" }'}</div>
+              <div class="btns"><span class="btn primary"><T en="Allow once" tr="Bir kez izin ver" /></span><span class="btn"><T en="Allow this tool for this conversation" tr="Bu konuşma boyunca bu araca izin ver" /></span><span class="btn danger"><T en="Deny" tr="Reddet" /></span></div>
+            </div>
+            <div class="metrics"><span class="ok">200</span><span>TTFB</span><span>Total</span><span>tokens</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 14 · Step 12 · Postman import -->
+  <Slide n={14} deck={deck} label={{ en: 'Step 12 — Import from Postman', tr: "12. adım — Postman'den içe aktarın" }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(12)}</span><T en="Import" tr="İçe aktarma" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Bring a Postman collection in, scripts and all." tr="Bir Postman koleksiyonunu script'leriyle birlikte içeri alın." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Import a collection exported from Postman — a v1, v2.0, v2.1 or v3 file, a v3 Native Git folder, an environment or a <code>.zip</code>. The version is read from the file." tr="Postman'den dışa aktarılmış bir koleksiyonu içe aktarın — v1, v2.0, v2.1 ya da v3 dosyası, v3 Native Git klasörü, bir ortam ya da <code>.zip</code>. Sürüm dosyadan okunur." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><kbd>Ctrl/Cmd</kbd> <kbd>O</kbd></li><li><span class="ui">Postman</span></li><li><T en="choose the file" tr="dosyayı seçin" /></li><li><T en="or" tr="ya da" /></li><li><span class="ui"><T en="Import folder…" tr="Klasör içe aktar…" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="A report of what came in, what was skipped and what could not be carried — for example Kafka and Postman Data requests in a v3 collection are skipped. Collection auth lands on the folder; requests inherit it." tr="Neyin geldiğini, neyin atlandığını ve neyin taşınamadığını anlatan bir rapor — örneğin v3 koleksiyonundaki Kafka ve Postman Data istekleri atlanır. Koleksiyonun auth'u klasöre yazılır; istekler onu miras alır." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3;align-self:center" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span><T en="Import report · sample" tr="İçe aktarma raporu · örnek" /></span></div>
+          <div class="import-head"><span class="ic ok" set:html={icons.check}></span><div><b>Petstore.postman_collection.json</b><small>Postman v2.1</small></div></div>
+          <div class="grid g3 import-stats">
+            <div class="card tight stat"><span class="v">24</span><span class="l"><T en="requests" tr="istek" /></span></div>
+            <div class="card tight stat"><span class="v">5</span><span class="l"><T en="folders" tr="klasör" /></span></div>
+            <div class="card tight stat"><span class="v">2</span><span class="l"><T en="environments" tr="ortam" /></span></div>
+          </div>
+          <div class="findings">
+            <div><span><T en="Collection auth → folder “Petstore”" tr="Koleksiyon auth'u → “Petstore” klasörü" /></span><span class="tag ok" style="justify-self:start"><T en="converted" tr="dönüştürüldü" /></span><span class="sc"></span></div>
+            <div><span><T en="Pre-request and test scripts" tr="Ön istek ve test script'leri" /></span><span class="tag ok" style="justify-self:start"><T en="kept" tr="korundu" /></span><span class="sc"></span></div>
+            <div><span><T en="Collection variables → Globals" tr="Koleksiyon değişkenleri → Globaller" /></span><span class="tag ok" style="justify-self:start"><T en="converted" tr="dönüştürüldü" /></span><span class="sc"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 15 · Step 13 · Git -->
+  <Slide n={15} deck={deck} label={{ en: 'Step 13 — Work as a team with Git', tr: '13. adım — Git ile ekip olarak çalışın' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(13)}</span>GIT</p>
+      <h2 class="title sm anim" style="--i:1"><T en="Share the project through your Git repository." tr="Projeyi kendi Git deponuz üzerinden paylaşın." /></h2>
+      <div class="step-body">
+        <div class="dcs">
+          <div class="dcs-item anim" style="--i:2"><span class="ic" set:html={ico.target}></span><div><span class="dcs-k">{K.do}</span><p><T en="Connect the project to a repository and push it. A teammate picks it up with <b>Clone from Git</b> on the New Project screen and pulls your later changes." tr="Projeyi bir depoya bağlayın ve gönderin. Ekip arkadaşınız onu Yeni Proje ekranındaki <b>Git'ten Klonla</b> ile alır, sonraki değişikliklerinizi çeker." /></p></div></div>
+          <div class="dcs-item anim" style="--i:3"><span class="ic" set:html={ico.pointer}></span><div><span class="dcs-k">{K.click}</span>
+            <ol class="path"><li><span class="ui"><T en="Settings" tr="Ayarlar" /></span></li><li><span class="ui"><T en="Storage" tr="Depolama" /></span></li><li><span class="ui"><T en="Save Mode: Git" tr="Kayıt Modu: Git" /></span></li><li><T en="branch menu" tr="dal menüsü" /></li><li><span class="ui"><T en="Commit…" tr="Commit et…" /></span></li><li><span class="ui primary"><T en="Commit and push" tr="Commit et ve gönder" /></span></li></ol>
+          </div></div>
+          <div class="dcs-item anim" style="--i:4"><span class="ic ok" set:html={ico.eye}></span><div><span class="dcs-k">{K.see}</span><p><T en="The changed requests, environments and suites to commit. Your <code>token</code> goes out <b>empty</b> — after a pull your teammate sees how many secrets to fill in. Scripts in the cloned project wait until they allow them." tr="Commit edilecek değişen istekler, ortamlar ve test paketleri. <code>token</code>'ınız <b>boş</b> gider — çektikten sonra ekip arkadaşınız kaç sırrı doldurması gerektiğini görür. Klonlanan projedeki script'ler o izin verene kadar bekler." /></p></div></div>
+        </div>
+        <div class="win anim step-win" style="--i:3;align-self:center" aria-hidden="true">
+          <div class="win-bar"><span class="lights"><i></i><i></i><i></i></span><span><T en="Project Settings · Storage" tr="Proje Ayarları · Depolama" /></span></div>
+          <div class="git-form">
+            <div class="seg"><span><T en="Local" tr="Yerel" /></span><span class="on">Git</span><span><T en="Local + Git" tr="Yerel + Git" /></span></div>
+            <div class="mcp-field"><label>URL</label><span>https://git.example.com/team/petstore.git</span></div>
+            <div class="row" style="gap:16px">
+              <div class="mcp-field" style="flex:1"><label>Branch</label><span>main</span></div>
+              <div class="mcp-field" style="flex:2"><label>Personal Access Token</label><span class="masked">••••••••••••••</span></div>
+            </div>
+          </div>
+          <div class="commit-list">
+            <div><span class="box"></span><span class="tag ok"><T en="Added" tr="Eklendi" /></span><span><span class="m get">GET</span> /bearer</span></div>
+            <div><span class="box"></span><span class="tag warn"><T en="Modified" tr="Değiştirildi" /></span><span><T en="Environment" tr="Ortam" /> · staging <span class="soft">· token = ""</span></span></div>
+          </div>
+          <div class="commit-btns"><span class="btn"><T en="Commit" tr="Commit et" /></span><span class="btn primary"><T en="Commit and push" tr="Commit et ve gönder" /></span></div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 16 · Step 14 · Shortcuts -->
+  <Slide n={16} deck={deck} label={{ en: 'Step 14 — Shortcuts and tips', tr: '14. adım — Kısayollar ve ipuçları' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><span class="step-no">{stepNo(14)}</span><T en="Shortcuts and tips" tr="Kısayollar ve ipuçları" /></p>
+      <h2 class="title sm anim" style="--i:1"><T en="Ten keys that save you the most clicks." tr="En çok tıklamadan kurtaran on tuş." /></h2>
+      <div class="content" style="gap:56px;align-items:stretch">
+        <div class="keys anim" style="--i:2">
+          {shortcuts.map((s) => (
+            <div><span class="keys-k">{s.k.map((k) => <kbd>{k}</kbd>)}</span><span>{isTr ? s.tr : s.en}</span></div>
+          ))}
+        </div>
+        <div class="col grow" style="gap:18px;justify-content:center">
+          <div class="card tight anim" style="--i:3"><h4><T en="Paste a cURL into the URL bar" tr="URL çubuğuna bir cURL yapıştırın" /></h4><p><T en="It becomes a full request — method, headers, body, auth. One Undo puts the text back." tr="Tam bir isteğe dönüşür — metot, başlıklar, gövde, auth. Tek bir Geri Al metni geri getirir." /></p></div>
+          <div class="card tight anim" style="--i:4"><h4><T en="Generate Code — 36 variants" tr="Kod Oluştur — 36 varyant" /></h4><p><T en="Turn the open request into code for your language. Secret variables stay as <code>{{name}}</code> unless you choose to include them." tr="Açık isteği kendi dilinizde koda çevirin. Gizli değişkenler, siz dahil etmeyi seçmedikçe <code>{{ad}}</code> olarak kalır." /></p></div>
+          <div class="card tight anim" style="--i:5"><h4><T en="118 dynamic variables" tr="118 dinamik değişken" /></h4><p><T en="<code>{{$randomEmail}}</code>, <code>{{$guid}}</code>, <code>{{$timestamp}}</code> … — the same names as Postman." tr="<code>{{$randomEmail}}</code>, <code>{{$guid}}</code>, <code>{{$timestamp}}</code> … — Postman'deki adlarla aynı." /></p></div>
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 17 · What's next -->
+  <Slide n={17} deck={deck} label={{ en: "What's next", tr: 'Sırada ne var' }}>
+    <div class="pad">
+      <p class="eyebrow anim"><T en="What's next" tr="Sırada ne var" /></p>
+      <h2 class="title anim" style="--i:1"><T en="Go deeper — <span class='grad'>the docs pick up from here.</span>" tr="Daha derine inin — <span class='grad'>dokümantasyon buradan devam eder.</span>" /></h2>
+      <div class="content">
+        <div class="grid g3 next-grid">
+          {next.map((n, i) => (
+            <a class="linkcard anim" style={`--i:${2 + i}`} href={p(n.href)}><span class="ic" set:html={n.icon}></span><span>{isTr ? n.tr : n.en}<small>testnizer.com{p(n.href)}</small></span></a>
+          ))}
+        </div>
+      </div>
+    </div>
+  </Slide>
+
+  <!-- 18 · Closing -->
+  <Slide n={18} deck={deck} bare label={{ en: 'Closing', tr: 'Kapanış' }} class="cover">
+    <div class="glow-bg"></div>
+    <div class="dots-bg"></div>
+    <div class="pad close-pad">
+      <span class="wordmark anim"><i class="logo-img lg"></i>Testnizer</span>
+      <h2 class="cover-title close-title anim" style="--i:1"><T en="That's the tour. <span class='grad'>Now try it on your own API.</span>" tr="Tur bu kadar. <span class='grad'>Şimdi kendi API'nizde deneyin.</span>" /></h2>
+      <div class="row anim" style="--i:2;gap:18px;flex-wrap:wrap;justify-content:center">
+        <a class="cta" href={p('/download')}><span set:html={icons.download}></span><T en="Download" tr="İndir" /></a>
+        <a class="cta ghost" href={p('/resources/presentations/testnizer-overview/')}><T en="Product overview deck" tr="Ürün tanıtımı sunumu" /><span set:html={icons.arrowRight}></span></a>
+        <a class="cta ghost" href={p('/docs/getting-started')}><T en="Read the docs" tr="Dokümantasyonu okuyun" /><span set:html={icons.arrowRight}></span></a>
+      </div>
+      <p class="close-links anim" style="--i:3"><T en="Questions and bug reports:" tr="Sorular ve hata bildirimleri:" /> <a href="https://github.com/apinizer/testnizer/issues" target="_blank" rel="noopener" class="mono">github.com/apinizer/testnizer/issues</a></p>
+    </div>
+  </Slide>
+
+</DeckLayout>

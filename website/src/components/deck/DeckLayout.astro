@@ -1,0 +1,124 @@
+---
+/**
+ * Page shell for a slide deck. Deliberately not BaseLayout: a deck is a
+ * full-window presentation with no site nav, and it must stand on its own —
+ * the stylesheet, the runtime script and the logo are inlined, nothing loads
+ * from a CDN (BaseLayout pulls Inter from rsms.me; the deck uses the system UI
+ * font instead).
+ *
+ * The same deck is served at /resources/presentations/<slug>/ (EN) and
+ * /tr/resources/presentations/<slug>/ (TR). The EN/TR switch is a real link to
+ * the other URL; the script only appends the current #N so the slide is kept.
+ */
+import fs from 'node:fs'
+import path from 'node:path'
+import css from './deck.css?raw'
+import js from './deck.js?raw'
+import { deckPath, indexPath, langOf, presentations } from '../../lib/presentations'
+
+interface Props {
+  slug: string
+}
+
+const { slug } = Astro.props
+const lang = langOf(Astro.url.pathname)
+const meta = presentations.find((p) => p.slug === slug)
+if (!meta) throw new Error(`Unknown deck: ${slug}`)
+
+const title = `${meta.title[lang]}`
+const description = meta.description[lang]
+const enHref = deckPath('en', slug)
+const trHref = deckPath('tr', slug)
+const canonical = new URL(deckPath(lang, slug), Astro.site)
+const ogImage = new URL('/og.png', Astro.site)
+const logo = fs.readFileSync(path.join(process.cwd(), 'public', 'logo.png')).toString('base64')
+const logoCss = `:root{--logo:url("data:image/png;base64,${logo}")}`
+
+const ui =
+  lang === 'tr'
+    ? {
+        prev: 'Önceki slayt',
+        next: 'Sonraki slayt',
+        fullscreen: 'Tam ekran (F)',
+        index: 'Tüm sunumlar',
+        lang: 'Sunum dili',
+        hint: 'Daha büyük görmek için telefonunuzu yan çevirin. Kaydırarak ya da dokunarak ilerleyin.',
+        noscript: 'Slaytlar alt alta gösteriliyor. Sunum modu için JavaScript gerekir.',
+        other: 'English version',
+      }
+    : {
+        prev: 'Previous slide',
+        next: 'Next slide',
+        fullscreen: 'Full screen (F)',
+        index: 'All presentations',
+        lang: 'Presentation language',
+        hint: 'Turn your phone sideways for a larger view. Swipe or tap to move between slides.',
+        noscript: 'Slides are shown one under the other. Presentation mode needs JavaScript.',
+        other: 'Türkçe sürüm',
+      }
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="en" href={new URL(enHref, Astro.site)} />
+    <link rel="alternate" hreflang="tr" href={new URL(trHref, Astro.site)} />
+    <link rel="alternate" hreflang="x-default" href={new URL(enHref, Astro.site)} />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:locale" content={lang === 'tr' ? 'tr_TR' : 'en_US'} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+    <meta name="theme-color" content="#050810" />
+    <style is:inline set:html={logoCss + css}></style>
+  </head>
+  <body>
+    <div class="deck-progress" aria-hidden="true"><i></i></div>
+
+    <main class="deck-stage" aria-roledescription={lang === 'tr' ? 'sunum' : 'presentation'} aria-label={title}>
+      <header class="deck-noscript-head">
+        <span>{ui.noscript}</span>
+        <span><a href={indexPath(lang)}>{ui.index}</a> · <a href={lang === 'tr' ? enHref : trHref} hreflang={lang === 'tr' ? 'en' : 'tr'}>{ui.other}</a></span>
+      </header>
+      <slot />
+    </main>
+
+    <nav class="deck-controls" aria-label={lang === 'tr' ? 'Sunum denetimleri' : 'Presentation controls'}>
+      <a class="deck-btn" href={indexPath(lang)} title={ui.index} aria-label={ui.index}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect></svg>
+      </a>
+      <span class="deck-sep" aria-hidden="true"></span>
+      <button class="deck-btn" type="button" data-deck-prev title={ui.prev} aria-label={ui.prev}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+      </button>
+      <span class="deck-count" data-deck-count aria-hidden="true"></span>
+      <button class="deck-btn" type="button" data-deck-next title={ui.next} aria-label={ui.next}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"></path></svg>
+      </button>
+      <span class="deck-sep" aria-hidden="true"></span>
+      <span class="deck-lang" role="group" aria-label={ui.lang}>
+        <a href={enHref} hreflang="en" lang="en" data-deck-lang aria-current={lang === 'en' ? 'true' : 'false'}>EN</a>
+        <a href={trHref} hreflang="tr" lang="tr" data-deck-lang aria-current={lang === 'tr' ? 'true' : 'false'}>TR</a>
+      </span>
+      <button class="deck-btn" type="button" data-deck-fullscreen title={ui.fullscreen} aria-label={ui.fullscreen}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M21 8V5a2 2 0 0 0-2-2h-3"></path><path d="M3 16v3a2 2 0 0 0 2 2h3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path></svg>
+      </button>
+    </nav>
+
+    <p class="deck-hint" aria-hidden="true">{ui.hint}</p>
+    <div class="sr-only" aria-live="polite" data-deck-live></div>
+
+    <script is:inline set:html={js}></script>
+  </body>
+</html>

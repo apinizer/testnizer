@@ -1,0 +1,126 @@
+---
+/**
+ * /resources/presentations and /tr/resources/presentations — one card per deck
+ * in the registry (src/lib/presentations.ts). Each card opens the deck in the
+ * page's language; the deck itself has an EN/TR switch that keeps the slide.
+ */
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { icons } from './icons'
+import { deckPath, presentations, type Lang } from '../lib/presentations'
+
+interface Props {
+  lang: Lang
+}
+
+const { lang } = Astro.props
+const isTr = lang === 'tr'
+const p = (href: string): string => (isTr ? `/tr${href}` : href)
+
+const t = isTr
+  ? {
+      title: 'Sunumlar — Testnizer',
+      description:
+        'Testnizer ürün tanıtımı ve uygulamalı başlangıç eğitimi; tarayıcıda açılan, Türkçe ve İngilizce sunumlar.',
+      badge: 'Kaynaklar',
+      h1: 'Sunumlar',
+      lead: 'Tarayıcıda açılan iki sunum: Testnizer’ı birkaç dakikada tanıtan bir ürün sunumu ve kurulumdan ilk MCP araç çağrısına kadar adım adım bir eğitim. İkisi de Türkçe ve İngilizce; sunumun içinden dil değiştirdiğinizde aynı slaytta kalırsınız.',
+      slides: (n: number) => `${n} slayt`,
+      open: 'Sunumu açın',
+      keys: 'Sunumda ← → ve Boşluk ile ilerleyin, F ile tam ekrana geçin. Bir slayda bağlantı vermek için adresin sonuna #numara ekleyin.',
+      docs: 'Dokümantasyon',
+      docsText: 'Her adımın ayrıntısı dokümanlarda.',
+      locale: 'tr-TR',
+    }
+  : {
+      title: 'Presentations — Testnizer',
+      description:
+        'A Testnizer product overview and a hands-on getting-started training, as in-browser slide decks in English and Turkish.',
+      badge: 'Resources',
+      h1: 'Presentations',
+      lead: 'Two decks that open in your browser: a product overview that introduces Testnizer in a few minutes, and a step-by-step training from installing the app to your first MCP tool call. Both are in English and Turkish — switch language inside a deck and you stay on the same slide.',
+      slides: (n: number) => `${n} slides`,
+      open: 'Open presentation',
+      keys: 'In a deck, move with ← → and Space, press F for full screen. To link to one slide, add #number to the address.',
+      docs: 'Documentation',
+      docsText: 'Every step is covered in more detail in the docs.',
+      locale: 'en-GB',
+    }
+
+const fmtDate = (iso: string): string =>
+  new Intl.DateTimeFormat(t.locale, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(
+    new Date(`${iso}T00:00:00Z`),
+  )
+---
+
+<BaseLayout title={t.title} description={t.description} lang={lang}>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-accent-text shadow-sm">
+        <Fragment set:html={icons.fileText} />
+        {t.badge}
+      </div>
+      <h1 class="mx-auto max-w-3xl text-balance text-4xl font-semibold tracking-tight text-text md:text-5xl">{t.h1}</h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">{t.lead}</p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-5xl px-6">
+      <ul class="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {presentations.map((d) => (
+          <li class="flex">
+            <article class="flex w-full flex-col overflow-hidden rounded-card border border-border bg-bg">
+              <a
+                href={deckPath(lang, d.slug)}
+                class="group block border-b border-border"
+                aria-label={`${t.open}: ${d.title[lang]}`}
+                tabindex="-1"
+              >
+                <div class="relative aspect-video overflow-hidden bg-[radial-gradient(120%_90%_at_10%_10%,rgba(59,130,246,0.22),transparent_60%),radial-gradient(80%_70%_at_95%_100%,rgba(16,185,129,0.14),transparent_60%)] bg-bg-soft p-6">
+                  <div class="flex items-center gap-2">
+                    <img src="/logo.png" alt="" class="h-6 w-6" />
+                    <span class="text-sm font-semibold text-text">Testnizer</span>
+                  </div>
+                  <p class="mt-6 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent-text">{d.format[lang]}</p>
+                  <p class="mt-2 max-w-[22rem] text-balance text-xl font-semibold leading-snug tracking-tight text-text transition-colors group-hover:text-accent-text">
+                    {d.title[lang]}
+                  </p>
+                  <span class="absolute bottom-4 right-5 font-mono text-xs text-text-soft">{t.slides(d.slides)}</span>
+                </div>
+              </a>
+              <div class="flex flex-1 flex-col p-6">
+                <h2 class="text-lg font-semibold text-text">{d.title[lang]}</h2>
+                <p class="mt-1 text-xs text-text-soft">
+                  {d.format[lang]} · {t.slides(d.slides)} · <time datetime={d.date}>{fmtDate(d.date)}</time>
+                </p>
+                <p class="mt-3 text-sm leading-relaxed text-text-muted">{d.description[lang]}</p>
+                <ul class="mt-4 flex flex-wrap gap-2" aria-label={isTr ? 'Konular' : 'Topics'}>
+                  {d.topics[lang].map((topic) => (
+                    <li class="rounded-full border border-border bg-bg-soft px-2.5 py-0.5 text-xs text-text-muted">{topic}</li>
+                  ))}
+                </ul>
+                <div class="mt-auto pt-6">
+                  <a
+                    href={deckPath(lang, d.slug)}
+                    class="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+                  >
+                    {t.open}
+                    <Fragment set:html={icons.arrowRight} />
+                  </a>
+                </div>
+              </div>
+            </article>
+          </li>
+        ))}
+      </ul>
+
+      <div class="mt-10 grid grid-cols-1 gap-4 text-sm leading-relaxed text-text-muted md:grid-cols-2">
+        <p class="rounded-lg border border-border bg-bg-soft px-4 py-3">{t.keys}</p>
+        <p class="rounded-lg border border-border bg-bg-soft px-4 py-3">
+          {t.docsText}{' '}
+          <a href={p('/docs')} class="font-medium text-accent-text hover:text-text">{t.docs} →</a>
+        </p>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

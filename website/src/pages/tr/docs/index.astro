@@ -22,6 +22,17 @@ const sortedSections = Object.entries(grouped).sort((a, b) => compareDocsSection
     Kılavuzlar, protokol referansları ve araç anlatımları. Testnizer'ın tüm özellikleri yazılı.
   </p>
 
+  <a
+    href="/tr/resources/presentations/"
+    class="not-prose mt-6 flex items-center justify-between gap-4 rounded-lg border border-border bg-bg-soft p-4 transition-colors hover:border-accent/40"
+  >
+    <span>
+      <span class="block text-sm font-semibold text-text">Slaytlarla öğrenmek ister misiniz? İki sunum hazır</span>
+      <span class="mt-1 block text-xs leading-relaxed text-text-muted">Bir ürün tanıtımı ve uygulamalı bir başlangıç eğitimi; Türkçe ve İngilizce.</span>
+    </span>
+    <span class="flex-shrink-0 text-sm font-medium text-accent-text">Sunumlar →</span>
+  </a>
+
   <div class="not-prose mt-10 space-y-8">
     {sortedSections.map(([section, entries]) => (
       <div>

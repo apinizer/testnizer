@@ -1,0 +1,14 @@
+---
+import OverviewDeck from '../../../components/deck/OverviewDeck.astro'
+import GettingStartedDeck from '../../../components/deck/GettingStartedDeck.astro'
+
+// The Turkish route (src/pages/tr/resources/presentations/[deck].astro) renders
+// the same components; the URL picks the language.
+export function getStaticPaths() {
+  return [{ params: { deck: 'testnizer-overview' } }, { params: { deck: 'testnizer-getting-started' } }]
+}
+
+const { deck } = Astro.params
+---
+
+{deck === 'testnizer-overview' ? <OverviewDeck /> : <GettingStartedDeck />}
