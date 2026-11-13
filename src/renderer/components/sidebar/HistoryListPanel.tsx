@@ -142,7 +142,8 @@ export default function HistoryListPanel() {
                     the full (stored, masked) URL in the tooltip. */}
                 <span
                   data-testid="history-entry-label"
-                  className="flex-1 truncate"
+                  // mr: a cut URL ("…") must not run into the status code
+                  className="mr-[6px] flex-1 truncate"
                   style={{ fontSize: 13 }}
                   title={historyRowLabel(entry).title}
                 >

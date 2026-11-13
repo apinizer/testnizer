@@ -10,7 +10,6 @@ import { History as HistoryIcon } from 'lucide-react'
 import { useHistoryStore } from '../../stores/history.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatCount } from '../../lib/plural'
-import { formatDate } from '../../lib/format-datetime'
 import { fillTemplate } from '../../../shared/fill-template'
 import EmptyState from '../shared/EmptyState'
 import HistoryProtocolCard from './HistoryProtocolCard'
@@ -27,6 +26,7 @@ import {
   totalStat,
 } from './history-overview'
 import { useMockAddresses } from './use-mock-addresses'
+import { formatHistoryDate } from './history-format'
 
 export default function HistoryHome() {
   const { t, locale } = useTranslation()
@@ -81,7 +81,7 @@ export default function HistoryHome() {
         title={t('sidebar.history')}
         sub={fillTemplate(
           formatCount(entries.length, t('historyHome.summaryOne'), t('historyHome.summary')),
-          { date: formatDate(oldest, locale, { year: false }) },
+          { date: formatHistoryDate(oldest, locale) },
         )}
       />
 

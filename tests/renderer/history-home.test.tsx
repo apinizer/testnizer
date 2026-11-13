@@ -304,6 +304,27 @@ describe('History overview — counters, dates and paging (merge review)', () =>
     )
   })
 
+  it('the summary date carries the year when the oldest row is from another year', () => {
+    // Fake system time: a "same year" case with the real clock flakes in January.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(NOW)
+    try {
+      seed([row({ executed_at: new Date(2025, 9, 9, 16, 58).getTime() })])
+      render(<HistoryHome />)
+      expect(screen.getByTestId('history-home-summary').textContent).toBe(
+        'Last 1 request since Oct 9, 2025',
+      )
+      cleanup()
+      seed([row({ executed_at: new Date(2026, 9, 9, 16, 58).getTime() })])
+      render(<HistoryHome />)
+      expect(screen.getByTestId('history-home-summary').textContent).toBe(
+        'Last 1 request since Oct 9',
+      )
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('the pager shows "page / pages"', () => {
     const now = Date.now()
     seed(Array.from({ length: PAGE_SIZE + 7 }, () => row({ executed_at: now })))

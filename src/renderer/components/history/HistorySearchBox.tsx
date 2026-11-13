@@ -3,6 +3,13 @@
  * it. Same look as the APIs / Mocks panels' box: px sizes (Tailwind rem
  * spacing shrinks with the app's root font size), 1.5px border, 13px
  * magnifier. `className` sizes the box for where it sits.
+ *
+ * Focus is drawn ONCE, on the box (`focus-within`: accent border + the app's
+ * 3px accent-light ring, the input focus look of globals.css). The input's
+ * own ring is off: the unlayered `:focus-visible` outline beats a plain
+ * `outline-none`, so it takes the important form, and the base-layer
+ * `input:focus` shadow goes with `focus:shadow-none` — otherwise a second box
+ * was drawn inside the first.
  */
 export default function HistorySearchBox({
   testId,
@@ -19,7 +26,7 @@ export default function HistorySearchBox({
 }) {
   return (
     <div
-      className={`flex items-center gap-[7px] rounded-[8px] border-[1.5px] border-[var(--border2)] bg-[var(--surface)] px-[10px] ${className}`}
+      className={`flex items-center gap-[7px] rounded-[8px] border-[1.5px] border-[var(--border2)] bg-[var(--surface)] px-[10px] focus-within:border-[var(--accent)] focus-within:shadow-[0_0_0_3px_var(--accent-light)] ${className}`}
     >
       <svg
         width="13"
@@ -40,7 +47,7 @@ export default function HistorySearchBox({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="w-full border-none bg-transparent text-sm text-[var(--text)] outline-none"
+        className="w-full border-none bg-transparent text-sm text-[var(--text)] outline-none! focus:shadow-none"
       />
     </div>
   )

@@ -14,21 +14,22 @@ import { formatDuration, formatWhen } from './history-format'
 export default function HistoryHomeTable({ rows }: { rows: HistoryEntry[] }) {
   const { t } = useTranslation()
   return (
-    <table className="w-full table-fixed border-collapse">
-      <colgroup>
-        <col className="w-[90px]" />
-        <col />
-        <col className="w-[90px]" />
-        <col className="w-[90px]" />
-        <col className="w-[130px]" />
-      </colgroup>
+    // Auto layout: method, status, duration and time size to their content
+    // (never cut — "Yesterday 12:58 PM", "Oct 9, 2025 04:58 PM"), the URL
+    // column takes the rest and truncates (`max-w-0` + `w-full`). A fixed
+    // `<col>` width cut the English time.
+    <table className="w-full border-collapse">
       <thead>
         <tr className="bg-[var(--surface)]">
-          <Th>{t('historyHome.col.method')}</Th>
-          <Th>{t('historyHome.col.url')}</Th>
-          <Th>{t('historyHome.col.status')}</Th>
-          <Th align="right">{t('historyHome.col.duration')}</Th>
-          <Th align="right">{t('historyHome.col.time')}</Th>
+          <Th className="min-w-[90px]">{t('historyHome.col.method')}</Th>
+          <Th className="w-full">{t('historyHome.col.url')}</Th>
+          <Th className="min-w-[90px]">{t('historyHome.col.status')}</Th>
+          <Th className="min-w-[90px]" align="right">
+            {t('historyHome.col.duration')}
+          </Th>
+          <Th className="min-w-[110px]" align="right">
+            {t('historyHome.col.time')}
+          </Th>
         </tr>
       </thead>
       <tbody>
@@ -40,19 +41,27 @@ export default function HistoryHomeTable({ rows }: { rows: HistoryEntry[] }) {
   )
 }
 
-function Th({ children, align = 'left' }: { children: ReactNode; align?: 'left' | 'right' }) {
+function Th({
+  children,
+  className,
+  align = 'left',
+}: {
+  children: ReactNode
+  className: string
+  align?: 'left' | 'right'
+}) {
   return (
     <th
-      className={`border-b border-[var(--border)] px-[12px] py-[8px] text-xs font-semibold tracking-[0.4px] text-[var(--muted)] uppercase ${
+      className={`border-b border-[var(--border)] px-[12px] py-[8px] text-xs font-semibold tracking-[0.4px] whitespace-nowrap text-[var(--muted)] uppercase ${
         align === 'right' ? 'text-right' : 'text-left'
-      }`}
+      } ${className}`}
     >
       {children}
     </th>
   )
 }
 
-const CELL = 'truncate border-t border-[var(--border)] px-[12px] py-[7px] text-sm'
+const CELL = 'border-t border-[var(--border)] px-[12px] py-[7px] text-sm whitespace-nowrap'
 
 function Row({ entry }: { entry: HistoryEntry }) {
   const { t, locale } = useTranslation()
@@ -69,7 +78,7 @@ function Row({ entry }: { entry: HistoryEntry }) {
       <td className={CELL}>
         <RequestBadge protocol={entry.protocol} method={entry.method} small />
       </td>
-      <td className={`${CELL} text-[var(--text)]`} title={label.title}>
+      <td className={`${CELL} w-full max-w-0 truncate text-[var(--text)]`} title={label.title}>
         {label.label}
       </td>
       <td
