@@ -89,6 +89,8 @@ Resources. Selecting an entry opens it in the **Explorer**.
 
 ## Calling a tool
 
+![MCP tab connected over Streamable HTTP, with the search_orders tool, its JSON arguments and the result](/docs/screenshots/mcp-tool-call.png)
+
 1. Select a tool. Its description, the server's hints (**read-only**,
    **destructive**, **idempotent**, **open world**) and its **Input schema** and
    **Output schema** are shown.
@@ -236,6 +238,8 @@ does, with this tab's Authorization settings, headers and OAuth token ("Uses thi
 tab's OAuth token" is shown when a token is in use), and it also sends some
 requests **without** credentials to see what an anonymous caller gets. You do not
 need to be connected first.
+
+![MCP Security tab after a scan: grade A, score 97/100, and the transport security checks](/docs/screenshots/mcp-security-scan.png)
 
 Press **Scan**. A progress bar shows `done / total checks` and the check that is
 running; **Cancel** stops it, and checks that did not run are marked skipped.

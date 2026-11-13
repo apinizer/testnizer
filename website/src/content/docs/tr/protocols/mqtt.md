@@ -101,6 +101,8 @@ bir zaman çizelgesinde görünür. WebSocket ve Socket.IO editörleriyle aynı 
 görünümü ve **Satırları kaydır**. Alınan mesajlar yalnızca bellekte tutulur;
 diske yazılmaz.
 
+![Bir broker'a bağlı, acme/orders/# konusuna abone MQTT sekmesi ve günlükte yayımlanan ile alınan mesajlar](/docs/screenshots/mqtt-message-log.png)
+
 ## Bağlantı ömrü
 
 Bir MQTT bağlantısı sekmesine aittir. Sekmeyi kapatmak bağlantıyı keser; projeden

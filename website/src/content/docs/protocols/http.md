@@ -83,6 +83,8 @@ overrides the automatic one, and the row is marked **Overridden**.
 
 ## Body tab
 
+![Body tab with a raw JSON body that uses a {{customerId}} variable, and the 201 Created response](/docs/screenshots/http-request-body.png)
+
 ### none
 
 No body. Content-Type header is not added automatically.
@@ -154,6 +156,8 @@ See the [Scripts guide](/docs/scripts) for the full `pm` API.
 Runs after the response arrives. The `pm.test` / `pm.expect` API mirrors
 Postman's so existing Postman test suites can be pasted in with minimal
 changes.
+
+![Post-response script with three pm.test checks and the Test Results panel showing all three passed](/docs/screenshots/http-tests-results.png)
 
 ```js
 pm.test('status is 200', () => {

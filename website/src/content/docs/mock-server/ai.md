@@ -64,6 +64,8 @@ error presets work.
 
 ### The LLM row
 
+![AI mock editor with three responses and the LLM row: provider, chunking, stop reason and usage](/docs/screenshots/mock-server-ai-editor.png)
+
 | Setting | Options |
 |---|---|
 | **Provider** | **OpenAI-compatible** or **Anthropic** wire format |

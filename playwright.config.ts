@@ -48,5 +48,20 @@ export default defineConfig({
       // being slow on weak hardware is tracked as its own concern.
       timeout: process.env.CI ? 240_000 : 90_000,
     },
+    // Documentation screenshots for website/public/docs/screenshots. Not a test
+    // suite: it exists only when asked for, so `npx playwright test`, CI and the
+    // ui project never collect it (its files are *.shots.ts, outside the default
+    // testMatch). Run: TESTNIZER_DOCS_SHOTS=1 npx playwright test --project=docs-screenshots
+    ...(process.env.TESTNIZER_DOCS_SHOTS === '1'
+      ? [
+          {
+            name: 'docs-screenshots',
+            testDir: './tests/e2e/docs-screenshots',
+            testMatch: /.*\.shots\.ts$/,
+            use: { video: 'off' as const, trace: 'off' as const },
+            timeout: 120_000,
+          },
+        ]
+      : []),
   ],
 })

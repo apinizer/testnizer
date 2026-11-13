@@ -92,6 +92,8 @@ altında listelenir. Bir girdiyi seçmek onu **Gezgin**'de açar.
 
 ## Araç çağırma
 
+![Streamable HTTP üzerinden bağlı MCP sekmesi: search_orders aracı, JSON argümanları ve sonucu](/docs/screenshots/mcp-tool-call.png)
+
 1. Bir araç seçin. Açıklaması, sunucunun ipuçları (**salt okunur**, **yıkıcı**,
    **idempotent**, **açık dünya**) ile **Girdi şeması** ve **Çıktı şeması**
    gösterilir.
@@ -242,6 +244,8 @@ Yetkilendirme ayarları, başlıkları ve OAuth belirteciyle kimlik doğrular (b
 belirteç kullanılıyorsa "Bu sekmenin OAuth belirtecini kullanır" görünür); ayrıca
 isimsiz bir çağıranın ne elde ettiğini görmek için bazı istekleri kimlik bilgisi
 **olmadan** gönderir. Önce bağlanmanız gerekmez.
+
+![Tarama sonrası MCP Security sekmesi: A notu, 97/100 puan ve taşıma güvenliği kontrolleri](/docs/screenshots/mcp-security-scan.png)
 
 **Tara**'ya basın. Bir ilerleme çubuğu `yapılan / toplam kontrol` ve çalışan
 kontrolü gösterir; **İptal** durdurur ve çalışmayan kontroller atlandı olarak

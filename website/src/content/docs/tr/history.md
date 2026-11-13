@@ -46,6 +46,8 @@ girin") ve o alanı boş bırakır.
 
 ## Geçmişe göz atma
 
+![Bugünkü istekleri yöntem, URL, durum ve saatle listeleyen History paneli](/docs/screenshots/history-list.png)
+
 Sol kenar çubuğundaki **Geçmiş** sekmesini açın. İki liste vardır:
 
 - **İstekler** — gönderdiğiniz istekler, güne göre gruplanmış (Bugün, Dün ve daha

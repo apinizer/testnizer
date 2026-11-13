@@ -97,6 +97,8 @@ stops with a notice and you can send another message to continue.
 
 ### Approval comes first
 
+![AI Chat asking for approval before the model runs the echo tool on an MCP server](/docs/screenshots/ai-chat-tool-approval.png)
+
 Every tool call asks you first. The card shows the server, the tool and the
 arguments, with three choices:
 
@@ -127,6 +129,8 @@ A literal credential in an ad-hoc server's URL, command line or environment is
 used for the session and not saved with the request.
 
 ## Reading a reply
+
+![AI Chat reply after the tool call, with status, time to first byte, total time, tokens and model calls](/docs/screenshots/ai-chat-reply.png)
 
 Under each reply you see a metrics row:
 

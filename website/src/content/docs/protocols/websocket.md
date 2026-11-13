@@ -103,6 +103,8 @@ reconnected). Click a row to see the full payload; large payloads are shortened 
 the row but complete in the detail view, which also shows the message's size, time
 and type.
 
+![WebSocket tab with a JSON subscribe message and the log of sent and received messages](/docs/screenshots/websocket-message-log.png)
+
 | Control | Action |
 |---|---|
 | **Search messages** | Text search across all payloads |

@@ -45,6 +45,8 @@ move it, version it, back it up, share it. There is no opaque cloud database.
 
 ## Send your first request
 
+![Testnizer main window with the APIs tree, a GET request and its JSON response with 3/3 tests passed](/docs/screenshots/getting-started-main-window.png)
+
 1. Click **+ New** in the left sidebar → **HTTP**
 2. In the URL bar, paste `https://httpbin.org/get` and pick **GET**
 3. Hit **Send**

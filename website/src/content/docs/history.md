@@ -47,6 +47,8 @@ them again") and leaves that field empty.
 
 ## Browsing history
 
+![History panel listing today's requests with method, URL, status and time](/docs/screenshots/history-list.png)
+
 Open the **History** tab in the left sidebar. It has two lists:
 
 - **Requests** — the requests you sent, grouped by day (Today, Yesterday and

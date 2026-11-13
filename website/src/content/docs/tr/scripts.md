@@ -149,6 +149,8 @@ gönderilir — bkz. [Cookie'ler](/tr/docs/protocols/http#cookieler).
 
 ### pm.request (yalnızca ön istek betiği)
 
+![pm.request.headers.add ile Idempotency-Key header'ı ekleyen ön istek script'i ve geçen 2/2 test](/docs/screenshots/scripts-pre-request.png)
+
 ```js
 pm.request.method                  // 'GET', 'POST', …
 pm.request.url.toString()          // tam URL dizesi

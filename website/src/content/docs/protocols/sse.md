@@ -76,6 +76,8 @@ that value, not the last id seen.
 
 ## The event log
 
+![SSE tab connected to a mock stream, with typed events in the log and one event expanded](/docs/screenshots/sse-event-log.png)
+
 Each event is one row:
 
 | Part | Shows |

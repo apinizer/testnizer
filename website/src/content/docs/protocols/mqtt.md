@@ -99,6 +99,8 @@ message**, **select two entries to compare the time between them**, a **Hexdump*
 view for binary payloads and **Wrap lines**. Received messages are kept in memory
 only; they are not written to disk.
 
+![MQTT tab connected to a broker, subscribed to acme/orders/#, with published and received messages in the log](/docs/screenshots/mqtt-message-log.png)
+
 ## Connection lifetime
 
 An MQTT connection belongs to its tab. Closing the tab disconnects, and so does

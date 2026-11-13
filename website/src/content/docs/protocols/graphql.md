@@ -37,6 +37,8 @@ Content-Type: application/json   ← added automatically, override if needed
 A Monaco instance with GraphQL syntax highlighting, bracket matching, and
 auto-complete powered by the introspected schema.
 
+![GraphQL tab with a query in the operation editor and the JSON response below it](/docs/screenshots/graphql-query.png)
+
 Write a query, mutation, or subscription:
 
 ```graphql

@@ -151,6 +151,8 @@ requests that follow it — see
 
 ### pm.request (pre-request only)
 
+![Pre-request script that adds an Idempotency-Key header with pm.request.headers.add, with 2/2 tests passed](/docs/screenshots/scripts-pre-request.png)
+
 ```js
 pm.request.method                  // 'GET', 'POST', …
 pm.request.url.toString()          // full URL string

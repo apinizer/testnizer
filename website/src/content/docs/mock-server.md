@@ -49,6 +49,8 @@ servers** and **AI servers**.
 
 ## Creating a server
 
+![The Mocks sidebar with the new mock server menu: HTTP, MCP, SSE and AI](/docs/screenshots/mock-server-new-menu.png)
+
 Click **+** at the top of the Mocks panel, or **New mock server** on an empty
 Mocks page. One dialog creates every kind:
 
@@ -127,6 +129,8 @@ path, status and latency. Click a row for the request and response headers and
 bodies. Only the latest 500 entries are kept, in memory, and they are gone when
 you quit the app. A stream (SSE or AI) is one row marked
 **streaming...** until it closes, not one row per chunk.
+
+![Logs tab of a running HTTP mock with six requests and the request and response of the selected entry](/docs/screenshots/mock-server-live-log.png)
 
 The log is masked the same way as History and the Console: credential headers,
 query and body fields, and the values of your secret variables are hidden before
