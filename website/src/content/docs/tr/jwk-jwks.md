@@ -42,7 +42,7 @@ sessizce tekilleştirilmez, raporlanır — çünkü tek bir `kid` ile iki giri�
 
 ## JWKS yayınlama
 
-Bir anahtar seti, dahili **[mock sunucudan](/tr/docs/mock-server)** JWKS uç
+Bir anahtar seti, dahili **[mock sunucudan](/tr/docs/mock-server/http)** JWKS uç
 noktası olarak yayınlanabilir. Bu, çevrimdışı bir kimlik testinin döngüsünü
 kapatır:
 

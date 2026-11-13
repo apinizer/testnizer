@@ -156,7 +156,8 @@ const api = {
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('folder:update', id, payload),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('folder:delete', id),
-    duplicate: (id: string): Promise<unknown> => ipcRenderer.invoke('folder:duplicate', id),
+    duplicate: (id: string, name?: string): Promise<unknown> =>
+      ipcRenderer.invoke('folder:duplicate', id, name),
   },
 
   // ─── Endpoint ────────────────────────────────────────────
@@ -255,6 +256,9 @@ const api = {
     add: (payload: unknown): Promise<unknown> => ipcRenderer.invoke('history:add', payload),
     clear: (scope?: string | { workspace_id?: string; project_id?: string }): Promise<unknown> =>
       ipcRenderer.invoke('history:clear', scope),
+    /** How many rows `clear(scope)` would delete — the Clear confirmation's count. */
+    count: (scope?: string | { workspace_id?: string; project_id?: string }): Promise<unknown> =>
+      ipcRenderer.invoke('history:count', scope),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('history:delete', id),
     prune: (limit: number, workspaceId?: string): Promise<unknown> =>
       ipcRenderer.invoke('history:prune', limit, workspaceId),
@@ -462,7 +466,8 @@ const api = {
     update: (id: string, payload: unknown): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:update', id, payload),
     delete: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:delete', id),
-    duplicate: (id: string): Promise<unknown> => ipcRenderer.invoke('testSuite:duplicate', id),
+    duplicate: (id: string, name?: string): Promise<unknown> =>
+      ipcRenderer.invoke('testSuite:duplicate', id, name),
     listEndpoints: (suiteId: string): Promise<unknown> =>
       ipcRenderer.invoke('testSuite:listEndpoints', suiteId),
     importEndpoints: (payload: unknown): Promise<unknown> =>

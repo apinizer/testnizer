@@ -10,10 +10,12 @@ const sections = [
       'TRACE ve CONNECT dahil tam metot desteği',
       'Gövde modları: ham / JSON / XML / urlencoded / dosya yükleme ile form-data / ikili',
       'İşletim sistemi anahtarlığıyla şifrelenmiş parola ifadeleri ve proje kapsamlı istemci sertifikalarıyla mTLS',
-      'Kimlik doğrulama ile HTTP / SOCKS proxy, yönlendirme takip / takip etme, özel zaman aşımları',
+      'Kimlik doğrulamalı ve host atlama listeli HTTP proxy; yönlendirme, SSL doğrulama ve zaman aşımı önce proje, sonra uygulama ayarlarından miras alınır',
+      'URL çubuğuna bir cURL komutu (bash, Windows CMD veya PowerShell) yapıştırın, istek olsun — Geri Al ile',
+      'Kendi tablosunda path değişkenleri (:id), Send ve Run sırasında doldurulur',
       'Postman uyumlu pm API ile istek öncesi ve sonrası betikler',
       'Durum kodu, başlıklar, gövde, yanıt süresi, JSON path, XML path üzerinde test doğrulamaları',
-      'Manuel düzenleme ile çalışma alanı başına çerez deposu',
+      'Proje başına çerez deposu; Headers sekmesi otomatik üretilen her başlığı ve nereden geldiğini listeler',
     ],
   },
   {
@@ -28,6 +30,7 @@ const sections = [
       'XML İmzalama (RSA-SHA1 / RSA-SHA256), zarf veya belirli öğeler',
       'XML Şifreleme (AES-128/256-CBC, AES-128/256-GCM, RSA-OAEP anahtar sarma)',
       'SOAPAction çıkarma ve başlık müzakeresi',
+      'WS-Security, zarf öneki ne olursa olsun hem Send\'de hem Runner\'da zarfa uygulanır',
     ],
   },
   {
@@ -35,19 +38,19 @@ const sections = [
     icon: icons.radio,
     bullets: [
       'Özel başlıklar ve alt protokol müzakeresi ile ws + wss',
-      'Şablon değişken ikamesi ile JSON / metin düzenleyici',
-      'Zaman damgaları ve yön ile mesaj zaman çizelgesi (gönderilen + alınan)',
-      'Manuel bağlantı kesme ile yeniden bağlanma kontrolü',
+      'Mesaj biçimleri: metin, JSON, XML, HTML, Base64 ve hex; {{değişken}} ikamesiyle',
+      'Kayıtlı mesajlar, günlükte arama ve filtreler, mesaj başına ayrıntılar ve mesajlar arası süre',
+      'Gelen mesajlar oturum boyunca bellekte kalır — diske asla yazılmaz',
     ],
   },
   {
     title: 'GraphQL',
     icon: icons.network,
     bullets: [
-      'HTTP ve WebSocket taşımaları üzerinden sorgu, mutasyon ve abonelik desteği',
+      'HTTP üzerinden sorgu ve mutasyon; WebSocket üzerinden graphql-transport-ws ile abonelik, gerekirse graphql-ws\'e düşer',
       'Aranabilir tür tarayıcıyla şema iç gözlemi',
-      'İşlemle senkronize edilen değişkenler JSON düzenleyici',
-      'Canlı abonelikler için graphql-ws, SaaS proxy yok',
+      'Değişkenler JSON düzenleyici ve abonelikler için bağlantı başlatma (init) yükü',
+      'Belgede birden çok adlı işlem varsa bir İşlem seçicisi — Send, Run ve Generate Code seçileni kullanır',
     ],
   },
   {
@@ -65,51 +68,64 @@ const sections = [
     title: 'Server-Sent Events',
     icon: icons.zap,
     bullets: [
-      'Otomatik Last-Event-ID devam ile uzun ömürlü olay akışları',
-      'Olay başına filtreleme, veri yüklerinin JSON ayrıştırması',
-      'Geri çekilmeli yeniden bağlanma (yapılandırılabilir)',
+      'Özel başlıklar ve Last-Event-ID ile devam destekli uzun ömürlü olay akışları',
+      'Olay türü filtresi; JSON veri yükleri algılanır ve biçimlendirilir',
+      'Sunucu akışı bitirip yeniden bağlanmayı reddettiğinde açık bir "sunucu akışı kapattı" durumu',
     ],
   },
   {
     title: 'Socket.IO',
     icon: icons.arrowsLeftRight,
     bullets: [
-      'Resmi socket.io-client üzerinden WebSocket ve HTTP long-polling transport\'ları',
-      'Namespace\'ler ve bağlantı sırasında auth (auth payload üzerinden bearer token)',
-      'WebSocket upgrade el sıkışmasında özel HTTP başlıkları',
-      'JSON yüküyle herhangi bir event emit edin — giden event\'ler zaman çizelgesinde görünür',
-      'Herhangi bir event adına abone olun; gelen event\'ler aynı zaman çizelgesine akar',
+      'WebSocket ve HTTP long-polling transport\'ları; v2, v3 veya v4 istemci seçimi',
+      'Namespace\'ler ve bağlantı sırasında auth (v2 token\'ı token sorgu parametresi olarak gönderir)',
+      'El sıkışmada özel HTTP başlıkları',
+      'Birden çok argümanla ve onaylı (ack) emit; dinleme anahtarlı event açıklamaları',
       'Yön okları ve zaman damgalarıyla çift yönlü event zaman çizelgesi',
+    ],
+  },
+  {
+    title: 'MQTT',
+    icon: icons.repeat,
+    bullets: [
+      'MQTT 3.1.1 ve 5.0 — client id, clean session, keep-alive, kullanıcı adı ve parola, last will',
+      'Kendi sertifikalarınızla TLS',
+      'QoS\'li abonelikler; QoS, retain ve MQTT 5 özellikleriyle yayın',
+      'Kayıtlı mesajlar ve aranabilir mesaj günlüğü; parola History ve Konsol\'da maskelenir',
+      'Ctrl+S ile kaydedilir ve Postman v3 üzerinden gidiş-dönüş yapar',
     ],
   },
   {
     title: 'MCP (Model Context Protocol)',
     icon: icons.plug,
     bullets: [
-      'Resmi @modelcontextprotocol/sdk üzerine kurulu — Claude Desktop ve diğer MCP host\'larıyla aynı wire protokolü',
-      'Üç transport: Streamable HTTP, SSE (eski), yerel olarak başlatılan sunucular için stdio',
-      'stdio için Testnizer sunucuyu alt süreç olarak başlatır (örn. `npx @modelcontextprotocol/server-everything`)',
-      'El sıkışma sonrası sunucu kimliği (ad + sürüm) gösterilir',
-      'Input-schema önizlemeli araç kataloğu',
-      'Herhangi bir aracı JSON argüman nesnesiyle çağırın; yapılandırılmış sonucu inceleyin',
+      'Resmi MCP TypeScript SDK (v2) üzerine kurulu — Streamable HTTP, eski SSE ve yerel olarak başlatılan sunucular için stdio',
+      '2024-10-07\'den 2026-07-28\'e protokol sürümleri: sekme başına Otomatik, Legacy ya da sabitlenmiş sürüm',
+      'Araçlar (şemadan üretilen formla), şablonlu kaynaklar, prompt\'lar ve bildirimler',
+      'El sıkışma dahil hattaki her şeyin ham JSON-RPC çerçeve görünümü',
+      'No Auth, Basic, Bearer, API Key ve OAuth 2.1; adım adım OAuth 2.1 hata ayıklayıcıyla',
+      'HTTP ve SSE MCP sunucuları için A–F notlu güvenlik taraması',
+      'Tests ve Scripts (pm.mcp); MCP istekleri Runner\'da, Test Paketlerinde ve Zamanlayıcıda',
     ],
   },
   {
-    title: 'Yapay Zeka Sohbet',
+    title: 'AI Chat',
     icon: icons.bot,
     bullets: [
       '14 sağlayıcı: OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter',
       'Öz barındırılan vLLM / LM Studio / Ollama / TGI uç noktaları için özel URL sağlayıcı',
-      'Durdurma desteği ile akışlı yanıtlar',
-      'Sistem istemi kontrolüyle çok dönüşlü konuşmalar',
-      'URL, başlıklar ve gövdede ortam değişkeni çözümleme',
+      'Durdurma destekli akışlı yanıtlar; sıcaklık (temperature) ve en fazla token',
+      'Sistem istemi kontrolüyle çok dönüşlü konuşmalar; yerelde saklanır, yazılırken maskelenir',
+      'Araç olarak MCP sunucuları — her araç çağrısı varsayılan olarak onayınızı ister',
+      'Yanıt başına durum, ilk token süresi, toplam süre ve token kullanımı',
     ],
   },
   {
     title: 'Mock Sunucu',
     icon: icons.server,
     bullets: [
-      'Özel portlarda birden fazla HTTP sunucusu — varsayılan olarak 127.0.0.1\'e bağlı, 0.0.0.0 yalnızca açık opt-in ile',
+      'Özel portlarda birden fazla sunucu — varsayılan olarak 127.0.0.1\'e bağlı, 0.0.0.0 yalnızca açık opt-in ile',
+      'Dört tür: HTTP, SSE (betiklenmiş olay akışları), AI (OpenAI ve Anthropic uyumlu LLM) ve MCP',
       'Endpoint eşleştirme: tam (exact), :param yer tutucuları, * / ** wildcard, adlandırılmış grup destekli regex',
       'Response başına koşullar: header / query / path-param / body-JSONPath / body-XPath / method / and / or — ilk eşleşen kazanır',
       'Handlebars + dinamik değer template\'leri ({{request.body.x}}, {{$timestamp}}, {{$randomUUID}})',
@@ -121,14 +137,19 @@ const sections = [
       'Yapılandırılabilir CORS (origins / methods / headers / credentials / max-age) ve preflight otomatik yanıtı',
       'Hızlı yansıtma için /__echo endpoint\'i',
       'Eşleşmeyen path\'ler için proxy passthrough + opsiyonel kayıt — yakalanan upstream cevapları offline replay için yeni endpoint olarak persist edilir',
-      'OpenAPI 3 (JSON / YAML, $ref dereference, examples + schema bazlı body) veya Postman v2 koleksiyonlarından endpoint içe aktarma',
+      'OpenAPI 3 veya Swagger 2.0 (JSON / YAML, examples + schema bazlı body) ya da Postman v1, v2.x ve v3 koleksiyonlarından endpoint içe aktarma — spec\'in $ref\'i yerel dosya okuyamaz, URL çağıramaz',
+      'APIs klasöründen mock oluşturma: kayıtlı örnekler yanıt olur',
       'Sunucu başına canlı istek log\'u — replay-friendly request / response yakalama ve eşleşen kuralın izi',
     ],
   },
 ]
 
 const tools = [
-  { icon: icons.key, title: 'JWT Çözücü/Kodlayıcı', body: 'Tek araçta decode + encode. Header / payload\'i JSON ya da tablo görünümünde, claim açıklamalı, ISO render\'lı tarih claim\'leri. HS / RS / PS / ES / EdDSA imzaları doğrulayın, paylaşılan secret veya PEM özel anahtarla imzalayın. Algoritma başına çalışan örnek token üretin.' },
+  { icon: icons.key, title: 'JWT / JOSE — tam yaşam döngüsü', body: 'Tek araçta çözme, imzalama ve doğrulama: HS / RS / PS / ES imzaları, JWE şifreleme/çözme, okunabilir son kullanma tarihiyle claim düzenleme ve JWKS\'e karşı doğrulama. Paylaşılan bir secret, bir PEM anahtar ya da keystore\'unuzdaki bir alias ile imzalayın — sonuncusunda özel anahtar uygulama çekirdeğinde kalır, editöre hiç ulaşmaz.' },
+  { icon: icons.key, title: 'Keystore Studio', body: 'JKS / PKCS#12 keystore\'larını ve X.509 sertifikalarını keytool ya da openssl olmadan açın, oluşturun, düzenleyin, dönüştürün ve dışa aktarın. Anahtar çifti ve gizli anahtar üretin, beş biçimden içe aktarın, alias\'ları ve iki parola düzeyini yönetin, girdileri PEM / DER / PKCS#12 olarak dışa aktarın. Anahtar↔sertifika eşleşmesi ada göre değil, kriptografik olarak kontrol edilir.' },
+  { icon: icons.fingerprint, title: 'JWK / JWKS', body: 'İki yönde PEM ⇄ JWK, anahtar çifti üretimi, kid olarak RFC 7638 parmak izleri, JWK-Set oluşturma — ve test edilen servisin anahtarlarınızı çekebilmesi için bir mock sunucudan /.well-known/jwks.json adresinde JWKS sunma. Sınırda zorlanan kural: yalnızca açık anahtarlar.' },
+  { icon: icons.lock, title: 'SAML — oluştur, imzala, doğrula', body: 'Bir AuthnRequest / Assertion / Response oluşturun, enveloped XML-DSig ile imzalayın ve doğrulayın — Redirect ve POST bağlamaları dahil. Doğrulayıcı imzanın HANGİ öğeyi kapsadığını kanıtlar; XML Signature Wrapping, algoritma karışıklığı (güvenilen sertifikanızla anahtarlanmış HMAC), SHA-1, XXE ve süresi geçmiş bearer pencereleri tam nedeniyle reddedilir.' },
+  { icon: icons.building, title: 'TLS Denetçisi', body: 'Canlı bir uç noktaya yöneltin; sertifika zincirini, son kullanma tarihini, protokol sürümlerini ve müzakere edilen şifreleri okuyun — isteklerinizin kullandığı TLS ayarlarıyla.' },
   { icon: icons.fileText, title: 'JSON / XML Biçimlendiriciler', body: 'Güzel yazdır, küçült, doğrula. Çok satırlı giriş, satır numaralı söz dizimi hataları. Sort-keys / sort-attributes seçenekleri.' },
   { icon: icons.fileText, title: 'Kodlayıcılar / Çözücüler', body: 'Base64, URL, Hex, HTML varlıkları, Unicode kaçış — eşleştirilmiş metin alanları, anında dönüştürme.' },
   { icon: icons.eyeOff, title: 'Metin Diff', body: 'Yan yana hizalı diff; eşleşen satırlar için karakter düzeyinde intra-line vurgular. Tarafa özel satır ve eklenen / silinen sayaçları, boşluk / büyük-küçük harf yoksay seçenekleri.' },
@@ -145,7 +166,8 @@ const tools = [
   { icon: icons.fingerprint, title: 'UUID Üretici', body: 'v1 / v4 / v5 / v7 — 1000\'e kadar toplu üretim, deterministik v5 için namespace preset\'leri (DNS / URL / OID / X.500). Lower / upper / no-dashes / urn / braces formatları. Herhangi bir UUID\'i doğrula + versiyonunu tespit et.' },
   { icon: icons.search, title: 'Regex Tester', body: 'Adlandırılmış + numaralı grup yakalamalı canlı regex match, $1 backreference\'lı replacement önizlemesi, altı JS flag\'i toggle\'lanabilir, dahili cheatsheet (email / URL / IPv4 / UUID / ISO 8601 / JWT / hex renk / telefon).' },
   { icon: icons.repeat, title: 'YAML ↔ JSON Dönüştürücü', body: 'Çift yönlü, indent + sort-keys seçenekleri. JSON_SCHEMA-safe (`!!js/*` tag\'leri yok). OpenAPI spec\'leri, Kubernetes config\'leri ve Helm chart\'ları için kullanışlı.' },
-  { icon: icons.building, title: 'Sertifika Yöneticisi', body: 'Yerel sertifika deposu, proje başına mTLS / istemci sertifikaları, parola ifadeleri için işletim sistemi anahtarlığı şifrelemesi.' },
+  { icon: icons.building, title: 'Sertifika Yöneticisi', body: 'Yerel sertifika deposu, proje başına mTLS / istemci sertifikaları, parola ifadeleri için işletim sistemi anahtarlığı şifrelemesi. İstemci sertifikası doğrudan kayıtlı bir keystore alias\'ından da gelebilir.' },
+  { icon: icons.fileCode, title: 'Betiklerde JWS/JWT', body: 'İstek öncesi ve Tests betiklerinde pm.jose.sign / verify / decode (artı require("jose")); bir akışın bir adımında token üretip sonrakinde kullanabilirsiniz. Send\'de ve Koleksiyon Çalıştırıcı\'da aynı davranır.' },
 ]
 ---
 
@@ -156,8 +178,21 @@ const tools = [
         Her şey tek uygulamada. Her şey cihazda.
       </h1>
       <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
-        Testnizer, tam kurumsal API yüzeyini kapsar — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO ve MCP, artı bir yapay zeka istemcisi ve kriptografik araçların bir çalışma tezgahı. Hiçbiri dışarıya bağlanmaz.
+        Testnizer, tam kurumsal API yüzeyini kapsar — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO, MQTT ve MCP, artı bir yapay zeka istemcisi ve eksiksiz bir güvenlik tezgahı: keystore'lar, sertifikalar, JWT/JOSE, JWK/JWKS, SAML ve TLS denetimi. Genelde keytool, openssl, jwt.io ve bir klasör dolusu betik gerektiren iş burada, çevrimdışı yapılır. Hiçbiri bize veri göndermez.
       </p>
+      <a
+        href="/tr/ai-mcp"
+        class="mx-auto mt-7 flex max-w-2xl items-center gap-3 rounded-card border border-border bg-bg p-4 text-left transition-colors hover:border-border-strong hover:bg-bg-muted"
+      >
+        <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+          <Fragment set:html={icons.sparkles} />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-semibold text-text">1.6.0'da yeni: yapay zeka, MCP ve akışlar</span>
+          <span class="mt-0.5 block text-xs leading-relaxed text-text-muted">MCP istemcisi ve güvenlik taraması, MCP araçlı AI Chat ve mock SSE, LLM ve MCP sunucuları.</span>
+        </span>
+        <span class="text-accent-text"><Fragment set:html={icons.arrowRight} /></span>
+      </a>
     </div>
   </section>
 
@@ -196,7 +231,7 @@ const tools = [
       <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Mock Sunucu</p>
       <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">Aynı arayüzde yapılandırılan gerçek bir HTTP sunucusu.</h2>
       <p class="mt-4 max-w-3xl text-base leading-relaxed text-text-muted">
-        Path param, wildcard veya regex'le endpoint tanımlayın. Header, query, body (JSONPath/XPath) veya method üzerinde tanımlı koşullarla response seçin. Template'leme, in-memory state ve her cevaptan önce JavaScript çalıştıran Node-vm sandbox'ı dahil. Auth, schema doğrulama, hata enjeksiyonu, rate limit, CORS, OpenAPI/Postman içe aktarma ve recording proxy — hepsi 127.0.0.1'de.
+        Path param, wildcard veya regex'le endpoint tanımlayın. Header, query, body (JSONPath/XPath) veya method üzerinde tanımlı koşullarla response seçin. Template'leme, in-memory state ve her cevaptan önce JavaScript çalıştıran Node-vm sandbox'ı dahil. Auth, schema doğrulama, hata enjeksiyonu, rate limit, CORS, OpenAPI/Postman içe aktarma ve recording proxy — varsayılan olarak 127.0.0.1'de. Aynı panel SSE, AI (LLM) ve MCP mock'larını da çalıştırır — <a href="/tr/ai-mcp#mocks" class="text-accent-text underline decoration-dotted underline-offset-2 hover:text-text">Yapay zeka, MCP ve akışlar</a> sayfasına bakın.
       </p>
 
       <figure class="mt-10 overflow-hidden rounded-card border border-border bg-bg shadow-sm">
@@ -250,7 +285,7 @@ const tools = [
         <div class="rounded-card border border-border bg-bg p-6">
           <h3 class="text-base font-semibold text-text">Koleksiyon çalıştırıcı</h3>
           <p class="mt-2 text-sm leading-relaxed text-text-muted">
-            HTML rapor çıktısıyla birden fazla uç noktanın sıralı veya paralel yürütülmesi. Parametreli çalıştırmalar için veri dosyaları üzerinde yineleme.
+            HTML ve JSON raporlarla birden fazla uç noktanın sıralı yürütülmesi. Veri dosyaları üzerinde yineleyin, koşuyu durduran kritik istekler işaretleyin, bir test paketine hata betiği ekleyin.
           </p>
         </div>
         <div class="rounded-card border border-border bg-bg p-6">
@@ -280,7 +315,7 @@ const tools = [
         <div class="rounded-card border border-border bg-bg p-6">
           <h3 class="text-base font-semibold text-text">Kod üretimi</h3>
           <p class="mt-2 text-sm leading-relaxed text-text-muted">
-            Herhangi bir isteği cURL, JavaScript fetch, Python requests olarak dışa aktarın — token paylaşmadan paylaşmak için kullanışlıdır.
+            20 dilde 36 varyant; bash, CMD ve PowerShell için cURL dahil. Gizli değişkenler {"{{ad}}"} olarak kalır, yazılmış kimlik bilgileri siz açmadıkça *** görünür.
           </p>
         </div>
       </div>

@@ -56,6 +56,7 @@ function truncate(str: string, max: number): string {
 export default function SseEventLog() {
   const { t } = useTranslation()
   const events = useSseStore((s) => s.events)
+  const droppedEarly = useSseStore((s) => s.droppedEarly)
   const clearEvents = useSseStore((s) => s.clearEvents)
   const autoScroll = useSseStore((s) => s.autoScroll)
   const setAutoScroll = useSseStore((s) => s.setAutoScroll)
@@ -107,9 +108,10 @@ export default function SseEventLog() {
             ))}
           </select>
           <span className="text-[var(--hint)]">
-            {t('sse.filterCount')
-              .replace('{shown}', String(filteredEvents.length))
-              .replace('{total}', String(events.length))}
+            {t('sse.filterCount', {
+              shown: String(filteredEvents.length),
+              total: String(events.length),
+            })}
           </span>
         </div>
       )}
@@ -188,6 +190,11 @@ export default function SseEventLog() {
         <div className="flex items-center gap-3">
           <span data-testid="sse-event-count" className="text-[var(--muted)]">
             {formatCount(events.length, t('sse.eventCountOne'), t('sse.eventCount'))}
+            {droppedEarly > 0 && (
+              <span data-testid="sse-dropped-early">
+                {` · ${formatCount(droppedEarly, t('rt.droppedEarlyOne'), t('rt.droppedEarly'))}`}
+              </span>
+            )}
           </span>
           {connectionState === 'connected' && connectedAt && (
             <span data-testid="sse-elapsed" className="text-[var(--hint)]">

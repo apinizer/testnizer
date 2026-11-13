@@ -15,6 +15,7 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { toast } from '../../lib/toast'
 import { detectImportFormat, checkTypeMismatch } from '../../lib/import-format-detect'
 import { startsWithCurl } from '../../../shared/curl'
@@ -321,9 +322,7 @@ export default function ImportModal() {
       const mismatch = checkTypeMismatch(selectedFormat.id, detected)
       if (mismatch) {
         setImportError(
-          t('import.typeMismatch')
-            .replace('{expected}', mismatch.expected)
-            .replace('{detected}', mismatch.detected),
+          t('import.typeMismatch', { expected: mismatch.expected, detected: mismatch.detected }),
         )
         setImportLoading(false)
         return
@@ -407,9 +406,10 @@ export default function ImportModal() {
             const mismatch = checkTypeMismatch(selectedFormat.id, detected)
             if (mismatch) {
               setImportError(
-                t('import.typeMismatch')
-                  .replace('{expected}', mismatch.expected)
-                  .replace('{detected}', mismatch.detected),
+                t('import.typeMismatch', {
+                  expected: mismatch.expected,
+                  detected: mismatch.detected,
+                }),
               )
               setImportLoading(false)
               return
@@ -475,9 +475,7 @@ export default function ImportModal() {
       const mismatch = checkTypeMismatch(selectedFormat.id, detected)
       if (mismatch) {
         setImportError(
-          t('import.typeMismatch')
-            .replace('{expected}', mismatch.expected)
-            .replace('{detected}', mismatch.detected),
+          t('import.typeMismatch', { expected: mismatch.expected, detected: mismatch.detected }),
         )
         setImportLoading(false)
         return
@@ -824,19 +822,19 @@ export default function ImportModal() {
               {step === 1
                 ? t('import.title')
                 : step === 2
-                  ? `Import ${selectedFormat.name}`
-                  : 'Import Destination'}
+                  ? t('import.titleFormat', { format: selectedFormat.name })
+                  : t('import.titleDestination')}
             </div>
             <div className="text-[var(--muted)]">
               {step === 1
                 ? t('import.subtitle')
                 : step === 2
                   ? selectedFormat.id === 'curl'
-                    ? 'Paste a cURL command or load it from a file'
+                    ? t('import.subtitleCurl')
                     : canUrlImport
-                      ? `Enter a URL or upload a ${selectedFormat.name} file to import`
-                      : `Upload a ${selectedFormat.name} file to import`
-                  : 'Choose where to import the data'}
+                      ? t('import.subtitleUrlOrFile', { format: selectedFormat.name })
+                      : t('import.subtitleFile', { format: selectedFormat.name })
+                  : t('import.subtitleDestination')}
             </div>
           </div>
           <button
@@ -871,7 +869,11 @@ export default function ImportModal() {
                   fontWeight: step === s ? 600 : 400,
                 }}
               >
-                {s === 1 ? 'Format' : s === 2 ? 'Source' : 'Destination'}
+                {s === 1
+                  ? t('import.stepFormat')
+                  : s === 2
+                    ? t('import.stepSource')
+                    : t('import.stepDestination')}
               </span>
               {s < 3 && (
                 <div
@@ -932,7 +934,7 @@ export default function ImportModal() {
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
                     <FileText size={15} aria-hidden="true" />
-                    Paste a cURL command
+                    {t('import.curlLabel')}
                   </label>
                   <textarea
                     value={curlPasteText}
@@ -944,7 +946,7 @@ export default function ImportModal() {
                   />
                   <div className="mt-2 flex items-center justify-between">
                     <span className="text-[var(--hint)]" style={{ fontSize: 12 }}>
-                      Or load from a file using the picker below.
+                      {t('import.curlFileHint')}
                     </span>
                     <button
                       type="button"
@@ -953,7 +955,7 @@ export default function ImportModal() {
                       className="flex cursor-pointer items-center gap-1.5 rounded-lg border-none bg-[var(--accent)] px-3 py-1.5 font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Upload size={14} aria-hidden="true" />
-                      Continue
+                      {t('import.continue')}
                     </button>
                   </div>
                 </div>
@@ -962,7 +964,7 @@ export default function ImportModal() {
               {selectedFormat.id === 'curl' && (
                 <div className="flex items-center gap-3">
                   <div className="h-px flex-1 bg-[var(--border)]" />
-                  <span className="text-[var(--hint)]">or</span>
+                  <span className="text-[var(--hint)]">{t('import.or')}</span>
                   <div className="h-px flex-1 bg-[var(--border)]" />
                 </div>
               )}
@@ -971,12 +973,12 @@ export default function ImportModal() {
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
                     <Globe2 size={15} aria-hidden="true" />
-                    Import from URL
+                    {t('import.fromUrl')}
                   </label>
                   <div className="flex gap-2">
                     <input
                       type="text"
-                      aria-label="Import URL"
+                      aria-label={t('import.urlAria')}
                       value={importUrl}
                       onChange={(e) => setImportUrl(e.target.value)}
                       onKeyDown={(e) => {
@@ -1000,7 +1002,7 @@ export default function ImportModal() {
                       ) : (
                         <Upload size={14} aria-hidden="true" />
                       )}
-                      Next
+                      {t('import.next')}
                     </button>
                   </div>
                 </div>
@@ -1009,7 +1011,7 @@ export default function ImportModal() {
               {canUrlImport && canFileImport && (
                 <div className="flex items-center gap-3">
                   <div className="h-px flex-1 bg-[var(--border)]" />
-                  <span className="text-[var(--hint)]">or</span>
+                  <span className="text-[var(--hint)]">{t('import.or')}</span>
                   <div className="h-px flex-1 bg-[var(--border)]" />
                 </div>
               )}
@@ -1018,7 +1020,7 @@ export default function ImportModal() {
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
                     <ClipboardPaste size={15} aria-hidden="true" />
-                    Import from clipboard
+                    {t('import.fromClipboard')}
                   </label>
                   <button
                     type="button"
@@ -1032,7 +1034,7 @@ export default function ImportModal() {
                     ) : (
                       <ClipboardPaste size={16} />
                     )}
-                    Paste {selectedFormat.name} spec from clipboard
+                    {t('import.pasteSpec', { format: selectedFormat.name })}
                   </button>
                 </div>
               )}
@@ -1040,7 +1042,7 @@ export default function ImportModal() {
               {canClipboardImport && canFileImport && (
                 <div className="flex items-center gap-3">
                   <div className="h-px flex-1 bg-[var(--border)]" />
-                  <span className="text-[var(--hint)]">or</span>
+                  <span className="text-[var(--hint)]">{t('import.or')}</span>
                   <div className="h-px flex-1 bg-[var(--border)]" />
                 </div>
               )}
@@ -1050,7 +1052,7 @@ export default function ImportModal() {
                   <PostmanFolderSource loading={importLoading} onPick={handlePickPostmanFolder} />
                   <div className="flex items-center gap-3">
                     <div className="h-px flex-1 bg-[var(--border)]" />
-                    <span className="text-[var(--hint)]">or</span>
+                    <span className="text-[var(--hint)]">{t('import.or')}</span>
                     <div className="h-px flex-1 bg-[var(--border)]" />
                   </div>
                 </>
@@ -1060,7 +1062,7 @@ export default function ImportModal() {
                 <div>
                   <label className="mb-2 flex items-center gap-1.5 font-medium text-[var(--text)]">
                     <FileText size={15} aria-hidden="true" />
-                    Import from file
+                    {t('import.fromFile')}
                   </label>
                   <button
                     type="button"
@@ -1074,7 +1076,7 @@ export default function ImportModal() {
                     ) : (
                       <Upload size={16} />
                     )}
-                    Click to select a {selectedFormat.name} file
+                    {t('import.pickFile', { format: selectedFormat.name })}
                   </button>
                   {selectedFormat.id === 'postman' && (
                     <div className="mt-1.5 text-[var(--hint)]">{t('import.postmanFileHint')}</div>
@@ -1098,7 +1100,7 @@ export default function ImportModal() {
                 onClick={handleBack}
                 className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)]"
               >
-                {'\u2190'} Back
+                {'\u2190'} {t('import.back')}
               </button>
               <button
                 type="button"
@@ -1124,7 +1126,7 @@ export default function ImportModal() {
                   style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
                 >
                   <div className="mb-2 font-semibold text-[var(--text)]">
-                    WSDL Parsed Successfully
+                    {t('import.wsdlParsed')}
                   </div>
                   <div className="space-y-1 text-[var(--muted)]">
                     {wsdlParsed.services.map((svc) => (
@@ -1132,8 +1134,12 @@ export default function ImportModal() {
                         <span className="font-medium text-[var(--text)]">{svc.name}</span>
                         {svc.ports.map((port) => (
                           <div key={port.name} className="ml-4">
-                            {port.name} — {port.operations.length} operation
-                            {port.operations.length !== 1 ? 's' : ''}
+                            {port.name} —{' '}
+                            {formatCount(
+                              port.operations.length,
+                              t('import.operationCountOne'),
+                              t('import.operationCount'),
+                            )}
                           </div>
                         ))}
                       </div>
@@ -1150,7 +1156,8 @@ export default function ImportModal() {
                 >
                   <FileText size={16} className="text-[var(--accent)]" />
                   <span className="text-[var(--text)]">
-                    Ready to import: <span className="font-semibold">{pendingFileName}</span>
+                    {t('import.readyToImport')}{' '}
+                    <span className="font-semibold">{pendingFileName}</span>
                   </span>
                 </div>
               )}
@@ -1164,14 +1171,13 @@ export default function ImportModal() {
                   className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 text-[var(--text)]"
                 >
                   <div className="font-semibold">
-                    {t('import.envNote.title').replace(
-                      '{kind}',
-                      t(
+                    {t('import.envNote.title', {
+                      kind: t(
                         postmanKind === 'globals'
                           ? 'import.envNote.globals'
                           : 'import.envNote.environment',
                       ),
-                    )}
+                    })}
                   </div>
                   <div className="text-[var(--sub)]">
                     {t(
@@ -1185,7 +1191,9 @@ export default function ImportModal() {
 
               {/* Folder Selection */}
               <div hidden={envOnlyImport}>
-                <div className="mb-3 font-semibold text-[var(--text)]">Import Destination</div>
+                <div className="mb-3 font-semibold text-[var(--text)]">
+                  {t('import.titleDestination')}
+                </div>
 
                 {/* New folder */}
                 <label
@@ -1203,7 +1211,7 @@ export default function ImportModal() {
                     className="accent-[var(--accent)]"
                   />
                   <FolderPlus size={16} className="text-[var(--accent)]" />
-                  <span className="text-[var(--text)]">Create new folder</span>
+                  <span className="text-[var(--text)]">{t('import.createFolder')}</span>
                 </label>
                 {folderMode === 'new' && (
                   <div className="mb-2 ml-8">
@@ -1211,7 +1219,7 @@ export default function ImportModal() {
                       type="text"
                       value={newFolderName}
                       onChange={(e) => setNewFolderName(e.target.value)}
-                      placeholder="Folder name"
+                      placeholder={t('import.folderNamePlaceholder')}
                       className="w-full rounded-lg border border-[var(--border2)] bg-[var(--bg)] px-3 py-2 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                     />
                   </div>
@@ -1233,7 +1241,7 @@ export default function ImportModal() {
                     className="accent-[var(--accent)]"
                   />
                   <FolderOpen size={16} className="text-[var(--accent)]" />
-                  <span className="text-[var(--text)]">Add to existing folder</span>
+                  <span className="text-[var(--text)]">{t('import.existingFolder')}</span>
                 </label>
                 {folderMode === 'existing' && (
                   <div className="mb-2 ml-8 max-h-[160px] overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2">
@@ -1257,7 +1265,9 @@ export default function ImportModal() {
                       </button>
                     ))}
                     {allFolders.length === 0 && (
-                      <div className="py-2 text-center text-[var(--hint)]">No folders found</div>
+                      <div className="py-2 text-center text-[var(--hint)]">
+                        {t('import.noFolders')}
+                      </div>
                     )}
                   </div>
                 )}
@@ -1277,14 +1287,14 @@ export default function ImportModal() {
                     onChange={() => setFolderMode('root')}
                     className="accent-[var(--accent)]"
                   />
-                  <span className="text-[var(--text)]">Project root (no folder)</span>
+                  <span className="text-[var(--text)]">{t('import.projectRoot')}</span>
                 </label>
               </div>
 
               {selectedFormat.id === 'proto' && (
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[12px] font-medium text-[var(--sub)]">
-                    gRPC server address (optional)
+                    {t('import.grpcAddress')}
                   </label>
                   <input
                     type="text"
@@ -1294,8 +1304,7 @@ export default function ImportModal() {
                     className="w-full rounded-lg border border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] outline-none focus:border-[var(--accent)]"
                   />
                   <span className="text-[11px] text-[var(--hint)]">
-                    Used as the default server for every imported method. Leave empty to use
-                    localhost:50051.
+                    {t('import.grpcAddressHint')}
                   </span>
                 </div>
               )}
@@ -1318,7 +1327,7 @@ export default function ImportModal() {
                 disabled={importing}
                 className="cursor-pointer rounded-[7px] border-[1.5px] border-[var(--border2)] bg-[var(--white)] px-3 py-1.5 text-[var(--sub)] transition-colors hover:bg-[var(--bg)] disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {'\u2190'} Back
+                {'\u2190'} {t('import.back')}
               </button>
               <div className="flex gap-2">
                 <button
@@ -1342,7 +1351,7 @@ export default function ImportModal() {
                   ) : (
                     <Upload size={14} />
                   )}
-                  Import
+                  {t('import.import')}
                 </button>
               </div>
             </div>

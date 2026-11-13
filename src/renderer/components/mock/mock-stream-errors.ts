@@ -149,11 +149,11 @@ export function translateStreamError(message: string): string {
   for (const rule of RULES) {
     const m = rule.re.exec(message)
     if (!m) continue
-    let text = t(rule.key)
+    const values: Record<string, string> = {}
     rule.vars?.forEach((v, i) => {
-      text = text.replace(`{${v}}`, m[i + 1])
+      values[v] = m[i + 1]
     })
-    return text
+    return t(rule.key, values)
   }
   return message
 }

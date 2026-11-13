@@ -145,7 +145,6 @@ describe('HistoryListPanel — MCP rows (issue #166)', () => {
     useMcpStore.setState({ _tabStates: new Map(), _currentTabId: null })
     useHistoryStore.setState({
       entries: [TOOL_ROW],
-      searchTerm: '',
       filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
@@ -247,7 +246,6 @@ describe('review item 1b: a masked History value is never re-sent', () => {
     useMcpStore.setState({ _tabStates: new Map(), _currentTabId: null })
     useHistoryStore.setState({
       entries: [MASKED_ROW],
-      searchTerm: '',
       filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
@@ -292,7 +290,6 @@ describe('review item 10: MCP rows read as the call, not "MCP host/mcp"', () => 
   it('History sidebar: the label is the tool name, the server URL is the title', () => {
     useHistoryStore.setState({
       entries: [TOOL_ROW],
-      searchTerm: '',
       filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)

@@ -120,9 +120,10 @@ export default function CreateSuiteFromFolderModal({
 
   const allChecked = selected.size === allIds.length
   const toggleAll = (): void => setSelected(allChecked ? new Set() : new Set(allIds))
-  const count = t('suiteFromFolder.selectedCount')
-    .replace('{selected}', String(selected.size))
-    .replace('{total}', String(allIds.length))
+  const count = t('suiteFromFolder.selectedCount', {
+    selected: String(selected.size),
+    total: String(allIds.length),
+  })
 
   return (
     <Modal

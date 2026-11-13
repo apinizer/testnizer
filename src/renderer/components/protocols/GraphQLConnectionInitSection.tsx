@@ -41,6 +41,7 @@ export default function GraphQLConnectionInitSection() {
           data-testid="graphql-connection-init-editor"
         >
           <MonacoWrapper
+            runsActiveRequest
             value={connectionInit}
             onChange={setConnectionInit}
             language="json"

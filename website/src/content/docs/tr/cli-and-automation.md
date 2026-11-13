@@ -5,9 +5,9 @@ order: 3
 section: Kılavuzlar
 ---
 
-> **CLI durumu:** Bağımsız `testnizer-cli` paketi v1.1 için aktif olarak
-> geliştirilmektedir. Uygulama içi koleksiyon çalıştırıcı ve zamanlayıcı bugün
-> kullanıma hazırdır.
+> **CLI durumu:** henüz bağımsız bir komut satırı çalıştırıcısı yok. Bugün
+> uygulama içi koleksiyon çalıştırıcı ve zamanlayıcı kullanıma hazırdır; bir
+> koşumun raporu HTML ya da JSON olarak dışa aktarılır.
 
 ## Koleksiyon çalıştırıcı
 
@@ -21,15 +21,25 @@ isteği ortamlar, değişken zincirleme ve test onayı takibiyle sırayla çalı
    sağ tıklayıp **Klasörü çalıştır** seçin)
 3. Çalıştırmayı yapılandırın:
    - **İstekler** — dahil edilecek tekil istekleri işaretleyin veya kaldırın
-   - **Ortam** — hangi ortamın değişkenlerini kullanacağınızı seçin
+   - **Ortam** — koşum projenin etkin ortamını kullanır; sonuçlar, koşum geçmişi
+     ve raporlar onu adıyla gösterir (hiçbiri yoksa "Ortam yok")
    - **Yineleme** — tüm diziyi kaç kez çalıştıracağınız (yük örnekleme veya
      veri güdümlü test için kullanışlıdır)
    - **İstekler arası gecikme** — her istek arasında milisaniye cinsinden duraklama
    - **İterasyonlar arası gecikme** — tam turlar arasındaki duraklama; bu farklı
      bir boşluktur ve çoğu zaman asıl istediğiniz odur
-   - **İlk başarısızlıkta dur** — herhangi bir test onayı başarısız olursa çalıştırmayı
-     durdur
+   - **Hata olursa çalıştırmayı durdur** — ilk başarısızlıkta çalıştırmayı durdur
 4. **Başlat**'a tıklayın
+
+### Kritik istekler
+
+Bir isteğin Ayarlar sekmesinde **Kritik istek**'i işaretleyin (ya da çalıştırma
+dizisindeki bir Flow satırında **Kritik** rozetinin yanındaki anahtarı kullanın);
+o istek başarısız olduğunda ya da çalışamadığında, *Hata olursa çalıştırmayı durdur*
+ne derse desin koşu durur. Diğer istekler eskisi gibi başarısızlıkların ardından
+devam eder ve teardown yine koşar. Sonuçlar, koşu geçmişi ve HTML / JSON raporlar
+koşuyu durduran kritik isteği adıyla anar; kritik satırlar rozet taşır. Setup ve
+Teardown satırlarında bu anahtar yoktur.
 
 ### Setup, Flow ve Teardown
 
@@ -63,6 +73,20 @@ iterasyon başına değil, run başına bir kez çalışır — ve teardown beti
 teardown isteklerinin garantilendiği şekilde garantilidir: akış erken
 durduğunda da koşar. Sonuçlarda betik satırları bir durum kodu yerine
 **SCRIPT** rozeti taşır ve hata fırlatan bir betik hata olarak raporlanır.
+Üçüncü slot **Run fail script**, teardown'dan sonra yalnız koşu kırmızıysa bir
+kez çalışır — raporu (`pm.run.exportHtml()`) bir e-posta ya da sohbet
+webhook'una göndermek için kullanın; bkz.
+[Run fail script](/tr/docs/scripts#run-fail-script--kırmızı-runda-uyarı).
+
+Koşu sonuçlarındaki, her **All Runs** satırındaki ve planlanmış bir görevin
+geçmişindeki **Export HTML** / **Export JSON** butonları koşu raporunu dosyaya
+kaydeder — sırlar maskeli, başlık sayıları ekranla aynı. Kayıtlı bir koşu
+yeniden çalıştırılmadan dışarı aktarılır. Birden çok iterasyonda her sonuç satırı
+kendi iterasyonunu açar ve HTML rapor her satırı iterasyonuyla etiketler.
+
+Bir koşu, Runner sekmesinden ayrıldığınızda da ekranını korur: geri döndüğünüzde
+ilerleme, o ana kadarki satırlar ve **Durdur** oradadır; siz başka yerdeyken biten
+bir koşunun sonuçları gösterilir.
 
 ### Bir koşuyu durdurmak
 
@@ -106,6 +130,21 @@ yineleme için ortam kapsamına eklenir:
 URL daha sonra `{{userId}}`'ye referans verebilir ve test `{{expectedName}}`'i
 onaylayabilir.
 
+### Bir koşu neler içerebilir
+
+- **MCP istekleri** Send ile aynı geçti / kaldı kuralları ve aynı `pm.*`
+  script'leriyle koşar. Bir koşu etkileşimli bir istemi (bir oturum açma, sunucudan
+  bir soru) yanıtlayamaz; bu yüzden böyle bir satır açık bir mesajla başarısız
+  olur. Bir stdio sunucusu, ancak o komuta bu bilgisayarda MCP sekmesinden bir kez
+  bağlandıysanız başlatılır; böylece Git'ten çekilen bir proje bir sonraki
+  koşunuzda bilinmeyen bir programı çalıştıramaz.
+- **Script'ler** yalnızca bu bilgisayarda izin verdiğiniz projelerde koşar. Git'ten,
+  proje dosyasından ya da script ekleyen bir içe aktarmadan gelen proje, izin
+  verene kadar engellidir; **zamanlanmış koşular asla sormaz**, script'li adımları
+  siz projeye izin verene kadar bir mesajla başarısız olur.
+- Koşu, Send ile aynı proxy (bypass listesi ve tür dahil), SSL ve yönlendirme
+  ayarlarını kullanır.
+
 ### Çalıştırma sonuçları
 
 Çalıştırma devam ederken, tamamlandıkça her istek yeşil ✓ veya kırmızı ✗ rozeti
@@ -118,8 +157,9 @@ gösterir. Çalıştırma bittikten sonra:
 
 ### HTML rapor dışa aktarma
 
-Çalıştırma sonrasında bağımsız bir HTML dosyası kaydetmek için **Raporu dışa aktar**'a
-tıklayın. Rapor:
+Çalıştırma sonrasında bağımsız bir HTML dosyası kaydetmek için **HTML Dışarı
+Aktar**'a tıklayın (**JSON Dışarı Aktar** aynı koşumu JSON olarak kaydeder). HTML
+rapor:
 
 - Onay başına bir satır içerir (geçti / başarısız / mesaj)
 - İstek URL'sini, metodunu, yanıt kodunu, yanıt süresini içerir
@@ -133,21 +173,27 @@ böylece yeniden çalıştırmadan geçmiş çalıştırmaları inceleyebilirsin
 
 ## Zamanlayıcı
 
-Zamanlayıcı, Testnizer açıkken bir cron zamanlamasına göre koleksiyon çalıştırması
-tetikler.
+Zamanlayıcı, Testnizer açıkken bir koşumu bir zamanlamaya göre tetikler.
 
-**Araçlar → Zamanlayıcı**'yı açın (ya da alt çubukta Zamanlayıcı sekmesini).
-**Zamanlama ekle**'ye tıklayın ve yapılandırın:
+Runner yapılandırmasında **Elle çalıştır** yerine **Çalıştırmaları planla**'yı
+seçin, tekrar sıklığını belirleyin ve **Çalıştırmayı planla**'ya tıklayın:
 
-- **Koleksiyon / klasör** — ne çalıştırılacak
-- **Ortam** — hangi değişken setinin kullanılacağı
-- **Cron ifadesi** — standart beş alanlı cron (`0 */6 * * *` = her 6 saatte bir)
-- **Etkin / devre dışı** geçiş
+- **Aralık** — her N dakikada ya da saatte bir
+- **Günlük** — her gün seçtiğiniz saatte
+- **Haftalık** — seçtiğiniz günlerde seçtiğiniz saatte
+- **Cron** — beş alanlı bir ifade (`m h dom mon dow`, örneğin `0 9 * * 1-5`)
 
-Zamanlayıcı sistem saatini kullanır. Zamanlanan bir tetikleyici çalışırken
-Testnizer açık değilse, çalıştırma atlanır (telafi yürütmesi yoktur).
+Tüm saatler yerel saatinizdir. **Planlanmış Görevler** görünümü her görevi sıradaki
+çalıştırması, zamanlaması, ortamı ve uç nokta sayısıyla listeler; görevi **Şimdi
+çalıştır**, **Duraklat** / **Sürdür** ya da **Sil** yapabilir ve çalıştırma geçmişini
+gösterebilirsiniz. Ortam sütunu görevin kullandığı ortamı adıyla gösterir; silinmişse
+satır bunu söyler. Bir paket ve zamanlaması **Çalıştırma hata betiği** taşıyabilir.
 
-Sonuçlar, manuel çalıştırmalar gibi Geçmiş'te görünür.
+Zamanlanan bir tetikleyici çalışırken Testnizer açık değilse, çalıştırma atlanır
+(telafi yürütmesi yoktur). Zamanlanmış koşular bir projenin script'lerine güvenip
+güvenmeyeceğinizi asla sormaz: script'li bir adım, projeye izin verene kadar bir
+mesajla başarısız olur. Sonuçlar, elle çalıştırmalar gibi koşu geçmişinde görünür
+ve her satır HTML ya da JSON olarak dışa aktarılır.
 
 ## Test paketleri
 
@@ -156,43 +202,22 @@ için bir araya getirir — birden fazla koleksiyona yayılan bir akışı test 
 istediğinizde kullanışlıdır (ör. auth koleksiyonu → siparişler koleksiyonu →
 faturalandırma koleksiyonu).
 
-**Araçlar → Test Paketleri** → **Yeni paket**'i açın ve koleksiyonları çalıştırmak
-istediğiniz sırayla ekleyin. Her paket çalıştırması, birleşik raporu olan tek bir
+**Testler** panelinde bir paket ekleyin ve istekleri ya da koleksiyonları
+çalıştırmak istediğiniz sırayla ekleyin. Paket modül modül koşar: her klasör için
+önce kendi istekleri, sonra alt klasörleri; APIs panelinden o klasörü çalıştırmakla
+aynı sırada. Çalıştır, Quick Run, Zamanlayıcı ve paket dışa aktarmaları bu
+sırayı kullanır. Klasör kimlik doğrulaması ve pre / post script'leri, APIs panelinden
+kurulan bir pakete taşınır. Her paket çalıştırması, birleşik raporu olan tek bir
 geçmiş girdisi olarak kaydedilir.
 
 Test verisi dosyaları için desteklenen içe aktarma formatları: JSON dizisi ve CSV
 (virgül veya noktalı virgülle ayrılmış, UTF-8, başlık satırıyla).
 
-## CI / gözetimsiz çalıştırmalar (v1.1 önizlemesi)
+## Gözetimsiz çalıştırmalar ve CI
 
-`testnizer-cli` başsız çalıştırıcıya sahip ayrı bir npm paketi olacaktır:
-
-```sh
-npx testnizer-cli run ./collections/payments.tns \
-  --env staging \
-  --iterations 1 \
-  --report ./out/payments.html \
-  --exit-code-on-failure
-```
-
-`--exit-code-on-failure` herhangi bir test onayı başarısız olduğunda 1 koduyla
-çıkar, bu da onu doğrudan CI geçti/başarısız mantığında kullanılabilir kılar.
-
-CLI, masaüstü uygulamasıyla aynı motorları (HTTP, SOAP, gRPC, WebSocket, SSE) ve
-aynı `pm` API'sini paylaşır. UI bağımlılığı yok. Telemetri yok.
-
-İlerlemeyi
-[sürümler sayfasında](https://github.com/apinizer/testnizer/releases)
-takip edin.
-
-## Neden Newman değil?
-
-Newman, CI'da Postman koleksiyonlarını çalıştırır. Çalışır, ancak SOAP, gRPC,
-GraphQL abonelikleri, SSE veya SoapUI XML koleksiyonlarını anlayamaz. Ayrıca
-Postman'ın barındırılan betik modelini kullanır — betikler `pm.sendRequest`'i
-çağırdığında istek, uç noktanıza doğrudan değil Postman'ın analiz hattı üzerinden
-gider.
-
-Testnizer CLI, uygulamayla aynı çevrimdışı öncelikli ilke üzerine inşa edilmiştir —
-analiz uç noktası yok, uzak yapılandırma yok, tüm kripto ve test yürütmesi
-cihazda.
+1.6.0'da başsız bir komut satırı çalıştırıcısı yoktur. Tıklamadan çalıştırmak için
+yukarıdaki Zamanlayıcı'yı kullanın; sonuçları başka bir sisteme aktarmak için
+koşumu JSON ya da HTML olarak dışa aktarın veya koşum kırmızı bittiğinde raporu bir
+webhook'a göndermek için bir **Çalıştırma hata betiği** kullanın (bkz.
+[Script'ler](/tr/docs/scripts#run-fail-script--kırmızı-runda-uyarı)). Bir CLI yol
+haritasındadır ama henüz yayımlanmadı.

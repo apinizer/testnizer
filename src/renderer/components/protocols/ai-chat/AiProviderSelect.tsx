@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, ChevronDown } from 'lucide-react'
 import { AI_PROVIDERS, type AiProvider, type AiProviderInfo } from '../../../stores/ai-chat.store'
+import { useTranslation } from '../../../lib/i18n'
 
 export function ProviderAvatar({
   info,
@@ -37,6 +38,8 @@ export default function ProviderSelect({
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
 
+  const { t } = useTranslation()
+  const nameOf = (p: AiProviderInfo): string => (p.labelKey ? t(p.labelKey) : p.label)
   const current = AI_PROVIDERS.find((p) => p.id === value) ?? AI_PROVIDERS[0]
 
   useEffect(() => {
@@ -73,7 +76,7 @@ export default function ProviderSelect({
         style={{ fontSize: 13 }}
       >
         <ProviderAvatar info={current} />
-        <span className="flex-1 truncate">{current.label}</span>
+        <span className="flex-1 truncate">{nameOf(current)}</span>
         <ChevronDown size={12} style={{ color: 'var(--muted)' }} />
       </button>
       {open &&
@@ -117,7 +120,7 @@ export default function ProviderSelect({
                   }}
                 >
                   <ProviderAvatar info={p} />
-                  <span className="flex-1 truncate">{p.label}</span>
+                  <span className="flex-1 truncate">{nameOf(p)}</span>
                   {isActive && <Check size={12} style={{ color: 'var(--accent)' }} />}
                 </button>
               )

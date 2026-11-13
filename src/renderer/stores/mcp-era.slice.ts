@@ -15,6 +15,7 @@ import type {
   McpSubscriptionView,
 } from '../types/mcp'
 import { DEFAULT_MCP_PROTOCOL, subscriptionFromConnect } from '../lib/mcp-protocol'
+import { t } from '../lib/i18n'
 
 export interface McpEraTabState {
   /** `protocol` connect option. Persisted and part of the Ctrl+S snapshot. */
@@ -96,7 +97,7 @@ export function toolLegPatch(
   if (!res.success) {
     return {
       result: null,
-      resultError: res.error ?? 'Tool call failed',
+      resultError: res.error ?? t('mcp.error.toolCallFailed'),
       isInvoking: false,
       pendingInput: null,
     }

@@ -27,8 +27,8 @@ const platforms = [
         }),
       },
     ],
-    note: 'İlk başlatmada sağ tıklayın → Aç. Beta sürecinde ad-hoc imzalı.',
-    extra: 'Sequoia\'da Gatekeeper hâlâ engelliyorsa: <code>xattr -dr com.apple.quarantine /Applications/Testnizer.app</code>',
+    note: 'Apple Developer ID ile imzalı ve Apple tarafından noter onaylı (notarized) — diğer uygulamalar gibi açılır.',
+    extra: 'macOS 13 (Ventura) veya üstü gerekir. macOS 11 ya da 12 kullanıyorsanız mevcut sürümünüzü koruyun, 1.6.0 veya sonrasını kurmayın.',
   },
   {
     icon: icons.windows,
@@ -49,7 +49,7 @@ const platforms = [
         }),
       },
     ],
-    note: 'SmartScreen beta sürecinde uyarı verecektir — Daha fazla bilgi → Yine de çalıştır.',
+    note: 'Yükleyici kod imzalıdır. SmartScreen yeni bir sürümde yine de sorabilir — Daha fazla bilgi → Yine de çalıştır.',
     extra: 'NSIS yükleyici. Varsayılan olarak kullanıcı başına kurulum; yönetici kurulumu da desteklenir.',
   },
   {

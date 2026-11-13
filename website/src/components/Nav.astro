@@ -16,8 +16,8 @@ const isTr = pathname === '/tr' || pathname.startsWith('/tr/')
 const p = (href: string): string => (isTr ? `/tr${href}` : href)
 
 const labels = isTr
-  ? { features: 'Özellikler', tools: 'Güvenlik araçları', security: 'Güvenlik', docs: 'Dokümanlar' }
-  : { features: 'Features', tools: 'Security tools', security: 'Security', docs: 'Docs' }
+  ? { features: 'Özellikler', aiMcp: 'AI & MCP', tools: 'Güvenlik araçları', security: 'Güvenlik', docs: 'Dokümanlar' }
+  : { features: 'Features', aiMcp: 'AI & MCP', tools: 'Security tools', security: 'Security', docs: 'Docs' }
 
 // `match` is the prefix that lights the link up, which is not always the href:
 // Docs points at one page but owns the whole section, and /security must not
@@ -25,11 +25,14 @@ const labels = isTr
 // is not listed — it is the button on the right.
 const links = [
   { href: p('/features'), match: p('/features'), label: labels.features },
+  { href: p('/ai-mcp'), match: p('/ai-mcp'), label: labels.aiMcp },
   { href: p('/security-tools'), match: p('/security-tools'), label: labels.tools },
   { href: p('/security'), match: p('/security'), label: labels.security },
   { href: p('/docs/getting-started'), match: p('/docs'), label: labels.docs },
 ]
 
+// Five links plus the Turkish labels no longer fit between 768 and 1024px —
+// they wrapped onto two lines — so the link row starts at lg and GitHub at xl.
 const isActive = (match: string): boolean =>
   pathname === match || pathname.startsWith(`${match}/`)
 ---
@@ -41,12 +44,12 @@ const isActive = (match: string): boolean =>
       <span class="text-text">Testnizer</span>
     </a>
 
-    <nav class="hidden items-center gap-1 md:flex">
+    <nav class="hidden items-center gap-1 lg:flex">
       {links.map(({ href, match, label }) => (
         <a
           href={href}
           class:list={[
-            'rounded-md px-3 py-1.5 text-sm transition-colors',
+            'whitespace-nowrap rounded-md px-3 py-1.5 text-sm transition-colors',
             isActive(match)
               ? 'text-accent-text bg-accent-light'
               : 'text-text-muted hover:text-text hover:bg-bg-muted',
@@ -72,7 +75,7 @@ const isActive = (match: string): boolean =>
         href="https://github.com/apinizer/testnizer"
         target="_blank"
         rel="noopener"
-        class="hidden rounded-md px-3 py-1.5 text-sm text-text-muted transition-colors hover:bg-bg-muted hover:text-text md:inline-flex"
+        class="hidden rounded-md px-3 py-1.5 text-sm text-text-muted transition-colors hover:bg-bg-muted hover:text-text xl:inline-flex"
       >
         GitHub
       </a>

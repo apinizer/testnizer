@@ -109,13 +109,13 @@ export default function HmacTool() {
                     className="border-b px-3 py-1.5 text-left font-semibold"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)', width: 130 }}
                   >
-                    Algorithm
+                    {t('tools.hash.colAlgorithm')}
                   </th>
                   <th
                     className="border-b px-3 py-1.5 text-left font-semibold"
                     style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}
                   >
-                    Hex digest
+                    {t('tools.hash.colHexDigest')}
                   </th>
                   <th
                     className="border-b px-3 py-1.5 text-left font-semibold"

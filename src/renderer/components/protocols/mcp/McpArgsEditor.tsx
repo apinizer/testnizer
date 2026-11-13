@@ -16,6 +16,7 @@ import {
 import McpArgsForm from './McpArgsForm'
 import { PROBLEM_KEYS } from './call-ui'
 import { GhostButton, SectionLabel } from './ui'
+import { fillTemplate } from '../../../../shared/fill-template'
 
 const UNSUPPORTED_KEYS: Record<ArgsFormUnsupported, string> = {
   composition: 'mcp.args.unsupported.composition',
@@ -30,18 +31,15 @@ const NOTE = 'm-0 text-[11px] text-[var(--muted)]'
 
 function problemText(p: ArgsProblem, t: (key: string) => string): string {
   if (p.reason === 'type') {
-    return t('mcp.args.problemType')
-      .replace('{field}', p.path)
-      .replace('{type}', p.expected ?? '')
+    return fillTemplate(t('mcp.args.problemType'), { field: p.path, type: p.expected ?? '' })
   }
   if (p.reason === 'enum') {
-    return t('mcp.args.problemEnum')
-      .replace('{field}', p.path)
-      .replace('{values}', p.expected ?? '')
+    return fillTemplate(t('mcp.args.problemEnum'), { field: p.path, values: p.expected ?? '' })
   }
-  return t(PROBLEM_KEYS[p.reason])
-    .replace('{field}', p.path)
-    .replace('{limit}', p.limit !== undefined ? String(p.limit) : '')
+  return fillTemplate(t(PROBLEM_KEYS[p.reason]), {
+    field: p.path,
+    limit: p.limit !== undefined ? String(p.limit) : '',
+  })
 }
 
 function ViewToggle({

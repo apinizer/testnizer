@@ -54,9 +54,7 @@ export default function McpResultTabs({
             <span
               data-testid="mcp-tests-summary"
               data-passed={allPassed ? 'true' : 'false'}
-              title={t('mcp.tests.passedOf')
-                .replace('{passed}', String(passed))
-                .replace('{total}', String(total))}
+              title={t('mcp.tests.passedOf', { passed: String(passed), total: String(total) })}
               className={`rounded-full px-[5px] text-[10px] font-semibold ${
                 allPassed
                   ? 'bg-[var(--green-bg)] text-[var(--green)]'
@@ -74,7 +72,7 @@ export default function McpResultTabs({
         <div data-testid="mcp-test-results" className="flex flex-col gap-2">
           {tests.scriptError && (
             <ErrorLine testId="mcp-tests-script-error">
-              {t('mcp.tests.scriptError').replace('{error}', tests.scriptError)}
+              {t('mcp.tests.scriptError', { error: tests.scriptError })}
             </ErrorLine>
           )}
           {(total > 0 || !tests.scriptError) && <TestResultsTab results={tests.results} />}

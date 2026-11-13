@@ -1,14 +1,713 @@
 ---
 title: Changelog
 description: Release notes and version history for Testnizer.
-order: 5
-section: Reference
+order: 1
+section: "What's new"
 ---
 
 Every Testnizer build is tagged and logged here. This page is the
 source of truth for release descriptions — the CI release job mirrors
 each entry into the matching [GitHub Release](https://github.com/apinizer/testnizer/releases),
 where signed installers and SHA-256 checksums are attached.
+
+## v1.6.0
+
+**Testnizer becomes an AI and MCP client. MCP grows into a full client with an
+OAuth 2.1 debugger and a graded security scan, AI Chat can call MCP tools, and
+the mock servers now speak MCP, SSE and the OpenAI / Anthropic APIs. The same
+release brings full Postman compatibility, MQTT, a Git Commit panel and
+Electron 44, and it keeps secrets encrypted on your machine.**
+
+### Highlights
+
+- **MCP, end to end.** Tools, resources, prompts, notifications and the raw
+  JSON-RPC frames; protocol 2026-07-28 next to the 2024–2025 revisions; MCP
+  requests you can save, test and script, and run in the Runner, a Test Suite
+  or the Scheduler.
+- **MCP Security Scan.** 30 checks over an MCP server, graded A–F, exported as
+  a self-contained HTML report.
+- **MCP OAuth 2.1 Debugger.** Every step of the authorization handshake is on
+  screen, while the tokens stay in the app core.
+- **AI Chat with MCP tools.** The assistant calls tools on your MCP servers,
+  and every call asks for your approval by default. Each reply shows its time
+  to first token, duration and token usage.
+- **Mock servers for SSE, AI and MCP.** Next to HTTP mocks you can now run an
+  event stream you define, an OpenAI- or Anthropic-compatible API and a local
+  MCP server, with failures on purpose. You can build and test a client or an
+  agent without a provider key, without spending tokens and without a network.
+- **Full Postman compatibility.** Any Postman export comes in (v1 to v3,
+  folders and `.zip`), projects go out as v2.1 or v3, and `pm` scripts, cURL
+  and code snippets behave as they do in Postman.
+- **MQTT** is a new protocol, and WebSocket and Socket.IO reach Postman's
+  feature set.
+- **Secrets stay on this machine.** They are encrypted on disk, left out of
+  every exported or committed file, and masked in History, the Console and
+  run reports.
+
+### Before you update
+
+- **macOS 13 (Ventura) or later is required.** On macOS 11 or 12 the app does
+  not offer this update.
+- Your database is copied to `backups/` before the new version changes it.
+- Scripts in a project that came from outside (Clone from Git, a project
+  file, an import that added scripts) do not run until you allow them on this
+  computer. Projects you already have are not affected.
+- A saved request reads files outside the project's working directory only
+  when you allow it in Project Settings. Projects that already use such paths
+  keep working.
+- A custom proxy now also applies to WebSocket, Socket.IO, MQTT, SSE and
+  GraphQL subscriptions.
+
+### AI and MCP
+
+- **MCP client:** the MCP tab
+  now covers what a Postman MCP request does. Besides Tools it has
+  **Resources** (with templates), **Prompts** and **Notifications**, a raw
+  JSON-RPC frame view of everything on the wire including the handshake, the
+  negotiated protocol version, server instructions, custom HTTP headers on
+  connect (`{{variables}}` work in them), stdio environment variables, and
+  paste / export of MCP configuration for VS Code, Cursor and Claude Desktop.
+  An **Authorization** tab offers No Auth, Basic, Bearer, API Key and OAuth 2.1.
+  Protocol **2026-07-28** is supported alongside the 2024–2025 revisions: a
+  per-tab selector (Auto, Legacy, or a pinned version), an era badge, and a
+  generated form when a server asks for more input mid-call. Tool arguments
+  come as a form built from the tool's schema (with a JSON toggle and inline
+  validation), a running call can be cancelled, Ctrl/Cmd+Enter runs the active
+  action, and the result header shows status, duration and size with a Copy
+  button. The result has a **JSON | Preview** switch like Postman's. Long
+  tool descriptions are clamped with Show more, so Invoke / Read / Get never
+  slide out of reach, and draggable dividers (remembered) let you size the
+  list, the call and the result. Tools can be saved with Ctrl+S (selected tool,
+  arguments, resource URI, prompt), get **Tests** and **Scripts** tabs
+  (`pm.test`, `pm.expect`, `pm.mcp`), and appear in History. A redirect to
+  another origin no longer replays your credential headers to it. A server that
+  sends a truncated image is now reported as such ("The server sent incomplete
+  image data") with **Download as received**, instead of a broken icon.
+
+- **MCP Security Scan:** a graded A–F report over 30
+  checks — transport, authentication, protocol behaviour, prompt-injection
+  heuristics in tool descriptions, information disclosure, CORS and security
+  headers, plus an opt-in rate-limit probe and, for 2026-07-28 servers, header
+  validation and cache-scope checks. Credentials are scrubbed from every
+  finding; the report exports as a self-contained HTML file. It is for servers
+  you are authorized to test, and the screen says so. The scan is now also
+  listed on the **Security** page and found by its search.
+
+- **MCP OAuth 2.1 Debugger:** step through the whole
+  authorization handshake — the unauthenticated probe, protected-resource and
+  authorization-server metadata, dynamic client registration, PKCE, the browser
+  sign-in, the token exchange and the authenticated connect — with every
+  request and response visible. A 401 on Connect opens it for you. Tokens, the
+  PKCE verifier and the client secret stay in the app's main process and never
+  reach the screen layer; nothing OAuth is saved. An authorization server on
+  plain HTTP is refused unless you opt in for that request, in which case it is
+  pinned to the host the server itself advertised.
+
+- **MCP in Runner, Test Suite and Scheduler:** MCP
+  requests run in a collection, a test suite or a schedule instead of being
+  skipped, with the same pass / fail rules and the same `pm.*` scripting as
+  Send. A run cannot answer an interactive prompt (a sign-in, a question from
+  the server), so such a row fails with a plain message. A stdio server is only
+  started by a run if you connected to that exact command on this computer
+  once — a project pulled from Git cannot make your next run execute an
+  unknown program.
+
+- **AI Chat:** the assistant can
+  use **MCP servers as tools** — a saved MCP request or an ad-hoc URL / stdio
+  command, with per-server and per-tool switches. Every tool call asks for your
+  approval by default (Allow once, Allow for this conversation, Deny); "Run
+  tools without asking" lasts for the open tab only and is never saved. Each
+  reply shows its status, time to first token, duration and token usage ("not
+  reported" when the provider does not say). Conversations are stored locally —
+  new, switch, rename, delete — never exported or committed, and they are
+  masked when written. Ctrl+S now saves and restores the AI Chat configuration;
+  API keys are encrypted per provider with the operating system's key store
+  and are not kept in browser storage; temperature and max tokens are
+  configurable. With Settings and Tools both open, the conversation used to
+  shrink to a sliver and clip the approval buttons; the configuration now
+  scrolls in its own resizable panel above the conversation, which keeps a
+  minimum height. When a provider reports an error part-way through a reply,
+  AI Chat now keeps the partial text and shows the error under it; before, the reply looked complete.
+
+### Mock servers
+
+- **Mock MCP Server:** a new kind of mock in the
+  Mocks panel — a local MCP server (Streamable HTTP and legacy SSE) with
+  presets (Echo, Auth required, Error server, Complex schemas, Slow), tools
+  with JSON Schema, resources, prompts, bearer authentication that behaves like
+  a real protected server, latency, and error scenarios (JSON-RPC error,
+  `isError`, timeout, HTTP status, every Nth call). One endpoint serves both
+  the 2025 and the 2026-07-28 clients, and it can ask for input mid-call to
+  test that flow. Logs are live and **Open in MCP tab** pre-fills the client.
+  Unsaved Tools / Resources / Prompts tabs show a dot, saving untouched
+  defaults warns first, and Ctrl+S saves the mock instead of opening the
+  request Save dialog. New mock server is now one dialog for every type, with
+  presets for HTTP mocks too.
+
+- **SSE and AI mock servers:** two more mock types. An
+  **SSE** mock streams events you define (`{{stream.seq}}`, `{{stream.iteration}}`,
+  `{{stream.now}}` per frame) with interval, heartbeat, loop, keep-open and
+  `Last-Event-ID` resume; presets: Ticker, Finite replay, Notifications feed,
+  Slow / heartbeat. An **AI** mock speaks the OpenAI chat API (and `/v1/models`)
+  and the Anthropic messages API, streaming when the client asks for it and
+  answering with JSON otherwise, with token usage on the final chunk; presets:
+  OpenAI-compatible chat, Anthropic messages, a tool-call round trip (pairs
+  with the Mock MCP Echo server) and error replies (`error-429`, `error-500`,
+  `error-401`). **Start & open in SSE tab / AI Chat tab** points Testnizer's own
+  client at the mock — without sending any saved provider key — and the AI
+  editor shows the base URL an SDK should use. In the logs a stream is one row
+  ("streaming…" until it closes), not one per chunk. The SSE tab now says "The
+  server closed the stream" when a server ends the stream and refuses the
+  reconnect, and a normally ended stream is no longer logged as an error. The
+  new screens wrap properly in narrow windows and at large font sizes, the
+  New mock server dialog works with the arrow keys, an empty Mocks page offers
+  New mock server, and the sidebar search matches type and port. Streams can be
+  chunked by a fixed size or sent whole, end with the stop reason you pick
+  (written as each provider names it), and fail on purpose part-way through:
+  an SSE `event: error` after N events, or an OpenAI / Anthropic error after N
+  chunks — the Errors preset includes both, plus an Anthropic 529
+  `overloaded_error`. A new preset round-trips a tool call over the Anthropic
+  messages API. A mock's type (HTTP / SSE / AI) can be changed in its Settings
+  without losing anything; **Open in AI Chat** also offers the Anthropic
+  endpoint, and a Mock MCP server offers **Start & open in MCP tab**. A chat tab
+  opened from a mock never sends your saved provider key.
+
+- **Mock server from a folder:** "Create mock server" copied an imported
+  request's full URL into the mock, so "Open in request tab" produced
+  `http://127.0.0.1:8080https://…` and the endpoint could never match a call.
+  Mocks now bind the path (`/v2/pet/:petId/uploadImage`), and Postman items whose
+  URL starts with `{{baseUrl}}` import into a mock instead of being skipped. A
+  request's saved examples become its responses, and one without examples answers an
+  empty 200 instead of 501. A failure now says why, instead of only reaching the
+  Console, and what could not be added is listed. Mocks created earlier keep their old
+  endpoints: create them again.
+
+- **Mock server from a file:** New mock server has an Import a file
+  option for HTTP mocks. It takes an OpenAPI or Swagger spec or a Postman v1, v2.x or
+  v3 collection, in JSON or YAML, recognises the format, shows what it found and names the server after
+  the spec. A file that is not a spec, or has nothing to mock, is refused before a
+  server exists, and a failed import leaves no empty server behind. Import on the
+  Endpoints tab stays and now reports the real reason. Swagger 2.0 responses keep
+  their bodies, a schema that refers to itself no longer stops the import, and a
+  spec's `$ref` can no longer read a local file or call a URL. Sample bodies read
+  `allOf`, `oneOf` and `anyOf`, and an import's warnings are listed instead of counted.
+  **Behaviour change:** OpenAPI imports now bind the spec's server path, on the Endpoints
+  tab too, so `https://api.example.com/v1` plus `/pets` answers at `/v1/pets`, as the
+  real API does and as a mock made from a folder always has. Endpoints imported earlier
+  keep their paths.
+
+- **Mock servers and secrets:** a secret variable in a mock response template now stays
+  as literal `{{name}}` text, so a request to the mock cannot read it.
+
+### Postman compatibility, import and export
+
+- **Postman import:** drop in any Postman file and
+  Testnizer works out what it is — a v1, v2.0 or v2.1 collection, a v3
+  collection (a single JSON file or a Native Git folder), an environment, a
+  globals file, an account data dump, or a `.zip` of any of these. Nothing is
+  unpacked to disk; unsafe archives (paths outside the folder, links,
+  encrypted or oversized entries) are refused. Every import runs as one step
+  and ends with a report of everything that was converted, skipped or could
+  not be carried. Saved responses arrive as examples, request settings as
+  request settings, secret variables encrypted. Collection authentication goes
+  on the import folder (or the project) and requests inherit it; path
+  variables (`:id`) get their own table and are filled in on Send and Run.
+  **Collection variables and Postman globals now land in the project's
+  Globals**, so they resolve whichever environment is active; a variable you
+  already have keeps its value and the clash is listed. Relative file paths in
+  form-data and binary bodies are read from **Project Settings → Working
+  directory**, as in Postman. WebSocket, Socket.IO, MQTT, gRPC, GraphQL, MCP
+  and AI requests in a v3 collection open in their own editors; Kafka and
+  Postman Data requests are listed as skipped.
+
+- **Postman export:** a project or test suite exports as Postman
+  **v2.1** (now with the collection id, saved examples, request settings,
+  project variables as collection variables, AWS Signature and Hawk auth) or
+  **v3** — a single JSON file or a Native Git folder that Postman opens
+  directly, checked against Postman's published schema. Anything v3 cannot
+  hold is listed in one warning. Environments and Globals export as Postman
+  files, and secret values are never written.
+
+- **cURL:** paste a cURL command into the URL bar and it
+  becomes the request — with an Undo; a plain URL stays a URL. Generate Code
+  and import understand all three flavours: Linux/macOS shell, Windows CMD
+  and PowerShell.
+
+- **Generate Code:** pick a language, then a variant and its
+  options — 36 variants, covering every snippet Postman offers except Postman
+  CLI. GraphQL and SOAP tabs generate their real request. Form-data, Basic
+  auth and Python JSON bodies are now correct in every language.
+
+- **Scripts:** Send and Run share one `pm`, so a script
+  behaves the same in both. `pm.test` with a `done` callback waits for it
+  (it used to pass even when the assertion failed), all 118 Postman dynamic
+  variables (`{{$randomEmail}}` …) work, `pm.collectionVariables` reads and
+  writes the project's Globals, `pm.vault` works against secret variables and
+  `pm.require` says clearly that it is not supported. Insomnia imports follow
+  Insomnia's own rule: the base environment is the project's Globals, and
+  `insomnia.environment` is that base until you pick an environment. Run and
+  mock servers no longer see Globals of other projects in the same
+  workspace.
+
+- **Export:** a whole project exports as **Postman v2.1,
+  OpenAPI 3, Insomnia** or Testnizer JSON from the APIs tree root, File →
+  Export, Settings and the project card on Home. Requests saved with Ctrl+S are
+  included, and anything a format cannot hold is listed in a warning rather
+  than dropped silently. On Postman and Insomnia export the **Tests** tab now
+  travels in full: its assertion rows become `pm.test` code in
+  the post-response script, project exports keep folder authentication and
+  scripts, and project pre-request / test scripts become the collection's own
+  scripts. Importing the file back does not run the tests twice. XPath
+  assertions have no equivalent there and stay Testnizer-only.
+
+- **Imported requests run as they were sent:** requests imported or saved in every format
+  were checked by running them, which fixed rows that Send, Run or a mock read differently.
+  A data file's columns now resolve in a request during Run without a script, and RAML path
+  parameters import as path variables.
+
+- **Bad import files:** a very large, deeply nested or irregular file now gets a clear
+  message instead of freezing the app. An OpenAPI `$ref` or a WSDL given as a file can no
+  longer read a local file or call a URL, a `.proto` file's imports must be regular `.proto`
+  files, and a proto downloaded from a URL stays inside its own folder. Pull lists the files
+  it skipped.
+
+### Protocols and connections
+
+- **MQTT:** a new protocol with MQTT 3.1.1 and 5.0 — client id,
+  clean session, keep-alive, username and password, last will, TLS with your
+  certificates, subscriptions with QoS, publish with QoS, retain and MQTT 5
+  properties, saved messages and a searchable message log. It saves with
+  Ctrl+S, appears in History and the Console with the password masked, and
+  round-trips through Postman v3.
+
+- **WebSocket and Socket.IO:** Postman's settings,
+  message formats (text, JSON, XML, HTML, Base64, hex), saved messages,
+  log search and filters, per-message details and time between messages.
+  Socket.IO adds event descriptions with a listen switch, acknowledgements,
+  several arguments per emit, headers on the handshake and a choice of client
+  v2, v3 or v4 (v2 sends its token as a `token` query parameter). A server
+  that closes the connection now shows as disconnected. Open WebSocket,
+  Socket.IO and MQTT connections close when you leave their project.
+
+- **SOAP WS-Security:** the WS-Security you set up in
+  the SOAP editor — UsernameToken, Timestamp, signature, encryption — is now
+  applied to the envelope on Send and in the Runner; Send used to turn it
+  into an HTTP Basic header and Run left it out. If a server only accepted
+  these requests because of that Basic header, choose Basic in the Auth tab.
+  Envelopes with any prefix (`soapenv:` as SoapUI writes them, `soap:`, or a
+  default namespace) get the `wsse:Security` header, in the Tools panel too;
+  text that is not a SOAP envelope is refused with a clear message instead of
+  coming back unchanged. SOAP Send now also sends the Auth tab (inherited from
+  the folder or project) and the Headers tab, as Run did, and Generate Code
+  shows the same request. The UsernameToken password is masked in History,
+  the Console and run reports.
+
+- **GraphQL subscriptions really subscribe:** a subscription now runs over WebSocket
+  (`graphql-transport-ws`, and the older `graphql-ws` when a server only speaks that).
+  The events arrive live, with a connection init payload you can set. A document with
+  several named operations now shows an **Operation** select, and Send, Run, Subscribe and
+  Generate Code use the chosen one. Exports to Postman v2.1, Postman v3, Insomnia and OpenAPI
+  say so when they cannot carry a connection init payload, instead of dropping it silently.
+
+- **Proxy for real-time connections:** **Behaviour change:** a custom proxy now also applies
+  to WebSocket, Socket.IO, MQTT, SSE and GraphQL subscriptions, which used to ignore it. With
+  no custom proxy they go out directly, as before. **Bypass for hosts** now works, on HTTP too:
+  it was saved but read by nothing. SOCKS was offered but never implemented, so a saved SOCKS
+  proxy now fails with a clear message and no new one can be chosen. Your request never goes
+  out directly instead.
+
+- **Connection errors read the same everywhere:** WebSocket,
+  Socket.IO, SSE, MCP and MQTT failures name what went wrong and where —
+  refused, timed out, DNS, TLS, HTTP status, invalid URL — with a hint, in
+  English or Turkish. Tokens in the URL (user info, `token`, `sig`, `key`…)
+  never appear in the message, and an MCP server's own error text is kept.
+
+### Runner and Test Suites
+
+- **Critical requests:** tick **Critical request** in a
+  request's Settings tab and the run stops when that request fails or cannot
+  run, whatever "Stop run if an error occurs" says; other requests keep going
+  past failures as before. The results, run history and HTML / JSON reports
+  name the critical request that stopped the run, and critical rows carry a
+  badge.
+
+- **Critical from the run sequence:** Flow rows of the run sequence have
+  a toggle next to the Critical badge, so you can mark a request while planning
+  the run. It writes the same field as the switch in the request's Settings tab
+  and works from the keyboard. Setup and Teardown rows do not offer it.
+
+- **Runner: fixed actions, report export, fail script:** **Start**, **Schedule** and **Save** sit in a footer that stays
+  visible however long the configuration or large the font. A test suite,
+  a collection run and any row of All Runs or Scheduled history export as
+  **HTML** or **JSON** through one report builder, so the counts in the
+  file match the screen and credentials are masked the same way. A suite
+  (and its schedule) can have a **Run fail script** that runs once, after
+  teardown, only when the run is red — with `pm.run.summary` and
+  `pm.run.exportHtml()` / `exportJson()` to post the result to a webhook or
+  mail service (reference the key as `{{secretVar}}`). It shows as a
+  teardown row and never changes the run's verdict; Stop during the script
+  is recorded.
+
+- **Run results name their environment:** a run records the
+  environment it actually used and shows it in the results, All Runs,
+  Scheduled history, the scheduled task list and the HTML / JSON report —
+  "No environment" when it used none. Renaming or deleting the environment
+  later does not rewrite history.
+
+- **One active environment for Send and Run:** when no environment was
+  marked active, the header and Send used the first one while Run, Test
+  Suite, Scheduler and mocks used none; choosing **No environment** was not
+  saved either. The active environment now has one source for both, every
+  choice is saved, and projects that relied on the old behaviour keep the
+  environment they saw.
+
+- **A run keeps its screen across tabs:** leaving the Runner tab during a
+  run and coming back used to show a blank page while the Console kept logging.
+  The progress, the rows so far and Stop are now there on return, and a run that
+  ends while you are elsewhere shows its results. A run started in one tab no
+  longer shows up in another, and scheduled runs stay out of an open run's rows.
+  Overview, All Runs and past reports show a banner back to the run in progress.
+  A results page with nothing to show now says so, and a run that could not start
+  says why.
+
+- **Test Suites run order:** a suite built from a
+  collection with several folders ran "the first request of every module, then
+  the second of every module", so a login in one module could run after the
+  calls that need it. Suites run module by module again, in the same order as
+  the APIs folder Run, in Run, Quick Run, Scheduler and in all three suite
+  exports. Folder authentication and pre / post scripts are carried into a suite
+  built from APIs, importing nested folders no longer fails with "FOREIGN KEY
+  constraint failed", and dragging a request in the Run Sequence no longer
+  moves it out of its folder.
+
+- **Runner configuration in a narrow window:** when the sequence
+  and the configuration no longer fit side by side, the sequence moves above
+  the form, so every field and the Start / Schedule / Save footer stay whole
+  down to the smallest window.
+
+### Git
+
+- **Git:** the branch menu has **Commit…**,
+  Pull, Push, Merge and **Discard all changes**, with ahead / behind counts. The
+  Commit panel lists what changed (added, modified, deleted) and lets you
+  tick the changes that go into the commit — the rest stay in your project —
+  then Commit (local), Commit and push, or Discard. A change that depends on
+  another (a request needs its folder) selects it with it, so a commit never
+  points at something it lacks. Push asks for a commit message first, tells you
+  how many uncommitted changes it would include and can push existing commits
+  only. A teammate's pull now brings the **whole project**: project-level
+  authentication, pre-request and test scripts, timeout, SSL, redirect and TLS
+  settings used to stay on the machine that set them, so requests that inherit
+  project auth broke on the other side. Credentials in them are blanked in the
+  file, `{{variable}}` references travel, and a pull tells you how many secret
+  values are still empty on this machine. Leaving `main` after re-importing a
+  teammate's merge no longer creates a reorder-only "Auto-save" commit that left
+  your local `main` diverged from the remote.
+
+### Security and privacy
+
+- **Secrets stay on this machine:** variables marked secret,
+  HTTP mock authentication, a Mock MCP bearer token and certificate passphrases
+  are written as empty values in every file that leaves the app — Git, project
+  files, exports — and a pull or import never overwrites the value you have
+  locally. A mock preset no longer copies its token into the server description,
+  and mock authentication stored in other shapes (a single `token`, an API-key
+  value, a plain `password`) is covered too. A mock whose authentication could
+  not be read used to let requests through; it now refuses them. A certificate
+  whose files or passphrase are not on this computer is imported disabled, so it
+  cannot break every request to its host. Importing a file written by an older
+  build keeps your local folder authentication and scripts instead of failing
+  half way. When upgrading: secrets that an older build already pushed to Git
+  stay in the repository history, so rotate them; a teammate on an older build
+  who pulls a file written by this version sees local secret values blanked
+  until they update; and a mock server with basic authentication and an empty
+  password no longer lets anyone in.
+
+- **Secrets encrypted at rest:** the values of secret
+  environment and global variables, mock server authentication and the Mock
+  MCP bearer token are now encrypted with your operating system's keychain in
+  the local database, like AI Chat keys and certificate passphrases already
+  were. Existing values are encrypted once on first start, and the database is
+  compacted so deleted values no longer linger in free pages. If a value can no
+  longer be decrypted — for example after the keychain changed — it is kept, and
+  the field asks you to re-enter it. Where no keychain is available (some Linux
+  setups), values stay unencrypted as before and the environment editor and
+  Settings say so.
+
+- **History, Console, Runner and mock logs hide credentials:** credential headers, query and body fields at any depth, URL
+  `user:pass@`, the values of your secret variables and token fields in
+  responses are masked before anything is stored or shown. History keeps the
+  `{{variable}}` template so a request can still be re-sent; Console masks by
+  default with a session-only **Show secrets**; old History rows are masked once
+  on first start. The v1.6.0 release scan went further: a credential sent in a
+  request body (JSON, form, XML / SOAP including CDATA and attributes) is
+  masked wherever a server echoes it back, even under another name; the mock
+  log masks your secret variables the same way; and WebSocket, Socket.IO,
+  SSE, GraphQL and gRPC tabs no longer write received messages to disk —
+  they live in memory for the session, and what an older build saved is
+  cleaned at start. **Generate Code**, the code pane and MCP **Copy as…** keep
+  secret variables as `{{name}}` unless you tick "Include secret values".
+  Passwords, tokens, API keys and credential headers typed into a request
+  editor — HTTP, MCP, WebSocket, SSE, Socket.IO, MQTT, GraphQL, gRPC and SOAP — are
+  no longer kept in the app's browser storage; only
+  `{{variable}}` references are. That covers auth fields, credential headers
+  and metadata, query parameters, form and JSON body fields, GraphQL
+  variables, connection URLs, MCP command lines and tool arguments, the SOAP
+  UsernameToken password and signing key, the MQTT password and user
+  properties, and credential fields inside realtime message bodies. A saved request gets them back from the
+  saved request (also when you press Send right after a restart), and an
+  unsaved tab asks you to type them again after a restart.
+  WebSocket, gRPC, GraphQL, SSE and Socket.IO calls reopen from History in
+  their own editors.
+
+- **Hardening:** production dependencies with
+  known advisories are updated (no critical ones left; the remaining ones are
+  explained in issue #288). The app window now runs in the operating system's
+  sandbox, web permissions (notifications, location, camera, microphone) are
+  refused unless the app itself needs them, and the page can no longer reach
+  environment variables. In the MCP OAuth debugger, a client secret you typed
+  is only sent to an authorization server on another host after you confirm
+  that host. Our build pipeline pins every GitHub Action to a fixed version
+  and runs with read-only permissions.
+
+- **Scripts from outside need your permission:** **Behaviour change:** scripts are not
+  sandboxed, so a project that came from outside could run code on your computer. A project
+  from Clone from Git or a project file, or one whose collection import added scripts, now
+  runs no script until you allow it on this computer. You are asked the first time a script
+  would run, and Project Settings shows the state. Projects you already have are not
+  affected. Scheduled runs never ask: their scripted steps fail with a message until you allow
+  the project. A later Pull does not ask again, so allow a project only if you trust where it
+  comes from.
+
+- **Files outside the working directory:** **Behaviour change:** a saved request can no
+  longer read just any file on your computer. Files outside the project's working
+  directory need **Read files outside the working directory** in Project Settings, which
+  stays on this computer and never travels with the project. A file you pick yourself in
+  the Body tab counts. Projects that already use such paths keep working after the
+  upgrade, and imports and Pull warn about them.
+
+- **Generate Code hides literal credentials:** with **Include
+  secret values** off, typed passwords, tokens, API keys in headers, query
+  and form bodies, and inherited auth appear as `***` — the snippet, Copy
+  and the request itself stay otherwise unchanged; `{{variables}}` stay
+  readable.
+
+- **App password and start screen:** Settings now has an **App
+  password** section — see whether one is set, change it, or turn it off with
+  your current password (before, this was only reachable from the Profile
+  dialog on Project Home). With no password, Testnizer opens straight into
+  your projects after the first launch instead of asking you to "Continue"
+  every time, and turning the password off keeps you in the app. The start
+  screen's text is translated and now says what is true: the app password is a
+  lock on launch, not database encryption, and Testnizer sends nothing to us.
+  With a password set, the user menu has **Manage password…**, which opens
+  that section. Settings now shows the current theme, language
+  and font size each time it opens; before, changing them from the command
+  palette and then pressing Save in Settings put the old values back.
+
+- **Proxy password without the keychain:** a Save in Settings or Project Settings used to erase
+  a stored proxy password this computer could not decrypt at that moment. It now stays, and
+  works again once the keychain is back.
+
+- **Privacy policy and website:** the texts now describe exactly what is
+  encrypted, what is stored locally in plain text, what mock servers keep in
+  memory, what History records for connection protocols and what the app
+  password protects. Because the text changed, you are asked to accept it again.
+
+### Platform and updates
+
+- **Electron 44:** Testnizer now runs on Electron 44.9.3, which
+  brings Chromium 152 and Node 24. Electron 33 no longer received security
+  fixes. The move closes Electron's own advisories, among them the
+  compromised eMudhra certificates and the Squirrel.Mac update race, and the
+  Brotli decoder flaw (CVE-2026-111497). Your database, encrypted secrets,
+  settings and open tabs carry over unchanged. A test opens a profile written
+  by the previous Electron with the new one, row by row, then opens it with
+  the old one again. **macOS 13 (Ventura) or later is now required.** On
+  macOS 11 or 12, Testnizer 1.4.10 or later does not offer this update and
+  keeps working as it is; on older versions, do not install it.
+
+- **Database backup before every update:** the first time a new
+  version starts, it copies your database to `backups/` in the app's data
+  folder before changing anything, with secret values encrypted in the copy
+  too. The three newest copies are kept; a copy is skipped (and you are told)
+  when the disk is nearly full, and a failed copy never removes an older one.
+  How to restore one is in the Getting started guide.
+
+### Editor and everyday use
+
+- **Editor and everyday use:** a new HTTP request is named after its URL when you first save it
+  ("users", not "New Endpoint"). The left panel has a visible collapse button
+  and remembers its state. The Headers tab lists the **auto-generated headers**
+  (Accept, User-Agent, Host, Content-Type, Content-Length, auth, cookies) with
+  where each comes from; auth values are masked, and a header you add overrides
+  the automatic one — which also fixes a header written in a different letter
+  case losing to the engine's value. Each open tab remembers its request
+  sub-tab instead of jumping back to Params. AI Chat requests show an AI chip,
+  not a POST badge. Ctrl+S and the Save dialog show a "Request saved" toast for
+  every protocol. Timeout, redirect and SSL settings are now saved with the
+  request and behave the same on Send and Run. Native drop-downs no longer clip
+  their text, toasts stack correctly, and save dialogs keep the file extension
+  of the suggested name (an HTML report no longer lands as `.json`). Dialogs
+  render crisp text on 1x monitors; they used to sit on a half pixel and look
+  blurred. The response pane is fully translated to Turkish. Small text across
+  the app — hints, badges, counters, log rows — now renders at the size it was
+  designed for, and code-like values (URLs, paths, tokens, protocol versions)
+  use the monospace font; a global style rule had been overriding both. The WebSocket and Socket.IO connection bars now look and read
+  like the MCP and SSE bars — themed status, translated labels, dark mode. Drop-downs, inputs and text areas now follow their size and
+  colour classes too, so a select matches the input next to it, placeholders
+  are lighter than real values and sizes follow the font-size setting; the
+  Runner results filter no longer clips.
+
+- **Many open tabs:** with more than 20 tabs open, returning to
+  an older tab could show an empty request, and Ctrl+S then saved it empty
+  over the stored one; an unsaved draft could lose its text the same way.
+  Tabs with unsaved changes are never dropped from memory now, and a saved
+  request whose tab was dropped (or not restored after a restart) is
+  reloaded from the project before you see, save or send it.
+
+- **Tab strips:** when the open tabs or the request sub-tabs no
+  longer fit, their scrollbar no longer pushes the editor down; the strips
+  keep their height, scroll sideways with the mouse wheel and keep the active
+  tab in view. The Generate Code dialog is translated and its Close button is
+  readable in dark mode.
+
+- **Saving a deleted request:** if a request (or its folder) was
+  deleted while its tab was open, Ctrl+S used to say "Request saved" and write
+  nothing. A tab with unsaved changes now becomes an unsaved draft and stays
+  open, and Save opens the Save dialog, which says why it opened, so you
+  choose a name and a folder. Deleting a request from the tree or the Tests
+  panel closes its tab when it has no unsaved changes.
+
+- **SSL verification and redirects follow the project:** a
+  request's **SSL verification** and **Follow redirects** now inherit from
+  Project Settings, then App Settings, on Send and on Run alike — before, a
+  project with SSL verification turned off still failed on a self-signed
+  server in the Runner, and every saved request carried its own `true` that
+  hid the project setting. A request that never changed the switch now
+  follows the project; one you set explicitly keeps your choice. SOAP and
+  GraphQL use the same settings (and the app proxy), and Generate Code
+  carries them. gRPC still verifies certificates.
+
+- **Settings say where they apply:** **Settings** and
+  **Project Settings** stay two dialogs, but each title and field now names
+  its scope — font, theme and language are app-wide and live only in
+  Settings; timeout, SSL, redirects and proxy show which level they come
+  from and can be reset to inherit. The two dialogs link to each other and
+  ask before dropping unsaved changes. The app-level proxy is now actually
+  used when a project has none (it was saved but ignored), its password is
+  hidden in History, the Console and run reports, and a proxy with only a
+  password keeps it.
+
+- **Narrow windows and the tab strip:** when the editor
+  gets too narrow the right panel steps aside on its own (and comes back) — opened by hand, it slides over the editor —
+  the URL keeps a usable width and secondary actions move into a menu; the
+  environment picker and the **+** button stay pinned at the right of the
+  tab strip however many tabs are open.
+
+- **Small UX debts:** the right panel starts closed for new
+  users and remembers your choice; a new WebSocket, SSE or GraphQL tab
+  starts with an empty URL; Postman export keeps the order you see in the
+  tree; secret values are masked consistently with a short explanation;
+  a new mock server checks its port as you type; keyboard shortcuts are
+  shown the same way everywhere (⌘ on macOS), and the ones listed now
+  work — ⌥⌘C / Ctrl+Alt+C toggles the Console, ⌥⌘← → / Ctrl+Alt+← → switch
+  tabs; a WebSocket shows its connection state once.
+
+- **Saving and the run sequence:** Save As now preselects the project's first folder every
+  time. Every second save used to land in the project root, so two requests saved in a row
+  ended up apart. The run sequence of a project run now shows the order the run executes:
+  folders first, then the requests at the root. It used to number the root's requests first,
+  though they ran last.
+
+- **Work stays where you started it:** a slow response, an import or a file load finishing
+  after you switched tabs now lands on the tab that started it. Results the app made up
+  when a real call was not possible (GraphQL, SOAP, gRPC, update check) are gone: you see
+  the real error.
+
+- **Double-click to pin in the APIs tree:** a double-click on a request
+  opens it in a pinned tab, or pins the preview already showing it. A single
+  click still opens a preview.
+
+- **Crash after closing a GraphQL tab:** closing a saved GraphQL request
+  could end in the "Testnizer hit a render error" screen, because Generate Code
+  misread its body, even with the dialog closed. Your data was never affected.
+
+- **Report an issue from the app:** Help and the user menu have a link that opens a
+  new GitHub issue with the version, build and operating system filled in. Nothing
+  else is sent.
+
+### Turkish interface
+
+- **Turkish interface:** 110 strings
+  corrected, and the sidebar, tab strip, request editor, Auth tab, response
+  pane, Environments dialog, delete confirmations, All Runs, Scheduled Tasks,
+  Runner configuration and results, Console, History and the WebSocket,
+  Socket.IO, GraphQL and gRPC editors are translated, with one term per
+  concept (Test Paketi, uç nokta, dal).
+
+- **Turkish, the last mile:** HTTP status codes with
+  Turkish names and descriptions (search works in both languages), Tools
+  placeholders and hints, one date and time format across Runs, History,
+  AI Chat and logs, and default request names recognised in both languages.
+  Mock **Insert example** snippets have Turkish names, counts read "1 warning"
+  / "2 warnings" everywhere, and an HTTP, GraphQL or SOAP timeout points to
+  the request timeout setting instead of a connect timeout.
+
+- **Polish from the release review:** the four connection bars
+  (WebSocket, SSE, Socket.IO, MCP) share one height and wrap the same way;
+  the mock editor header and the MCP editor fit narrow windows and large
+  font sizes; **Start & open** connects the tab and reuses an already open
+  one; a chat reply cut by an error shows "200 · interrupted"; the restart
+  hint for typed credentials appears only when there is something to lose;
+  **Set a password…** works in place in Settings (also from the user menu)
+  instead of signing you out.
+
+### From the tester rounds
+
+- **From the tester check:** a push that GitHub briefly
+  refuses with a server error is retried automatically; if it still fails,
+  the message says nothing was lost and pushing again creates no second
+  commit. On macOS, file pickers open folders whose names end in `.jks`,
+  `.p12`, `.pfx` or `.keystore`. The folder icon on a Test Suite run result
+  reveals the request in Tests. A mock endpoint opens in a request tab — any
+  method, with Send and Save — instead of the system browser.
+
+- **From the second tester round:**
+  - Closing a project tab in the header with unsaved requests now asks first: Save, Don't Save, or Cancel, with the unsaved requests listed by name. With many projects open, the project tabs shrink and scroll, and the header buttons stay on screen. A project tab shows a dot while the project has unsaved requests, and deleting such a project says how many requests will be lost and names them.
+  - Typing `Authorization` and pressing Tab keeps `Authorization`. An empty header value no longer fills itself in. A suggestion is only taken after you pick it with the arrow keys.
+  - Changing a running mock server to a port that is already in use leaves the server on its old port and says which port is taken and by whom. Before, the new port and "Running" showed with no error.
+  - With several Runner iterations, each result row opens its own iteration, and only the clicked row is highlighted. The HTML run report labels each row with its iteration.
+  - When a WebSocket, SSE or gRPC server closes a connection, the tab keeps its own messages; it never shows another tab's.
+  - Cmd/Ctrl+Enter runs the request of the editor you are in: GraphQL, SOAP, gRPC, WebSocket, Socket.IO, MQTT and SSE (connect, or send when already connected). Before, it always sent the HTTP request. It no longer starts a second HTTP request while one is running. The Send, Run, Connect and similar buttons show the shortcut in their tooltip when it does the same thing as the button.
+  - Run, Test Suite and Scheduler honour the proxy bypass list and the proxy type, the same as Send. A SOCKS proxy gives the same clear error in Run as in Send instead of being used as an HTTP proxy. A cleared proxy username and password no longer break every request with "Invalid proxy authorization".
+  - History **Clear** asks for confirmation, says how many entries it will delete, clears only the active project, and is disabled when the list is empty. History rows show the full URL on hover, and the trash and "···" buttons have labels.
+  - Long tab names are truncated and show the full name on hover. The active tab always shows its close button, and tabs can be reached with the keyboard.
+  - A folder added to a long APIs tree is scrolled into view and selected. Before, it was created below the visible part of the tree and seemed not to appear. Switching projects quickly no longer leaves the previous project's tree in the sidebar.
+  - Turkish strings that were still in English (Git Pull / Push, the branch dialog, the Duplicate message and others found in a full scan) are translated. Git error messages now follow the interface language too: English users no longer see Turkish messages such as "Git yapılandırması bulunamadı", and Turkish users no longer see English ones. Copies made in Turkish are named "(kopya)". A name containing `$&`, `$1` or `{name}` now shows as typed in every message.
+
+**Tests:** the suite grew to 12634 tests in 848 files, and the full UI end-to-end suite runs 952 tests. New end-to-end specs
+cover Postman import (account data dumps and artifacts, Native Git v3 folders,
+`.zip` archives, collection variables), Postman v3 export, cURL paste, the
+Generate Code variants, MQTT, WebSocket and Socket.IO parity, an upgrade-data
+check that opens a profile across the Electron 44 move, the renderer sandbox,
+the SSE and AI mock servers (`tur1/mock-sse`, `tur1/mock-ai`, including a
+parity test that drives the mock with Testnizer's own AI Chat engine for both
+providers and an offline tool-call round trip against a real Mock MCP server),
+the AI Chat layout at two window sizes with every approval button hit-tested,
+the MCP Security Scan entry on the Security page, Git Commit / Discard /
+selective commit, the tester-UX fixes, project export to Postman and back, and the second tester round (closing a project tab with unsaved requests, header autocomplete with Tab, a mock moved to a busy port, Runner iterations, realtime server close, Cmd/Ctrl+Enter per protocol, Run proxy settings, History Clear, the tab strip, Turkish git texts and copy names, the project tab dot and delete warning, shortcut tooltips, and names with `$&`).
+Secrets are covered by canary scans: a unique sentinel value is planted in
+every place a credential can live and the output of every file boundary,
+History, Console, Runner and mock log is searched for it — which is how the
+v1.6.0 scan found the leaks fixed above. Git portability has a
+guarantee test that fills every column of every exported table and checks that
+a teammate receives it exactly, apart from a documented list of things that stay
+local by design.
+
+**Still deferred:** security scans beyond MCP — HTTP, GraphQL, SOAP,
+real-time and LLM endpoints; and the CLI / contract /
+open-banking roadmap.
 
 ## v1.5.4
 

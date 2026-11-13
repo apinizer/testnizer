@@ -47,9 +47,7 @@ export default function InheritableToggleRow({
         <div className="mt-1 flex items-center gap-2 text-[var(--muted)]">
           <span data-testid={`${testId}-source`} data-inherited={own === null ? 'true' : 'false'}>
             {own === null
-              ? t('settingsTab.inheritedValue')
-                  .replace('{source}', sourceText)
-                  .replace('{value}', onOff(effective))
+              ? t('settingsTab.inheritedValue', { source: sourceText, value: onOff(effective) })
               : t('settingsTab.ownValue')}
           </span>
           {own !== null && (
@@ -59,9 +57,10 @@ export default function InheritableToggleRow({
               data-testid={`${testId}-inherit`}
               className="cursor-pointer border-none bg-transparent p-0 text-[var(--accent)] underline-offset-2 hover:underline"
             >
-              {t('settingsTab.useInherited')
-                .replace('{source}', sourceText)
-                .replace('{value}', inherited === null ? '…' : onOff(inherited))}
+              {t('settingsTab.useInherited', {
+                source: sourceText,
+                value: inherited === null ? '…' : onOff(inherited),
+              })}
             </button>
           )}
         </div>

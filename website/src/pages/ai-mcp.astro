@@ -1,0 +1,299 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro'
+import { icons } from '../components/icons'
+
+/**
+ * AI, MCP & streaming — the 1.6.0 capability page.
+ *
+ * Same anatomy as /security-tools: a hero, one article per capability, then the
+ * "why". The clients on this page connect out by design (an AI provider, an MCP
+ * server, an event stream), so each of those articles carries the same plain
+ * note the TLS inspector does. The mock servers are the part that works with
+ * the cable pulled, and the page says so.
+ */
+
+const clients = [
+  {
+    id: 'mcp',
+    icon: icons.plug,
+    name: 'MCP client',
+    tagline: 'Everything a Model Context Protocol server exposes, in one tab.',
+    body: 'Connect over Streamable HTTP, legacy SSE or stdio (Testnizer starts the local server for you). Testnizer negotiates protocol 2024-10-07 through 2026-07-28 — leave it on Auto, force Legacy, or pin a version per tab — and when a server asks for more input mid-call, it shows a form for it.',
+    points: [
+      'Tools with a form built from each tool’s JSON Schema (and a JSON toggle), Resources with templates, Prompts and Notifications',
+      'A raw JSON-RPC frame view of everything on the wire, the handshake included, plus the negotiated version and server instructions',
+      'No Auth, Basic, Bearer, API Key or OAuth 2.1 — with a step-by-step OAuth 2.1 debugger: metadata, dynamic client registration, PKCE, sign-in, token exchange',
+      'Custom HTTP headers and stdio environment variables, with {{variables}}; paste or export the config for VS Code, Cursor and Claude Desktop',
+      'Save with Ctrl+S, add Tests and Scripts (pm.test, pm.expect, pm.mcp), and run MCP requests in the Runner, a Test Suite or a schedule',
+    ],
+    docs: '/docs/protocols/mcp',
+    note: 'This connects to the MCP server you point it at. OAuth tokens, the PKCE verifier and the client secret stay in the app’s main process and are never saved. A run only starts a stdio server whose exact command you have connected to once on this computer.',
+  },
+  {
+    id: 'mcp-scan',
+    icon: icons.shieldCheck,
+    name: 'MCP security scan',
+    tagline: 'A graded A–F report on an MCP server, with the evidence for every finding.',
+    body: 'Point the scan at an HTTP or SSE MCP server and it checks how the server is reached, how it authenticates, how it behaves at the protocol level and what its tool descriptions say. Each category gets its own score, each finding carries its evidence, and the whole report exports as one self-contained HTML file.',
+    points: [
+      'Transport: HTTPS and TLS, downgrade, cross-origin redirects',
+      'Authentication: unauthenticated initialize, WWW-Authenticate, protected-resource and authorization-server metadata, tokens in the query string',
+      'Prompt-injection heuristics in tool descriptions — instruction overrides, hidden Unicode, embedded URLs, tool shadowing, secret-looking schema fields',
+      'Protocol behaviour, information disclosure, CORS and security headers, an opt-in rate-limit probe, and header and cache-scope checks for 2026-07-28 servers',
+      'Credentials are scrubbed from every finding before it is shown or exported',
+    ],
+    docs: '/docs/protocols/mcp',
+    note: 'The scan sends real requests to the server. Run it only against servers you are authorized to test — the scan screen says the same.',
+  },
+  {
+    id: 'ai-chat',
+    icon: icons.bot,
+    name: 'AI Chat',
+    tagline: 'Talk to a model, and let it use your MCP servers — with you approving each call.',
+    body: 'Fourteen providers — OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together and OpenRouter — plus a Custom URL for your own endpoint. Replies stream in, with system prompt, temperature and max tokens under your control.',
+    points: [
+      'MCP servers as tools: a saved MCP request or an ad-hoc URL or stdio command, with per-server and per-tool switches',
+      'Every tool call asks first: Allow once, Allow this tool for this conversation, or Deny. "Run tools without asking" lasts for the open tab only and is never saved',
+      'Each reply shows its status, time to first token, duration and token usage — "not reported" when the provider does not say, never a made-up zero',
+      'A provider error part-way through a reply keeps the partial text and shows the error under it',
+      'Conversations are stored locally, masked when written, and never exported or committed; API keys are encrypted per provider with the OS key store',
+    ],
+    docs: '/docs/protocols/ai-chat',
+    note: 'AI Chat is not offline: your messages go directly from your machine to the provider you configure, and tool calls go to the MCP servers you enable. Nothing passes through Testnizer or Apinizer.',
+  },
+  {
+    id: 'sse',
+    icon: icons.zap,
+    name: 'Server-Sent Events client',
+    tagline: 'Open a long-lived event stream and watch it arrive.',
+    body: 'Connect to an SSE endpoint with your own headers, resume from a Last-Event-ID, filter the log by event type and read JSON payloads pretty-printed. When the server ends the stream and refuses the reconnect, the tab says so instead of logging an error.',
+    points: [
+      'Custom headers and a Last-Event-ID to resume from',
+      'Event-type filter, with JSON data detected and formatted',
+      'Cmd/Ctrl+Enter connects, and a custom proxy applies as it does to HTTP',
+      'Received events live in memory for the session — they are not written to disk',
+    ],
+    docs: '/docs/protocols/sse',
+    note: 'This connects to the endpoint you enter, and nowhere else.',
+  },
+]
+
+const mocks = [
+  {
+    id: 'mock-sse',
+    icon: icons.activity,
+    name: 'Mock SSE server',
+    tagline: 'An event stream that behaves exactly as you script it.',
+    points: [
+      'Events you define, with {{stream.seq}}, {{stream.iteration}} and {{stream.now}} per frame',
+      'Interval, heartbeat, loop, keep-open and Last-Event-ID resume',
+      'Fail on purpose: an event: error after N events',
+      'Presets: Ticker, Finite replay, Notifications feed, Slow / heartbeat',
+    ],
+    docs: '/docs/mock-server/sse',
+  },
+  {
+    id: 'mock-ai',
+    icon: icons.bot,
+    name: 'Mock AI (LLM) server',
+    tagline: 'The OpenAI and Anthropic APIs, answered locally.',
+    points: [
+      'OpenAI chat completions (and /v1/models) and the Anthropic messages API — streaming when the client asks, JSON otherwise, token usage on the last chunk',
+      'Chunk by a fixed size or send whole; end with the stop reason you pick',
+      'Error injection: 401, 429 and 500 replies, an Anthropic 529 overloaded_error, or an error after N chunks',
+      'A tool-call round-trip preset that pairs with the Mock MCP Echo server; the editor shows the base URL an SDK should use',
+    ],
+    docs: '/docs/mock-server/ai',
+  },
+  {
+    id: 'mock-mcp',
+    icon: icons.plug,
+    name: 'Mock MCP server',
+    tagline: 'A local MCP server with tools, resources and prompts you define.',
+    points: [
+      'Streamable HTTP and legacy SSE; one endpoint serves both 2025 and 2026-07-28 clients',
+      'Tools with JSON Schema, resources, prompts, and bearer authentication that behaves like a real protected server',
+      'Latency and error scenarios: JSON-RPC error, isError, timeout, HTTP status, every Nth call — and input requested mid-call',
+      'Presets: Echo, Auth required, Error server, Complex schemas, Slow; live logs and Open in MCP tab',
+    ],
+    docs: '/docs/mock-server/mcp',
+  },
+]
+
+const reasons = [
+  {
+    title: 'No provider account, no token bill',
+    body: 'Build and test an agent, an SDK integration or a chat UI against a model that answers instantly and costs nothing per call.',
+  },
+  {
+    title: 'Failures on demand',
+    body: 'A 429 on the third request, an error after the fifth chunk, a tool that times out every other call — the cases real providers never produce when you need them.',
+  },
+  {
+    title: 'Deterministic and offline',
+    body: 'Mocks bind to 127.0.0.1 by default and need no network, so the same run gives the same answer on a laptop, in a lab or on an air-gapped machine.',
+  },
+]
+---
+
+<BaseLayout
+  title="AI, MCP & streaming — MCP client, MCP security scan, AI Chat, mock LLM and MCP servers | Testnizer"
+  description="A full MCP client with an OAuth 2.1 debugger and an A–F security scan, AI Chat that calls MCP tools with your approval, an SSE client — and local mock SSE, LLM and MCP servers, in a free desktop API client."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-accent-text shadow-sm">
+        <Fragment set:html={icons.sparkles} />
+        AI, MCP &amp; streaming
+      </div>
+      <h1 class="mx-auto max-w-3xl text-balance text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Test the servers your agents talk to — then mock them.
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        An MCP client that shows every frame, a security scan for MCP servers, an AI chat that can use their tools, and an SSE client — next to mock SSE, LLM and MCP servers that run on your machine.
+      </p>
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a
+          href="/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          Download — free, no account
+        </a>
+        <a
+          href="#mocks"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          Mock all three
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <div class="space-y-5">
+        {clients.map((c) => (
+          <article id={c.id} class="scroll-mt-20 rounded-card border border-border bg-bg p-7">
+            <div class="flex items-start gap-4">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={c.icon} />
+              </span>
+              <div class="min-w-0 flex-1">
+                <h2 class="text-lg font-semibold text-text">{c.name}</h2>
+                <p class="mt-1 text-sm font-medium text-accent-text">{c.tagline}</p>
+                <p class="mt-3 text-sm leading-relaxed text-text-muted">{c.body}</p>
+                <ul class="mt-4 space-y-2">
+                  {c.points.map((p) => (
+                    <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                      <span class="mt-0.5 flex-shrink-0 text-accent-text">
+                        <Fragment set:html={icons.check} />
+                      </span>
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p class="mt-4 rounded-lg border border-border bg-bg-soft px-3.5 py-2.5 text-xs leading-relaxed text-text-soft">
+                  {c.note}
+                </p>
+                <a href={c.docs} class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-accent-text hover:text-text">
+                  Read the docs
+                  <Fragment set:html={icons.arrowRight} />
+                </a>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section id="mocks" class="scroll-mt-14 border-y border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Mock all three</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          A fake model, fake tools and a fake stream — on your machine.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-text-muted">
+          The clients above need a real server. These don't. Create a mock from the Mocks panel, pick a preset, and point Testnizer's own client at it with <strong class="text-text">Start &amp; open</strong> — a chat tab opened from a mock never sends your saved provider key. This is the part of the page that works with the cable pulled.
+        </p>
+      </div>
+
+      <div class="mt-12 grid grid-cols-1 gap-4 md:grid-cols-3">
+        {reasons.map((r) => (
+          <div class="rounded-card border border-border bg-bg p-6">
+            <h3 class="text-base font-semibold text-text">{r.title}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-text-muted">{r.body}</p>
+          </div>
+        ))}
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {mocks.map((m) => (
+          <article id={m.id} class="flex scroll-mt-20 flex-col rounded-card border border-border bg-bg p-7">
+            <div class="flex items-center gap-3">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={m.icon} />
+              </span>
+              <h3 class="text-lg font-semibold text-text">{m.name}</h3>
+            </div>
+            <p class="mt-3 text-sm font-medium text-accent-text">{m.tagline}</p>
+            <ul class="mt-4 flex-1 space-y-2">
+              {m.points.map((p) => (
+                <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                  <span class="mt-0.5 flex-shrink-0 text-accent-text">
+                    <Fragment set:html={icons.check} />
+                  </span>
+                  <span>{p}</span>
+                </li>
+              ))}
+            </ul>
+            <a href={m.docs} class="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-accent-text hover:text-text">
+              Read the docs
+              <Fragment set:html={icons.arrowRight} />
+            </a>
+          </article>
+        ))}
+      </div>
+
+      <p class="mx-auto mt-8 max-w-3xl text-center text-sm leading-relaxed text-text-muted">
+        Put them together and an agent's whole loop runs on one machine: AI Chat talks to the mock LLM, the mock LLM asks for a tool call, and the Mock MCP Echo server answers it. HTTP mocks live in the same panel — <a href="/docs/mock-server" class="text-accent-text underline decoration-dotted underline-offset-2 hover:text-text">see the mock server docs</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">What connects, and to where</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">
+        Offline, except where you point it.
+      </h2>
+      <div class="mt-6 space-y-5 text-base leading-relaxed text-text-muted">
+        <p>
+          Testnizer has no server of its own to talk to. AI Chat sends your messages to the provider you configure, the MCP client and the security scan connect to the MCP server you enter, and the SSE client opens the stream you ask for. Those connections go straight from your machine to that address — the same rule as every HTTP request you send.
+        </p>
+        <p>
+          What stays local: conversations, the OAuth state of an MCP session, provider API keys (encrypted with the OS key store), received stream events, and every mock server on this page.
+        </p>
+      </div>
+      <div class="mt-9 flex flex-col gap-3 sm:flex-row">
+        <a
+          href="/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          Download for macOS, Windows, Linux
+        </a>
+        <a
+          href="/security"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          How the offline model is enforced
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

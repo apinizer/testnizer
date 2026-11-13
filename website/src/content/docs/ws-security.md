@@ -1,7 +1,7 @@
 ---
 title: WS-Security
 description: Sign, encrypt, verify, and decrypt SOAP envelopes locally — no online tools.
-order: 2
+order: 12
 section: Protocols
 ---
 
@@ -30,6 +30,16 @@ zeroed when the request completes.
 
 Open a SOAP request → **Auth** tab → **WS-Security**.
 
+WS-Security is applied to the envelope in the main process, on **Send** and in the
+**Collection Runner**, Test Suites and the Scheduler alike. (Before 1.6.0, Send turned
+it into an HTTP Basic header and Run left it out. If a server only accepted your
+requests because of that Basic header, choose **Basic** in the Auth tab.) `{{variables}}`
+in the WS-Security fields are resolved first, then the envelope is signed, so the
+signature covers the bytes that are sent. The `wsse:Security` header is added to
+envelopes with any prefix (`soapenv:` as SoapUI writes it, `soap:`, or a default
+namespace), in the Tools panel too. Text that is not a SOAP envelope is refused with a
+message instead of coming back unchanged.
+
 The configuration is per-request, not per-collection. This matches how most
 WS-Security headers work in practice — different operations on the same
 endpoint often need different security elements.
@@ -49,7 +59,10 @@ In the WS-Security pane:
 
 - **Username**: `alice`
 - **Password type**: `PasswordText`
-- **Password**: `secret` (passes through OS keychain — never plaintext on disk)
+- **Password**: `secret`, or better `{{soapPassword}}` with a secret variable. A password
+  typed here is saved with the request like the other Auth fields, so keep the real
+  value in a [secret variable](/docs/variables#secrets-and-sensitive-variables). It is
+  masked in History, the Console and run reports
 
 ### UsernameToken (Password Digest)
 

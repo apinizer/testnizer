@@ -36,6 +36,7 @@ import { readSioMeta, sioMetaOf, type SioRequestFields } from '../lib/realtime-m
 import { savedMessageFromTimeline } from '../lib/socketio-timeline'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 import { withoutTab } from '../lib/tab-slice'
+import { t } from '../lib/i18n'
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -501,7 +502,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
       }
       const api = getSioApi()
       if (!api) {
-        set({ connectionState: 'error', errorMessage: 'API not available' })
+        set({ connectionState: 'error', errorMessage: t('common.apiUnavailable') })
         return
       }
       const ownerTabId = start._currentTabId
@@ -621,7 +622,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
       } else {
         unsubscribe()
         // Issue #253: `errorInfo` → the active locale's text with host:port.
-        const message = connectErrorText(res, 'Connection failed')
+        const message = connectErrorText(res, t('connError.unknown.what'))
         // A user Cancel cleared the pending id first: the rejection it causes
         // is not an error to show.
         patchTab(ownerTabId, (sl) =>
@@ -704,7 +705,7 @@ export const useSocketIOStore = create<SocketIOStore>((set, get) => {
       if (!api) return
       const res = await api.emitArgs(connectionId, eventName, args, { ack: s.emitAck })
       if (!res?.success) {
-        patchTab(ownerTabId, () => ({ errorMessage: res?.error ?? 'Emit failed' }))
+        patchTab(ownerTabId, () => ({ errorMessage: res?.error ?? t('socketio.error.emitFailed') }))
       }
     },
 

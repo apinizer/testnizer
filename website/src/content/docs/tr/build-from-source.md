@@ -55,7 +55,7 @@ Tamamen yalıtılmış ağlar için:
 4. Normal şekilde yükleyin
 
 Kurulumdan sonra yalıtılmış makinede otomatik güncelleme kontrolünü devre dışı
-bırakın: **Ayarlar → Güncellemeler → Otomatik güncelleme kontrolü → kapalı**.
+bırakın: **Proje ayarları → Güncelleme → Güncellemeleri otomatik kontrol et → kapalı**. (Otomatik güncelleme kontrolleri açık olan projeyi izler.)
 
 ## Sürüm bütünlüğü
 
@@ -63,12 +63,15 @@ Sürümler, yalıtılmış işletim sistemi başına çalıştırıcılarda GitH
 tarafından derlenir. İş akışı günlükleri ve artifact yükleme adımları
 [github.com/apinizer/testnizer](https://github.com/apinizer/testnizer/actions)
 adresinde kamuya açık olarak görüntülenebilir; böylece her artifact'ı onu üreten
-tam derleme çalışmasına kadar izleyebilirsiniz.
+tam derleme çalışmasına kadar izleyebilirsiniz. Derleme hattı her GitHub Action'ı
+sabit bir sürüme iliştirir ve salt okunur izinlerle çalışır.
 
 ## Sorun bildirme
 
 [github.com/apinizer/testnizer/issues](https://github.com/apinizer/testnizer/issues)
-adresinde bir sorun açın.
+adresinde bir sorun açın; ya da Yardım ve kullanıcı menülerindeki **Sorun bildir
+veya özellik iste** bağlantısını kullanın: tarayıcınızda sürüm, derleme ve işletim
+sistemi doldurulmuş yeni bir GitHub sorunu açar, başka hiçbir şey gönderilmez.
 
 Güvenlik sorunları — herkese açık sorun açmak yerine GitHub'ın özel
 güvenlik bildirim kanalını kullanın

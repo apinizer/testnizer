@@ -25,10 +25,11 @@ export default function ImportResultPanel({
 }) {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
-  const summary = t('import.result.summary')
-    .replace('{endpoints}', String(report.endpointCount ?? 0))
-    .replace('{folders}', String(report.folderCount ?? 0))
-    .replace('{examples}', String(report.exampleCount ?? 0))
+  const summary = t('import.result.summary', {
+    endpoints: String(report.endpointCount ?? 0),
+    folders: String(report.folderCount ?? 0),
+    examples: String(report.exampleCount ?? 0),
+  })
 
   return (
     <div data-testid="import-result" className="space-y-3">
@@ -45,7 +46,7 @@ export default function ImportResultPanel({
           </div>
           {report.environmentName && (
             <div className="text-[var(--sub)]">
-              {t('import.result.environment').replace('{name}', report.environmentName)}
+              {t('import.result.environment', { name: report.environmentName })}
             </div>
           )}
         </div>
@@ -62,7 +63,7 @@ export default function ImportResultPanel({
           >
             <AlertTriangle size={14} className="shrink-0 text-[var(--orange)]" aria-hidden="true" />
             <span className="flex-1 font-medium">
-              {t('import.result.warnings').replace('{n}', String(report.warnings.length))}
+              {t('import.result.warnings', { n: String(report.warnings.length) })}
             </span>
             <span className="text-[var(--hint)]">
               {open ? t('import.result.hideDetails') : t('import.result.showDetails')}

@@ -3,6 +3,8 @@ import { Shield, Key, FileWarning } from 'lucide-react'
 import { verifySignature, decryptEnvelope } from '../../lib/tools/wsse'
 import { openWsSecurityToolWith } from '../../lib/tools-bridge'
 import MonacoWrapper from '../shared/MonacoWrapper'
+import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 
 interface VerifyResult {
   valid: boolean
@@ -32,6 +34,7 @@ interface Props {
  * with the body pre-filled.
  */
 export default function WsseResponsePanel({ body }: Props) {
+  const { t } = useTranslation()
   const [verifyCert, setVerifyCert] = useState('')
   const [decryptKey, setDecryptKey] = useState('')
   const [decryptPass, setDecryptPass] = useState('')
@@ -67,7 +70,7 @@ export default function WsseResponsePanel({ body }: Props) {
   if (!body) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-[var(--muted)]">
-        No response body.
+        {t('soap.resp.noBody')}
       </div>
     )
   }
@@ -82,7 +85,7 @@ export default function WsseResponsePanel({ body }: Props) {
             className={hasSignature ? 'text-[var(--green)]' : 'text-[var(--muted)]'}
           />
           <span style={{ color: hasSignature ? 'var(--green)' : 'var(--muted)' }}>
-            {hasSignature ? 'Signed' : 'No signature'}
+            {hasSignature ? t('soap.resp.signed') : t('soap.resp.noSignature')}
           </span>
         </div>
         <div className="flex items-center gap-1.5">
@@ -91,7 +94,7 @@ export default function WsseResponsePanel({ body }: Props) {
             className={hasEncryption ? 'text-[var(--accent)]' : 'text-[var(--muted)]'}
           />
           <span style={{ color: hasEncryption ? 'var(--accent-text)' : 'var(--muted)' }}>
-            {hasEncryption ? 'Encrypted' : 'Not encrypted'}
+            {hasEncryption ? t('soap.resp.encrypted') : t('soap.resp.notEncrypted')}
           </span>
         </div>
         <button
@@ -99,7 +102,7 @@ export default function WsseResponsePanel({ body }: Props) {
           className="ml-auto rounded border px-2 py-0.5 text-xs"
           style={{ borderColor: 'var(--border)', color: 'var(--accent-text)' }}
         >
-          Open in WS-Security Tool
+          {t('soap.resp.openInTool')}
         </button>
       </div>
 
@@ -107,12 +110,12 @@ export default function WsseResponsePanel({ body }: Props) {
       {hasSignature && (
         <fieldset className="mb-4 rounded border border-[var(--border)] p-3">
           <legend className="px-1 text-xs font-medium text-[var(--accent-text)]">
-            Verify Signature
+            {t('soap.resp.verifySignature')}
           </legend>
           <textarea
             value={verifyCert}
             onChange={(e) => setVerifyCert(e.target.value)}
-            placeholder="Public certificate (PEM) used to verify"
+            placeholder={t('soap.resp.verifyCertPlaceholder')}
             className={TEXTAREA}
           />
           <button
@@ -120,7 +123,7 @@ export default function WsseResponsePanel({ body }: Props) {
             disabled={!verifyCert}
             className="mt-2 rounded bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Verify
+            {t('soap.resp.verify')}
           </button>
           {verifyResult && (
             <div
@@ -132,23 +135,34 @@ export default function WsseResponsePanel({ body }: Props) {
             >
               {verifyResult.valid ? (
                 <>
-                  <div className="font-semibold">✓ Signature valid</div>
+                  <div className="font-semibold">{t('soap.resp.signatureValid')}</div>
                   <div className="mt-1 text-[var(--muted)]">
-                    {verifyResult.signedReferences.length} signed reference
-                    {verifyResult.signedReferences.length === 1 ? '' : 's'}
+                    {formatCount(
+                      verifyResult.signedReferences.length,
+                      t('soap.resp.signedRefsOne'),
+                      t('soap.resp.signedRefs'),
+                    )}
                   </div>
                   {verifyResult.certInfo && (
                     <div className="mt-1 text-[var(--muted)]">
-                      <div>Subject: {verifyResult.certInfo.subject ?? '—'}</div>
-                      <div>Issuer: {verifyResult.certInfo.issuer ?? '—'}</div>
-                      <div>Valid until: {verifyResult.certInfo.notAfter ?? '—'}</div>
+                      <div>
+                        {t('soap.resp.subject', { value: verifyResult.certInfo.subject ?? '—' })}
+                      </div>
+                      <div>
+                        {t('soap.resp.issuer', { value: verifyResult.certInfo.issuer ?? '—' })}
+                      </div>
+                      <div>
+                        {t('soap.resp.validUntil', {
+                          value: verifyResult.certInfo.notAfter ?? '—',
+                        })}
+                      </div>
                     </div>
                   )}
                 </>
               ) : (
                 <>
                   <div className="font-semibold flex items-center gap-1">
-                    <FileWarning size={12} /> Signature INVALID
+                    <FileWarning size={12} /> {t('soap.resp.signatureInvalid')}
                   </div>
                   {verifyResult.reason && <div className="mt-1">{verifyResult.reason}</div>}
                 </>
@@ -161,18 +175,20 @@ export default function WsseResponsePanel({ body }: Props) {
       {/* Decrypt */}
       {hasEncryption && (
         <fieldset className="mb-4 rounded border border-[var(--border)] p-3">
-          <legend className="px-1 text-xs font-medium text-[var(--accent-text)]">Decrypt</legend>
+          <legend className="px-1 text-xs font-medium text-[var(--accent-text)]">
+            {t('soap.resp.decrypt')}
+          </legend>
           <textarea
             value={decryptKey}
             onChange={(e) => setDecryptKey(e.target.value)}
-            placeholder="Private key (PEM)"
+            placeholder={t('soap.resp.privateKeyPlaceholder')}
             className={TEXTAREA}
           />
           <input
             type="password"
             value={decryptPass}
             onChange={(e) => setDecryptPass(e.target.value)}
-            placeholder="Passphrase (optional)"
+            placeholder={t('soap.resp.passphrasePlaceholder')}
             className="mt-2 w-full rounded border border-[var(--border)] bg-[var(--white)] px-2 py-1 text-xs text-[var(--text)] outline-none"
           />
           <button
@@ -180,7 +196,7 @@ export default function WsseResponsePanel({ body }: Props) {
             disabled={!decryptKey}
             className="mt-2 rounded bg-[var(--accent)] px-3 py-1 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Decrypt
+            {t('soap.resp.decrypt')}
           </button>
           {decrypted && (
             <div
@@ -195,8 +211,7 @@ export default function WsseResponsePanel({ body }: Props) {
 
       {!hasSignature && !hasEncryption && (
         <div className="rounded border border-[var(--border)] p-4 text-sm text-[var(--muted)]">
-          This response has no XML signature or encrypted data. Use the standalone WS-Security tool
-          to inspect or transform arbitrary payloads.
+          {t('soap.resp.nothingToInspect')}
         </div>
       )}
 

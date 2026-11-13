@@ -5,12 +5,12 @@ import { formatShortcut } from '../../lib/shortcut-format'
 import { isCloseTabKey } from '../../lib/shortcut-chords'
 import { positionContextMenu, type MenuPosition } from '../../lib/menu-position'
 import { makeTabId } from '../../lib/utils'
-import { isBlankScratchTab } from '../../lib/tab-kind'
+import { editorProtocol, isBlankScratchTab } from '../../lib/tab-kind'
 import { defaultRequestTabName } from '../../lib/endpoint-name'
-import { isRequestLikeTab } from '../../lib/mark-dirty'
 import { openEndpointTab } from '../../lib/open-endpoint-tab'
 import { activateTabStores, cloneTabStores, switchActiveTab } from '../../lib/activate-tab'
-import { useTranslation } from '../../lib/i18n'
+import { useTranslation, t as translate } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { useScrollStrip } from '../../lib/use-scroll-strip'
 import UrlBar from './UrlBar'
 import UrlPreview from './UrlPreview'
@@ -77,12 +77,11 @@ import { T } from '../../styles/tokens'
 // leaked protocol-store slices that the in-Workbench Ctrl+W path cleaned
 // up — v1.4.4 close-bypass).
 import { cleanupTabState } from '../../lib/cleanup-tab-state'
-import { saveActiveRequestInPlace } from '../../lib/save-active-request'
+import { saveTabForClose } from '../../lib/save-tab-for-close'
 import { ensureWithheldCredentialsLoaded } from '../../lib/withheld-credentials'
-import { saveMockMcpDraft } from '../mock-mcp/mock-mcp-save'
 import UnsavedChangesDialog from '../modals/UnsavedChangesDialog'
-import { toast } from '../../lib/toast'
 import { EditorVisibilityProvider } from '../../lib/editor-visibility'
+import { copyName } from '../../lib/copy-name'
 
 // Tool-tab protocol → component. The Workbench renders EVERY open tool tab and
 // toggles visibility (rather than mounting only the active one) so a tool's
@@ -116,6 +115,13 @@ const TOOL_COMPONENTS: Record<string, ComponentType> = {
   'tools.jwk': JwkTool,
   'tools.saml': SamlTool,
 }
+
+/**
+ * A tab label's width cap: ~25 characters of 13 px text, so a tab with its
+ * method badge stays near 250 px — the range other tab strips (browsers,
+ * Postman) use — and a handful of tabs still fits next to each other.
+ */
+const TAB_NAME_MAX_W = 'max-w-[180px]'
 
 /** Exported for the zero-tab regression test (issue #97). */
 export function EndpointTabBar() {
@@ -238,9 +244,11 @@ export function EndpointTabBar() {
       const dirtyCount = idsToClose.filter((id) => allTabs.find((t) => t.id === id)?.isDirty).length
       if (dirtyCount > 0) {
         const ok = window.confirm(
-          dirtyCount === 1
-            ? 'This tab has unsaved changes. Close anyway?'
-            : `${dirtyCount} tabs have unsaved changes. Close anyway?`,
+          formatCount(
+            dirtyCount,
+            t('tabStrip.confirmCloseUnsaved'),
+            t('tabStrip.confirmCloseUnsavedMany'),
+          ),
         )
         if (!ok) return
       }
@@ -282,7 +290,7 @@ export function EndpointTabBar() {
         suite_id: item.suite_id,
         folder_id: item.folder_id,
         protocol: item.protocol,
-        name: `${item.name} (copy)`,
+        name: copyName(item.name),
         method: item.method,
         url: item.url,
         request_schema: item.request_schema,
@@ -308,7 +316,7 @@ export function EndpointTabBar() {
      * returns before this point.
      */
     if (src.endpointId || src.savedRequestId) {
-      const copyName = `${src.name} (copy)`
+      const nameOfCopy = copyName(src.name)
       let createdId: string | undefined
 
       if (src.savedRequestId) {
@@ -319,7 +327,7 @@ export function EndpointTabBar() {
         if (!res?.success || !res.data) return
         const created = (await window.api?.savedRequest?.create({
           ...(res.data as Record<string, unknown>),
-          name: copyName,
+          name: nameOfCopy,
         } as Parameters<typeof window.api.savedRequest.create>[0])) as {
           success: boolean
           data?: { id: string }
@@ -334,7 +342,7 @@ export function EndpointTabBar() {
         if (!res?.success || !res.data) return
         const created = (await window.api?.endpoint?.create({
           ...(res.data as Record<string, unknown>),
-          name: copyName,
+          name: nameOfCopy,
         } as Parameters<typeof window.api.endpoint.create>[0])) as {
           success: boolean
           data?: { id: string }
@@ -358,7 +366,7 @@ export function EndpointTabBar() {
     // tab. No ids means `openTab` has nothing to deduplicate on.
     openTab({
       id: newId,
-      name: `${src.name} (copy)`,
+      name: copyName(src.name),
       protocol: src.protocol,
       method: src.method,
       url: src.url,
@@ -467,76 +475,49 @@ export function EndpointTabBar() {
     requestCloseTab(tabId)
   }
 
-  // ─── Unsaved-changes confirm handlers (issue #9) ────────────────
   /**
-   * Mock MCP editor tab: save its draft through the editor's own path — it is
-   * not a request row, `saveActiveRequestInPlace` would report it not
-   * applicable and Save did nothing (issue #154). No activation needed.
+   * Keys on a focused tab: ←/→/Home/End move focus along the strip, Enter /
+   * Space activate it. Keys from inside the tab (the ×, the rename input) are
+   * theirs — the × closes through its native click, the input types a space.
    */
-  async function closeSaveMockMcp(tabId: string, serverId: string | undefined) {
-    const result = serverId ? await saveMockMcpDraft(serverId) : null
-    setCloseSaving(false)
-    if (result && !result.ok) {
-      if (result.error) toast.error(`Failed to save: ${result.error}`)
-      return // keep the dialog open so the user can fix, retry or cancel
+  function handleTabKeyDown(e: React.KeyboardEvent<HTMLDivElement>, tabId: string) {
+    if (e.target !== e.currentTarget) return
+    // A modified key is a global shortcut, not the strip's: Mod+Enter on a
+    // focused but inactive tab must run the ACTIVE tab's request — activating
+    // the focused one here first made the chord send that tab's instead.
+    if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      handleSwitchTab(tabId)
+      return
     }
-    setCloseConfirmTabId(null)
-    doCloseTab(tabId)
+    const all = Array.from(
+      e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(':scope > [role="tab"]') ?? [],
+    )
+    const at = all.indexOf(e.currentTarget)
+    let next = -1
+    if (e.key === 'ArrowRight') next = (at + 1) % all.length
+    else if (e.key === 'ArrowLeft') next = (at - 1 + all.length) % all.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = all.length - 1
+    if (next < 0 || at < 0) return
+    e.preventDefault()
+    all[next].focus()
   }
 
+  // ─── Unsaved-changes confirm handlers (issue #9) ────────────────
+  // Save & Close: `saveTabForClose` is the one implementation (the header's
+  // project-tab close uses it too). Only a real save closes the tab; Save As
+  // (never-saved / orphaned tab, issues #101 / #269) and a failure keep it open.
   async function handleCloseSave() {
     const tabId = closeConfirmTabId
     if (!tabId) return
     setCloseSaving(true)
-    const closing = useTabsStore.getState().tabs.find((t) => t.id === tabId)
-    if (closing?.protocol === 'mockMcpServer') {
-      await closeSaveMockMcp(tabId, closing.mockMcpServerId)
-      return
-    }
-    try {
-      // `saveActiveRequestInPlace` targets the ACTIVE tab — make the closing tab
-      // active first so a background tab's × still saves the right request.
-      // `activateTab` only flips the protocol stores' live slices; it does NOT
-      // touch `tabs.activeTabId`, so without the explicit `setActiveTab` the
-      // save resolved the PREVIOUS active tab and wrote the closing tab's
-      // editor content into that tab's row (background-tab × corruption).
-      if (useTabsStore.getState().activeTabId !== tabId) {
-        activateTab(tabId)
-        useTabsStore.getState().setActiveTab(tabId)
-      }
-      const result = await saveActiveRequestInPlace()
-      if (result.notApplicable) {
-        // Never-saved tab (New → HTTP etc.): there is no row to write in
-        // place. Route to the "Save As" modal — the same fallback Ctrl+S
-        // uses — and keep the tab OPEN: the modal's success path attaches
-        // the new savedRequestId and clears the dirty flag, after which a
-        // plain × closes without prompting. Previously this branch fell
-        // through to doCloseTab, so "Save & Close" on a new tab silently
-        // discarded the edits (issue #101).
-        // A tab whose row was deleted (issue #269) lands here too — unbound
-        // and still dirty, so it stays open and goes to Save As like a draft.
-        setCloseSaving(false)
-        setCloseConfirmTabId(null)
-        if (result.orphaned) toast.info(t('toast.requestOrphaned'))
-        const tab = useTabsStore.getState().tabs.find((t) => t.id === tabId)
-        if (tab && isRequestLikeTab(tab)) {
-          useUIStore.getState().setShowEndpointSaveModal(true)
-        }
-        return
-      }
-      if (!result.success) {
-        toast.error(`Failed to save: ${result.error ?? 'unknown error'}`)
-        setCloseSaving(false)
-        return // keep the dialog open so the user can retry or cancel
-      }
-    } catch (err) {
-      toast.error(`Failed to save: ${(err as Error).message || 'unknown error'}`)
-      setCloseSaving(false)
-      return
-    }
+    const outcome = await saveTabForClose(tabId)
     setCloseSaving(false)
+    if (outcome === 'failed') return // keep the dialog open: retry or cancel
     setCloseConfirmTabId(null)
-    doCloseTab(tabId)
+    if (outcome === 'saved') doCloseTab(tabId)
   }
 
   function handleCloseDiscard() {
@@ -605,6 +586,7 @@ export function EndpointTabBar() {
       <div
         ref={stripRef}
         data-testid="tab-strip"
+        role="tablist"
         className="scroll-strip min-w-0 flex-1"
         style={{
           display: 'flex',
@@ -626,6 +608,16 @@ export function EndpointTabBar() {
               data-preview={isPreview ? 'true' : 'false'}
               data-dirty={tab.isDirty ? 'true' : 'false'}
               data-active={isActive ? 'true' : 'false'}
+              // Keyboard: one tab stop (the active tab), arrows move focus,
+              // Enter / Space activate — the WAI-ARIA tabs pattern with manual
+              // activation (switching a tab re-points every protocol store).
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={isActive ? 0 : -1}
+              onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
+              // Full name as the tooltip over the whole tab (badge and chip
+              // included) — the label below is cut off with "…".
+              title={tab.name}
               className="group"
               draggable={renamingTabId !== tab.id}
               onDragStart={(e) => {
@@ -788,8 +780,14 @@ export function EndpointTabBar() {
                 // tab-drag gesture entirely (the SOAP tab in particular sees
                 // the user mouse-down on this label). Forcing the span out of
                 // the drag-source set lets the gesture bubble to the parent.
+                // The label is capped and ends in "…" (a 100+ character name
+                // pushed every other tab off the strip); the full name is the
+                // tab's tooltip. Only CSS cuts it — `data-tab-name` and text
+                // locators keep the full name.
                 <span
+                  data-testid="tab-name"
                   draggable={false}
+                  className={`${TAB_NAME_MAX_W} min-w-0 truncate`}
                   onDoubleClick={(e) => {
                     e.stopPropagation()
                     if (isPreview) {
@@ -802,25 +800,40 @@ export function EndpointTabBar() {
                   {tab.name}
                 </span>
               )}
-              {tab.isDirty && (
+              {/* The active tab always shows its × — dirty or not — so on a
+                dirty active tab the dot stands beside it as its own mark. */}
+              {isActive && tab.isDirty && (
                 <span
                   data-testid="tab-dirty"
-                  style={{
-                    width: 6,
-                    height: 6,
-                    borderRadius: '50%',
-                    background: T.accent,
-                    flexShrink: 0,
-                  }}
+                  className="pointer-events-none h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--accent)]"
                 />
               )}
-              <span
-                data-testid="tab-close"
-                className="hidden cursor-pointer group-hover:inline"
-                style={{ color: T.ghost, fontSize: 13 }}
-                onClick={(e) => handleCloseTab(tab.id, e)}
-              >
-                ×
+              {/* One fixed slot for the ×, so a tab never changes width on
+                hover. On other tabs the × shows on hover / keyboard focus, and
+                a dirty tab's dot holds the slot until then (VS Code). Opacity,
+                not display: a hidden button could not take keyboard focus. */}
+              <span className="relative inline-flex h-4 w-4 shrink-0 items-center justify-center">
+                {!isActive && tab.isDirty && (
+                  <span
+                    data-testid="tab-dirty"
+                    className="pointer-events-none absolute h-1.5 w-1.5 rounded-full bg-[var(--accent)] group-hover:opacity-0 group-focus-visible:opacity-0 group-has-[:focus-visible]:opacity-0"
+                  />
+                )}
+                <button
+                  type="button"
+                  data-testid="tab-close"
+                  aria-label={t('tabStrip.closeTabNamed', { name: tab.name })}
+                  title={t('tabStrip.close')}
+                  tabIndex={isActive ? 0 : -1}
+                  draggable={false}
+                  onClick={(e) => handleCloseTab(tab.id, e)}
+                  onDoubleClick={(e) => e.stopPropagation()}
+                  className={`flex h-4 w-4 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-sm leading-none text-[var(--hint)] hover:bg-[var(--surface)] hover:text-[var(--text)] group-hover:opacity-100 group-focus-visible:opacity-100 focus-visible:opacity-100 ${
+                    isActive ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  ×
+                </button>
               </span>
             </div>
           )
@@ -1037,7 +1050,7 @@ export default function Workbench() {
   // selected (the page only controls the left panel). PageWelcome shows only
   // when there is no active tab at all.
   const activeTab = tabs.find((t) => t.id === activeTabId)
-  const protocol = activeTab?.protocol || 'http'
+  const protocol = activeTab ? editorProtocol(activeTab) : 'http'
   const addEndpointsSuiteId = useUIStore((s) => s.addEndpointsSuiteId)
 
   // Global tab keyboard shortcuts (mirror the labels shown in the tab
@@ -1077,7 +1090,8 @@ export default function Workbench() {
         e.preventDefault()
         const target = useTabsStore.getState().tabs.find((t) => t.id === currentId)
         if (!force && target?.isDirty) {
-          const ok = window.confirm('This tab has unsaved changes. Close anyway?')
+          // Module-level `translate`: this listener is registered once.
+          const ok = window.confirm(translate('tabStrip.confirmCloseUnsaved'))
           if (!ok) return
         }
         cleanupTabState(currentId)

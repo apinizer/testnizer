@@ -26,13 +26,15 @@ Testnizer, servis tanımını yüklemenin üç yolunu destekler:
 **Metod** açılır menülerini doldurur.
 
 Proto'nuz diğer proto dosyalarını göreli yolla içe aktarıyorsa Testnizer onları
-aynı kök dizinden çözer — dosyayı düzleştirmeniz gerekmez.
+aynı kök dizinden çözer — dosyayı düzleştirmeniz gerekmez. Bir import normal bir `.proto`
+dosyasına işaret etmelidir; başka bir şey reddedilir.
 
 ### 2. URL
 
 Bir `.proto` dosyasına işaret eden URL'yi yapıştırın. Testnizer dosyayı gönderim
 anında alır ve diskten yüklenmiş gibi tam olarak ayrıştırır. Şema kaydı veya
-dahili artifact sunucusunda barındırılan proto dosyaları için kullanışlıdır.
+dahili artifact sunucusunda barındırılan proto dosyaları için kullanışlıdır. İndirilen bir
+proto'nun import'ları kendi klasörü içinde çözülür, dışına çıkamaz.
 
 ### 3. Sunucu yansıması
 
@@ -66,6 +68,8 @@ etkin değilken `:80` ekler.
 
 Geçerli CA'sı olmayan sunucu TLS için **Ayarlar → Sertifikalar** bölümüne öz imzalı
 bir CA sertifikası ekleyebilirsiniz; Testnizer bu hostname için ona güvenir.
+gRPC sunucu sertifikasını her zaman doğrular (bunu kapatan bir anahtar yoktur) ve proxy
+ayarını kullanmaz.
 
 ## Servis ve metod
 

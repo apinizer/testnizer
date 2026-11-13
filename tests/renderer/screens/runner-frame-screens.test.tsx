@@ -277,7 +277,7 @@ describe('Runner screens — smoke mount', () => {
         onNewRun={noop}
         onRunAgain={noop}
         onViewAllRuns={noop}
-        selectedResultId={null}
+        selectedResultKey={null}
         onSelectResult={noop}
       />,
     )
@@ -297,7 +297,7 @@ describe('Runner screens — smoke mount', () => {
         onNewRun={noop}
         onRunAgain={noop}
         onViewAllRuns={noop}
-        selectedResultId={null}
+        selectedResultKey={null}
         onSelectResult={noop}
       />,
     )

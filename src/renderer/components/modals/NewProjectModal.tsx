@@ -1,5 +1,6 @@
 import { useRef, useState, useEffect } from 'react'
 import { toast } from '../../lib/toast'
+import { gitErrorText } from '../../lib/git-error-text'
 import {
   Check,
   Globe,
@@ -312,7 +313,7 @@ export default function NewProjectModal() {
       }
 
       if (!listResult?.success) {
-        setCloneError(listResult?.error || t('newProject.gitConnectionFailed'))
+        setCloneError(gitErrorText(listResult) || t('newProject.gitConnectionFailed'))
         setCloning(false)
         return
       }
@@ -348,7 +349,7 @@ export default function NewProjectModal() {
             | undefined
           if (local?.success && local.data) {
             const visible = local.data.display_name?.trim() || local.data.name || ''
-            setCloneError(t('newProject.git.alreadyLinked').replace('{name}', visible))
+            setCloneError(t('newProject.git.alreadyLinked', { name: visible }))
             setCloning(false)
             return
           }
@@ -521,7 +522,8 @@ export default function NewProjectModal() {
           const settled = async (label: string, call: Promise<unknown>): Promise<boolean> => {
             try {
               const res = (await call) as { success?: boolean; error?: string } | undefined
-              if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
+              if (res && res.success === false)
+                throw new Error(gitErrorText(res) || t('tree.unknownError'))
               return true
             } catch (e) {
               warnings.push(`${label}: ${e instanceof Error ? e.message : String(e)}`)
@@ -548,7 +550,7 @@ export default function NewProjectModal() {
                 token: gitToken || '',
               })) as { success?: boolean; error?: string } | undefined
               if (cfgRes && cfgRes.success === false) {
-                throw new Error(cfgRes.error ?? 'unknown error')
+                throw new Error(cfgRes.error || t('tree.unknownError'))
               }
 
               if (source === 'git') {
@@ -566,7 +568,8 @@ export default function NewProjectModal() {
                       data?: PullNotices & { imported?: boolean }
                     }
                   | undefined
-                if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
+                if (res && res.success === false)
+                  throw new Error(gitErrorText(res) || t('tree.unknownError'))
                 // The clone landed but the checkout holds no project .json:
                 // the user picked "Clone from Git" expecting the remote's
                 // collection, so an empty tree is a warning, not silence.
@@ -580,7 +583,8 @@ export default function NewProjectModal() {
                 const res = (await window.api.git.push(projectId)) as
                   | { success?: boolean; error?: string }
                   | undefined
-                if (res && res.success === false) throw new Error(res.error ?? 'unknown error')
+                if (res && res.success === false)
+                  throw new Error(gitErrorText(res) || t('tree.unknownError'))
               }
             } catch (e) {
               warnings.push(
@@ -857,14 +861,14 @@ export default function NewProjectModal() {
                           fontWeight: 600,
                         }}
                       >
-                        Select .json File
+                        {t('newProject.selectJsonFile')}
                       </button>
                     </>
                   ) : (
                     <>
                       <Check size={22} style={{ color: 'var(--green)' }} />
                       <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 600 }}>
-                        {localFileData?.project?.name || 'Project file selected'}
+                        {localFileData?.project?.name || t('newProject.fileSelected')}
                       </div>
                       <div
                         style={{
@@ -895,7 +899,7 @@ export default function NewProjectModal() {
                           fontSize: 13,
                         }}
                       >
-                        Change file
+                        {t('newProject.changeFile')}
                       </button>
                     </>
                   )}
@@ -934,7 +938,7 @@ export default function NewProjectModal() {
 
               {/* Display Name */}
               <div>
-                <Label text="DISPLAY NAME *" />
+                <Label text={t('newProject.displayNameLabel')} />
                 <input
                   data-testid="new-project-display-name"
                   value={displayName}
@@ -949,7 +953,7 @@ export default function NewProjectModal() {
                       .replace(/^-|-$/g, '')
                     if (!slugManuallyEdited) setProjName(slug)
                   }}
-                  placeholder="My Awesome Project"
+                  placeholder={t('newProject.displayNamePlaceholder')}
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') goNext()
@@ -957,13 +961,13 @@ export default function NewProjectModal() {
                   style={inputStyle}
                 />
                 <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 3 }}>
-                  Shown in the UI. Can contain spaces, Turkish characters, etc.
+                  {t('newProject.displayNameHint')}
                 </div>
               </div>
 
               {/* Name (slug) */}
               <div>
-                <Label text="PROJECT NAME (SLUG) *" />
+                <Label text={t('newProject.slugLabel')} />
                 <input
                   data-testid="new-project-name"
                   value={projName}
@@ -983,7 +987,7 @@ export default function NewProjectModal() {
                   }}
                 />
                 <div style={{ fontSize: 13, color: 'var(--hint)', marginTop: 3 }}>
-                  Used for file names and Git. Only a-z, 0-9, dash (-) and underscore (_).
+                  {t('newProject.slugHint')}
                 </div>
                 {nameError && (
                   <div style={{ fontSize: 13, color: '#cc2200', marginTop: 3 }}>
@@ -1087,7 +1091,7 @@ export default function NewProjectModal() {
                     <>
                       <div
                         role="radiogroup"
-                        aria-label="Project emoji"
+                        aria-label={t('newProject.emojiGroup')}
                         className="mb-1.5 flex flex-wrap gap-1"
                       >
                         {EMOJIS.map((e) => (
@@ -1096,7 +1100,7 @@ export default function NewProjectModal() {
                             type="button"
                             role="radio"
                             aria-checked={selectedEmoji === e}
-                            aria-label={`Emoji ${e}`}
+                            aria-label={t('newProject.emojiOption', { emoji: e })}
                             onClick={() => {
                               setSelectedEmoji(e)
                               setCustomEmoji('')
@@ -1139,7 +1143,7 @@ export default function NewProjectModal() {
                   <Label text={t('newProject.color')} />
                   <div
                     role="radiogroup"
-                    aria-label="Project color"
+                    aria-label={t('newProject.colorGroup')}
                     className="flex flex-wrap gap-1.5"
                   >
                     {COLORS.map((col) => (
@@ -1148,7 +1152,7 @@ export default function NewProjectModal() {
                         type="button"
                         role="radio"
                         aria-checked={col === selectedColor}
-                        aria-label={`Color ${col}`}
+                        aria-label={t('newProject.colorOption', { color: col })}
                         onClick={() => setSelectedColor(col)}
                         className="cursor-pointer"
                         style={{
@@ -1325,7 +1329,7 @@ export default function NewProjectModal() {
                   />
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text)' }}>
-                      {projName || 'Project'}
+                      {projName || t('newProject.summaryFallbackName')}
                     </div>
                     <div style={{ fontSize: 13, color: 'var(--muted)' }}>
                       {projType === 'http'
@@ -1334,7 +1338,7 @@ export default function NewProjectModal() {
                           ? 'gRPC'
                           : 'WebSocket'}
                       {' · '}
-                      {branchName} branch
+                      {t('newProject.summaryBranch', { branch: branchName })}
                     </div>
                   </div>
                 </div>

@@ -68,14 +68,21 @@ export const EMPTY_FILTERS: HistoryFilters = {
 interface HistoryStore {
   entries: HistoryEntry[]
   isLoading: boolean
-  /** The legacy history modal's search (`modals/HistoryPanel`). */
-  searchTerm: string
   filters: HistoryFilters
 
   fetch: (options?: { workspaceId?: string; projectId?: string; limit?: number }) => Promise<void>
-  clear: (workspaceId?: string) => Promise<void>
+  /**
+   * Delete one PROJECT's history — what the History list shows and what
+   * Settings → Data clears (one scope for both). Resolves `{ok:false, error}`
+   * when the bridge refused; the rows then stay listed (the truth).
+   */
+  clear: (projectId: string) => Promise<{ ok: boolean; error?: string }>
+  /**
+   * How many rows `clear(projectId)` would delete — main counts with the
+   * delete's own scope rule. `null` = unknown (the bridge refused / failed).
+   */
+  count: (projectId: string) => Promise<number | null>
   deleteEntry: (id: string) => Promise<void>
-  setSearchTerm: (term: string) => void
   setFilters: (patch: Partial<HistoryFilters>) => void
   resetFilters: () => void
 }
@@ -122,7 +129,6 @@ export const HISTORY_LIST_LIMIT = 500
 export const useHistoryStore = create<HistoryStore>((set) => ({
   entries: [],
   isLoading: false,
-  searchTerm: '',
   filters: EMPTY_FILTERS,
 
   fetch: async (options = {}) => {
@@ -143,12 +149,30 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
     }
   },
 
-  clear: async (workspaceId) => {
+  clear: async (projectId) => {
     // `{success:false}` is how the bridge reports failure — it resolves rather
     // than throwing, so the old try/catch let a refused clear empty the list on
     // screen while every row was still in the database.
-    if (!(await deleted(window.api?.history?.clear(workspaceId)))) return
-    set({ entries: [] })
+    let res: { success?: boolean; error?: string } | undefined
+    try {
+      res = (await window.api?.history?.clear({ project_id: projectId })) as typeof res
+    } catch (e) {
+      return { ok: false, error: (e as Error).message }
+    }
+    if (res && res.success === false) return { ok: false, error: res.error }
+    set((state) => ({ entries: state.entries.filter((e) => e.project_id !== projectId) }))
+    return { ok: true }
+  },
+
+  count: async (projectId) => {
+    try {
+      const res = (await window.api?.history?.count?.({ project_id: projectId })) as
+        | { success?: boolean; data?: unknown }
+        | undefined
+      return res?.success && typeof res.data === 'number' ? res.data : null
+    } catch {
+      return null
+    }
   },
 
   deleteEntry: async (id) => {
@@ -156,7 +180,6 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
     set((state) => ({ entries: state.entries.filter((e) => e.id !== id) }))
   },
 
-  setSearchTerm: (term) => set({ searchTerm: term }),
   setFilters: (patch) =>
     set((s) => {
       const next = { ...s.filters, ...patch }

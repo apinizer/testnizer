@@ -193,6 +193,9 @@ bağımsız tezgah. SOAP editöründeki WS-Security sekmesiyle aynı motor.
   RSA veya EC anahtar ile imzalar
 - **XML Encryption** — bir elemanı AES-128/256-CBC veya AES-GCM ile şifreler
 
+`wsse:Security` header'ı her önekli envelope'a (`soapenv:`, `soap:` ya da varsayılan ad alanı)
+eklenir. SOAP envelope'u olmayan metin, olduğu gibi geri dönmek yerine bir mesajla reddedilir.
+
 Adım adım anlatım için [WS-Security kılavuzu](/tr/docs/ws-security)'na bakın.
 
 ## Hash Hesaplayıcı
@@ -232,6 +235,8 @@ durum kodu için aranabilir, kategori filtreli referans.
 - Kod, ad ve açıklamada serbest metin arama
 - Kategori rozetleri renk kodlu
 - Scroll'da kategori başlıkları sticky
+
+Arayüz Türkçeyken kodlar Türkçe ad ve açıklamalarla görünür; arama her iki dilde de çalışır.
 
 Garip / efsane kodlar dahil: 418 ("I'm a teapot"), 451 ("Unavailable for
 Legal Reasons"), 425 Too Early, 511 Network Authentication Required.
@@ -295,6 +300,29 @@ Pill switch'li (YAML → JSON / JSON → YAML) çift yönlü dönüştürücü.
 OpenAPI spec'leri (genelde diskte YAML, tool'larda JSON), Kubernetes
 manifest'leri, GitHub Actions workflow'ları, Helm chart values dosyaları
 ve docker-compose dosyalarıyla çalışırken faydalı.
+
+## Parola Üretici, OTP Doğrulayıcı ve QR Kod
+
+- **Parola Üretici** — **Karakter** modu (uzunluk, kaç tane, büyük harf, küçük harf, rakam,
+  sembol, benzer görünen karakterleri ve özel karakterleri hariç tutma, en az rakam ve sembol,
+  tekrarsız karakter) ya da **Parola Cümlesi** modu (kelime sayısı, ayraç, kelime biçimi,
+  isteğe bağlı bir rakam). Entropi tahmini ve güç etiketi gösterir; kopyalamak için bir sonuca
+  tıklayın.
+- **OTP Doğrulayıcı** — bir TOTP ya da HOTP secret'ını `otpauth://` URI'sinden, QR görselinden
+  veya elle (yayıncı, hesap, Base32 secret, algoritma, hane, periyot ya da sayaç) kaydedin ve
+  canlı kodu görün. Secret'lar gösterilip gizlenebilir, QR başka bir doğrulayıcı için yeniden
+  gösterilebilir.
+- **QR Kod** — bir metni ya da URL'yi seçtiğiniz hata düzeltme düzeyiyle QR koda dönüştürüp
+  indirin veya bir QR görselini çözün.
+
+## Araçlar nerede
+
+Araçlar sayfası yukarıdaki genel amaçlı araçları listeler. Anahtar materyali ve kimlik araçları
+(JWT Çözücü, [JWK & JWKS](/tr/docs/jwk-jwks), WS-Security, [SAML](/tr/docs/saml), Parola Üretici,
+OTP Doğrulayıcı, [Keystore Studio](/tr/docs/keystore-studio) ve
+[TLS İnceleyici](/tr/docs/tls-inspector)) **Güvenlik** sayfasındadır; bu sayfada ayrıca MCP
+Güvenlik Taramasını açan bir giriş vardır (bkz. [MCP](/tr/docs/protocols/mcp#güvenlik-taraması)).
+Her araç komut paletinde de bulunur.
 
 ## Offline çalışmanın önemi
 

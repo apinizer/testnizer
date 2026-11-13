@@ -1,4 +1,5 @@
 import { formatCount } from './plural'
+import { fillTemplate } from '../../shared/fill-template'
 
 /**
  * After a pull: secret values never travel through git (issue #177), so a
@@ -18,11 +19,10 @@ const MAX_NAMED_FILES = 5
 export function skippedFilesMessage(t: (key: string) => string, files: readonly string[]): string {
   const named = files.slice(0, MAX_NAMED_FILES).join(', ')
   const rest = files.length > MAX_NAMED_FILES ? ', …' : ''
-  return formatCount(
-    files.length,
-    t('toast.pullSkippedFileOne'),
-    t('toast.pullSkippedFiles'),
-  ).replace('{files}', `${named}${rest}`)
+  return fillTemplate(
+    formatCount(files.length, t('toast.pullSkippedFileOne'), t('toast.pullSkippedFiles')),
+    { files: `${named}${rest}` },
+  )
 }
 
 /** Everything a finished pull has to tell the user; every entry point shows these. */

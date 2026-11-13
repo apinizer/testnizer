@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { clickContextMenuItem, clickContextSubmenuItem } from './context-menu'
 
 /** Search the APIs tree. */
@@ -13,6 +13,50 @@ export async function treeClearSearch(page: Page): Promise<void> {
   if (await search.isVisible().catch(() => false)) {
     await search.fill('')
   }
+}
+
+/** Scroll the APIs tree's virtual list; false when it could not move (end reached). */
+async function scrollTree(page: Page, mode: 'top' | 'page'): Promise<boolean> {
+  return page
+    .getByTestId('tree-node')
+    .first()
+    .evaluate((el, m) => {
+      const box = el.closest('.overflow-y-auto') as HTMLElement | null
+      if (!box) return false
+      const before = box.scrollTop
+      box.scrollTop = m === 'top' ? 0 : before + box.clientHeight * 0.8
+      return m === 'top' || box.scrollTop !== before
+    }, mode)
+}
+
+/** Scroll the APIs tree back to its first row (the project root). */
+export async function treeScrollToTop(page: Page): Promise<void> {
+  await scrollTree(page, 'top')
+  await page.waitForTimeout(50)
+}
+
+/**
+ * Bring the tree row labelled `label` into the virtual window and return it.
+ *
+ * The APIs tree is virtualized: only the rows near its scroll position exist
+ * in the DOM. The scroll position outlives a spec in the shared ui window
+ * (a created folder is revealed, i.e. scrolled to — so a later spec can find
+ * the tree scrolled to the bottom), and a long canonical project has rows far
+ * below the first screen. So: clear the filter, scroll to the top (the project
+ * root is always row 0), then page down until the row is rendered.
+ */
+export async function treeScrollToRow(page: Page, label: string): Promise<Locator> {
+  await treeClearSearch(page)
+  const row = page.getByTestId('tree-node').filter({ hasText: label }).first()
+  await treeScrollToTop(page)
+  for (let i = 0; i < 200; i++) {
+    // optional: probe — the row is either rendered at this scroll position or we page on
+    if (await row.isVisible().catch(() => false)) return row
+    if (!(await scrollTree(page, 'page'))) break
+    await page.waitForTimeout(50)
+  }
+  await row.waitFor({ state: 'visible', timeout: 5_000 })
+  return row
 }
 
 /** Click a tree node by label text. */
@@ -57,7 +101,7 @@ export async function treeAddFolder(
   parentLabel: string,
   name = 'New Folder',
 ): Promise<void> {
-  const node = page.getByTestId('tree-node').filter({ hasText: parentLabel }).first()
+  const node = await treeScrollToRow(page, parentLabel)
   await node.click({ button: 'right' })
   await clickContextMenuItem(page, /Add Folder/i)
 
@@ -98,6 +142,8 @@ export async function treeRename(page: Page, nodeLabel: string, newName: string)
  * root is always the first virtual row.
  */
 export async function treeRenameRoot(page: Page, newName: string): Promise<void> {
+  // Row 0 is the first rendered row only when the tree is scrolled to the top.
+  await treeScrollToTop(page)
   const root = page.getByTestId('tree-node').first()
   await root.click({ button: 'right' })
   await clickContextMenuItem(page, /Rename/i)

@@ -3,6 +3,7 @@ import { Save, Send, Wand2 } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import { useTranslation } from '../../lib/i18n'
+import { withRunShortcut } from '../../lib/run-shortcut'
 import { WS_CONTENT_TYPES, isBinaryContentType } from '../../../shared/realtime'
 import { RT_MONACO_LANGUAGE, beautify, canBeautify } from '../../lib/realtime-format'
 import { GhostButton, PrimaryButton } from '../mock-mcp/ui'
@@ -33,7 +34,7 @@ export default function WsComposer() {
   const renameSaved = useWebSocketStore((s) => s.renameSavedMessage)
   const deleteSaved = useWebSocketStore((s) => s.deleteSavedMessage)
   const [beautifyError, setBeautifyError] = useState<string | null>(null)
-  const nextName = t('rt.saved.defaultName').replace('{n}', String(saved.length + 1))
+  const nextName = t('rt.saved.defaultName', { n: String(saved.length + 1) })
 
   const runBeautify = (): void => {
     const res = beautify(content, mode)
@@ -77,6 +78,8 @@ export default function WsComposer() {
             <PrimaryButton
               onClick={() => void send()}
               disabled={!connected || !content.trim()}
+              // While disconnected the chord connects instead (`run-active-request.ts`).
+              title={connected && content.trim() ? withRunShortcut(t('ws.sendMessage')) : undefined}
               data-testid="ws-send"
               className="h-8"
             >
@@ -96,11 +99,12 @@ export default function WsComposer() {
             role="alert"
             className="m-0 text-[12px] text-[var(--red)]"
           >
-            {t('ws.beautifyFailed').replace('{error}', beautifyError)}
+            {t('ws.beautifyFailed', { error: beautifyError })}
           </p>
         )}
         <div data-testid="ws-composer" className="min-h-0">
           <MonacoWrapper
+            runsActiveRequest
             value={content}
             onChange={setContent}
             language={RT_MONACO_LANGUAGE[mode]}

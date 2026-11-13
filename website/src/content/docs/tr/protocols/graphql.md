@@ -5,11 +5,10 @@ order: 4
 section: Protokoller
 ---
 
-Testnizer'ın GraphQL editörü, yalnızca HTTP olan uç noktalar ile `graphql-ws`
-abonelik transportunu destekleyen sunucular arasındaki farkı anlar ve her
-operasyon türünü buna göre yönlendirir.
+Testnizer'ın GraphQL editörü sorgu ve mutasyonları HTTP ile gönderir, abonelikler için
+WebSocket bağlantısı açar.
 
-> **Çoklu sekme:** URL, sorgu, değişkenler, header'lar ve yanıt sekme bazında saklanır. İçgözlenen şema, aynı uç noktayı işaret eden tüm sekmeler arasında **paylaşılır** — bir kez içgözleyin, her yerde kullanın.
+> **Çoklu sekme:** URL, sorgu, değişkenler, header'lar, yanıt ve içgözlenen şema sekme bazında saklanır. Şemaya ihtiyaç duyan her sekmede içgözlem yapın; yeniden başlatınca şema temizlenir.
 
 ## GraphQL isteği oluşturma
 
@@ -56,7 +55,7 @@ query GetUser($id: ID!) {
 **Gönder**'e tıklayın (veya `Ctrl+Enter`). Testnizer operasyon türünü algılar:
 
 - `query` / `mutation` → HTTP POST olarak gönderilir (standart JSON gövdesi)
-- `subscription` → bağlantı `graphql-ws` WebSocket transportuna yükseltilir
+- `subscription` → WebSocket bağlantısı üzerinden açılır (bkz. [Abonelikler](#abonelikler))
 
 Editörde birden fazla operasyon olabilir. Hangisinin çalışacağını seçmek için
 araç çubuğundaki operasyon adı açılır menüsünü kullanın.
@@ -105,18 +104,17 @@ doğrudan yapıştırabilirsiniz:
 
 ## Abonelikler
 
-Operasyon `subscription` olduğunda Testnizer otomatik olarak bir WebSocket
-bağlantısına yükseltir. Bağlantı `graphql-ws` protokolünü kullanır
-(`Sec-WebSocket-Protocol: graphql-ws`).
+Operasyon `subscription` olduğunda Testnizer bir WebSocket bağlantısı açar.
+`graphql-transport-ws` protokolünü kullanır, sunucu bunu reddederse eski `graphql-ws`'i bir
+kez dener. **Bağlantı başlatma içeriği**, bağlantı açılırken gönderilen veridir; birçok
+sunucu token'ı burada bekler. Token için `{{değişken}}` kullanın.
 
-Abonelik zaman çizelgesi WebSocket editörüyle aynı şekilde davranır — olaylar
-geldikçe görünür, duraklatabilir, filtreleyebilir ve bireysel yükleri inceleyebilirsiniz.
+Olaylar geldikçe görünür. Günlük son 1000 olayı tutar ve kaçının düştüğünü gösterir.
 
-Abonelik etkinken bir **Durdur** düğmesi görünür. Tıklamak bir `complete` mesajı
-gönderir ve WebSocket'i kapatır. Sekmeyi kapattığınızda da bağlantı kapanır.
+Abonelik etkinken bir **Durdur** düğmesi görünür. Aboneliği bitirir ve bağlantıyı kapatır.
+Sekmeyi kapattığınızda ya da projeden çıktığınızda da bağlantı kapanır.
 
-Eski `subscriptions-transport-ws` protokolünü kullanan sunucular için istek
-ayarlarındaki (dişli simgesi) **Legacy WS** seçeneğini etkinleştirin.
+Abonelik de diğer istekler gibi proxy ayarını kullanır. Belgede birden çok adlandırılmış işlem varsa **İşlem** seçimi görünür ve seçilen işlem çalışır.
 
 ## HTTP ayrıntıları
 
@@ -132,6 +130,13 @@ Sorgular ve mutasyonlar için istek şöyle bir POST'tur:
 
 **Console** sekmesi, tam olarak neyin gönderildiğini doğrulayabilmeniz için ham
 HTTP isteğini ve yanıtı gösterir.
+
+Sorgular ve mutasyonlar, HTTP ile aynı **SSL doğrulaması** ve **yönlendirmeleri izle**
+ayarlarını (istek, sonra proje, sonra uygulama) ve tanımlı proxy'yi kullanır; bkz.
+[Ayarlar sekmesi](/tr/docs/protocols/http#ayarlar-sekmesi). Belge birden çok adlı operasyon
+içeriyorsa Gönder, Çalıştır, Abone Ol ve Kod Oluştur **İşlem** seçiminde seçilen
+operasyonu kullanır. Postman ve Insomnia dışa aktarımları, bir connection init payload'unu
+taşıyamadıklarında bunu söyler.
 
 ## Kalıcı sorgular (APQ)
 

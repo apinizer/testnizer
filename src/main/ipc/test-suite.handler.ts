@@ -524,7 +524,9 @@ export function registerTestSuiteHandlers(): void {
   // Clones the suite metadata + every test_suite_item (full request snapshots)
   // and every test_suite_folder underneath. Items are independent copies —
   // editing one suite never bleeds into another.
-  ipcMain.handle('testSuite:duplicate', async (_event, id: string) => {
+  // `name`: the copy's name, worded by the renderer in the UI language
+  // (`lib/copy-name.ts`); without one the English suffix is the fallback.
+  ipcMain.handle('testSuite:duplicate', async (_event, id: string, name?: string) => {
     try {
       const db = getDb()
       const original = db
@@ -549,7 +551,11 @@ export function registerTestSuiteHandlers(): void {
           original.project_id,
           // De-dupe so duplicating twice yields "X (copy)", "X (copy) (1)", …
           // rather than two suites named identically.
-          ensureUniqueSuiteName(db, original.project_id, `${original.name} (copy)`),
+          ensureUniqueSuiteName(
+            db,
+            original.project_id,
+            typeof name === 'string' && name.trim() ? name : `${original.name} (copy)`,
+          ),
           original.description,
           maxOrder.mx + 1,
           now,

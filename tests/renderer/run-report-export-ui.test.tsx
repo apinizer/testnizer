@@ -237,7 +237,7 @@ describe('RunnerResults — Export HTML / JSON (issue #266)', () => {
         onNewRun={noop}
         onRunAgain={noop}
         onViewAllRuns={noop}
-        selectedResultId={null}
+        selectedResultKey={null}
         onSelectResult={noop}
         {...over}
       />,

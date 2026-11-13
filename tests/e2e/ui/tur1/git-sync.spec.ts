@@ -182,7 +182,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
           projectId,
         )
         expect(bad.success).toBe(false)
-        expect(bad.error ?? '').toMatch(/kimlik doğrulaması|401|Authentication/i)
+        expect(bad.error ?? '').toMatch(/Git authentication failed|401|Authentication/i)
         expect(bad.error ?? '').not.toContain('definitely-wrong')
         log = await authLog(gitUrl)
         expect(log.some((a) => !a.ok && a.password === 'definitely-wrong')).toBe(true)
@@ -277,7 +277,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
         )
         const rejected = await push()
         expect(rejected.success).toBe(false)
-        expect(rejected.error ?? '').toMatch(/Önce Pull/i)
+        expect(rejected.error ?? '').toMatch(/Pull first, then try Push again/)
         expect(rejected.error ?? '').not.toMatch(/\[rejected\]|fetch first/) // no raw git text
 
         // ── Pull reconciles by merging (pull.rebase=false), then Push lands.
@@ -302,7 +302,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
         await configure('http://127.0.0.1:9/nothing-here.git', deadPath)
         const dead = await push()
         expect(dead.success).toBe(false)
-        expect(dead.error ?? '').toContain('Uzak depoya erişilemedi')
+        expect(dead.error ?? '').toContain('Could not reach the remote repository')
         expect(fs.existsSync(path.join(deadPath, '.git'))).toBe(false)
 
         // ── local_path is somebody else's checkout → refused, origin untouched.
@@ -311,7 +311,7 @@ uiTest.describe('Tur1 — Git sync with PAT [issue #127]', () => {
         await configure(repo, foreignPath)
         const foreign = await push()
         expect(foreign.success).toBe(false)
-        expect(foreign.error ?? '').toContain('başka bir uzak depoya')
+        expect(foreign.error ?? '').toContain('connected to another remote')
         expect(teammate(foreignPath, ['remote', 'get-url', 'origin']).trim()).toBe(
           'https://example.com/other/dotfiles.git',
         )

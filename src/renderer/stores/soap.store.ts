@@ -40,6 +40,7 @@ import {
   withSoapTransportHeaders,
 } from '../../shared/soap-transport'
 import { isWsSecurityEnabled, resolveWsSecurityVariables } from '../../shared/soap-wsse'
+import { t } from '../lib/i18n'
 
 /** SOAP metadata stored in endpoint request_schema.soap */
 interface SoapEndpointMeta {
@@ -381,10 +382,16 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
             : {}),
         })
       } else {
-        patchOwner({ parseError: result?.error || 'Failed to parse WSDL', isLoading: false })
+        patchOwner({
+          parseError: result?.error || t('soap.error.wsdlParseFailed'),
+          isLoading: false,
+        })
       }
     } catch (e) {
-      patchOwner({ parseError: (e as Error).message || 'Failed to parse WSDL', isLoading: false })
+      patchOwner({
+        parseError: (e as Error).message || t('soap.error.wsdlParseFailed'),
+        isLoading: false,
+      })
     }
   },
 
@@ -610,7 +617,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
           {
             requestId: makeId(),
             protocol: 'soap',
-            error: result?.error || 'SOAP request failed',
+            error: result?.error || t('soap.error.requestFailed'),
             timing: { total: 0 },
           },
           activeTabId,
@@ -621,7 +628,7 @@ export const useSoapStore = create<SoapStore>((set, get) => ({
         {
           requestId: makeId(),
           protocol: 'soap',
-          error: (e as Error).message || 'SOAP request failed',
+          error: (e as Error).message || t('soap.error.requestFailed'),
           timing: { total: 0 },
         },
         activeTabId,

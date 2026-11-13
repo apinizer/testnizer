@@ -11,6 +11,7 @@
  * Both go through `composeConnectionMessage` + `joinConnectionHint`, so the
  * English text the renderer shows is the string main sent — no drift.
  */
+import { isCredentialArgName, isCredentialHeaderName } from './credential-headers'
 
 export const CONNECTION_ERROR_KINDS = [
   'refused',
@@ -209,4 +210,59 @@ export function isConnectionErrorInfo(value: unknown): value is ConnectionErrorI
     (CONNECTION_ERROR_KINDS as readonly string[]).includes(v.kind) &&
     typeof v.message === 'string'
   )
+}
+
+// ─── Credential scrub ───────────────────────────────────────
+
+const URL_IN_TEXT = /\b[a-z][a-z0-9+.-]*:\/\/[^\s'"<>()]+/gi
+
+/**
+ * An `Authorization` / `Proxy-Authorization` header written into the text
+ * (`Authorization: Basic dXNlcjp0b2tlbg==`, git's `http.extraHeader=…` echo):
+ * the scheme is kept, the credential after it goes.
+ */
+const AUTHORIZATION_IN_TEXT =
+  /\b((?:Proxy-)?Authorization\s*[:=]\s*(?:Basic|Bearer|Token|Digest)\s+)[^\s'",;]+/gi
+
+/**
+ * Remove credentials from server / SDK text: URL userinfo and URL query /
+ * fragment (`?token=…`), an `Authorization: <scheme> <credential>` header,
+ * plus any literal userinfo or credential-named query value of the
+ * connection URL. Bare origins are left untouched. The one owner of this rule:
+ * connection errors (main) and git errors (`git-errors.ts`) both call it.
+ */
+export function scrubConnectionText(text: string, ctxUrl: string | undefined): string {
+  let out = text
+    .replace(URL_IN_TEXT, (m) =>
+      m.replace(/^([a-z][a-z0-9+.-]*:\/\/)[^/@\s]*@/i, '$1').replace(/[?#].*$/, ''),
+    )
+    .replace(AUTHORIZATION_IN_TEXT, (_m, head: string) => `${head}••••••`)
+  if (ctxUrl) {
+    try {
+      const u = new URL(ctxUrl)
+      const queryCredentials = [...u.searchParams.entries()]
+        // Query names are ARGUMENTS: the shared argument rule (whole words —
+        // `sig`, `api_key`, `access_token`) is the one History / Console use
+        // for query fields. The broader header rule stays as a superset so no
+        // value this scrub already removed can start leaking.
+        .filter(([name]) => isCredentialArgName(name) || isCredentialHeaderName(name))
+        .map(([, value]) => value)
+      const secrets = [u.username, u.password, ...queryCredentials]
+        .flatMap((v) => {
+          if (!v) return []
+          let decoded = v
+          try {
+            decoded = decodeURIComponent(v)
+          } catch {
+            /* keep raw */
+          }
+          return decoded === v ? [v] : [v, decoded]
+        })
+        .filter((v) => v.length >= 3)
+      for (const s of secrets) out = out.split(s).join('••••••')
+    } catch {
+      /* not a URL — nothing more to remove */
+    }
+  }
+  return out.trim()
 }

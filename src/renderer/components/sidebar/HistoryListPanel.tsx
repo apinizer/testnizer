@@ -1,25 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Trash2, Clock, History as HistoryIcon } from 'lucide-react'
-import {
-  HISTORY_LIST_LIMIT,
-  useHistoryStore,
-  type HistoryRange,
-  type HistoryStatusClass,
-  type HistoryTarget,
-} from '../../stores/history.store'
+import { HISTORY_LIST_LIMIT, useHistoryStore } from '../../stores/history.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
-import { mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
-import HistoryFilterSelect from '../history/HistoryFilterSelect'
+import { historyRowLabel } from '../shared/history-row-label'
+import HistoryClearButton from './HistoryClearButton'
+import HistorySidebarFilters from '../history/HistorySidebarFilters'
 import { useMockAddresses } from '../history/use-mock-addresses'
-import {
-  filterHistory,
-  hasActiveFilters,
-  historyProtocolName,
-  protocolStats,
-  rangeOptions,
-  statusOptions,
-  targetOptions,
-} from '../history/history-overview'
+import { filterHistory, hasActiveFilters, protocolStats } from '../history/history-overview'
 import { openHistoryEntry } from './open-history-entry'
 import RequestBadge from '../shared/RequestBadge'
 import EmptyState from '../shared/EmptyState'
@@ -38,13 +25,10 @@ export default function HistoryListPanel() {
   const { t, locale } = useTranslation()
   const entries = useHistoryStore((s) => s.entries)
   const fetch = useHistoryStore((s) => s.fetch)
-  const clear = useHistoryStore((s) => s.clear)
   const deleteEntry = useHistoryStore((s) => s.deleteEntry)
   // Filters (search, date, status, protocol) are shared with the History
   // page's overview in the workbench — one set, the same rows in both.
   const filters = useHistoryStore((s) => s.filters)
-  const setFilters = useHistoryStore((s) => s.setFilters)
-  const resetFilters = useHistoryStore((s) => s.resetFilters)
 
   const activeProjectId = useWorkspaceStore((s) => s.activeProjectId)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
@@ -85,128 +69,20 @@ export default function HistoryListPanel() {
         </span>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>{entries.length}</span>
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={() => clear(activeWorkspaceId || undefined)}
-          className="cursor-pointer rounded px-1.5 py-0.5"
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            color: 'var(--muted)',
-            fontSize: 13,
-          }}
-          title={t('history.clearAllTitle')}
-        >
-          {t('history.clear')}
-        </button>
+        {/* Clears the active project (what this list shows); disabled off the
+            unfiltered list, since Clear ignores the search filter. */}
+        <HistoryClearButton
+          projectId={activeProjectId || undefined}
+          listEmpty={entries.length === 0}
+        />
       </div>
 
-      {/* Search — the APIs / Mocks panels' box: px sizes (Tailwind rem spacing
-       *  shrinks with the app's root font size), 1.5px border, 13px magnifier. */}
-      <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            background: 'var(--surface)',
-            border: '1.5px solid var(--border2)',
-            borderRadius: 8,
-            padding: '6px 10px',
-            gap: 7,
-          }}
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="var(--hint)"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            data-testid="history-search"
-            value={filters.query}
-            onChange={(e) => setFilters({ query: e.target.value })}
-            placeholder={t('history.filterPlaceholder')}
-            aria-label={t('history.filterPlaceholder')}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              fontSize: 13,
-              color: 'var(--text)',
-              width: '100%',
-              fontFamily: 'inherit',
-            }}
-          />
-        </div>
-        {/* Date, status / protocol, mock target — the overview's drop-downs, 2×2 */}
-        <div
-          className="mt-2"
-          style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 }}
-        >
-          <HistoryFilterSelect
-            fill
-            testId="history-side-range"
-            label={t('historyHome.rangeLabel')}
-            value={filters.range}
-            onChange={(v) => setFilters({ range: v as HistoryRange })}
-            options={rangeOptions(t)}
-          />
-          <HistoryFilterSelect
-            fill
-            testId="history-side-status"
-            label={t('historyHome.col.status')}
-            value={filters.status}
-            onChange={(v) => setFilters({ status: v as HistoryStatusClass })}
-            options={statusOptions(t, filters.protocol)}
-          />
-          <HistoryFilterSelect
-            fill
-            testId="history-side-protocol"
-            label={t('historyHome.protocolLabel')}
-            value={filters.protocol ?? ''}
-            onChange={(v) => setFilters({ protocol: v || null })}
-            options={[
-              ['', t('historyHome.protocol.all')],
-              ...protocols.map((p) => [p, historyProtocolName(p)] as [string, string]),
-            ]}
-          />
-          <HistoryFilterSelect
-            fill
-            testId="history-side-target"
-            label={t('historyHome.targetLabel')}
-            value={filters.target}
-            onChange={(v) => setFilters({ target: v as HistoryTarget })}
-            options={targetOptions(t)}
-          />
-        </div>
-        {filtering && (
-          <div
-            className="mt-1.5 flex items-center justify-between"
-            style={{ fontSize: 12, color: 'var(--muted)' }}
-          >
-            <span data-testid="history-side-count">
-              {t('history.filteredCount')
-                .replace('{shown}', String(filtered.length))
-                .replace('{total}', String(entries.length))}
-            </span>
-            <button
-              type="button"
-              data-testid="history-side-reset"
-              onClick={resetFilters}
-              className="cursor-pointer border-none bg-transparent p-0"
-              style={{ color: 'var(--accent)', fontSize: 12 }}
-            >
-              {t('historyHome.reset')}
-            </button>
-          </div>
-        )}
-      </div>
+      <HistorySidebarFilters
+        protocols={protocols}
+        shown={filtered.length}
+        total={entries.length}
+        filtering={filtering}
+      />
 
       {/* List */}
       <div className="flex-1 overflow-y-auto">
@@ -214,8 +90,7 @@ export default function HistoryListPanel() {
         {groups.length === 0 && filtering && (
           <div
             data-testid="history-no-matches"
-            className="px-4 py-4 text-center"
-            style={{ color: 'var(--muted)', fontSize: 13 }}
+            className="px-4 py-4 text-center text-sm text-[var(--muted)]"
           >
             {t('history.noMatches')}
           </div>
@@ -263,31 +138,32 @@ export default function HistoryListPanel() {
                 }}
               >
                 <RequestBadge protocol={entry.protocol} method={entry.method} small />
-                {entry.protocol === 'mcp' ? (
-                  // The call (tool / prompt / resource), the server in the tooltip.
-                  <span
-                    className="flex-1 truncate"
-                    style={{ fontSize: 13 }}
-                    title={mcpHistoryRowLabel(entry).title}
-                  >
-                    {mcpHistoryRowLabel(entry).label}
-                  </span>
-                ) : (
-                  <span className="flex-1 truncate" style={{ fontSize: 13 }}>
-                    {shortUrl(entry.url)}
-                  </span>
-                )}
+                {/* MCP: the call, the server in the tooltip; the rest: host+path,
+                    the full (stored, masked) URL in the tooltip. */}
+                <span
+                  data-testid="history-entry-label"
+                  className="flex-1 truncate"
+                  style={{ fontSize: 13 }}
+                  title={historyRowLabel(entry).title}
+                >
+                  {historyRowLabel(entry).label}
+                </span>
                 <HistoryStatus entry={entry} t={t} />
                 <span className="shrink-0" style={{ color: 'var(--hint)', fontSize: 13 }}>
                   {formatTime(entry.executed_at, locale)}
                 </span>
                 <button
                   type="button"
+                  data-testid="history-entry-delete"
+                  aria-label={t('common.delete')}
+                  title={t('common.delete')}
                   onClick={(e) => {
                     e.stopPropagation()
                     setDeleteTargetId(entry.id)
                   }}
-                  className="hidden shrink-0 cursor-pointer group-hover:block"
+                  // Hidden by opacity, not display:none, so Tab reaches it; shown
+                  // on row hover and on keyboard focus.
+                  className="shrink-0 cursor-pointer opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -295,7 +171,7 @@ export default function HistoryListPanel() {
                     padding: 1,
                   }}
                 >
-                  <Trash2 size={10} />
+                  <Trash2 size={10} aria-hidden="true" />
                 </button>
               </div>
             ))}
@@ -365,15 +241,6 @@ function formatTime(ts: number, locale: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function shortUrl(url: string): string {
-  try {
-    const u = new URL(url)
-    return u.host + u.pathname
-  } catch {
-    return url
-  }
 }
 
 /** Status badge — the shared rule with the Recent endpoints list (G-15). */

@@ -30,6 +30,7 @@ import {
 import { isCredentialHeaderName } from '../../shared/credential-headers'
 import { requestSslVerification } from '../../shared/request-settings'
 import type { AuthConfig, HttpMethod, KeyValuePair, RequestBody, Tab } from '../types'
+import { fillTemplate } from '../../shared/fill-template'
 
 type RequestSlice = Pick<
   ReturnType<typeof useRequestStore.getState>,
@@ -55,7 +56,7 @@ export type CurlPasteResult =
 export function curlWarningText(t: (key: string) => string, w: CurlWarning): string {
   const key = `curlPaste.warning.${w.code}`
   const text = t(key)
-  return text === key ? w.message : text.replace('{arg}', w.arg ?? '')
+  return text === key ? w.message : fillTemplate(text, { arg: w.arg ?? '' })
 }
 
 /**

@@ -32,7 +32,7 @@ export default function McpProtocolSelect({ disabled }: { disabled: boolean }) {
       <optgroup label={t('mcp.protocol.pinGroup')}>
         {MCP_LEGACY_VERSIONS.map((v) => (
           <option key={v} value={v}>
-            {t('mcp.protocol.pin').replace('{version}', v)}
+            {t('mcp.protocol.pin', { version: v })}
           </option>
         ))}
       </optgroup>

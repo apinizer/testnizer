@@ -10,7 +10,9 @@ import { navigateSidebar } from './bootstrap'
  * earlier test in the same worker.
  */
 export function randomMockPort(): number {
-  const idx = Number(process.env.TEST_PARALLEL_INDEX ?? process.env.TEST_WORKER_INDEX ?? '0')
+  const idx = Number(
+    process.env.TEST_PARALLEL_INDEX ?? process.env.TEST_WORKER_INDEX ?? '0',
+  )
   const band = 31000 + (Number.isFinite(idx) ? idx : 0) * 1000
   return band + Math.floor(Math.random() * 1000)
 }
@@ -22,7 +24,7 @@ export function randomMockPort(): number {
  */
 export async function createMockServer(page: Page, name: string, port: number): Promise<void> {
   await navigateSidebar(page, 'mocks')
-  // The header "+" opens a type menu; HTTP opens the dialog with HTTP picked.
+  // The header "+" opens a type menu (HTTP / MCP / SSE / AI) first.
   await page.getByTestId('mock-new').click()
   await page.getByTestId('mock-new-option-http').click()
   await expect(page.getByTestId('mock-new-dialog')).toBeVisible({ timeout: 10_000 })
@@ -93,10 +95,7 @@ export async function fillLastResponseCondition(page: Page, condition: object): 
   const count = await all.count()
   let target: ReturnType<Page['locator']> | null = null
   for (let i = count - 1; i >= 0; i--) {
-    const val = await all
-      .nth(i)
-      .inputValue()
-      .catch(() => '')
+    const val = await all.nth(i).inputValue().catch(() => '')
     if (val.includes('"type"')) {
       target = all.nth(i)
       break

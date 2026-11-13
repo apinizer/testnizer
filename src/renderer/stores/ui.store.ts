@@ -20,25 +20,33 @@ export type SettingsFocus = 'appPasswordSet' | 'appPassword'
 
 // Preset font stacks offered as quick picks. The stored `fontFamily` is always
 // a raw CSS font-family value — users may type any stack they like.
-export const FONT_PRESETS: Array<{ id: string; label: string; stack: string }> = [
-  { id: 'inter', label: 'Inter', stack: "Inter, -apple-system, 'Segoe UI', system-ui, sans-serif" },
-  {
-    id: 'system',
-    label: 'System',
-    stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
-  },
-  { id: 'sfpro', label: 'SF Pro', stack: "'SF Pro Text', -apple-system, system-ui, sans-serif" },
-  {
-    id: 'roboto',
-    label: 'Roboto',
-    stack: "Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif",
-  },
-  {
-    id: 'jetbrains',
-    label: 'JetBrains Mono',
-    stack: "'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace",
-  },
-]
+// `labelKey`: an ordinary word, translated where the preset renders; `label`
+// is a font name shown as-is.
+export const FONT_PRESETS: Array<{ id: string; label: string; labelKey?: string; stack: string }> =
+  [
+    {
+      id: 'inter',
+      label: 'Inter',
+      stack: "Inter, -apple-system, 'Segoe UI', system-ui, sans-serif",
+    },
+    {
+      id: 'system',
+      label: 'System',
+      labelKey: 'settings.fontSystem',
+      stack: "-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif",
+    },
+    { id: 'sfpro', label: 'SF Pro', stack: "'SF Pro Text', -apple-system, system-ui, sans-serif" },
+    {
+      id: 'roboto',
+      label: 'Roboto',
+      stack: "Roboto, 'Helvetica Neue', Helvetica, Arial, sans-serif",
+    },
+    {
+      id: 'jetbrains',
+      label: 'JetBrains Mono',
+      stack: "'JetBrains Mono', 'SF Mono', Menlo, Monaco, Consolas, monospace",
+    },
+  ]
 export const DEFAULT_FONT_FAMILY = FONT_PRESETS[0].stack
 
 interface UIStore {

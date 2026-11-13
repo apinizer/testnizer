@@ -10,6 +10,7 @@ import RealtimeLogToolbar from './realtime/RealtimeLogToolbar'
 import RealtimeLogRow from './realtime/RealtimeLogRow'
 import MessageView from './realtime/MessageView'
 import { useRealtimeLog, type LogFilter, type LogKind } from './realtime/use-realtime-log'
+import { fillTemplate } from '../../../shared/fill-template'
 
 const FILTERS: readonly LogFilter[] = ['all', 'sent', 'received', 'system']
 const SYSTEM_KEYS: Record<string, string> = {
@@ -18,6 +19,7 @@ const SYSTEM_KEYS: Record<string, string> = {
   error: 'ws.system.error',
   reconnecting: 'ws.system.reconnecting',
   reconnected: 'ws.system.reconnected',
+  dropped: 'ws.system.dropped',
 }
 
 const kindOf = (m: WsMessage): LogKind => m.direction
@@ -100,10 +102,7 @@ export default function WsMessageLog() {
                   system
                     ? undefined
                     : () =>
-                        saveLogged(
-                          msg.id,
-                          t('rt.saved.defaultName').replace('{n}', String(savedCount + 1)),
-                        )
+                        saveLogged(msg.id, t('rt.saved.defaultName', { n: String(savedCount + 1) }))
                 }
                 selected={log.selected.includes(msg.id)}
                 onToggleSelect={() => log.toggleSelect(msg.id)}
@@ -126,9 +125,10 @@ export default function WsMessageLog() {
       </div>
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]" data-testid="ws-message-counts">
-          {formatCount(traffic.length, t('ws.countsOne'), t('ws.countsOther'))
-            .replace('{sent}', String(sentCount))
-            .replace('{received}', String(traffic.length - sentCount))}
+          {fillTemplate(formatCount(traffic.length, t('ws.countsOne'), t('ws.countsOther')), {
+            sent: String(sentCount),
+            received: String(traffic.length - sentCount),
+          })}
         </span>
         <label className="flex cursor-pointer items-center gap-1.5">
           <input

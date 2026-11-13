@@ -14,8 +14,10 @@ import { useUIStore } from '../../stores/ui.store'
 import { useWorkspaceStore } from '../../stores/workspace.store'
 import { useBranchStore } from '../../stores/branch.store'
 import { toast } from '../../lib/toast'
+import { gitErrorText } from '../../lib/git-error-text'
 import { pullWarnings, skippedFilesMessage, type PullNotices } from '../../lib/pull-messages'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import { formatDate } from '../../lib/format-datetime'
 import type { SaveMode, GitRepoFile } from '../../types'
 import Modal from '../shared/Modal'
@@ -193,7 +195,7 @@ export default function SaveModal() {
       if (result?.success && result.data) {
         setDiffResult(result.data)
       } else {
-        setDiffError(result?.error || 'Failed to compute diff')
+        setDiffError(gitErrorText(result) || t('saveModal.diffFailed'))
       }
     } catch (e) {
       setDiffError((e as Error).message)
@@ -228,7 +230,7 @@ export default function SaveModal() {
         }
       } else {
         if (!gitUrl || !gitUsername || !gitToken) {
-          toast.error('Please fill in all Git fields')
+          toast.error(t('saveModal.fillGitFields'))
           return
         }
         const result = (await window.api?.save?.git({
@@ -243,7 +245,7 @@ export default function SaveModal() {
           toast.success(`${t('toast.pushed')}: ${gitBranch}`)
           fetchSaveHistory(activeProjectId)
         } else {
-          toast.error(result?.error || t('toast.pushFailed'))
+          toast.error(gitErrorText(result) || t('toast.pushFailed'))
         }
       }
     } catch (e) {
@@ -266,12 +268,12 @@ export default function SaveModal() {
       if (result?.success) {
         toast.success(
           result.data?.noChanges
-            ? 'No changes to push.'
-            : `${t('toast.pushed')}: ${result.data?.message || 'Success'}`,
+            ? t('saveModal.noChangesToPush')
+            : `${t('toast.pushed')}: ${result.data?.message || t('saveModal.pushSuccess')}`,
         )
         fetchSaveHistory(activeProjectId)
       } else {
-        toast.error(result?.error || t('toast.pushFailed'))
+        toast.error(gitErrorText(result) || t('toast.pushFailed'))
       }
     } catch (e) {
       toast.error((e as Error).message)
@@ -291,13 +293,17 @@ export default function SaveModal() {
       if (result?.success) {
         const imp = result.data?.imported
         const msg = imp
-          ? `${t('toast.pulled')}: ${imp.endpoints || 0} endpoints, ${imp.savedRequests || 0} requests, ${imp.environments || 0} environments`
+          ? `${t('toast.pulled')}: ${t('saveModal.pulledSummary', {
+              endpoints: imp.endpoints || 0,
+              requests: imp.savedRequests || 0,
+              environments: imp.environments || 0,
+            })}`
           : t('toast.pulled')
         toast.success(msg)
         pullWarnings(t, result.data).forEach((m) => toast.warning(m))
         fetchSaveHistory(activeProjectId)
       } else {
-        toast.error(result?.error || t('toast.pullFailed'))
+        toast.error(gitErrorText(result) || t('toast.pullFailed'))
       }
     } catch (e) {
       toast.error((e as Error).message)
@@ -307,7 +313,7 @@ export default function SaveModal() {
 
   async function handleGitOpen() {
     if (!gitUrl || !gitUsername || !gitToken) {
-      toast.error('Please fill in all Git fields')
+      toast.error(t('saveModal.fillGitFields'))
       return
     }
     setLoading(true)
@@ -327,9 +333,9 @@ export default function SaveModal() {
         setGitTmpDir(result.data.tmpDir)
         const skipped = result.data.skipped?.map((s) => s.file) ?? []
         if (skipped.length > 0) toast.warning(skippedFilesMessage(t, skipped))
-        else if (result.data.files.length === 0) toast.warning('No JSON files found in repository')
+        else if (result.data.files.length === 0) toast.warning(t('saveModal.noJsonFiles'))
       } else {
-        toast.error(result?.error || 'Failed to list files')
+        toast.error(gitErrorText(result) || t('saveModal.listFilesFailed'))
       }
     } catch (e) {
       toast.error((e as Error).message)
@@ -345,9 +351,9 @@ export default function SaveModal() {
         error?: string
       }
       if (result?.success) {
-        toast.success(`Loaded: ${file.name}`)
+        toast.success(t('saveModal.loaded', { name: file.name }))
       } else {
-        toast.error(result?.error || 'Failed to read file')
+        toast.error(gitErrorText(result) || t('saveModal.readFileFailed'))
       }
     } catch (e) {
       toast.error((e as Error).message)
@@ -355,18 +361,25 @@ export default function SaveModal() {
     setLoading(false)
   }
 
+  // Worded here, not with main's English `summary`, so it follows the UI
+  // language (tester finding 6).
+  function diffSummary(total: number): string {
+    if (total === 0) return t('saveModal.diffInSync')
+    return formatCount(total, t('saveModal.diffChangesOne'), t('saveModal.diffChanges'))
+  }
+
   const tabs: { id: TabMode; label: string; icon?: React.ReactNode }[] = [
-    { id: 'save', label: 'Save' },
-    { id: 'push', label: 'Push', icon: <ArrowUp size={11} /> },
-    { id: 'pull', label: 'Pull', icon: <ArrowDown size={11} /> },
-    { id: 'open', label: 'Open from Git' },
+    { id: 'save', label: t('common.save') },
+    { id: 'push', label: t('git.push'), icon: <ArrowUp size={11} /> },
+    { id: 'pull', label: t('git.pull'), icon: <ArrowDown size={11} /> },
+    { id: 'open', label: t('saveModal.tabOpen') },
   ]
 
   return (
     <Modal
       open={show}
       onOpenChange={(o) => !o && handleClose()}
-      title="Save Project"
+      title={t('saveModal.title')}
       testId="save-modal"
     >
       <div
@@ -386,7 +399,7 @@ export default function SaveModal() {
         >
           <div className="flex items-center gap-2">
             <span className="font-semibold" style={{ color: 'var(--text)' }}>
-              Project
+              {t('saveModal.project')}
             </span>
             <div
               className="flex items-center"
@@ -462,10 +475,10 @@ export default function SaveModal() {
                     )}
                     <div>
                       <div className="font-medium" style={{ color: 'var(--text)' }}>
-                        {mode === 'local' ? 'Local' : 'Git'}
+                        {mode === 'local' ? t('saveModal.modeLocal') : 'Git'}
                       </div>
                       <div style={{ color: 'var(--muted)' }}>
-                        {mode === 'local' ? 'Save to this computer' : 'GitHub / GitLab'}
+                        {mode === 'local' ? t('saveModal.modeLocalHint') : 'GitHub / GitLab'}
                       </div>
                     </div>
                   </label>
@@ -477,7 +490,7 @@ export default function SaveModal() {
                   <input
                     value={localDir}
                     readOnly
-                    placeholder="Select folder..."
+                    placeholder={t('saveModal.selectFolder')}
                     style={{ ...inputStyle, flex: 1, fontFamily: 'var(--font-mono)', fontSize: 13 }}
                   />
                   <button
@@ -492,7 +505,7 @@ export default function SaveModal() {
                     }}
                     onClick={handleSelectDirectory}
                   >
-                    Browse
+                    {t('saveModal.browse')}
                   </button>
                 </div>
               )}
@@ -515,7 +528,7 @@ export default function SaveModal() {
                     <input
                       value={gitUsername}
                       onChange={(e) => setGitUsername(e.target.value)}
-                      placeholder="username"
+                      placeholder={t('saveModal.usernamePlaceholder')}
                       style={inputStyle}
                     />
                   </div>
@@ -529,7 +542,7 @@ export default function SaveModal() {
                   <input
                     value={commitMessage}
                     onChange={(e) => setCommitMessage(e.target.value)}
-                    placeholder="Commit message..."
+                    placeholder={t('saveModal.commitPlaceholder')}
                     style={inputStyle}
                   />
                 </div>
@@ -538,7 +551,7 @@ export default function SaveModal() {
               {saveHistory.length > 0 && (
                 <div className="mt-3">
                   <div className="mb-1 font-semibold" style={{ color: 'var(--muted)' }}>
-                    Recent Saves
+                    {t('saveModal.recentSaves')}
                   </div>
                   <div
                     className="max-h-[100px] overflow-y-auto rounded-md"
@@ -576,7 +589,7 @@ export default function SaveModal() {
                 <input
                   value={commitMessage}
                   onChange={(e) => setCommitMessage(e.target.value)}
-                  placeholder="Commit message (optional)..."
+                  placeholder={t('saveModal.commitOptionalPlaceholder')}
                   style={inputStyle}
                 />
               </div>
@@ -586,7 +599,7 @@ export default function SaveModal() {
                   className="flex items-center gap-2 py-6 text-center"
                   style={{ color: 'var(--muted)', justifyContent: 'center' }}
                 >
-                  <Loader2 size={14} className="animate-spin" /> Comparing with remote...
+                  <Loader2 size={14} className="animate-spin" /> {t('saveModal.comparing')}
                 </div>
               )}
 
@@ -610,24 +623,30 @@ export default function SaveModal() {
                         fontWeight: 500,
                       }}
                     >
-                      {diffResult.summary}
+                      {diffSummary(diffResult.totalChanges)}
                     </span>
                   </div>
 
                   {diffResult.totalChanges > 0 && (
                     <div className="max-h-[220px] overflow-y-auto">
-                      <DiffCategoryView label="Endpoints" diff={diffResult.changes.endpoints} />
                       <DiffCategoryView
-                        label="Saved Requests"
+                        label={t('saveModal.catEndpoints')}
+                        diff={diffResult.changes.endpoints}
+                      />
+                      <DiffCategoryView
+                        label={t('saveModal.catSavedRequests')}
                         diff={diffResult.changes.savedRequests}
                       />
-                      <DiffCategoryView label="Folders" diff={diffResult.changes.folders} />
                       <DiffCategoryView
-                        label="Environments"
+                        label={t('saveModal.catFolders')}
+                        diff={diffResult.changes.folders}
+                      />
+                      <DiffCategoryView
+                        label={t('saveModal.catEnvironments')}
                         diff={diffResult.changes.environments}
                       />
                       <DiffCategoryView
-                        label="Global Variables"
+                        label={t('saveModal.catGlobalVariables')}
                         diff={diffResult.changes.globalVariables}
                       />
                     </div>
@@ -645,7 +664,7 @@ export default function SaveModal() {
                   className="flex items-center gap-2 py-6 text-center"
                   style={{ color: 'var(--muted)', justifyContent: 'center' }}
                 >
-                  <Loader2 size={14} className="animate-spin" /> Comparing with remote...
+                  <Loader2 size={14} className="animate-spin" /> {t('saveModal.comparing')}
                 </div>
               )}
 
@@ -668,24 +687,30 @@ export default function SaveModal() {
                         fontWeight: 500,
                       }}
                     >
-                      {diffResult.summary}
+                      {diffSummary(diffResult.totalChanges)}
                     </span>
                   </div>
 
                   {diffResult.totalChanges > 0 && (
                     <div className="max-h-[220px] overflow-y-auto">
-                      <DiffCategoryView label="Endpoints" diff={diffResult.changes.endpoints} />
                       <DiffCategoryView
-                        label="Saved Requests"
+                        label={t('saveModal.catEndpoints')}
+                        diff={diffResult.changes.endpoints}
+                      />
+                      <DiffCategoryView
+                        label={t('saveModal.catSavedRequests')}
                         diff={diffResult.changes.savedRequests}
                       />
-                      <DiffCategoryView label="Folders" diff={diffResult.changes.folders} />
                       <DiffCategoryView
-                        label="Environments"
+                        label={t('saveModal.catFolders')}
+                        diff={diffResult.changes.folders}
+                      />
+                      <DiffCategoryView
+                        label={t('saveModal.catEnvironments')}
                         diff={diffResult.changes.environments}
                       />
                       <DiffCategoryView
-                        label="Global Variables"
+                        label={t('saveModal.catGlobalVariables')}
                         diff={diffResult.changes.globalVariables}
                       />
                     </div>
@@ -696,7 +721,7 @@ export default function SaveModal() {
                       className="mt-2 rounded-md px-3 py-2"
                       style={{ background: '#fff0f0', color: '#cc2200' }}
                     >
-                      No remote data found. Push first before pulling.
+                      {t('saveModal.noRemote')}
                     </div>
                   )}
                 </div>
@@ -724,7 +749,7 @@ export default function SaveModal() {
                   <input
                     value={gitUsername}
                     onChange={(e) => setGitUsername(e.target.value)}
-                    placeholder="username"
+                    placeholder={t('saveModal.usernamePlaceholder')}
                     style={inputStyle}
                   />
                 </div>
@@ -739,7 +764,7 @@ export default function SaveModal() {
               {gitFiles.length > 0 && (
                 <div className="mt-3">
                   <div className="mb-1 font-semibold" style={{ color: 'var(--muted)' }}>
-                    JSON Files in Repository
+                    {t('saveModal.repoJsonFiles')}
                   </div>
                   <div
                     className="max-h-[140px] overflow-y-auto rounded-md"
@@ -794,7 +819,7 @@ export default function SaveModal() {
             }}
             onClick={handleClose}
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -820,12 +845,12 @@ export default function SaveModal() {
           >
             {loading && <Loader2 size={13} className="animate-spin" />}
             {tabMode === 'save'
-              ? 'Save'
+              ? t('common.save')
               : tabMode === 'push'
-                ? 'Push'
+                ? t('git.push')
                 : tabMode === 'pull'
-                  ? 'Pull'
-                  : 'Connect'}
+                  ? t('git.pull')
+                  : t('saveModal.connect')}
           </button>
         </div>
       </div>

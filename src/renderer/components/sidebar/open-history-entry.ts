@@ -11,7 +11,12 @@ import { useUIStore } from '../../stores/ui.store'
 import { mcpHistoryRestore } from '../protocols/mcp/history-restore'
 import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
 import { openHistoryEntryInTab } from '../../lib/history-open'
-import { historyTabName, historyTabUrl, unmaskHistoryValue } from '../../lib/history-restore'
+import {
+  historyTabName,
+  historyTabUrl,
+  shortHistoryUrl,
+  unmaskHistoryValue,
+} from '../../lib/history-restore'
 import { useHistoryHiddenStore } from '../../stores/history-hidden.store'
 import type { HistoryEntry, ApiResponse } from '../../types'
 
@@ -38,7 +43,7 @@ export function openHistoryEntry(entry: HistoryEntry): void {
   useTabsStore.getState().openPreviewTab({
     id: tabId,
     name: mcpRow
-      ? `${entry.method || 'CALL_TOOL'} ${mcpRow.name || shortUrl(mcpRow.url)}`
+      ? `${entry.method || 'CALL_TOOL'} ${mcpRow.name || shortHistoryUrl(mcpRow.url)}`
       : historyTabName(entry),
     protocol,
     method: entry.method,
@@ -60,7 +65,7 @@ export function openHistoryEntry(entry: HistoryEntry): void {
   if (protocol === 'soap') {
     useHistoryHiddenStore.getState().setHidden(realTabId, soapHidden)
     useSoapStore.getState().switchToTab(realTabId)
-    useResponseStore.getState().clearResponse()
+    useResponseStore.getState().clearResponse(realTabId)
     // SOAP snapshots store wsdl/operation/etc. fields at the top level
     // (see soap.handler.ts addHistory) — not under a nested `soap` key —
     // and the request body lives in `envelope`. Map them onto the shape
@@ -82,7 +87,7 @@ export function openHistoryEntry(entry: HistoryEntry): void {
           ? (/action="([^"]*)"/.exec(contentType)?.[1] ?? '')
           : (soapActionHeader ?? '').replace(/^"|"$/g, '')
       const soapStore = useSoapStore.getState()
-      useSoapStore.getState().loadFromEndpoint({
+      soapStore.loadFromEndpoint({
         url: entry.url,
         body: snap.body as { type: string; content?: string } | undefined,
         headers: hdrs as Array<{ key: string; value: string; enabled: boolean }>,
@@ -108,7 +113,7 @@ export function openHistoryEntry(entry: HistoryEntry): void {
         },
       })
   } else {
-    useResponseStore.getState().clearResponse()
+    useResponseStore.getState().clearResponse(realTabId)
     // HTTP, WebSocket, gRPC, GraphQL (issue #182): one restore, shared with
     // the welcome page's recent list. Rows carrying the `{{var}}` template
     // reopen from it, so re-sending keeps working auth (issue #195).
@@ -125,32 +130,36 @@ export function openHistoryEntry(entry: HistoryEntry): void {
     const cleanActualRequest = r.actualRequest
       ? { ...r.actualRequest, url: stripCredentialsInUrl(r.actualRequest.url) ?? '' }
       : r.actualRequest
-    useResponseStore.getState().setResponse({
-      requestId: entry.id,
-      protocol,
-      status: r.status,
-      statusText: r.statusText,
-      headers: r.headers,
-      body: r.body,
-      // Restore the binary flag so an image / PDF body opened from history
-      // previews as the file instead of dumping its base64 as text. Rows
-      // captured before the flag was persisted still carry a valid base64
-      // body, so fall back to inferring it from the content type
-      // (issue #25 follow-up).
-      bodyEncoding: r.bodyEncoding ?? inferBinaryEncoding(r.headers, r.body),
-      bodySize: r.bodySize,
-      timing: r.timing || { total: entry.duration_ms || 0 },
-      error: r.error,
-      // Carry forward the saved test results + console logs so the user
-      // who opens an old run (especially a Test Suite request, where
-      // pm.test()'s output is the whole point) sees the assertion
-      // verdicts and script logs they originally produced. Without
-      // these the Tests / Console sub-panes always rendered as empty
-      // even when the runner had real data on disk (v1.4.4 §12.4).
-      testResults: r.testResults,
-      consoleLogs: r.consoleLogs,
-      actualRequest: cleanActualRequest,
-    })
+    useResponseStore.getState().setResponse(
+      {
+        requestId: entry.id,
+        protocol,
+        status: r.status,
+        statusText: r.statusText,
+        headers: r.headers,
+        body: r.body,
+        // Restore the binary flag so an image / PDF body opened from history
+        // previews as the file instead of dumping its base64 as text. Rows
+        // captured before the flag was persisted still carry a valid base64
+        // body, so fall back to inferring it from the content type
+        // (issue #25 follow-up).
+        bodyEncoding: r.bodyEncoding ?? inferBinaryEncoding(r.headers, r.body),
+        bodySize: r.bodySize,
+        timing: r.timing || { total: entry.duration_ms || 0 },
+        error: r.error,
+        // Carry forward the saved test results + console logs so the user
+        // who opens an old run (especially a Test Suite request, where
+        // pm.test()'s output is the whole point) sees the assertion
+        // verdicts and script logs they originally produced. Without
+        // these the Tests / Console sub-panes always rendered as empty
+        // even when the runner had real data on disk (v1.4.4 §12.4).
+        testResults: r.testResults,
+        consoleLogs: r.consoleLogs,
+        actualRequest: cleanActualRequest,
+      },
+      // The tab this row opened in — not "whichever tab is active" (issue #76).
+      realTabId,
+    )
   }
 }
 
@@ -189,14 +198,5 @@ function stripCredentialsInUrl(raw: string | undefined): string | undefined {
     return raw
   } catch {
     return raw
-  }
-}
-
-function shortUrl(url: string): string {
-  try {
-    const u = new URL(url)
-    return u.host + u.pathname
-  } catch {
-    return url
   }
 }

@@ -423,5 +423,17 @@
       "tests/e2e/ui/tur1/04-tree-tab-save.spec.ts"
     ],
     "expectedFailure": "Every second Save As preselects no folder and saves to the project root, so two requests saved in a row land in different places."
+  },
+  {
+    "id": "F45",
+    "journey": "Runner iteration rows",
+    "origin": "Tester finding 12: result rows were selected by endpointId, which every iteration of a request shares",
+    "file": "src/renderer/lib/run-result-key.ts",
+    "find": "return { key: `${base}#${occurrence}`, result }",
+    "replace": "return { key: result.endpointId, result }",
+    "specs": [
+      "tests/e2e/ui/73-runner-iteration-selection.spec.ts"
+    ],
+    "expectedFailure": "Clicking the third iteration's row highlights all three rows and the detail pane shows the first run's label."
   }
 ]

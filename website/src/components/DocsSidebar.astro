@@ -1,4 +1,5 @@
 ---
+import { compareDocsSections } from '../lib/docs-sections'
 import { getCollection } from 'astro:content'
 
 interface Props {
@@ -17,21 +18,7 @@ const grouped = all
     return acc
   }, {})
 
-const sectionOrder = [
-  'Getting started', 'Başlarken',
-  'Guides', 'Kılavuzlar',
-  'Protocols', 'Protokoller',
-  'Tools', 'Araçlar',
-  'Reference', 'Referans',
-]
-const sortedSections = Object.entries(grouped).sort((a, b) => {
-  const ia = sectionOrder.indexOf(a[0])
-  const ib = sectionOrder.indexOf(b[0])
-  if (ia === -1 && ib === -1) return a[0].localeCompare(b[0])
-  if (ia === -1) return 1
-  if (ib === -1) return -1
-  return ia - ib
-})
+const sortedSections = Object.entries(grouped).sort((a, b) => compareDocsSections(a[0], b[0]))
 
 const prefix = lang === 'tr' ? '/tr/docs' : '/docs'
 ---

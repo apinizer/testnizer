@@ -16,6 +16,7 @@ import type { GrpcMethodType } from '../../stores/grpc.store'
 import MonacoWrapper from '../shared/MonacoWrapper'
 import KeyValueTable from '../shared/KeyValueTable'
 import { useTranslation } from '../../lib/i18n'
+import { withRunShortcut } from '../../lib/run-shortcut'
 import CredentialRowsHint from '../shared/CredentialRowsHint'
 
 const METHOD_TYPE_COLORS: Record<GrpcMethodType, { bg: string; color: string; label: string }> = {
@@ -230,7 +231,7 @@ export default function GrpcRequestPane() {
           <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--muted)]">
             <p className="mb-1 font-semibold text-[var(--text)]">{t('grpc.guide.title')}</p>
             <ol className="list-inside list-decimal space-y-1">
-              <li>{t('grpc.guide.step1').replace('{address}', 'demo.connectrpc.com:443')}</li>
+              <li>{t('grpc.guide.step1', { address: 'demo.connectrpc.com:443' })}</li>
               <li>{t('grpc.guide.step2')}</li>
               <li>{t('grpc.guide.step3')}</li>
               <li>{t('grpc.guide.step4')}</li>
@@ -299,6 +300,7 @@ export default function GrpcRequestPane() {
               data-testid="grpc-request-editor"
             >
               <MonacoWrapper
+                runsActiveRequest
                 value={requestBody}
                 onChange={setRequestBody}
                 language="json"
@@ -357,7 +359,14 @@ export default function GrpcRequestPane() {
                     type="button"
                     onClick={execute}
                     disabled={!selectedService || !selectedMethod || halfClosed}
-                    title={halfClosed ? t('grpc.streamHalfClosed') : undefined}
+                    title={
+                      halfClosed
+                        ? t('grpc.streamHalfClosed')
+                        : selectedService && selectedMethod
+                          ? withRunShortcut(t('grpc.send'))
+                          : undefined
+                    }
+                    data-testid="grpc-stream-send"
                     className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                     style={{ background: 'var(--accent)', border: 'none' }}
                   >
@@ -401,6 +410,11 @@ export default function GrpcRequestPane() {
                 type="button"
                 onClick={() => (isLoading ? cancelUnary() : execute())}
                 disabled={!isLoading && (!selectedService || !selectedMethod)}
+                title={
+                  !isLoading && selectedService && selectedMethod
+                    ? withRunShortcut(t('grpc.execute'))
+                    : undefined
+                }
                 data-testid="grpc-execute"
                 className="flex w-full cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
                 style={{

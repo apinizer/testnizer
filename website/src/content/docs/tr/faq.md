@@ -7,16 +7,31 @@ section: Referans
 
 ## Postman'den nasıl geçiş yaparım?
 
-**İçe Aktar** iletişim kutusunu açın (`Dosya → İçe Aktar` veya sol kenar çubuğuna
-dosya sürükleyin) ve Postman dışa aktarma dosyanızı seçin. Testnizer, Postman
-Koleksiyonu v2 ve v2.1 biçimini destekler. Postman'den JSON olarak dışa aktarılan
-ortamlar da içe aktarılabilir — aynı İçe Aktar iletişim kutusunu kullanın ve ortam
-dosyasını seçin.
+**İçe Aktar** iletişim kutusunu açın (`Dosya → İçe Aktar` veya sol kenar
+çubuğuna dosya sürükleyin), **Postman** kartını seçin ve Postman dosyanızı
+seçin. Testnizer, Postman Koleksiyonu **v1, v2.0, v2.1 ve v3** biçimlerini
+(tek bir JSON dosyası ya da **Klasör içe aktar…** ile bir Postman 12 *Native Git*
+klasörü), Postman ortam ve globals dosyalarını, bir Postman veri dışa aktarımını
+ve bunların `.zip` arşivlerini okur. Sürümü dosyadan kendisi algılar; sizin
+seçmeniz gerekmez.
 
-Klasör hiyerarşisi, istek açıklamaları, ön istek scriptleri, test scriptleri ve
-yetkilendirme ayarları korunur. Az sayıda Postman'e özgü koleksiyon çalıştırıcı
-seçeneği (örn. `postman.setNextRequest`) işlemsiz olarak kabul edilir ve içe
-aktarma sırasında konsola kaydedilir.
+Klasör hiyerarşisi, istek açıklamaları, ön istek scriptleri, test scriptleri,
+kayıtlı örnekler ve yetkilendirme ayarları korunur. Koleksiyon değişkenleri
+projenin **Globaller**'i olur; koleksiyon düzeyindeki kimlik doğrulama ve
+scriptler her isteğe kopyalanmak yerine içe aktarma klasörüne taşınır. Bir şey
+aktarılamazsa (Testnizer'da olmayan bir kimlik doğrulama türü, bir Kafka isteği,
+bir `pm.require` çağrısı) **İçe aktarma tamamlandı** paneli bunu listeler.
+Ayrıntılar için [İçe ve dışa aktarma](/tr/docs/import-formats#postman), Globaller
+için [Ortamlar ve değişkenler](/tr/docs/environments#globaller) sayfalarına bakın.
+
+---
+
+## Testnizer hangi protokolleri destekliyor?
+
+HTTP / REST, SOAP, WebSocket, GraphQL (query, mutation ve subscription), gRPC, SSE,
+Socket.IO, MQTT, MCP ve AI Chat; her birinin kendi editörü var. Mock sunucular dört
+türde gelir (HTTP, SSE, AI ve MCP). Bkz. [Protokollere genel bakış](/tr/docs/protocols)
+ve [Mock sunucular](/tr/docs/mock-server).
 
 ---
 
@@ -47,7 +62,11 @@ makineler arasında paylaşmak istiyorsanız Git entegrasyonunu kullanın (aşa�
 **Git deposu (önerilen).** Sol kenar çubuğundaki branch panelinden proje klasörü
 içinde bir Git deposu başlatın. Değişiklikleri herhangi bir kod tabanında yaptığınız
 gibi commit edin ve push edin. Takım üyeleri depoyu klonlar ve Testnizer'da açar.
-Branch'lar doğrudan Testnizer branch'larıyla eşlenir.
+Branch'lar doğrudan Testnizer branch'larıyla eşlenir. Bir pull projenin tamamını
+getirir: proje düzeyindeki kimlik doğrulamayı, script'leri ve istek ayarlarını da.
+Secret değişken değerleri, mock token'ları ve sertifika passphrase'leri dosyaya
+asla yazılmaz; her ekip üyesi kendisininkini girer, pull da makinenizde kaç secret
+değerin hâlâ boş olduğunu söyler. Bkz. [Git entegrasyonu](/tr/docs/git-branches).
 
 **Veritabanı kopyası.** Tek seferlik aktarımlar için `testnizer.db` dosyasını bir
 makineden diğerine kopyalayabilirsiniz. Dosya macOS'ta `~/Library/Application
@@ -61,19 +80,22 @@ yerini alır; bu nedenle yalnızca ilk kurulum veya geçiş senaryoları için k
 
 Scriptlerin büyük çoğunluğu değişiklik gerektirmeden çalışır. Testnizer, `pm.request`,
 `pm.response`, `pm.environment`, `pm.globals`, `pm.collectionVariables`,
-`pm.variables`, `pm.test`, `pm.expect` ve `pm.sendRequest` dahil olmak üzere `pm`
-script API'sini uygular.
+`pm.variables`, `pm.vault`, `pm.test` (`done` callback biçimi dahil), `pm.expect`
+ve `pm.sendRequest` dahil olmak üzere `pm` script API'sini uygular.
 
 Aşağıdaki Postman'e özgü özellikler desteklenmez:
 
-- `postman.setNextRequest()` — koleksiyon çalıştırıcı yalnızca sıralı çalıştırmayı kullanır
 - Görselleştirici (`pm.visualizer.set()`) — eşdeğeri yok; çıktı yok sayılır
+- `pm.require()` (Postman paket kütüphaneleri) — açık bir "desteklenmiyor" hatası
+  fırlatır; yerleşik `require()` kütüphaneleri yaygın ihtiyaçları karşılar
 - `pm.info.iteration` ve `pm.info.iterationCount` — yalnızca koleksiyon çalıştırıcı
   bağlamında kullanılabilir, tek istek çalıştırmalarında değil
 - Yerleşik Postman bulut veya izleme API'lerine yapılan başvurular
 
-Bir script desteklenmeyen bir yöntemi çağırırsa Testnizer, isteği başarısız
-yapmak yerine konsola bir uyarı kaydeder ve çalıştırmaya devam eder.
+`pm.require()` çağıran bir script açık bir "desteklenmiyor" hatasıyla başarısız
+olur ve içe aktarma raporu onu kullanan script'leri adıyla listeler. Git'ten ya da
+proje dosyasından gelen bir proje, siz bu bilgisayarda izin verene kadar hiçbir
+script çalıştırmaz.
 
 ---
 
@@ -89,13 +111,33 @@ dosyayı ayrıştırır ve ağ isteği yapmadan tüm kullanılabilir operasyonla
 
 ---
 
+## Secret'larım şifreli mi?
+
+**Secret** olarak işaretli değişkenler (current ve initial değer), mock sunucu
+kimlik doğrulaması, Mock MCP bearer token'ı, sertifika passphrase'leri ve AI Chat
+API anahtarları yerel veritabanında işletim sisteminin anahtarlığıyla şifrelenir
+(macOS'ta Keychain, Windows'ta DPAPI, Linux'ta libsecret). Uygulamadan çıkan her
+dosyaya (Git, proje dosyaları, dışa aktarmalar) boş değer olarak yazılır. Geçmiş,
+Console, koşum raporları ve mock logları, bir şey saklanmadan ya da gösterilmeden
+önce kimlik bilgilerini ve secret değişkenlerinizin değerlerini maskeler.
+
+Anahtarlığın olmadığı yerlerde (bazı Linux kurulumları) bu değerler şifrelenmeden
+saklanır ve ortam editörü ile Ayarlar bunu söyler. Bir değer artık çözülemiyorsa
+(örneğin anahtarlık değiştiyse) alan sizden yeniden girmenizi ister. Bir isteğin
+Auth sekmesine doğrudan yazdığınız kimlik bilgileri istekte yazdığınız gibi saklanır:
+gerçek değeri bir secret değişkende tutun ve `{{secretVar}}` ile başvurun.
+
+Opsiyonel **uygulama şifresi** açılışta bir kilittir, veritabanı şifrelemesi değildir.
+
+---
+
 ## Sertifikalar ve özel anahtarlar nasıl saklanır?
 
 İstemci sertifika dosyaları (PEM / P12) dosya yollarıyla başvurulur. Özel anahtar
-parolası, varsa, macOS'ta `electron-store` aracılığıyla işletim sistemi anahtarlığında
-(Keychain Access) ve Windows'ta Windows Kimlik Bilgisi Yöneticisi'nde saklanır.
-Linux'ta parola, makineye özgü bir anahtar kullanılarak uygulama veri dizininde
-şifreli bir dosyada saklanır.
+parolası, varsa, Electron `safeStorage` ile — işletim sistemi anahtarlığıyla —
+şifrelenir: macOS'ta Keychain, Windows'ta DPAPI, Linux'ta libsecret. Linux'ta
+anahtarlık yoksa parola bilgisayarınızda şifrelenmeden saklanır. Proje dosyalarına,
+Git'e ya da dışa aktarımlara asla yazılmaz.
 
 Sertifika dosyalarının kendisi asla uygulama veri dizinine kopyalanmaz —
 Testnizer onları her istek yapıldığında belirttiğiniz yoldan okur.
@@ -107,8 +149,8 @@ Testnizer onları her istek yapıldığında belirttiğiniz yoldan okur.
 Evet. Testnizer hiçbir telemetri, çökme raporlama veya kullanım analizi kütüphanesi
 içermez. Uygulama, yazılım güncellemelerini kontrol etmek dışında (aşağıdaki
 "Hava boşluklu ortamda güncellemeler nasıl çalışır?" bölümüne bakın) arka planda
-herhangi bir ağ isteği yapmaz. Güncelleme kontrolleri **Ayarlar → Genel →
-Güncellemeleri otomatik olarak kontrol et** bölümünden de devre dışı bırakılabilir.
+herhangi bir ağ isteği yapmaz. Güncelleme kontrolleri **Proje ayarları →
+Güncelleme → Güncellemeleri otomatik kontrol et** bölümünden de devre dışı bırakılabilir.
 
 ---
 
@@ -123,11 +165,17 @@ değişiklikleri, yürürlüğe girmeden önce resmi web sitesinde duyurulacakt�
 
 ## Hava boşluklu ortamda güncellemeler nasıl çalışır?
 
-Hava boşluklu ortamda **Ayarlar → Genel** bölümünden otomatik güncelleme
-kontrollerini devre dışı bırakın. Yeni bir sürüm mevcut olduğunda, uygun
+Hava boşluklu ortamda **Proje ayarları → Güncelleme** bölümünden otomatik
+güncelleme kontrollerini devre dışı bırakın. Yeni bir sürüm mevcut olduğunda, uygun
 yükleyiciyi internet erişimi olan bir makinede resmi sürümler sayfasından
 indirin, dosyayı hava boşluklu makineye aktarın ve yükleyiciyi manuel olarak
 çalıştırın. Yükleyici, uygulama veri dizinini korurken mevcut kurulumun yerini alır.
+
+Varsayılan olarak Testnizer güncellemeyi arka planda indirir ve hazır olunca sorar:
+**Yeniden başlat ve yükle**, **Çıkışta yükle** ya da **Bu sürümü atla**. Yeni bir
+sürümün ilk açılışı önce veritabanınızı bir `backups` klasörüne kopyalar; bkz.
+[Başlarken](/tr/docs/getting-started#güncellemeden-sonra-bir-yedeği-geri-yükleme).
+Testnizer 1.6.0, macOS 13 (Ventura) veya üstünü gerektirir.
 
 macOS'ta yeni `.app` paketini Uygulamalar klasörüne sürükleyin. Windows'ta
 `.exe` yükleyicisini çalıştırın. Linux'ta `.AppImage` dosyasını değiştirin
@@ -147,71 +195,36 @@ kullanarak projeyi commit edin ve push edin.
 
 ---
 
-## Test sonuçlarını bir CI pipeline'ına nasıl gönderirim?
+## CI için komut satırı çalıştırıcısı var mı?
 
-Testnizer CLI çalıştırıcısını kullanın. Komut satırından şununla bir koleksiyon çalıştırın:
-
-```bash
-testnizer run --collection ./my-project.db \
-              --environment staging \
-              --reporter junit \
-              --output ./results/report.xml
-```
-
-JUnit XML çıktısı Jenkins, GitLab CI, GitHub Actions ve diğer CI sistemleriyle
-uyumludur. `--reporter json` ile JSON raporlayıcısı da kullanılabilir.
-İlk başarısız testte çalıştırmayı durdurmak ve sıfır olmayan bir kodla çıkmak
-için `--bail` bayrağını ayarlayın.
-
-Tüm CLI seçenekleri için [CLI ve otomasyon](/tr/docs/cli-and-automation) bölümüne bakın.
+1.6.0'da yok. Bağımsız bir CLI yol haritasında ama henüz yayımlanmadı. Tıklamadan
+koşum için şimdilik uygulama içi **Scheduler**'ı kullanın ve herhangi bir koşumun
+**HTML** ya da **JSON** raporunu kaydedin. Bkz.
+[Collection runner & otomasyon](/tr/docs/cli-and-automation).
 
 ---
 
 ## Testnizer proxy sunucuları destekliyor mu?
 
-Evet. **Ayarlar → Ağ → Proxy** bölümünden bir proxy yapılandırın. Testnizer
-tarafından yapılan tüm isteklere uygulanan HTTP veya SOCKS5 proxy adresi
-belirleyebilirsiniz. İstek başına proxy geçersiz kılmaları şu anda desteklenmez;
-proxy ayarı globaldir.
+Evet. **Ayarlar → Ağ → Proxy** bölümünden ya da tek proje için **Proje Ayarları**'ndan bir
+HTTP proxy ayarlayın. HTTP, SOAP, GraphQL (abonelikler dahil), WebSocket, Socket.IO, MQTT ve
+SSE için geçerlidir. **Bu host'lar için bypass** listesindeki host'lar doğrudan çıkar. SOCKS
+proxy henüz desteklenmiyor; SOCKS ayarlı istek mesajla başarısız olur. gRPC, MCP ve AI Chat
+bu ayarı kullanmaz.
 
-Proxy kimlik doğrulama (kullanıcı adı ve parola) desteklenir. Kimlik bilgileri
-`electron-store`'da saklanır ve koleksiyon veya ortam dosyalarına yazılmaz.
+Proxy kimlik doğrulama (kullanıcı adı ve parola) desteklenir. Parola, işletim
+sistemi anahtarlığıyla (`safeStorage`) şifrelenir ve koleksiyon veya ortam
+dosyalarına yazılmaz.
 
-macOS Ağ Tercihleri'nde veya Windows İnternet Seçenekleri'nde yapılandırılan
-sistem proxy'si, Testnizer ayarlarında özel bir proxy belirlemediğiniz sürece
-varsayılan olarak dikkate alınır.
-
----
-
-## gRPC için TLS sertifika doğrulamayı nasıl devre dışı bırakırım?
-
-gRPC istek editöründe **Bağlantı** sekmesini açın ve **TLS modu**'nu `Güvensiz`
-olarak ayarlayın. Bu, yalnızca o istek için sunucu sertifika doğrulamasını devre
-dışı bırakır ve `grpc.ssl_target_name_override` iletmek ve güvensiz kanal kimlik
-bilgisi kullanmakla eşdeğerdir.
-
-Üretim uç noktalarına karşı güvensiz mod kullanmayın. Öz imzalı sertifikalar için
-daha iyi yaklaşım, kök CA sertifikasını **Ayarlar → Sertifikalar → Güvenilen CA**
-bölümüne yüklemek ve TLS doğrulamasını etkin tutmaktır.
+**Sistem proxy'sini kullan** seçiliyse HTTP istekleri macOS ya da Windows ağ ayarlarını değil
+`HTTP_PROXY`, `HTTPS_PROXY` ve `NO_PROXY` ortam değişkenlerini okur. WebSocket, Socket.IO, MQTT,
+SSE ve GraphQL abonelikleri yalnız özel proxy kullanır.
 
 ---
 
-## v1.1 için neler planlanıyor?
+## gRPC için TLS sertifika doğrulamasını kapatabilir miyim?
 
-v1.1 yol haritası, kaba öncelik sırasına göre şu öğeleri içermektedir:
-
-- **Kendi barındırdığınız Git sunucusu üzerinden takım çalışma alanı senkronizasyonu**
-  — uygulamadan ayrılmadan uzak kaynak yapılandırması için birinci sınıf kullanıcı arayüzü
-- **Ortam değişken grupları** — çok sayıda servisi olan büyük projeler için tek
-  ortam içinde değişkenleri adlandırılmış gruplara düzenleme
-- **Koleksiyon çalıştırıcı iyileştirmeleri** — CSV/JSON dosyalarından veri güdümlü
-  çalıştırmalar, paralel çalıştırma seçeneği ve geliştirilmiş HTML rapor şablonu
-- **Yanıt karşılaştırma** — iki kaydedilmiş yanıt arasında veya bir temel çizgi
-  ile canlı yanıt arasında yan yana diff
-- **WSDL kod üretimi** — yüklenen WSDL'den TypeScript ve Java'da yazılı istemci
-  taslakları oluşturma
-- **Plugin API (beta)** — üçüncü taraf uzantıların istek editörleri, yanıt
-  görüntüleyicileri ve kenar çubuğu panelleri eklemesine izin verme
-
-Yol haritası değişikliğe tabidir. Kesin teslim tarihleri için resmi web sitesindeki
-sürüm notlarını takip edin.
+Hayır. gRPC, HTTP, SOAP ve GraphQL'in kullandığı **SSL doğrulama** ayarını izlemez:
+TLS açıkken sunucu sertifikasını her zaman doğrular. Öz imzalı sertifikalı bir
+sunucu için [gRPC sayfasında](/tr/docs/protocols/grpc) anlatıldığı gibi CA
+sertifikasını ekleyin; TLS kullanmayan yerel bir sunucu için **Plaintext** seçin.

@@ -791,7 +791,7 @@ function oauthDonePatch(evt: McpOAuthDoneEvent): Partial<TabMcpState> {
   return {
     oauthRunning: false,
     oauthSummary: evt.ok && evt.summary ? evt.summary : null,
-    oauthError: evt.ok ? null : (evt.error ?? 'OAuth flow failed'),
+    oauthError: evt.ok ? null : (evt.error ?? t('mcp.oauth.error.flowFailed')),
     oauthNoAuthRequired: !!evt.noAuthRequired,
   }
 }
@@ -1160,9 +1160,7 @@ async function preScriptsAllow(
     ctx.tabId,
     kind,
     callId,
-    pre.skipped
-      ? t('mcp.script.skipped')
-      : t('mcp.script.preError').replace('{error}', pre.message),
+    pre.skipped ? t('mcp.script.skipped') : t('mcp.script.preError', { error: pre.message }),
   )
   flushMcpScriptLogs(ctx, '')
   return false
@@ -1483,7 +1481,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     ensureMcpEventSubscriptions()
     const api = getMcpApi()
     if (!api?.oauthStart) {
-      set({ oauthError: 'OAuth is not available' })
+      set({ oauthError: t('mcp.oauth.error.unavailable') })
       return
     }
     const ownerTabId = st._currentTabId
@@ -1515,7 +1513,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     try {
       res = await api.oauthStart(request)
     } catch (e) {
-      res = { success: false, error: errText(e, 'OAuth flow failed to start') }
+      res = { success: false, error: errText(e, t('mcp.oauth.error.startFailed')) }
     }
     if (res.success && res.data) {
       const flowId = res.data.oauthSessionId
@@ -1529,7 +1527,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     } else {
       patchTab(ownerTabId, {
         oauthRunning: false,
-        oauthError: res.error ?? 'OAuth flow failed to start',
+        oauthError: res.error ?? t('mcp.oauth.error.startFailed'),
       })
     }
   },
@@ -1553,10 +1551,10 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     try {
       res = await api.oauthConfirm(oauthFlowId, accept)
     } catch (e) {
-      res = { success: false, error: errText(e, 'Could not answer the confirmation') }
+      res = { success: false, error: errText(e, t('mcp.oauth.error.confirmFailed')) }
     }
     if (!res.success)
-      patchTab(ownerTabId, { oauthError: res.error ?? 'Could not answer the confirmation' })
+      patchTab(ownerTabId, { oauthError: res.error ?? t('mcp.oauth.error.confirmFailed') })
   },
 
   forgetOAuth: async () => {
@@ -1602,7 +1600,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     if (st.securityRunning) return
     if (st.transport === 'stdio') {
       set({
-        securityError: 'The security scan applies to the Streamable HTTP and SSE transports only',
+        securityError: t('mcp.security.stdio'),
       })
       return
     }
@@ -1610,7 +1608,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     ensureMcpEventSubscriptions()
     const api = getMcpApi()
     if (!api?.securityScan) {
-      set({ securityError: 'The security scan is not available' })
+      set({ securityError: t('mcp.security.error.unavailable') })
       return
     }
     const ownerTabId = st._currentTabId
@@ -1639,7 +1637,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     try {
       res = await api.securityScan(request)
     } catch (e) {
-      res = { success: false, error: errText(e, 'Security scan failed to start') }
+      res = { success: false, error: errText(e, t('mcp.security.error.startFailed')) }
     }
     if (res.success && res.data) {
       const scanId = res.data.scanId
@@ -1650,7 +1648,7 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     } else {
       patchTab(ownerTabId, {
         securityRunning: false,
-        securityError: res.error ?? 'Security scan failed to start',
+        securityError: res.error ?? t('mcp.security.error.startFailed'),
       })
     }
   },
@@ -2036,10 +2034,9 @@ export const useMcpStore = create<McpStore>((set, get) => ({
     )
     if (missing.length > 0) {
       set({
-        promptError: t('mcp.error.promptMissingArg').replace(
-          '{names}',
-          missing.map((a) => a.name).join(', '),
-        ),
+        promptError: t('mcp.error.promptMissingArg', {
+          names: missing.map((a) => a.name).join(', '),
+        }),
       })
       return
     }

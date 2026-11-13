@@ -23,6 +23,7 @@ vi.mock('../../src/renderer/components/shared/MonacoWrapper', () => ({
 import RunnerConfig from '../../src/renderer/components/runner/RunnerConfig'
 import RunnerResults from '../../src/renderer/components/runner/RunnerResults'
 import RunnerSequence from '../../src/renderer/components/runner/RunnerSequence'
+import { keyRunResults } from '../../src/renderer/lib/run-result-key'
 import type {
   RunnerEndpointItem,
   RunnerFolderGroup,
@@ -270,7 +271,7 @@ function renderResults(
       onNewRun={noop}
       onRunAgain={noop}
       onViewAllRuns={noop}
-      selectedResultId="liste"
+      selectedResultKey={keyRunResults(RESULTS)[1].key}
       onSelectResult={noop}
       onOpenEndpoint={noop}
       {...over}
@@ -404,7 +405,7 @@ describe('issue #248 follow-up — Run results in Turkish', () => {
   it('a run with one request says "1 istek"; the empty body state is Turkish', () => {
     renderResults({
       results: [result({ endpointId: 'tek', endpointName: 'Tek istek', iteration: 1 })],
-      selectedResultId: 'tek',
+      selectedResultKey: 'main:1:tek#0',
     })
     expect(screen.getByText('(1 istek, 1 başarılı)')).toBeTruthy()
     expect(screen.getByText('Yanıt gövdesi yok.')).toBeTruthy()
@@ -413,7 +414,7 @@ describe('issue #248 follow-up — Run results in Turkish', () => {
   })
 
   it('the running state (progress line, both stop buttons) is Turkish', () => {
-    renderResults({ isRunning: true, selectedResultId: null })
+    renderResults({ isRunning: true, selectedResultKey: null })
     expect(screen.getByText('Çalışıyor: 2 / 5...')).toBeTruthy()
     expect(screen.getByTestId('runner-stop').textContent).toBe('Durdur')
     expect(screen.getByTestId('runner-stop-direct').textContent).toBe('Hemen durdur')

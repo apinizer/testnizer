@@ -1,11 +1,19 @@
 import { useEffect, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import Modal from '../shared/Modal'
+import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
+import UnsavedNamesList from './UnsavedNamesList'
 
 interface UnsavedChangesDialogProps {
   open: boolean
-  /** Name of the request/tab being closed, shown in the prompt. */
+  /** Name of the request/tab — or, with `unsavedNames`, the project — being closed. */
   itemName: string
+  /**
+   * Closing a whole project (its header tab): the names of its unsaved
+   * requests. Same dialog, same buttons; only the wording and the list differ.
+   */
+  unsavedNames?: string[]
   /** True while the Save action is in flight (disables the buttons). */
   saving?: boolean
   onSave: () => void
@@ -14,7 +22,8 @@ interface UnsavedChangesDialogProps {
 }
 
 /**
- * Three-way confirm shown when closing a tab with unsaved changes (issue #9):
+ * Three-way confirm shown when closing a tab — or a project's header tab —
+ * with unsaved changes (issue #9):
  * Save (persist then close) · Discard (close, lose changes) · Cancel (keep open).
  * Replaces the silent discard on the × button and the weaker 2-way
  * `window.confirm` the menu / Cmd+W paths used.
@@ -22,12 +31,20 @@ interface UnsavedChangesDialogProps {
 export default function UnsavedChangesDialog({
   open,
   itemName,
+  unsavedNames,
   saving = false,
   onSave,
   onDiscard,
   onCancel,
 }: UnsavedChangesDialogProps) {
+  const { t } = useTranslation()
   const saveRef = useRef<HTMLButtonElement>(null)
+  const isProject = unsavedNames !== undefined
+  const count = unsavedNames?.length ?? 0
+  const bodyTemplate = isProject
+    ? formatCount(count, t('unsaved.projectBodyOne'), t('unsaved.projectBody'))
+    : t('unsaved.tabBody')
+  const [beforeName, afterName = ''] = bodyTemplate.split('{name}')
 
   useEffect(() => {
     if (open) setTimeout(() => saveRef.current?.focus(), 50)
@@ -36,8 +53,10 @@ export default function UnsavedChangesDialog({
   if (!open) return null
 
   return (
-    <Modal open={open} onOpenChange={(o) => !o && onCancel()} title="Unsaved changes">
+    <Modal open={open} onOpenChange={(o) => !o && onCancel()} title={t('unsaved.title')}>
       <div
+        data-testid="unsaved-changes-dialog"
+        data-scope={isProject ? 'project' : 'tab'}
         className="w-[440px] rounded-lg border shadow-xl"
         style={{ background: 'var(--white)', borderColor: 'var(--border)' }}
       >
@@ -57,10 +76,10 @@ export default function UnsavedChangesDialog({
           </div>
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold" style={{ fontSize: 13, color: 'var(--text)' }}>
-              Unsaved changes
+              {t('unsaved.title')}
             </h3>
             <p className="mt-0.5" style={{ fontSize: 13, color: 'var(--muted)' }}>
-              Save your changes before closing this tab?
+              {t(isProject ? 'unsaved.projectQuestion' : 'unsaved.tabQuestion')}
             </p>
           </div>
         </div>
@@ -75,9 +94,11 @@ export default function UnsavedChangesDialog({
               wordBreak: 'break-word',
             }}
           >
-            <strong>{itemName}</strong> has unsaved changes. They will be lost if you close without
-            saving.
+            {beforeName}
+            <strong>{itemName}</strong>
+            {afterName}
           </p>
+          {isProject && <UnsavedNamesList names={unsavedNames} />}
         </div>
 
         {/* Footer */}
@@ -99,7 +120,7 @@ export default function UnsavedChangesDialog({
               opacity: saving ? 0.6 : 1,
             }}
           >
-            Cancel
+            {t('unsaved.cancel')}
           </button>
           <div className="flex gap-2">
             <button
@@ -116,7 +137,7 @@ export default function UnsavedChangesDialog({
                 opacity: saving ? 0.6 : 1,
               }}
             >
-              Discard
+              {t('unsaved.discard')}
             </button>
             <button
               ref={saveRef}
@@ -132,7 +153,7 @@ export default function UnsavedChangesDialog({
                 opacity: saving ? 0.7 : 1,
               }}
             >
-              {saving ? 'Saving…' : 'Save & Close'}
+              {saving ? t('unsaved.saving') : t('unsaved.saveAndClose')}
             </button>
           </div>
         </div>

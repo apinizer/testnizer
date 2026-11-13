@@ -27,8 +27,8 @@ const platforms = [
         }),
       },
     ],
-    note: 'On first launch right-click → Open. Ad-hoc signed during beta.',
-    extra: 'On Sequoia, if Gatekeeper still blocks: <code>xattr -dr com.apple.quarantine /Applications/Testnizer.app</code>',
+    note: 'Signed with an Apple Developer ID and notarized by Apple — it opens like any other app.',
+    extra: 'Requires macOS 13 (Ventura) or later. On macOS 11 or 12, keep your current version and do not install 1.6.0 or later.',
   },
   {
     icon: icons.windows,
@@ -49,7 +49,7 @@ const platforms = [
         }),
       },
     ],
-    note: 'SmartScreen will prompt during beta — More info → Run anyway.',
+    note: 'The installer is code-signed. SmartScreen may still ask on a new release — More info → Run anyway.',
     extra: 'NSIS installer. Per-user install by default; admin install also supported.',
   },
   {

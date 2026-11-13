@@ -13,7 +13,7 @@ import { toast } from './toast'
 export async function setRequestCritical(id: string, critical: boolean): Promise<boolean> {
   const res = await window.api.runner.setRequestCritical(id, critical)
   if (!res.success) {
-    toast.error(t('runSequence.criticalSaveFailed').replace('{error}', res.error ?? ''))
+    toast.error(t('runSequence.criticalSaveFailed', { error: res.error ?? '' }))
     return false
   }
   const tab = findOpenTabFor(id)

@@ -17,7 +17,7 @@ plus any custom method string you type in the method picker.
 **QUERY** is the safe, idempotent method that carries a request body — the
 standard answer to "GET with a body, or POST?" for reads whose parameters do
 not fit in a URL. It has its own badge and is also selectable in
-[mock servers](/docs/mock-server).
+[mock servers](/docs/mock-server/http).
 
 ## URL bar
 
@@ -32,6 +32,19 @@ Query parameters can be entered:
   parameter without deleting it)
 
 Encoded characters in the URL are decoded in the Params table automatically.
+
+**Path variables.** A `:name` segment in the URL path (`/users/:id`) adds a row
+to the **Path Variables** table under Params. Fill in the value and Send, Run,
+Generate Code and the cURL export all substitute it, after the pre-request
+script and before `{{variables}}` resolve. A `:name` with no value is sent
+literally, as before. A Postman export writes them back as `url.variable[]`.
+
+**Paste a cURL command.** Paste a `curl` command (bash, Windows CMD or
+PowerShell) straight into the URL bar and Testnizer fills the whole request —
+method, URL, params, headers, body, auth and settings. A toast shows the shell it
+detected, lists anything it could not carry over, and offers **Undo**. A plain
+URL pastes as text. See [cURL](/docs/import-formats#curl) for what the parser
+understands.
 
 ## Auth tab
 
@@ -56,7 +69,17 @@ reference them as `{{accessToken}}`.
 
 Key-value table with auto-complete on common header names. Rows can be
 disabled individually. Testnizer never strips headers you add, including
-`Host`, `Content-Length`, or `User-Agent`.
+`Host`, `Content-Length`, or `User-Agent`. In the auto-complete list, Tab or Enter
+takes a suggestion only after you have picked it with the arrow keys; typing
+`Authorization` and pressing Tab keeps what you typed.
+
+Under your rows, **Auto-generated headers** lists the headers Testnizer will add
+itself, and where each comes from: **Auth** (the Authorization header or API key of
+the effective auth, inherited auth included), **Engine** (`Accept`, `User-Agent`,
+`Host`, `Content-Type` implied by the body, `Content-Length`) and **Cookie** (cookies
+from the cookie jar). Values only known at send time say "calculated at send", and
+auth values are masked. A header you add with the same name, in any letter case,
+overrides the automatic one, and the row is marked **Overridden**.
 
 ## Body tab
 
@@ -81,6 +104,19 @@ A Monaco editor with a content-type chooser in the toolbar:
 File rows open the native OS file picker; the file name and MIME type are
 sent in the part headers.
 
+A file path that is **relative** (for example `data/upload.json`, as in an
+imported Postman collection) is read from the project's **Working directory**:
+set it in **Project Settings → General → Working directory** to an absolute
+folder on this computer. A file outside that folder, an absolute path included, is read
+only if you picked it yourself in the Body tab or turned on **Read files outside the
+working directory** in the same settings page, so an imported project cannot upload
+any file from your computer. If a request has a
+relative path and no working directory is set, Send fails with a message that
+names the setting. The working directory is a per-computer setting: it is not
+saved with the project or pushed to Git, because a folder on one machine means
+nothing on another. The other setting stays on this computer too. Both apply to Send, the Collection Runner, Test Suites and
+scheduled runs alike.
+
 ### x-www-form-urlencoded
 
 URL-encoded key-value table. Values are percent-encoded before sending.
@@ -89,7 +125,8 @@ URL-encoded key-value table. Values are percent-encoded before sending.
 
 The entire request body is a single file from disk. Testnizer sets
 `Content-Type` based on the file extension (override it in the Headers tab
-if needed).
+if needed). A relative path resolves against the project's
+[Working directory](#form-data) as described above.
 
 ## Pre-request script
 
@@ -140,7 +177,7 @@ are persisted to history.
 
 | Tab | Contents |
 |---|---|
-| **Body** | Monaco editor — JSON auto-formatted, XML pretty-printed, images previewed inline |
+| **Body** | Monaco editor — JSON auto-formatted, XML pretty-printed, images previewed inline; PDF, audio and video play in an inline frame |
 | **Headers** | Response header table with search |
 | **Cookies** | Cookies set by the response, with domain/path/flags |
 | **Console** | Raw request + raw response (useful when debugging redirects or unexpected headers) |
@@ -174,23 +211,100 @@ own column and stay selectable for copying.
 
 ## Code snippet generation
 
-Click the `</>` icon in the request toolbar to generate a ready-to-paste
-snippet:
+Click **Code** in the response bar (or open the **Code** pane of the right panel)
+to generate a ready-to-paste snippet for the request in the active tab.
 
-- **cURL**
-- **JavaScript (fetch)**
-- **JavaScript (axios)**
-- **Python (requests)**
-- **Go (net/http)**
-- **Java (OkHttp)**
+Pick a **Language**, then one of its **Variants**, and open **Options** for the
+settings that variant honours. There are 20 languages and 36 variants:
 
-Snippets include the current headers, auth, and body — variables resolved
-to their current values at generation time.
+| Language | Variants |
+|---|---|
+| cURL | bash, CMD, PowerShell |
+| C | libcurl |
+| C# | HttpClient, RestSharp |
+| Dart | http, dio |
+| Go | net/http |
+| HTTP | HTTP/1.1 |
+| Java | OkHttp, Unirest |
+| JavaScript | Fetch, XHR, jQuery |
+| Kotlin | OkHttp |
+| NodeJS | Axios, Native, Request, Unirest |
+| Objective-C | NSURLSession |
+| OCaml | Cohttp |
+| PHP | cURL, Guzzle, HTTP_Request2, pecl_http |
+| PowerShell | Invoke-RestMethod |
+| Python | Requests, http.client |
+| R | httr, RCurl |
+| Ruby | Net::HTTP |
+| Rust | reqwest |
+| Shell | wget, HTTPie |
+| Swift | URLSession |
 
-## Follow redirects
+**Options** vary by variant and can include indent size and type, **Trim request
+body**, **Follow redirects**, **Request timeout**, **Use async/await** and
+**Include boilerplate**. The cURL variants have **Multi-line**, **Long option
+names** (`--header`) and **Silent mode** (`-s`). A request that turns redirects
+off, or has its own timeout, carries that into the snippet. **Reset to defaults**
+restores the options. The selection lasts for the session.
 
-Enabled by default. To inspect a redirect response, turn off **Follow
-redirects** in the request settings panel (gear icon in the URL bar).
+What the snippet contains:
+
+- The current headers, query parameters (merged into the URL before any
+  `#fragment`), path variables and body, including form-data text and file
+  parts, binary bodies and a GraphQL `{query, variables}` JSON body
+- The auth that would actually be sent, including **auth inherited** from a
+  folder or the project, as a header or the language's own API
+- The `Content-Type` the body implies, unless you set one
+- `{{variables}}` resolved to their current values. A **secret** variable stays
+  as a `{{name}}` placeholder; tick **Include secret values** only for a
+  ready-to-run command, because the copied text then holds the real values. The
+  panel lists variables that could not be resolved
+- With **Include secret values** off, passwords, tokens and API keys you typed in
+  headers, query parameters, form bodies and auth (inherited auth included) appear as
+  `***` in the snippet; `{{variables}}` stay readable
+
+Generate Code covers **HTTP, GraphQL and SOAP** tabs: a GraphQL tab produces the
+POST with its JSON body, and a SOAP tab the POST with the envelope and the
+`SOAPAction` or SOAP 1.2 `Content-Type`. For a WebSocket, Socket.IO, MQTT, MCP,
+gRPC, SSE or AI Chat tab the pane says that code generation is not available,
+rather than showing a stale HTTP request.
+
+## Request settings
+
+The **Settings** tab of the request holds **Request timeout**, **Follow redirects**,
+**Max redirects**, **Enable SSL certificate verification** and **Critical request**.
+They are saved with the request (Ctrl+S) and behave the same on Send and on Run.
+
+Timeout, SSL verification and redirects **inherit**: request, then
+**Project Settings**, then app **Settings**. A request that never changed a switch
+follows the project; the tab shows where the current value comes from ("Inherited from
+project settings: on") and offers **Use project settings** to go back. A value you set
+explicitly on the request keeps your choice. An empty timeout inherits, and `0` means no
+timeout. To inspect a redirect response, turn off **Follow redirects**.
+
+**Critical request.** Tick it and a run (Runner, Test Suite, Scheduler) stops when that
+request fails or cannot run, whatever "Stop run if an error occurs" says. The results,
+run history and HTML / JSON reports name the critical request that stopped the run. You
+can also toggle it from the run sequence while planning a run.
+
+## Proxy
+
+A custom proxy set in **Project Settings** or app **Settings → Network** applies to HTTP
+requests; a project without its own proxy uses the app's. **Bypass for hosts** lists hosts
+that go out directly. **Use system proxy** reads the `HTTP_PROXY`, `HTTPS_PROXY` and
+`NO_PROXY` environment variables. SOCKS is not supported: a request set to use it fails
+with a message instead of going out directly. See the
+[FAQ](/docs/faq#does-testnizer-support-proxy-servers).
+
+## Saving and tabs
+
+Ctrl+S saves the open request in place and shows "Request saved"; a new request is named
+after its URL when you first save it ("users", not "New Endpoint"). In the APIs tree a
+single click opens a request in a preview tab and a double-click opens it in a pinned tab
+(or pins the preview already showing it). Each open tab remembers its request sub-tab.
+Passwords, tokens and credential headers you type are not kept in the app's browser
+storage after a restart unless the request is saved; use a `{{variable}}` to keep them
+without saving.
 
 ## TLS / mTLS
 

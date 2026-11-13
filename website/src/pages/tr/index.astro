@@ -33,16 +33,84 @@ const guarantees = [
   },
 ]
 
+// Hero'daki iki uzun paragrafın söylediği dört şey, taranabilir kartlar
+// olarak. Her biri onu kanıtlayan sayfaya bağlanır.
+const pillars = [
+  {
+    icon: icons.globe,
+    title: 'API protokolleri',
+    body: 'HTTP · SOAP · GraphQL · gRPC · WebSocket · Socket.IO · MQTT · SSE',
+    href: '/tr/features',
+  },
+  {
+    icon: icons.sparkles,
+    title: 'Yapay zeka & MCP',
+    body: 'MCP istemcisi · MCP güvenlik taraması · MCP araçlarını çağırabilen AI Chat',
+    href: '/tr/ai-mcp',
+  },
+  {
+    icon: icons.server,
+    title: 'Mock sunucular',
+    body: 'HTTP · SSE · AI (LLM) · MCP mock\'ları, varsayılan olarak 127.0.0.1\'de',
+    href: '/tr/docs/mock-server',
+  },
+  {
+    icon: icons.key,
+    title: 'Güvenlik araç kutusu',
+    body: 'Keystore · mTLS · JWT / JOSE · JWK / JWKS · WS-Security · SAML · TLS — özel anahtar uygulamadan çıkmaz',
+    href: '/tr/security-tools',
+  },
+]
+
+const newIn160 = [
+  {
+    icon: icons.plug,
+    title: 'Tam bir MCP istemcisi',
+    body: 'Streamable HTTP, eski SSE ve stdio. 2024-10-07\'den 2026-07-28\'e protokol sürümleri — Otomatik, Legacy ya da sabitlenmiş sürüm. Araçlar, kaynaklar, prompt\'lar, bildirimler ve ham JSON-RPC çerçeveleri; üstüne bir OAuth 2.1 hata ayıklayıcı.',
+  },
+  {
+    icon: icons.shieldCheck,
+    title: 'MCP güvenlik taraması',
+    body: 'Taşıma, kimlik doğrulama, protokol davranışı, prompt injection sezgileri, bilgi ifşası, CORS, güvenlik başlıkları ve isteğe bağlı hız sınırı denemesi üzerinden A–F notlu rapor. Tek bir HTML dosyası olarak dışa aktarılır.',
+  },
+  {
+    icon: icons.bot,
+    title: 'MCP araçlarıyla AI Chat',
+    body: 'Asistan MCP sunucularınızdaki araçları çağırabilir — ve her çağrı varsayılan olarak onayınızı ister. Her yanıt ilk token süresini, toplam süreyi ve token kullanımını gösterir. Sohbetler bu makinede kalır.',
+  },
+  {
+    icon: icons.activity,
+    title: 'Mock SSE, LLM ve MCP sunucuları',
+    body: 'Olay akışı yayınlayın, OpenAI ve Anthropic API\'lerine yanıt verin ya da MCP araçları sunun — seçtiğiniz gecikme ve hatalarla. Bir ajanı sağlayıcı hesabı olmadan, tek token harcamadan geliştirin.',
+  },
+]
+
 const protocols = [
-  { icon: icons.globe, name: 'HTTP / REST', body: 'Metotlar, parametreler, başlıklar, gövde, çerezler, mTLS, proxy, yönlendirmeler, dosya yükleme ile multipart, betikler, doğrulamalar.' },
-  { icon: icons.fileCode, name: 'SOAP / WSDL', body: 'WSDL içe aktarma (URL veya dosya), manuel zarf modu, SOAP 1.1 + 1.2, çoklu servis, çoklu port.' },
+  { icon: icons.globe, name: 'HTTP / REST', body: 'Parametreler, path değişkenleri, başlıklar, tüm gövde modları, çerezler, mTLS, proxy, yönlendirmeler, betikler ve doğrulamalar. URL çubuğuna cURL komutu yapıştırın.' },
+  { icon: icons.fileCode, name: 'SOAP / WSDL', body: 'WSDL içe aktarma, SOAP 1.1 + 1.2, manuel zarflar ve hem Send\'de hem Runner\'da uygulanan WS-Security.' },
   { icon: icons.cpu, name: 'gRPC', body: '.proto içe aktarma, dört akış modu, meta veri, mesaj alanlarından JSON iskeleti.' },
-  { icon: icons.radio, name: 'WebSocket', body: 'ws + wss, özel başlıklar, JSON / metin düzenleyici, mesaj zaman çizelgesi.' },
-  { icon: icons.arrowsLeftRight, name: 'Socket.IO', body: 'Namespace + auth ile bağlanın, JSON yüküyle event emit edin, herhangi bir event adına abone olun, çift yönlü zaman çizelgesini izleyin.' },
-  { icon: icons.network, name: 'GraphQL', body: 'Sorgu, mutasyon, abonelik, şema iç gözlemi, değişkenler JSON.' },
-  { icon: icons.bot, name: 'Yapay Zeka Sohbet', body: '14 sağlayıcı (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq…) artı özel URL — akışlı, çok dönüşlü. İstekler doğrudan sizin yapılandırdığınız sağlayıcıya gider; bu, harici bir sunucuyla iletişim kuran tek özelliktir.' },
-  { icon: icons.zap, name: 'Server-Sent Events', body: 'Last-Event-ID ile devam destekli uzun ömürlü akışlar.' },
-  { icon: icons.plug, name: 'MCP', body: 'Model Context Protocol istemcisi. Streamable HTTP, SSE ve stdio (yerel alt süreç) transport\'ları. Sunucunun yayınladığı araçları listeleyin, JSON argümanlarla çağırın, sonuçları inceleyin.' },
+  { icon: icons.network, name: 'GraphQL', body: 'Sorgular, mutasyonlar, şema gezgini ve WebSocket üzerinden abonelikler (graphql-transport-ws, gerekirse graphql-ws).' },
+  { icon: icons.radio, name: 'WebSocket', body: 'Metin, JSON, XML, HTML, Base64 ve hex mesajlar, kayıtlı mesajlar, filtreli ve aranabilir günlük.' },
+  { icon: icons.arrowsLeftRight, name: 'Socket.IO', body: 'v2, v3 veya v4 istemci, namespace, auth, onaylar (ack), emit başına birden çok argüman, olay başına dinleme anahtarı.' },
+  { icon: icons.repeat, name: 'MQTT', body: 'MQTT 3.1.1 ve 5.0 — QoS, retain, last will, kendi sertifikalarınızla TLS, MQTT 5 özellikleri, kayıtlı mesajlar.' },
+  { icon: icons.zap, name: 'Server-Sent Events', body: 'Özel başlıklar, Last-Event-ID ile devam ve olay türü filtresiyle uzun ömürlü akışlar.' },
+  { icon: icons.plug, name: 'MCP', body: 'Streamable HTTP, SSE ve stdio. Araçlar, kaynaklar, prompt\'lar, ham JSON-RPC çerçeveleri, OAuth 2.1 ve güvenlik taraması.' },
+  { icon: icons.bot, name: 'AI Chat', body: '14 sağlayıcı artı özel URL, akışlı yanıtlar, onaylı MCP araçları. İstekler doğrudan sizin yapılandırdığınız sağlayıcıya gider.' },
+]
+
+const migrationFormats = [
+  'OpenAPI 3.x',
+  'Swagger 2.0',
+  'Postman v1 / v2.0 / v2.1',
+  'Postman v3 (JSON veya Native Git klasörü)',
+  'Postman .zip ve veri dökümü',
+  'Insomnia v4 / v5',
+  'cURL (bash, CMD, PowerShell)',
+  'WSDL',
+  '.proto',
+  'RAML 1.0',
+  'SoapUI / ReadyAPI',
+  'HAR',
 ]
 
 const tools = [
@@ -61,26 +129,25 @@ const tools = [
   <!-- Hero -->
   <section class="hero-glow relative overflow-hidden border-b border-border">
     <div class="dot-grid absolute inset-0"></div>
-    <div class="relative mx-auto max-w-6xl px-6 pt-20 pb-24 text-center md:pt-28 md:pb-32">
-      <div class="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-bg-soft px-3 py-1 text-xs font-medium text-text-muted">
+    <!-- Ekranın ilk görünen kısmı bütçelidir: rozetten Product Hunt'a kadar her
+         şey 1366×768'de sabit menünün altına sığmalı. Bu yüzden buradaki dikey
+         boşluklar aşağıdaki bölümlerden bilerek daha sıkıdır. -->
+    <div class="relative mx-auto max-w-6xl px-6 pt-10 pb-12 text-center md:pt-14 md:pb-14">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg-soft px-3 py-1 text-xs font-medium text-text-muted">
         <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
         {release.tag} — sonsuza dek ücretsiz · Apinizer projesi
       </div>
 
-      <h1 class="mx-auto max-w-4xl text-4xl font-semibold tracking-tight text-text md:text-6xl md:leading-[1.1]">
-        Güvenlik işinizi de yapan
-        <span class="text-gradient">çevrimdışı API istemcisi.</span>
+      <h1 class="mx-auto max-w-5xl text-balance text-4xl font-semibold tracking-tight text-text md:text-5xl md:leading-[1.1] lg:text-6xl">
+        Çevrimdışı API ve yapay zeka istemcisi,
+        <span class="text-gradient">güvenlik işinizi de yapar.</span>
       </h1>
 
-      <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-text-muted">
-        HTTP, SOAP, WebSocket, GraphQL, gRPC ve SSE test edin — sonra aynı pencereden bir JWT imzalayın, bir JKS keystore açın, SAML assertion üretin ya da canlı bir TLS zincirini inceleyin; hiçbir anahtar veya token hiçbir yere yüklenmeden. Ücretsiz; üretim kimlik bilgileri ve veri yüklerinin makineden <em>asla ayrılmaması gereken</em> bankacılık, kamu, sigorta ve sağlık sektörlerindeki takımlar için <a href="https://apinizer.com" target="_blank" rel="noopener" class="underline decoration-dotted underline-offset-2 hover:text-text">Apinizer</a> tarafından geliştirilmiştir.
+      <p class="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-text-muted">
+        API'leri, MCP sunucularını ve LLM'leri test edin, hepsini yerelde mock'layın, kriptografiyi kendi makinenizde yapın — ücretsiz, hesapsız, telemetrisiz.
       </p>
 
-      <p class="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-text-muted">
-        Kriptografik iş, uygulamanın çalıştığı yerde yapılır: <strong class="text-text">keystore'lar</strong> (JKS / PKCS#12, keytool yok), <strong class="text-text">sertifikalar ve mTLS</strong>, <strong class="text-text">JWT / JOSE</strong>, <strong class="text-text">JWK / JWKS</strong>, <strong class="text-text">WS-Security</strong>, <strong class="text-text">SAML</strong> ve <strong class="text-text">canlı TLS denetimi</strong> — özel anahtar uygulama çekirdeğinin dışına hiç çıkmadan. <a href="/tr/security-tools" class="text-accent-text underline decoration-dotted underline-offset-2 hover:text-text">Araç kutusuna bakın →</a>
-      </p>
-
-      <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+      <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
         <a
           href="/tr/download"
           class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
@@ -97,20 +164,48 @@ const tools = [
         </a>
       </div>
 
-      <p class="mt-5 text-xs text-text-soft">
+      <p class="mt-4 text-xs text-text-soft">
         macOS (arm64 / x64) · Windows (x64 / arm64) · Linux (deb / AppImage)
       </p>
 
-      <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
         <StatBadge label="son sürüm" value={release.tag} href={releasesUrl} />
         {stats && stats.downloads > 0 && <StatBadge label="indirme" value={formatCount(stats.downloads)} href={releasesUrl} />}
         {stats && stats.stars > 0 && <StatBadge label="yıldız" value={formatCount(stats.stars)} href="https://github.com/apinizer/testnizer" />}
         <StatBadge label="telemetri" value="yok" />
       </div>
 
-      <div class="mt-4 flex justify-center">
+      <div class="mt-3 flex justify-center" data-fold="ph">
         <ProductHuntBadge label="Product Hunt'ta oy verin" />
       </div>
+
+      <ul class="mx-auto mt-8 grid max-w-6xl grid-cols-1 gap-3 text-left sm:grid-cols-2 lg:grid-cols-4" data-fold="pillars">
+        {pillars.map((pl) => (
+          <li>
+            <a
+              href={pl.href}
+              class="group flex h-full items-start gap-3 rounded-card border border-border bg-bg/70 p-4 transition-colors hover:border-border-strong hover:bg-bg-muted"
+            >
+              <span class="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={pl.icon} />
+              </span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-sm font-semibold text-text">
+                  {pl.title}
+                  <span class="text-text-soft transition-colors group-hover:text-accent-text">
+                    <Fragment set:html={icons.arrowRight} />
+                  </span>
+                </span>
+                <span class="mt-1 block text-xs leading-relaxed text-text-muted">{pl.body}</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+
+      <p class="mx-auto mt-5 max-w-3xl text-xs leading-relaxed text-text-soft">
+        <a href="https://apinizer.com" target="_blank" rel="noopener" class="underline decoration-dotted underline-offset-2 hover:text-text-muted">Apinizer</a> tarafından bankacılık, kamu, sigorta ve sağlık için geliştirildi — üretim kimlik bilgilerinin makineden asla çıkmaması gereken takımlar için.
+      </p>
     </div>
   </section>
 
@@ -131,6 +226,46 @@ const tools = [
       <p class="mt-4 text-center text-sm text-text-soft">
         Bir Swagger spec içe aktarıldı, POST gönderildi, 200 alındı. Hesap yok, bulut senkronu yok, telemetri yok.
       </p>
+    </div>
+  </section>
+
+  <!-- 1.6.0'da yeni -->
+  <section class="border-b border-border py-24">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">1.6.0'da yeni</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          Yapay zeka, MCP ve akışlar.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-text-muted">
+          Ajanlarınızın konuştuğu sunucuları test edin, güvenlik sorunlarına karşı tarayın; gerçeklerini çağırmak istemediğinizde modeli, araçları ve olay akışını mock'layın.
+        </p>
+      </div>
+
+      <div class="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {newIn160.map((n) => (
+          <a href="/tr/ai-mcp" class="group flex flex-col rounded-card border border-border bg-bg-soft p-6 transition-colors hover:border-border-strong">
+            <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+              <Fragment set:html={n.icon} />
+            </span>
+            <h3 class="mt-4 text-base font-semibold text-text">{n.title}</h3>
+            <p class="mt-1.5 flex-1 text-sm leading-relaxed text-text-muted">{n.body}</p>
+          </a>
+        ))}
+      </div>
+
+      <div class="mt-8 flex flex-col items-center gap-3">
+        <a
+          href="/tr/ai-mcp"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          Yapay zeka, MCP ve akışlara bakın
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+        <p class="max-w-2xl text-center text-xs leading-relaxed text-text-soft">
+          AI Chat mesajlarınızı doğrudan sizin yapılandırdığınız sağlayıcıya, MCP istemcisi de sizin gösterdiğiniz sunucuya gönderir — hiçbir şey bizden geçmez. Mock sunucular ise hiç ağ gerektirmez.
+        </p>
+      </div>
     </div>
   </section>
 
@@ -220,11 +355,11 @@ const tools = [
           Kurumsal sistemlerin gerçekte çalıştığı şeyleri test edin.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-text-muted">
-          Sadece REST değil. SOAP zarfları, gRPC akışları, WebSocket oturumları ve olay akışları — birinci sınıf, cihaz üzerinde.
+          Sadece REST değil. SOAP zarfları, gRPC akışları, WebSocket ve MQTT oturumları, olay akışları ve MCP sunucuları — birinci sınıf, cihaz üzerinde.
         </p>
       </div>
 
-      <div class="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border md:grid-cols-2 lg:grid-cols-3">
+      <div class="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border md:grid-cols-2 lg:grid-cols-5">
         {protocols.map((p) => (
           <div class="bg-bg p-6">
             <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-light text-accent-text">
@@ -274,23 +409,12 @@ const tools = [
           Mevcut koleksiyonlarınızı getirin.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-text-muted">
-          Belgeli yüzey için kayıpsız gidiş-dönüş — betikler ve değişkenler dahil.
+          Herhangi bir Postman dosyasını bırakın, Testnizer ne olduğunu kendisi anlar — betikler, değişkenler ve kayıtlı örnekler dahil — ve içe aktarmayı neyin dönüştürülüp neyin atlandığını gösteren bir raporla bitirir. Bir proje Postman v2.1 veya v3, OpenAPI 3 ve Insomnia olarak geri dışa aktarılır.
         </p>
       </div>
 
       <div class="mx-auto mt-10 flex max-w-3xl flex-wrap items-center justify-center gap-2">
-        {[
-          'OpenAPI 3.x',
-          'Swagger 2.0',
-          'Postman v2.1',
-          'Insomnia v4',
-          'cURL',
-          'WSDL',
-          '.proto',
-          'RAML 1.0',
-          'SoapUI / ReadyAPI',
-          'HAR',
-        ].map((fmt) => (
+        {migrationFormats.map((fmt) => (
           <span class="rounded-full border border-border bg-bg px-3.5 py-1.5 text-xs font-medium text-text-muted">
             {fmt}
           </span>

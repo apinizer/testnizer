@@ -50,7 +50,7 @@ import EpochTool from '../../src/renderer/components/tools/EpochTool'
 import LegalDocModal from '../../src/renderer/components/eula/LegalDocModal'
 import MonacoWrapperImpl from '../../src/renderer/components/shared/MonacoWrapperImpl'
 import { useConsoleStore } from '../../src/renderer/stores/console.store'
-import { useHistoryStore } from '../../src/renderer/stores/history.store'
+import { EMPTY_FILTERS, useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { useWebSocketStore } from '../../src/renderer/stores/websocket.store'
 import { useGraphQLStore } from '../../src/renderer/stores/graphql.store'
@@ -320,7 +320,7 @@ describe('issue #248 follow-up — History sidebar in Turkish', () => {
         historyEntry('dun', startOfToday.getTime() - 60 * 60 * 1000),
         historyEntry('eski', now - 10 * DAY),
       ],
-      searchTerm: '',
+      filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => {}),
     } as Partial<ReturnType<typeof useHistoryStore.getState>>)
     render(<HistorySidebar />)
@@ -591,7 +591,7 @@ describe('issue #248 follow-up — English stays byte-identical', () => {
     const h = render(<HistorySidebar />)
     expect(screen.getAllByText('History').length).toBe(2)
     expect(screen.getByPlaceholderText('Filter history...')).toBeTruthy()
-    expect(screen.getByTitle('Clear all history')).toBeTruthy()
+    expect(screen.getByTitle("Clear this project's history")).toBeTruthy()
     expect(screen.getByText('Today', { selector: 'div' })).toBeTruthy()
     expect(screen.getByRole('button', { name: /Commits/ })).toBeTruthy()
     h.unmount()

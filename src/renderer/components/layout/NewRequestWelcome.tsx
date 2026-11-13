@@ -21,15 +21,20 @@ import { formatRelativeTime } from '../../lib/format-datetime'
 import { historyStatusDisplay } from '../../lib/history-status'
 import { makeTabId } from '../../lib/utils'
 import RequestBadge from '../shared/RequestBadge'
-import { mcpHistoryRestore, mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
+import { mcpHistoryRestore } from '../protocols/mcp/history-restore'
+import { historyRowLabel } from '../shared/history-row-label'
 import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
 import { openHistoryEntryInTab } from '../../lib/history-open'
 import { historyTabName, historyTabUrl } from '../../lib/history-restore'
 import type { HistoryEntry } from '../../types'
 
-/** What a recent row reads as: MCP rows by their call (tool / prompt / URI), the rest by URL. */
-function recentLabel(entry: HistoryEntry): { label: string; title?: string } {
-  return entry.protocol === 'mcp' ? mcpHistoryRowLabel(entry) : { label: entry.url }
+/**
+ * What a recent row reads as: MCP rows by their call (tool / prompt / URI), the
+ * rest by their full URL. The tooltip is the History sidebar's (one helper).
+ */
+function recentLabel(entry: HistoryEntry): { label: string; title: string } {
+  const row = historyRowLabel(entry)
+  return entry.protocol === 'mcp' ? row : { label: entry.url, title: row.title }
 }
 
 interface QuickAction {

@@ -509,7 +509,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
         const errResp: ApiResponse = {
           requestId: makeId(),
           protocol: 'graphql',
-          error: result?.error || 'GraphQL query failed',
+          error: result?.error || t('graphql.error.queryFailed'),
           timing: { total: 0 },
         }
         applyToOwner({ response: errResp })
@@ -519,7 +519,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       const errResp: ApiResponse = {
         requestId: makeId(),
         protocol: 'graphql',
-        error: (e as Error).message || 'GraphQL query failed',
+        error: (e as Error).message || t('graphql.error.queryFailed'),
         timing: { total: 0 },
       }
       applyToOwner({ response: errResp })
@@ -563,7 +563,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       // Previously silently returned — the user clicked Introspect and
       // nothing happened, no banner, no log (v1.4.4 §12.7). Surface a
       // clear error so the button feels live.
-      set({ introspectError: 'Enter the GraphQL endpoint URL first.' })
+      set({ introspectError: t('graphql.error.urlFirst') })
       return
     }
 
@@ -580,7 +580,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     const unresolved = introUrl.match(/\{\{\s*([^}\s]+)\s*\}\}/)
     if (unresolved) {
       set({
-        introspectError: `Variable ${unresolved[0]} is not defined in the active environment.`,
+        introspectError: t('graphql.error.undefinedVariable', { name: unresolved[0] }),
         isIntrospecting: false,
       })
       return
@@ -629,7 +629,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
             parsed = JSON.parse(apiResp.body)
           } catch {
             patchOwner({
-              introspectError: `Server returned non-JSON response (status ${apiResp.status ?? '?'}).`,
+              introspectError: t('graphql.error.nonJson', { status: apiResp.status ?? '?' }),
               isIntrospecting: false,
             })
             return
@@ -637,14 +637,13 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           // GraphQL surface-level errors come back with { errors: [...] }
           // even on HTTP 200.
           if (parsed.errors && parsed.errors.length > 0) {
-            const msg = parsed.errors[0]?.message || 'GraphQL endpoint returned errors'
+            const msg = parsed.errors[0]?.message || t('graphql.error.endpointErrors')
             patchOwner({ introspectError: msg, isIntrospecting: false })
             return
           }
           if (!parsed.data) {
             patchOwner({
-              introspectError:
-                'Server response had no `data` field — endpoint may not support introspection.',
+              introspectError: t('graphql.error.noData'),
               isIntrospecting: false,
             })
             return
@@ -656,11 +655,11 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
       }
 
       const errorMsg =
-        (result as { error?: string } | undefined)?.error ?? 'Failed to introspect schema'
+        (result as { error?: string } | undefined)?.error ?? t('graphql.error.introspectFailed')
       patchOwner({ introspectError: errorMsg, isIntrospecting: false })
     } catch (e) {
       patchOwner({
-        introspectError: (e as Error)?.message ?? 'Introspection failed',
+        introspectError: (e as Error)?.message ?? t('graphql.error.introspectionFailed'),
         isIntrospecting: false,
       })
     }
@@ -691,7 +690,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
     const connectionInit = resolveVariables(start.connectionInit, vars)
     if (!parseConnectionInit(connectionInit).ok) return failNow(t('graphql.sub.invalidInit'))
     const api = getSubscriptionApi()
-    if (!api) return failNow('GraphQL subscription bridge unavailable')
+    if (!api) return failNow(t('graphql.sub.bridgeUnavailable'))
 
     const ownerTabId = start._currentTabId
     const owner = (): TabGraphQLState | undefined =>
@@ -802,7 +801,7 @@ export const useGraphQLStore = create<GraphQLStore>((set, get) => ({
           _pendingConnectId: undefined,
         }))
       } else {
-        failOwner(subscriptionFailureText(res, 'GraphQL subscription failed'))
+        failOwner(subscriptionFailureText(res, t('graphql.sub.failed')))
       }
     } catch (e) {
       failOwner((e as Error).message)

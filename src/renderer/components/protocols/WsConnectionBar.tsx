@@ -1,6 +1,8 @@
 import { Plug, Unplug, X } from 'lucide-react'
 import { useWebSocketStore } from '../../stores/websocket.store'
 import { useTranslation } from '../../lib/i18n'
+import { isModEnterChord } from '../../lib/shortcut-chords'
+import { withRunShortcut } from '../../lib/run-shortcut'
 import McpStatusPill from './mcp/McpStatusPill'
 import VariableAutocompleteInput from '../shared/VariableAutocompleteInput'
 import {
@@ -49,7 +51,7 @@ export default function WsConnectionBar() {
               autoComplete="off"
               className={CB_URL_FIELD}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !busy) connect()
+                if (e.key === 'Enter' && !isModEnterChord(e) && !busy) connect()
               }}
             />
           </fieldset>
@@ -59,6 +61,7 @@ export default function WsConnectionBar() {
             type="button"
             onClick={() => void (busy ? disconnect() : connect())}
             disabled={!busy && !url.trim()}
+            title={!busy && url.trim() ? withRunShortcut(t('mcp.connect')) : undefined}
             data-testid={isConnected ? 'ws-disconnect' : isConnecting ? 'ws-cancel' : 'ws-connect'}
             className={cbPrimaryButton(busy)}
           >

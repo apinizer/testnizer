@@ -24,7 +24,8 @@ import {
 } from '../../src/renderer/components/history/history-overview'
 import { HISTORY_LIST_LIMIT, useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
-import { setLocale } from '../../src/renderer/lib/i18n'
+import { setLocale, t as translate } from '../../src/renderer/lib/i18n'
+import { formatWhen } from '../../src/renderer/components/history/history-format'
 import type { HistoryEntry } from '../../src/renderer/types'
 
 const openHistoryEntry = vi.fn()
@@ -255,6 +256,64 @@ describe('HistoryHome', () => {
   })
 })
 
+describe('History overview — counters, dates and paging (merge review)', () => {
+  function seed(entries: HistoryEntry[]): void {
+    useHistoryStore.setState({
+      entries,
+      filters: EMPTY_FILTERS,
+      fetch: vi.fn(async () => undefined),
+    } as never)
+  }
+
+  it('one request reads singular in the summary and the sidebar count (issue #309 rule)', () => {
+    const now = Date.now()
+    seed([row({ executed_at: now, status_code: 500 })])
+    render(<HistoryHome />)
+    expect(screen.getByTestId('history-home-summary').textContent).toMatch(/^Last 1 request since /)
+    cleanup()
+    render(<HistoryListPanel />)
+    fireEvent.change(screen.getByTestId('history-side-status'), { target: { value: 'failed' } })
+    expect(screen.getByTestId('history-side-count').textContent).toBe('1 of 1 request')
+  })
+
+  it('two requests read plural; Turkish has one form', () => {
+    const now = Date.now()
+    seed([row({ executed_at: now }), row({ executed_at: now })])
+    render(<HistoryHome />)
+    expect(screen.getByTestId('history-home-summary').textContent).toMatch(
+      /^Last 2 requests since /,
+    )
+    cleanup()
+    useLocale('tr')
+    render(<HistoryHome />)
+    expect(screen.getByTestId('history-home-summary').textContent).toMatch(
+      / tarihinden bu yana son 2 istek$/,
+    )
+  })
+
+  it('times go through the shared formatter: 24-hour in Turkish, "Yesterday" from i18n', () => {
+    const now = new Date(2026, 10, 12, 15, 0).getTime()
+    const yesterdayMidnight = new Date(2026, 10, 11, 0, 5).getTime()
+    useLocale('tr')
+    expect(formatWhen(yesterdayMidnight, translate, 'tr', now)).toBe('Dün 00:05')
+    useLocale('en')
+    expect(formatWhen(yesterdayMidnight, translate, 'en', now)).toMatch(/^Yesterday /)
+    // Older than yesterday: the short date without a year, then the time.
+    expect(formatWhen(new Date(2026, 10, 1, 9, 30).getTime(), translate, 'tr', now)).toBe(
+      '1 Kas 09:30',
+    )
+  })
+
+  it('the pager shows "page / pages"', () => {
+    const now = Date.now()
+    seed(Array.from({ length: PAGE_SIZE + 7 }, () => row({ executed_at: now })))
+    render(<HistoryHome />)
+    expect(screen.getByTestId('history-home-page').textContent).toBe('1 / 2')
+    fireEvent.click(screen.getByTestId('history-home-next'))
+    expect(screen.getByTestId('history-home-page').textContent).toBe('2 / 2')
+  })
+})
+
 describe('History sidebar filters — shared with the overview', () => {
   function seed(entries: HistoryEntry[]): void {
     useHistoryStore.setState({
@@ -299,9 +358,11 @@ describe('History sidebar filters — shared with the overview', () => {
       'Sent to mocks',
       'Excluding mocks',
     ])
-    expect((target.parentElement as HTMLElement).style.gridTemplateColumns).toBe(
-      'minmax(0, 1fr) minmax(0, 1fr)',
-    )
+    // Two equal columns (Tailwind `grid-cols-2` = repeat(2, minmax(0, 1fr))).
+    const grid = target.parentElement as HTMLElement
+    expect(grid.classList.contains('grid')).toBe(true)
+    expect(grid.classList.contains('grid-cols-2')).toBe(true)
+    expect(grid.querySelectorAll('select')).toHaveLength(4)
   })
 
   it('the protocol drop-down lists every protocol in the history, even just one', () => {

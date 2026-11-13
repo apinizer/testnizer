@@ -103,7 +103,7 @@ export default function RealtimeLogToolbar({
           data-testid={id('diff')}
           className="flex items-center gap-1 rounded-full bg-[var(--accent-light)] px-2 py-0.5 text-[11px] tabular-nums text-[var(--accent-text)]"
         >
-          {t('rt.log.diff').replace('{ms}', String(diffMs))}
+          {t('rt.log.diff', { ms: String(diffMs) })}
           <button
             type="button"
             onClick={onClearSelection}

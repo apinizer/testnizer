@@ -1,6 +1,8 @@
 /**
  * A History filter drop-down — the same control in the sidebar list and the
  * workbench overview. `fill` makes it fill its grid cell (sidebar, 2×2).
+ * The chevron's end padding comes from the global select rule (globals.css),
+ * so no `pr-*` here.
  */
 export default function HistoryFilterSelect({
   testId,
@@ -24,17 +26,9 @@ export default function HistoryFilterSelect({
       title={label}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="cursor-pointer"
-      style={{
-        background: 'var(--input-bg)',
-        border: '1px solid var(--border2)',
-        borderRadius: 6,
-        padding: fill ? '4px 4px' : '5px 8px',
-        fontSize: fill ? 12 : 13,
-        color: 'var(--text)',
-        fontFamily: 'inherit',
-        ...(fill ? { width: '100%', minWidth: 0 } : {}),
-      }}
+      className={`cursor-pointer rounded-[6px] border border-[var(--border2)] bg-[var(--input-bg)] text-[var(--text)] ${
+        fill ? 'w-full min-w-0 pl-1 text-xs' : 'pl-2 text-sm'
+      }`}
     >
       {options.map(([v, l]) => (
         <option key={v} value={v}>

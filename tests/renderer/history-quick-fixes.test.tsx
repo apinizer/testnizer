@@ -41,7 +41,6 @@ const useLocale = (l: 'en' | 'tr'): void => {
 function seed(entries: HistoryEntry[]): void {
   useHistoryStore.setState({
     entries,
-    searchTerm: '',
     filters: EMPTY_FILTERS,
     fetch: vi.fn(async () => undefined),
   } as never)
