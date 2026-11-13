@@ -61,6 +61,8 @@ akıtılmaz: gövdesi yazıldığı gibi gönderilir; hata şablonları böyle �
 
 ### LLM satırı
 
+![Üç yanıt ve LLM satırıyla AI mock editörü: sağlayıcı, parçalama, durma nedeni ve kullanım](/docs/screenshots/mock-server-ai-editor.png)
+
 | Ayar | Seçenekler |
 |---|---|
 | **Sağlayıcı** | **OpenAI uyumlu** ya da **Anthropic** tel biçimi |

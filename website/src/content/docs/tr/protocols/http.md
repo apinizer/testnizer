@@ -83,6 +83,8 @@ bir header otomatik olanı geçersiz kılar ve satır **Geçersiz kılındı** d
 
 ## Body sekmesi
 
+![{{customerId}} değişkeni kullanan ham JSON gövdeli Body sekmesi ve 201 Created yanıtı](/docs/screenshots/http-request-body.png)
+
 ### none
 
 Gövde yok. Content-Type header otomatik olarak eklenmez.
@@ -152,6 +154,8 @@ Tam `pm` API'si için [Scriptler kılavuzuna](/tr/docs/scripts) bakın.
 
 Yanıt geldikten sonra çalışır. `pm.test` / `pm.expect` API'si Postman'inkini yansıtır,
 böylece mevcut Postman test takımları minimum değişiklikle yapıştırılabilir.
+
+![Üç pm.test kontrolü içeren yanıt sonrası script ve üçünün de geçtiğini gösteren Test Results paneli](/docs/screenshots/http-tests-results.png)
 
 ```js
 pm.test('status 200', () => {

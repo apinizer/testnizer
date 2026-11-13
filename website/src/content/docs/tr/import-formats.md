@@ -30,6 +30,8 @@ URL ve metod değil, ön/sonrası betikler ve koleksiyon değişkenleri de dahil
 Testnizer formatı otomatik algılar. Algılama belirsizse (`.json` ile nadiren,
 ham XML ile daha sık), bir açılır liste seçim yapmanızı sağlar.
 
+![Desteklenen kaynak biçimleriyle Import API Data penceresi](/docs/screenshots/import-formats-dialog.png)
+
 İçe aktarma, aktif projenin içinde yeni bir koleksiyon oluşturur. Kenar çubuğu
 bağlam menüsünden sonradan yeniden adlandırabilirsiniz.
 

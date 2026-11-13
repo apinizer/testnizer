@@ -147,6 +147,8 @@ onaylayabilir.
 
 ### Çalıştırma sonuçları
 
+![Koleksiyon çalıştırıcı sonuçları: 12 isteğin 12'si geçti, her isteğin kontrolleri listeleniyor](/docs/screenshots/runner-results.png)
+
 Çalıştırma devam ederken, tamamlandıkça her istek yeşil ✓ veya kırmızı ✗ rozeti
 gösterir. Çalıştırma bittikten sonra:
 

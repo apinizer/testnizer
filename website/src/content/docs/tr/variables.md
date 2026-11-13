@@ -13,6 +13,8 @@ olanak tanır.
 
 ## Değişken kapsam hiyerarşisi
 
+![Staging ortam değerlerini proje Globals değerlerinin üstünde listeleyen Variables yan paneli](/docs/screenshots/variables-right-panel.png)
+
 Testnizer `{{değişken}}` yer tutucularını üç kapsamdan çözümler. Aynı anahtar
 birden fazla kapsamda bulunduğunda, daha spesifik kapsam kazanır. En düşükten en
 yükseğe öncelik:

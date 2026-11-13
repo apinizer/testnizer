@@ -12,6 +12,8 @@ environments, users, and test runs without manual edits.
 
 ## Variable scope hierarchy
 
+![Variables side panel listing the Staging environment values above the project Globals](/docs/screenshots/variables-right-panel.png)
+
 Testnizer resolves `{{variable}}` placeholders from three scopes. When the same
 key exists in more than one, the more specific scope wins. From lowest to
 highest priority:

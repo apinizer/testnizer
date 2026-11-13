@@ -21,6 +21,8 @@ read from the same place. A run records the environment it used (or "No environm
 and shows it in the results, All Runs, Scheduled history and the HTML / JSON report;
 renaming or deleting the environment later does not rewrite that history.
 
+![Environments dialog with the active Staging environment, its initial and current values, and a masked secret apiKey](/docs/screenshots/environments-editor.png)
+
 Create one from **Environments** in the right sidebar → **+ New**.
 
 Each variable has:

@@ -77,6 +77,8 @@ okur.
 
 ## Olay günlüğü
 
+![Mock akışa bağlı SSE sekmesi: günlükte türlerine göre olaylar ve açılmış bir olay](/docs/screenshots/sse-event-log.png)
+
 Her olay bir satırdır:
 
 | Bölüm | Gösterir |

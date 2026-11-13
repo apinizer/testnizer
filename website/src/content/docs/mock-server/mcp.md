@@ -100,6 +100,8 @@ clients as you wrote it, and the call arguments are validated against it
 (draft-07 by default; a schema that declares `$schema` 2019-09 or 2020-12 uses
 that dialect; `format` is not enforced).
 
+![Mock MCP server Tools tab with four tools, an input schema and a JSON response](/docs/screenshots/mock-server-mcp-tools.png)
+
 The response **Kind** is one of:
 
 - **Text**: returned verbatim as one text content block.

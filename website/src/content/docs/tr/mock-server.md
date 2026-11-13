@@ -49,6 +49,8 @@ Kenar çubuğu sunucuları türe göre gruplar: **HTTP sunucuları**, **MCP sunu
 
 ## Sunucu oluşturma
 
+![Yeni mock sunucu menüsüyle Mocks kenar çubuğu: HTTP, MCP, SSE ve AI](/docs/screenshots/mock-server-new-menu.png)
+
 Mock'lar panelinin üstündeki **+** düğmesine ya da boş Mock'lar sayfasındaki
 **Yeni mock sunucu** düğmesine tıklayın. Tek bir pencere her türü oluşturur:
 
@@ -124,6 +126,8 @@ durum ve gecikme. İstek ve yanıt header'ları ile gövdeleri için bir satıra
 Yalnızca son 500 kayıt bellekte tutulur; uygulamadan çıkınca silinir. Bir akış (SSE
 ya da AI) kapanana kadar **akış sürüyor...** olarak işaretlenmiş tek bir satırdır,
 her parça için ayrı satır değildir.
+
+![Çalışan bir HTTP mock'un Logs sekmesi: altı istek ve seçilen kaydın isteği ile yanıtı](/docs/screenshots/mock-server-live-log.png)
 
 Günlük History ve Konsol ile aynı biçimde maskelenir: kimlik bilgisi header'ları,
 sorgu ve gövde alanları ile secret değişkenlerinizin değerleri saklanmadan önce gizlenir.

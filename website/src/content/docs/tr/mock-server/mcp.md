@@ -96,6 +96,8 @@ Her aracın bir adı, isteğe bağlı bir başlığı ve açıklaması, bir **Gi
 duyurulur ve çağrı argümanları ona karşı doğrulanır (varsayılan draft-07; `$schema`
 2019-09 ya da 2020-12 bildiren şema o lehçeyi kullanır; `format` zorlanmaz).
 
+![Dört araç, bir girdi şeması ve JSON yanıtıyla Mock MCP sunucusunun Tools sekmesi](/docs/screenshots/mock-server-mcp-tools.png)
+
 Yanıt **Türü** şunlardan biridir:
 
 - **Metin**: tek bir metin içerik bloğu olarak olduğu gibi döner.

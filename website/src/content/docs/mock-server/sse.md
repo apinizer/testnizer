@@ -70,6 +70,8 @@ event. Write JSON data with `{{json ...}}`, which escapes newlines.
 
 ## The Stream row
 
+![SSE mock editor with the Stream row (interval, heartbeat, loop) and an event body that uses templates](/docs/screenshots/mock-server-sse-editor.png)
+
 | Setting | What it does | Default |
 |---|---|---|
 | **Interval (ms)** | Time between events. The first event goes out at once. Up to 600000 | 1000 |

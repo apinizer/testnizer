@@ -21,6 +21,8 @@ Bir çalıştırma kullandığı ortamı (ya da "Ortam yok"u) kaydeder ve sonuç
 Zamanlanmış geçmişte ve HTML / JSON raporunda gösterir; ortamı sonradan yeniden adlandırmak ya
 da silmek bu geçmişi değiştirmez.
 
+![Aktif Staging ortamı, ilk ve güncel değerleri ve maskelenmiş secret apiKey ile Environments penceresi](/docs/screenshots/environments-editor.png)
+
 Sağ kenar çubuğundaki **Ortamlar** → **+ Yeni** seçeneğinden bir ortam oluşturun.
 
 Her değişkenin şunları vardır:

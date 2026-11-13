@@ -147,6 +147,8 @@ The URL can then reference `{{userId}}` and the test can assert `{{expectedName}
 
 ### Run results
 
+![Collection runner results: 12 of 12 requests passed, with each request's checks listed](/docs/screenshots/runner-results.png)
+
 While the run is in progress, each request shows a green ✓ or red ✗ badge
 as it completes. After the run:
 

@@ -27,6 +27,8 @@ The editor has three tabs: **Endpoints**, **Settings** and **Logs**.
 
 The Endpoints tab is split into a left list and a right editor.
 
+![HTTP mock editor with the endpoint list, the endpoint definition and a JSON response](/docs/screenshots/mock-server-http-editor.png)
+
 ### Method and path
 
 Path matching has four modes:

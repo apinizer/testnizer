@@ -37,6 +37,8 @@ Content-Type: application/json   ← otomatik eklenir, gerekirse geçersiz kıl�
 İçgözlenmiş şemayla desteklenen GraphQL söz dizimi vurgulama, parantez
 eşleştirme ve otomatik tamamlamalı bir Monaco örneği.
 
+![İşlem editöründe bir sorgu ve altında JSON yanıtıyla GraphQL sekmesi](/docs/screenshots/graphql-query.png)
+
 Sorgu, mutasyon veya abonelik yazın:
 
 ```graphql

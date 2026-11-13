@@ -27,6 +27,8 @@ Editörün üç sekmesi vardır: **Uç noktalar**, **Ayarlar** ve **Loglar**.
 
 Uç noktalar sekmesi solda bir liste, sağda bir editör olarak ikiye ayrılır.
 
+![Endpoint listesi, endpoint tanımı ve JSON yanıtıyla HTTP mock editörü](/docs/screenshots/mock-server-http-editor.png)
+
 ### Yöntem ve yol
 
 Yol eşleştirmenin dört modu vardır:

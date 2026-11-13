@@ -30,6 +30,8 @@ and collection variables, not just the URL and method.
 the format. If detection is ambiguous (rare with `.json`, common with raw XML),
 a dropdown lets you pick.
 
+![Import API Data dialog with the supported source formats](/docs/screenshots/import-formats-dialog.png)
+
 Importing creates a new collection inside the active project. You can rename it
 afterwards from the sidebar context menu.
 

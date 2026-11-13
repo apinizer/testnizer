@@ -99,6 +99,8 @@ mesaj gönderebilirsiniz.
 
 ### Önce onay
 
+![Model bir MCP sunucusundaki echo aracını çalıştırmadan önce onay isteyen AI Chat](/docs/screenshots/ai-chat-tool-approval.png)
+
 Her araç çağrısı önce size sorar. Kart sunucuyu, aracı ve argümanları gösterir; üç
 seçenek vardır:
 
@@ -130,6 +132,8 @@ Geçici bir sunucunun URL'sine, komut satırına ya da ortamına düz yazılmı�
 kimlik bilgisi oturum boyunca kullanılır ve istekle birlikte kaydedilmez.
 
 ## Bir yanıtı okuma
+
+![Araç çağrısından sonra gelen AI Chat yanıtı: durum, ilk bayta kadar süre, toplam süre, token ve model çağrısı sayısı](/docs/screenshots/ai-chat-reply.png)
 
 Her yanıtın altında bir ölçüm satırı görürsünüz:
 

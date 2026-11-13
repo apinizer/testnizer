@@ -44,6 +44,8 @@ taşıyın, sürümleyin, yedekleyin, paylaşın. Opak bir bulut veritabanı yok
 
 ## İlk isteğinizi gönderin
 
+![APIs ağacı, bir GET isteği ve 3/3 testi geçen JSON yanıtıyla Testnizer ana penceresi](/docs/screenshots/getting-started-main-window.png)
+
 1. Sol kenar çubuğunda **+ Yeni** üzerine tıklayın → **HTTP**
 2. URL çubuğuna `https://httpbin.org/get` yapıştırın ve **GET** seçin
 3. **Gönder**'e basın

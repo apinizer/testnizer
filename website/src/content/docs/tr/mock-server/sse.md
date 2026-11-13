@@ -69,6 +69,8 @@ kaçan `{{json ...}}` ile yazın.
 
 ## Akış satırı
 
+![Stream satırı (aralık, heartbeat, döngü) ve şablon kullanan olay gövdesiyle SSE mock editörü](/docs/screenshots/mock-server-sse-editor.png)
+
 | Ayar | Ne yapar | Varsayılan |
 |---|---|---|
 | **Aralık (ms)** | Olaylar arası süre. İlk olay hemen gider. En çok 600000 | 1000 |

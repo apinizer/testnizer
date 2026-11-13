@@ -104,6 +104,8 @@ Tam yükü görmek için bir satıra tıklayın; büyük yükler satırda kısal
 ayrıntı görünümünde tam gösterilir; ayrıntı mesajın boyutunu, zamanını ve türünü
 de gösterir.
 
+![JSON subscribe mesajı ve gönderilen ile alınan mesajların günlüğüyle WebSocket sekmesi](/docs/screenshots/websocket-message-log.png)
+
 | Kontrol | İşlem |
 |---|---|
 | **Mesajlarda ara** | Tüm yüklerde metin araması |
