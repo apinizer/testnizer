@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { useUIStore } from '../../stores/ui.store'
+import { useTranslation } from '../../lib/i18n'
 import { DYNAMIC_VARIABLES, isKnownDynamicVariable } from '../../../shared/dynamic-variables'
 
 /** Built-in dynamic variables — the shared table Send, Run and Mock resolve (issue #281). */
@@ -77,6 +78,7 @@ export default function VariableAutocompleteInput({
   'aria-describedby': ariaDescribedBy,
 }: VariableAutocompleteInputProps) {
   const masked = type === 'password'
+  const { t } = useTranslation()
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [queryStart, setQueryStart] = useState(-1) // cursor position where {{ started
@@ -589,7 +591,7 @@ export default function VariableAutocompleteInput({
             })}
             {suggestions.length === 0 && (
               <div style={{ padding: '8px 12px', fontSize: 13, color: 'var(--muted)' }}>
-                No variables found
+                {t('varHover.noVariables')}
               </div>
             )}
           </div>,
@@ -665,12 +667,10 @@ export default function VariableAutocompleteInput({
             </div>
 
             {hoverInfo.category === 'unresolved' ? (
-              <div style={{ color: '#cc2200', marginBottom: 8 }}>
-                Not defined in the active environment or globals.
-              </div>
+              <div style={{ color: '#cc2200', marginBottom: 8 }}>{t('varHover.undefined')}</div>
             ) : (
               <>
-                <div style={{ color: 'var(--muted)', marginBottom: 2 }}>Value</div>
+                <div style={{ color: 'var(--muted)', marginBottom: 2 }}>{t('varHover.value')}</div>
                 <div
                   style={{
                     fontFamily: 'var(--font-mono)',
@@ -684,11 +684,13 @@ export default function VariableAutocompleteInput({
                     overflow: 'auto',
                   }}
                 >
-                  {hoverInfo.value || <em style={{ color: 'var(--muted)' }}>(empty)</em>}
+                  {hoverInfo.value || (
+                    <em style={{ color: 'var(--muted)' }}>{t('varHover.empty')}</em>
+                  )}
                 </div>
                 {hoverInfo.envName && (
                   <div style={{ color: 'var(--muted)', marginBottom: 8 }}>
-                    Environment:{' '}
+                    {t('varHover.environment')}{' '}
                     <strong style={{ color: 'var(--text)' }}>{hoverInfo.envName}</strong>
                   </div>
                 )}
@@ -724,7 +726,7 @@ export default function VariableAutocompleteInput({
                   cursor: 'pointer',
                 }}
               >
-                Edit →
+                {t('varHover.edit')}
               </button>
             </div>
           </div>,

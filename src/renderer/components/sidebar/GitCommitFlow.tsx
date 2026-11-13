@@ -86,9 +86,10 @@ export default function GitCommitFlow({
         }
         if (r.committed && r.partial) {
           toast.success(
-            t('gitCommit.committedPartial')
-              .replace('{included}', String(r.included ?? only?.length ?? 0))
-              .replace('{count}', String(changes?.items.length ?? 0)),
+            t('gitCommit.committedPartial', {
+              included: String(r.included ?? only?.length ?? 0),
+              count: String(changes?.items.length ?? 0),
+            }),
           )
         } else {
           toast.success(t(r.committed ? 'gitCommit.committed' : 'gitCommit.nothingToCommit'))

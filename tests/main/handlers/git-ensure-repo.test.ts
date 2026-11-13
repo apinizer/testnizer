@@ -130,7 +130,7 @@ vi.mock('simple-git', () => {
 })
 
 const { registerGitHandlers } = await import('../../../src/main/ipc/git.handler')
-const { GIT_PUSH_REJECTED_ERROR } = await import('../../../src/main/lib/git-config')
+const { GIT_ERROR_TEXT } = await import('../../../src/shared/git-errors')
 
 const REPO = 'https://github.com/acme/apis.git'
 let projectId: string
@@ -156,7 +156,13 @@ beforeEach(() => {
 })
 
 const push = () =>
-  harness.invoke('git:push', projectId) as Promise<{ success: boolean; error?: string }>
+  harness.invoke('git:push', projectId) as Promise<{
+    success: boolean
+    error?: string
+    errorCode?: string
+    errorDetail?: string
+    errorParams?: Record<string, string>
+  }>
 const pull = () =>
   harness.invoke('git:pull', projectId) as Promise<{
     success: boolean
@@ -220,8 +226,11 @@ describe('ensureGitRepo decides from `ls-remote`, never from a failed clone', ()
     )
     const res = await push()
     expect(res.success).toBe(false)
-    expect(res.error).toContain('Uzak depoya erişilemedi')
-    expect(res.error).toContain('Could not resolve host')
+    expect(res.errorCode).toBe('GIT_REMOTE_UNREACHABLE')
+    expect(res.errorDetail).toContain('Could not resolve host')
+    expect(res.error).toBe(
+      GIT_ERROR_TEXT.GIT_REMOTE_UNREACHABLE.replace('{detail}', res.errorDetail ?? ''),
+    )
     expect(remote.calls).not.toContain('init')
     expect(remote.calls.some((c) => c.startsWith('clone'))).toBe(false)
     expect(existsSync(join(localPath, '.git'))).toBe(false)
@@ -233,8 +242,11 @@ describe('ensureGitRepo decides from `ls-remote`, never from a failed clone', ()
     )
     const res = await push()
     expect(res.success).toBe(false)
-    expect(res.error).toMatch(/kimlik doğrulaması/i)
-    expect(res.error).not.toContain('ghp_x')
+    expect(res.errorCode).toBe('GIT_AUTH_FAILED')
+    expect(res.error).toBe(
+      GIT_ERROR_TEXT.GIT_AUTH_FAILED.replace('{detail}', res.errorDetail ?? ''),
+    )
+    expect(JSON.stringify(res)).not.toContain('ghp_x')
   })
 })
 
@@ -280,7 +292,10 @@ describe('an existing checkout in local_path', () => {
     remote.originUrl = 'https://github.com/someone-else/dotfiles.git'
     const res = await push()
     expect(res.success).toBe(false)
-    expect(res.error).toContain('başka bir uzak depoya')
+    expect(res.errorCode).toBe('GIT_FOREIGN_REPO')
+    expect(res.errorParams?.remote).toContain('someone-else/dotfiles')
+    expect(res.errorParams?.path).toBe(localPath)
+    expect(res.error).toContain('is already a git repository connected to another remote')
     expect(res.error).toContain('someone-else/dotfiles')
     expect(remote.calls.some((c) => c.startsWith('remote set-url'))).toBe(false)
   })
@@ -346,6 +361,9 @@ describe('git:push stages only the project file', () => {
     )
     const res = await push()
     expect(res.success).toBe(false)
-    expect(res.error).toBe(GIT_PUSH_REJECTED_ERROR)
+    expect(res).toMatchObject({
+      errorCode: 'GIT_PUSH_REJECTED',
+      error: GIT_ERROR_TEXT.GIT_PUSH_REJECTED,
+    })
   })
 })

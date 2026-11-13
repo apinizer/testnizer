@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useResponseStore } from '../../stores/response.store'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
 import type { SseEvent } from '../../types'
 
 /**
@@ -65,7 +66,7 @@ export default function EventsTab() {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]">
-          {events.length} event{events.length !== 1 ? 's' : ''} parsed from response stream
+          {formatCount(events.length, t('response.events.parsedOne'), t('response.events.parsed'))}
         </span>
       </div>
 
@@ -117,7 +118,7 @@ export default function EventsTab() {
 
               {isExpanded && (
                 <pre className="mt-1.5 max-h-96 overflow-auto rounded-lg bg-[var(--surface)] p-2 font-mono text-[var(--text)]">
-                  {isJson ? formatJson(event.data) : event.data || '(empty)'}
+                  {isJson ? formatJson(event.data) : event.data || t('response.events.empty')}
                 </pre>
               )}
             </div>

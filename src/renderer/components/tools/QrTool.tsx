@@ -150,7 +150,7 @@ export default function QrTool() {
             <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
               <img
                 src={encoded.url}
-                alt="QR code"
+                alt={t('tools.qr.imageAlt')}
                 width={220}
                 height={220}
                 style={{ imageRendering: 'pixelated', background: '#fff', padding: 8 }}

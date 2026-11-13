@@ -215,9 +215,9 @@ export default function EnvironmentModal() {
   async function handleMoveToGlobals(env: Environment): Promise<void> {
     try {
       const { moved, conflicts } = await moveToGlobals(env.id)
-      toast.success(t('env.moveDone').replace('{count}', String(moved.length)))
+      toast.success(t('env.moveDone', { count: String(moved.length) }))
       if (conflicts.length > 0) {
-        toast.warning(t('env.moveConflicts').replace('{keys}', conflicts.join(', ')))
+        toast.warning(t('env.moveConflicts', { keys: conflicts.join(', ') }))
       }
       setMovedEnv({ env, conflicts })
     } catch (err) {
@@ -528,7 +528,7 @@ export default function EnvironmentModal() {
         itemType={t('env.itemType')}
         description={
           movedEnv && movedEnv.conflicts.length > 0
-            ? t('env.moveDeleteConflicts').replace('{keys}', movedEnv.conflicts.join(', '))
+            ? t('env.moveDeleteConflicts', { keys: movedEnv.conflicts.join(', ') })
             : t('env.moveDeleteDesc')
         }
         onConfirm={() => {
@@ -1105,7 +1105,7 @@ function VarRowView({
         }}
         title={
           variable.key
-            ? t('env.copyReference').replace('{ref}', `{{${variable.key}}}`)
+            ? t('env.copyReference', { ref: `{{${variable.key}}}` })
             : t('env.copyNeedsName')
         }
         disabled={!variable.key}

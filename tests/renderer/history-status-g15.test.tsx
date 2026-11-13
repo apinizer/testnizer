@@ -153,7 +153,6 @@ describe('Recent endpoints (new-request page) and the History sidebar', () => {
     for (const file of [
       'src/renderer/components/layout/NewRequestWelcome.tsx',
       'src/renderer/components/sidebar/HistoryListPanel.tsx',
-      'src/renderer/components/modals/HistoryPanel.tsx',
     ]) {
       const src = readFileSync(resolve(__dirname, '../..', file), 'utf8')
       expect(src, file).not.toMatch(/function statusColor/)

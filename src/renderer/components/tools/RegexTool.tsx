@@ -194,7 +194,7 @@ export default function RegexTool() {
                 type="text"
                 value={replacement}
                 onChange={(e) => setReplacement(e.target.value)}
-                placeholder="$1 [redacted]"
+                placeholder={t('tools.regex.replacementPlaceholder')}
                 className="w-full rounded border px-2 py-1 font-mono text-xs"
                 style={{
                   background: 'var(--white)',
@@ -326,7 +326,11 @@ export default function RegexTool() {
                                 <span style={{ color: 'var(--accent-text)' }}>
                                   {g.name ?? `$${j + 1}`}:{' '}
                                 </span>
-                                {g.value ?? <em style={{ color: 'var(--muted)' }}>(undefined)</em>}
+                                {g.value ?? (
+                                  <em style={{ color: 'var(--muted)' }}>
+                                    {t('tools.regex.groupUndefined')}
+                                  </em>
+                                )}
                               </div>
                             ))
                           )}

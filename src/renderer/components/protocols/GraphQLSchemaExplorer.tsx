@@ -208,7 +208,7 @@ function TypeDetail({ type, onNavigate }: { type: GqlType; onNavigate: (name: st
       {type.fields.length > 0 && (
         <div>
           <div className="mb-1.5 font-semibold text-[var(--muted)]">
-            {t('graphql.fields').replace('{count}', String(type.fields.length))}
+            {t('graphql.fields', { count: String(type.fields.length) })}
           </div>
           <div className="space-y-1">
             {type.fields.map((field) => (

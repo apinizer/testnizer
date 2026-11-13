@@ -25,7 +25,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent'
 import type { ProxyAgent } from 'undici'
 import type { ConnectionErrorContext } from './error-classifier'
 import { SOCKS_PROXY_UNSUPPORTED, isProxyBypassed, isSocksProxy } from '../../shared/proxy-bypass'
-import type { ProxySetting } from '../../shared/request-settings'
+import { proxyCredentials, type ProxySetting } from '../../shared/request-settings'
 
 export interface ResolvedProxy {
   /** `http://host:port`, without credentials. */
@@ -57,10 +57,10 @@ export function resolveConnectionProxy(
   if (isProxyBypassed(setting.bypass, targetUrl)) return null
   if (isSocksProxy(setting)) throw new Error(SOCKS_PROXY_UNSUPPORTED)
   const host = setting.host.includes(':') ? `[${setting.host}]` : setting.host
-  const { username = '', password = '' } = setting.auth ?? {}
+  const login = proxyCredentials(setting.auth)
   return {
     origin: parsedProxyUrl(`http://${host}:${setting.port ?? 8080}`).origin,
-    ...(username || password ? { auth: { username, password } } : {}),
+    ...(login ? { auth: login } : {}),
   }
 }
 

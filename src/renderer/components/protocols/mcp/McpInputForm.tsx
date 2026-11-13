@@ -64,9 +64,10 @@ export default function McpInputForm({
     const built = buildInputResponses(views, action, values)
     if (built.problem) {
       const p = built.problem
-      const text = t(PROBLEM_KEYS[p.reason])
-        .replace('{field}', p.field)
-        .replace('{limit}', p.limit !== undefined ? String(p.limit) : '')
+      const text = t(PROBLEM_KEYS[p.reason], {
+        field: p.field,
+        limit: p.limit !== undefined ? String(p.limit) : '',
+      })
       setProblem({ key: p.key, field: p.field, text })
       return
     }

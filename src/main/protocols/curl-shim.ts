@@ -26,6 +26,7 @@ import { randomUUID } from 'node:crypto'
 import { performance } from 'node:perf_hooks'
 import { app } from 'electron'
 import { isProxyBypassed } from '../../shared/proxy-bypass'
+import { proxyCredentials } from '../../shared/request-settings'
 import type { HttpRequestOptions } from './http.engine'
 import { getJarCookieHeader, storeResponseCookies } from './http.engine'
 
@@ -317,9 +318,8 @@ export function buildCurlArgs(input: {
     args.push('--noproxy', '*')
   } else if (input.proxy) {
     args.push('-x', `${input.proxy.host}:${input.proxy.port}`)
-    if (input.proxy.auth) {
-      args.push('--proxy-user', `${input.proxy.auth.username}:${input.proxy.auth.password}`)
-    }
+    const login = proxyCredentials(input.proxy.auth)
+    if (login) args.push('--proxy-user', `${login.username}:${login.password}`)
   }
 
   if (input.caCertPath) args.push('--cacert', input.caCertPath)

@@ -12,6 +12,15 @@
 import { app } from 'electron'
 import { join } from 'path'
 import { getDb } from '../db/database'
+import {
+  GitCodedError,
+  gitFailure,
+  gitFailureOf,
+  scrubGitFailure,
+  wrappedGitFailure,
+  type GitErrorCode,
+  type GitFailure,
+} from '../../shared/git-errors'
 import { decryptSecret } from './secure-storage'
 
 export interface ProjectGitConfig {
@@ -24,14 +33,9 @@ export interface ProjectGitConfig {
   localPath: string
 }
 
-export const GIT_TOKEN_MISSING_ERROR =
-  'Git token bulunamadı veya şifresi çözülemedi. Proje Ayarları → Storage bölümünden Personal Access Token’ı yeniden girin.'
-
-export const GIT_SSH_URL_ERROR =
-  'Git remote HTTPS URL olmalı (https://…). SSH adresleri (git@host:…) Personal Access Token ile kullanılamaz.'
-
-export const GIT_AUTH_FAILED_ERROR =
-  'Git kimlik doğrulaması başarısız (401/403). Kullanıcı adı ve Personal Access Token’ı kontrol edin.'
+// The user-facing texts of every failure below (token missing, SSH URL, auth,
+// non-fast-forward, transient 5xx, unreachable, foreign checkout) live in
+// `src/shared/git-errors.ts` with a stable code; the renderer translates them.
 
 /** Where a project's checkout lives when the user picked no folder (Git-only save mode). */
 export function defaultGitLocalPath(projectId: string): string {
@@ -73,7 +77,7 @@ interface StoredGitConfig {
 /**
  * Resolve the project's Git settings with a usable (decrypted) token.
  * Returns null when no remote is configured at all. `token` may still be ''
- * — callers that need it must check and surface {@link GIT_TOKEN_MISSING_ERROR}.
+ * — callers that need it must check and answer `GIT_TOKEN_MISSING` (shared/git-errors).
  */
 export async function getProjectGitConfig(projectId: string): Promise<ProjectGitConfig | null> {
   try {
@@ -152,7 +156,7 @@ export function buildAuthUrl(repoUrl: string, username: string, token: string): 
   const trimmed = repoUrl.trim()
   if (isLocalRemote(trimmed)) return trimmed
   if (isSshRemote(trimmed) || !/^https?:\/\//i.test(trimmed)) {
-    throw new Error(GIT_SSH_URL_ERROR)
+    throw new GitCodedError('GIT_SSH_URL')
   }
   const urlObj = new URL(trimmed)
   urlObj.username = encodeURIComponent(username.trim() || 'token')
@@ -190,7 +194,7 @@ export interface GitAuth {
 
 export function gitAuth(repoUrl: string, username: string, token: string): GitAuth {
   const trimmed = repoUrl.trim()
-  if (isSshRemote(trimmed)) throw new Error(GIT_SSH_URL_ERROR)
+  if (isSshRemote(trimmed)) throw new GitCodedError('GIT_SSH_URL')
   // Disable the system credential helper for this process (empty value).
   // simple-git flags credential.helper as unsafe; we opt in explicitly via
   // `gitClientOptions().unsafe` because an EMPTY helper is the safe direction
@@ -207,7 +211,7 @@ export function gitAuth(repoUrl: string, username: string, token: string): GitAu
       config.push(`http.extraHeader=Authorization: Basic ${basic}`)
     }
   } else if (!isLocalRemote(trimmed)) {
-    throw new Error(GIT_SSH_URL_ERROR)
+    throw new GitCodedError('GIT_SSH_URL')
   }
   return { cleanUrl, config, env: { GIT_TERMINAL_PROMPT: '0' } }
 }
@@ -345,31 +349,24 @@ export function _resetIdentityConfigCache(): void {
   identityConfigCache = null
 }
 
-/** Push refused because the remote moved on — not an auth problem. */
-export const GIT_PUSH_REJECTED_ERROR =
-  'Uzak depo yerel kopyanızdan ileride (non-fast-forward). Önce Pull yapın, sonra tekrar Push deneyin.'
-
 /** True for git's "remote is ahead" refusals. */
 export function isPushRejectedError(message: string): boolean {
   return /non-fast-forward|fetch first|\[rejected\]|Updates were rejected/i.test(message)
 }
 
 /**
- * Push failed because the remote server had a temporary problem (GitHub
- * answers `remote: Internal Server Error` / HTTP 5xx a few times a day; the
- * next attempt works). True on every push path: `git:push` keeps the commit
- * in the checkout and the next Push commits nothing new (`committed:false`);
- * the Save dialog's temp-clone paths re-export into a fresh clone and commit
- * only if the content differs from it (`sameExport`, issue #301) — so the next
+ * `GIT_PUSH_TRANSIENT` — push failed because the remote server had a
+ * temporary problem (GitHub answers `remote: Internal Server Error` / HTTP 5xx
+ * a few times a day; the next attempt works). "Nothing lost, no duplicate
+ * commit" is true on every push path: `git:push` keeps the commit in the
+ * checkout and the next Push commits nothing new (`committed:false`); the
+ * Save dialog's temp-clone paths re-export into a fresh clone and commit only
+ * if the content differs from it (`sameExport`, issue #301) — so the next
  * attempt lands exactly one commit, and none when the remote had in fact
  * taken the first push before its acknowledgment was lost.
+ * `GIT_REMOTE_TRANSIENT` is the same server-side condition on a non-push
+ * operation (pull, fetch, clone).
  */
-export const GIT_PUSH_TRANSIENT_ERROR =
-  'Uzak sunucu geçici bir hata döndürdü (HTTP 5xx) ve birkaç denemeye rağmen gönderim yapılamadı. Değişiklikleriniz kaybolmadı; yalnızca uzak depoya gönderim başarısız oldu. Birazdan Push’u tekrar deneyin — yeni (çift) bir commit oluşturulmaz.'
-
-/** Same server-side condition on a non-push operation (pull, fetch, clone). */
-export const GIT_REMOTE_TRANSIENT_ERROR =
-  'Uzak sunucu geçici bir hata döndürdü (HTTP 5xx). Birazdan tekrar deneyin.'
 
 /** Any explicit 4xx — a client-side problem a retry cannot fix (401/403/404/413…). */
 const HTTP_CLIENT_ERROR = /RPC failed; HTTP 4\d\d|returned error: 4\d\d|\bHTTP 4\d\d\b/i
@@ -430,9 +427,9 @@ export interface PushRetryOptions {
  * server-side failures ({@link isTransientRemoteError}); auth errors and
  * non-fast-forward refusals throw on the first attempt. Re-pushing is safe:
  * a push is a ref update — if the server did apply the first one, the retry
- * finds the ref already there. When every attempt fails transiently the
- * error carries {@link GIT_PUSH_TRANSIENT_ERROR} so {@link describeGitError}
- * shows it instead of the raw stderr.
+ * finds the ref already there. When every attempt fails transiently it
+ * throws `GIT_PUSH_TRANSIENT` (a {@link GitCodedError}, git's line as detail)
+ * so {@link describeGitFailure} shows it instead of the raw stderr.
  */
 export async function pushWithRetry(
   git: PushCapable,
@@ -451,24 +448,26 @@ export async function pushWithRetry(
       const msg = e instanceof Error ? e.message : String(e)
       if (!isTransientRemoteError(msg)) throw e
       if (attempt >= delays.length) {
-        throw new Error(`${GIT_PUSH_TRANSIENT_ERROR} (${transientDetail(msg)})`, { cause: e })
+        throw new GitCodedError('GIT_PUSH_TRANSIENT', { detail: transientDetail(msg), cause: e })
       }
       await sleep(delays[attempt])
     }
   }
 }
 
-/** Remote could not be reached at all (DNS, proxy, offline, wrong host). */
-export function unreachableRemoteError(detail: string): string {
-  return `Uzak depoya erişilemedi: ${detail.split('\n')[0]}`
+/** Remote could not be reached at all (DNS, proxy, offline, wrong host). Pass redacted text. */
+export function unreachableRemoteError(detail: string): GitCodedError {
+  return new GitCodedError('GIT_REMOTE_UNREACHABLE', { detail: detail.split('\n')[0] })
 }
 
 /**
  * `local_path` already holds a git checkout of ANOTHER remote. Re-pointing
  * its origin would hijack the user's unrelated repository, so refuse.
  */
-export function foreignRepoError(localPath: string, existingRemote: string): string {
-  return `${localPath} zaten başka bir uzak depoya bağlı bir git deposu (${existingRemote}). Proje Ayarları → Storage bölümünden boş veya bu depoya ait bir klasör seçin.`
+export function foreignRepoError(localPath: string, existingRemote: string): GitCodedError {
+  return new GitCodedError('GIT_FOREIGN_REPO', {
+    params: { path: localPath, remote: existingRemote },
+  })
 }
 
 /**
@@ -500,23 +499,48 @@ export function sameRemote(a: string | undefined, b: string | undefined): boolea
 }
 
 /**
- * ONE mapping from a git failure to the text the user sees: token redacted,
- * 401/403 → explicit auth message, "remote is ahead" → pull-first hint,
- * temporary server error (5xx) → "nothing lost, try again".
- * Every push/pull catch (git.handler AND save.handler) goes through here so
- * the two paths cannot drift again.
+ * ONE mapping from a git failure to what the user sees: token redacted,
+ * 401/403 → `GIT_AUTH_FAILED`, "remote is ahead" → `GIT_PUSH_REJECTED`,
+ * temporary server error (5xx) → `GIT_REMOTE_TRANSIENT` ("try again").
+ * A failure that already carries a code (a {@link GitCodedError} thrown by a
+ * helper, `GIT_PUSH_TRANSIENT` from {@link pushWithRetry}) keeps it; only its
+ * detail is redacted — never our own sentence (a short token could match
+ * letters in it). Every push/pull catch (git.handler AND save.handler) goes
+ * through here so the two paths cannot drift again; the result spreads into
+ * the IPC envelope (`{ success: false, ...describeGitFailure(e, token) }`).
  */
-export function describeGitError(e: unknown, token: string | undefined): string {
-  const raw = e instanceof Error ? e.message : String(e)
-  const msg = redactToken(raw, token)
-  if (msg.startsWith(GIT_AUTH_FAILED_ERROR)) return msg
-  // Prefix checked on the RAW text: redaction must only touch git's detail,
-  // never our own sentence (a short token could match letters in it).
-  if (raw.startsWith(GIT_PUSH_TRANSIENT_ERROR)) {
-    return GIT_PUSH_TRANSIENT_ERROR + redactToken(raw.slice(GIT_PUSH_TRANSIENT_ERROR.length), token)
-  }
-  if (isGitAuthError(msg)) return `${GIT_AUTH_FAILED_ERROR} (${msg.split('\n')[0]})`
-  if (isPushRejectedError(msg)) return GIT_PUSH_REJECTED_ERROR
-  if (isTransientRemoteError(msg)) return `${GIT_REMOTE_TRANSIENT_ERROR} (${transientDetail(msg)})`
-  return msg
+export function describeGitFailure(e: unknown, token: string | undefined): GitFailure {
+  if (e instanceof GitCodedError)
+    return scrubGitFailure(gitFailureOf(e), (s) => redactToken(s, token))
+  const msg = redactToken(gitFailureOf(e).error, token)
+  if (isGitAuthError(msg)) return gitFailure('GIT_AUTH_FAILED', msg.split('\n')[0])
+  if (isPushRejectedError(msg)) return gitFailure('GIT_PUSH_REJECTED')
+  if (isTransientRemoteError(msg)) return gitFailure('GIT_REMOTE_TRANSIENT', transientDetail(msg))
+  return { error: msg }
+}
+
+/**
+ * `code` wrapping a caught error (pull / merge "succeeded but importing …
+ * failed"), redacted like {@link describeGitFailure}: a coded inner error
+ * travels as `errorCause` so the renderer words it too.
+ */
+export function describeWrappedGitFailure(
+  code: GitErrorCode,
+  inner: unknown,
+  token: string | undefined,
+): GitFailure {
+  return scrubGitFailure(wrappedGitFailure(code, inner), (s) => redactToken(s, token))
+}
+
+/** {@link describeGitFailure} as a throwable, for helpers that rethrow. */
+export function describedGitError(e: unknown, token: string | undefined): Error {
+  const f = describeGitFailure(e, token)
+  return f.errorCode
+    ? new GitCodedError(f.errorCode, {
+        detail: f.errorDetail,
+        params: f.errorParams,
+        inner: f.errorCause,
+        cause: e,
+      })
+    : new Error(f.error, { cause: e })
 }

@@ -59,9 +59,10 @@ export default function McpImage({ data, mimeType, alt, testId, className, downl
     >
       <ImageOff size={13} className="shrink-0" />
       <span>
-        {t(incomplete ? 'mcp.result.imageIncomplete' : 'mcp.result.imageFailed')
-          .replace('{bytes}', String(base64ByteLength(data)))
-          .replace('{mime}', mimeType || '?')}
+        {t(incomplete ? 'mcp.result.imageIncomplete' : 'mcp.result.imageFailed', {
+          bytes: String(base64ByteLength(data)),
+          mime: mimeType || '?',
+        })}
       </span>
       {downloadName && (
         <button

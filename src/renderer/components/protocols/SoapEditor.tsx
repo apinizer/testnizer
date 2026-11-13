@@ -1,4 +1,6 @@
 import { useEffect } from 'react'
+import { useTranslation } from '../../lib/i18n'
+import { withRunShortcut } from '../../lib/run-shortcut'
 import { Send } from 'lucide-react'
 import { useSoapStore, type SoapMode } from '../../stores/soap.store'
 import { useResponseStore } from '../../stores/response.store'
@@ -24,12 +26,13 @@ function RawXmlBodyEditor() {
   const setRawXml = useSoapStore((s) => s.setRawXml)
   return (
     <div className="h-full overflow-hidden rounded-lg border border-[var(--border)]">
-      <MonacoWrapper value={rawXml} onChange={setRawXml} language="xml" />
+      <MonacoWrapper runsActiveRequest value={rawXml} onChange={setRawXml} language="xml" />
     </div>
   )
 }
 
 export default function SoapEditor() {
+  const { t } = useTranslation()
   const parsedWsdl = useSoapStore((s) => s.parsedWsdl)
   const sendSoap = useSoapStore((s) => s.sendSoap)
   const cancelSoap = useSoapStore((s) => s.cancelSoap)
@@ -49,11 +52,11 @@ export default function SoapEditor() {
   }, [activeTabId])
 
   const detailTabs: { key: SoapDetailTab; label: string }[] = [
-    { key: 'body', label: 'Body' },
-    { key: 'auth', label: 'Auth' },
-    { key: 'headers', label: 'Headers' },
+    { key: 'body', label: t('request.body') },
+    { key: 'auth', label: t('soap.tabAuth') },
+    { key: 'headers', label: t('request.headers') },
     // Run settings (issue #304) — the HTTP Settings tab's Critical switch.
-    { key: 'settings', label: 'Settings' },
+    { key: 'settings', label: t('request.settings') },
   ]
 
   return (
@@ -88,7 +91,7 @@ export default function SoapEditor() {
                     border: 'none',
                   }}
                 >
-                  {m === 'wsdl' ? 'WSDL Import' : 'Manual'}
+                  {m === 'wsdl' ? t('soap.modeWsdl') : t('soap.modeManual')}
                 </button>
               )
             })}
@@ -183,22 +186,27 @@ export default function SoapEditor() {
               type="button"
               onClick={() => (isLoading ? cancelSoap() : sendSoap())}
               disabled={!isLoading && mode === 'wsdl' && !!parsedWsdl && !selectedOperation}
+              title={
+                !isLoading && !(mode === 'wsdl' && parsedWsdl && !selectedOperation)
+                  ? withRunShortcut(t('soap.send'))
+                  : undefined
+              }
               data-testid="soap-send"
               className="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg py-2.5 font-medium text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               style={{ background: isLoading ? '#cc2200' : 'var(--accent)', border: 'none' }}
             >
               <Send size={14} />
-              {isLoading ? 'Cancel' : 'Send SOAP Request'}
+              {isLoading ? t('soap.cancel') : t('soap.send')}
             </button>
             <button
               type="button"
               onClick={() => openWsSecurityToolWith(rawXml, 'WS-Security')}
               disabled={!rawXml}
-              title="Open current request body in WS-Security Tool"
+              title={t('soap.openInWsseTitle')}
               className="cursor-pointer rounded-lg border px-3 py-2.5 font-medium transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
               style={{ borderColor: 'var(--border)', color: 'var(--text)' }}
             >
-              Open in WSSE Tool
+              {t('soap.openInWsse')}
             </button>
           </div>
         </div>

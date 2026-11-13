@@ -7,6 +7,8 @@
 // Workbench.tsx, but the v1.4.4 menu fix needs it from AppShell too.
 
 import { useTabsStore } from '../stores/tabs.store'
+import { t } from './i18n'
+import type { Tab } from '../types'
 import { forgetStoredAuth } from './stored-auth-credentials'
 import { useRequestStore } from '../stores/request.store'
 import { useSoapStore } from '../stores/soap.store'
@@ -26,10 +28,17 @@ import { useMockMcpStore } from '../stores/mock-mcp.store'
  * disposes any live subscription/connection that tab owns.
  */
 export function cleanupTabState(tabId: string): void {
-  const allTabs = useTabsStore.getState().tabs
-  const closing = allTabs.find((t) => t.id === tabId)
-  if (!closing) return
+  const closing = useTabsStore.getState().tabs.find((t) => t.id === tabId)
+  if (closing) releaseTabState(closing)
+}
 
+/**
+ * The teardown itself, for a tab that may not be in the live tab strip: a
+ * hidden project's tabs exist only in its stashed snapshot, and closing that
+ * project's header tab must still drop their slices and connections.
+ */
+export function releaseTabState(closing: Tab): void {
+  const tabId = closing.id
   useRequestStore.getState().removeTabState(tabId)
   forgetStoredAuth(tabId)
   useSoapStore.getState().removeTabState(tabId)
@@ -65,7 +74,7 @@ export function closeTabSafely(tabId: string, options?: { force?: boolean }): bo
   const target = tabs.tabs.find((t) => t.id === tabId)
   if (!target) return false
   if (!options?.force && target.isDirty) {
-    const ok = window.confirm('This tab has unsaved changes. Close anyway?')
+    const ok = window.confirm(t('tabStrip.confirmCloseUnsaved'))
     if (!ok) return false
   }
   cleanupTabState(tabId)

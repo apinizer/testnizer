@@ -80,6 +80,9 @@ vi.mock('electron-store', () => ({ default: FakeStore }))
 const { registerGitHandlers } = await import('../../../src/main/ipc/git.handler')
 const { registerSaveHandlers } = await import('../../../src/main/ipc/save.handler')
 const gitConfig = await import('../../../src/main/lib/git-config')
+const { GIT_ERROR_TEXT } = await import('../../../src/shared/git-errors')
+/** The fixed part of the "nothing lost, push again" sentence (before git's detail). */
+const TRANSIENT_SENTENCE = GIT_ERROR_TEXT.GIT_PUSH_TRANSIENT.split(' ({detail})')[0]
 
 let root: string
 let fx: RealGitFixture
@@ -180,8 +183,8 @@ describe('git:push — transient remote error (GitHub 500)', () => {
 
     const first = await fx.call<PushData>('git:push', fx.on(a).projectId)
     expect(first.success).toBe(false)
-    expect(first.error).toContain(gitConfig.GIT_PUSH_TRANSIENT_ERROR)
-    expect(first.error).not.toBe(gitConfig.GIT_PUSH_REJECTED_ERROR)
+    expect((first as { errorCode?: string }).errorCode).toBe('GIT_PUSH_TRANSIENT')
+    expect(first.error).toContain(TRANSIENT_SENTENCE)
     expect(hookRuns()).toBe(3) // 1 attempt + 2 retries
     expect(remoteCommitCount('main')).toBe(0)
     // The commit is safe locally.
@@ -202,7 +205,8 @@ describe('git:push — transient remote error (GitHub 500)', () => {
     const res = await fx.call<PushData>('git:push', fx.on(a).projectId)
     expect(res.success).toBe(false)
     expect(hookRuns()).toBe(1)
-    expect(res.error ?? '').not.toContain(gitConfig.GIT_PUSH_TRANSIENT_ERROR ?? '\u0000')
+    expect((res as { errorCode?: string }).errorCode).not.toBe('GIT_PUSH_TRANSIENT')
+    expect(res.error ?? '').not.toContain(TRANSIENT_SENTENCE)
   })
 })
 
@@ -245,7 +249,8 @@ describe('save:gitPush / save:git (temp clone) — retried, one commit', () => {
     installFlakyHook(3)
     const res = await fx.call('save:gitPush', { projectId: fx.on(a).projectId })
     expect(res.success).toBe(false)
-    expect(res.error).toContain(gitConfig.GIT_PUSH_TRANSIENT_ERROR)
+    expect((res as { errorCode?: string }).errorCode).toBe('GIT_PUSH_TRANSIENT')
+    expect(res.error).toContain(TRANSIENT_SENTENCE)
     expect(remoteCommitCount('main')).toBe(before)
     // Retry from the UI → exactly one new commit.
     await fx.ok('save:gitPush', { projectId: a.projectId })
@@ -322,7 +327,7 @@ describe('save:gitPush / save:git (temp clone) — an unchanged project makes no
 
     // The lost-ack click: on HEAD the first call threw before saving the remote
     // config, so the retry is the one that has to save it, or the toolbar
-    // Push / Pull keep answering "Git yapılandırması bulunamadı".
+    // Push / Pull keep answering GIT_CONFIG_MISSING.
     storeState.sets = []
     const second = await fx.ok<{ message?: string }>('save:git', payload)
     expect(second.message).toBe('No changes to push')
@@ -348,7 +353,8 @@ describe('save:git / save:gitPush / save:gitPull — the temp clone is removed o
     const dir = isolateTmp()
     const res = await fx.call('save:gitPush', { projectId: fx.on(a).projectId })
     expect(res.success).toBe(false)
-    expect(res.error).toContain(gitConfig.GIT_PUSH_TRANSIENT_ERROR)
+    expect((res as { errorCode?: string }).errorCode).toBe('GIT_PUSH_TRANSIENT')
+    expect(res.error).toContain(TRANSIENT_SENTENCE)
     expect(clonesIn(dir)).toEqual([])
   })
 

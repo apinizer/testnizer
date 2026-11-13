@@ -555,10 +555,11 @@ export default function RunnerConfig({
             label became a bug report in the first place. */}
         {iterations > 1 && iterationDelay > 0 && (
           <div className="mb-4" style={{ fontSize: 12, color: 'var(--hint)', marginTop: -8 }}>
-            {t('runnerConfig.delayTotal')
-              .replace('{total}', String(delay + iterationDelay))
-              .replace('{delay}', String(delay))
-              .replace('{iterationDelay}', String(iterationDelay))}
+            {t('runnerConfig.delayTotal', {
+              total: String(delay + iterationDelay),
+              delay: String(delay),
+              iterationDelay: String(iterationDelay),
+            })}
           </div>
         )}
 

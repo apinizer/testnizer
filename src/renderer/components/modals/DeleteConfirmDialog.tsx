@@ -2,6 +2,8 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { AlertTriangle } from 'lucide-react'
 import Modal from '../shared/Modal'
 import { useTranslation } from '../../lib/i18n'
+import { formatCount } from '../../lib/plural'
+import UnsavedNamesList from './UnsavedNamesList'
 
 interface DeleteConfirmDialogProps {
   open: boolean
@@ -16,6 +18,12 @@ interface DeleteConfirmDialogProps {
   requireTyping?: boolean
   /** Optional custom description shown under the title */
   description?: string
+  /**
+   * Deleting a project with open unsaved requests: their names. The dialog
+   * then says how many edits are lost and lists them (the project-close
+   * dialog's list). Empty or absent → no such line.
+   */
+  unsavedNames?: string[]
 }
 
 export default function DeleteConfirmDialog({
@@ -27,6 +35,7 @@ export default function DeleteConfirmDialog({
   onCancel,
   requireTyping = false,
   description,
+  unsavedNames = [],
 }: DeleteConfirmDialogProps) {
   const { t, locale } = useTranslation()
   const [value, setValue] = useState('')
@@ -63,7 +72,7 @@ export default function DeleteConfirmDialog({
 
   // EN reads "Delete {type}", TR "{type} silinsin mi?" — the type can lead the
   // sentence, so capitalise whatever comes first (with the locale's casing).
-  const headingRaw = t('deleteConfirm.heading').replace('{type}', typeLabel ?? itemType)
+  const headingRaw = t('deleteConfirm.heading', { type: typeLabel ?? itemType })
   const heading = headingRaw.charAt(0).toLocaleUpperCase(locale) + headingRaw.slice(1)
   const [questionBefore, questionAfter = ''] = t('deleteConfirm.question').split('{name}')
   const [typeBefore, typeAfter = ''] = t('deleteConfirm.typeToConfirm').split('{word}')
@@ -113,6 +122,19 @@ export default function DeleteConfirmDialog({
             <strong>{itemName}</strong>
             {questionAfter}
           </p>
+
+          {unsavedNames.length > 0 && (
+            <div data-testid="delete-unsaved-warning" className="mt-3 text-sm text-[var(--text)]">
+              <p className="font-medium">
+                {formatCount(
+                  unsavedNames.length,
+                  t('deleteConfirm.unsavedLostOne'),
+                  t('deleteConfirm.unsavedLost'),
+                )}
+              </p>
+              <UnsavedNamesList names={unsavedNames} />
+            </div>
+          )}
 
           {requireTyping && (
             <>

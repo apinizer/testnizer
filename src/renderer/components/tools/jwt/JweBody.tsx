@@ -1,5 +1,6 @@
 import { useId, useMemo, useState } from 'react'
 import { useTranslation } from '../../../lib/i18n'
+import { formatCount } from '../../../lib/plural'
 import { useInvalidateOn } from '../../../lib/use-stale-guard'
 import KeyMaterialField from '../../shared/KeyMaterialField'
 import type { KeyMaterialSelection } from '../../shared/KeyMaterialPicker'
@@ -346,7 +347,12 @@ export default function JweBody(): React.JSX.Element {
           {inspected ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <Badge tone={inspected.kind === 'jwe' ? 'accent' : 'warning'}>
-                {inspected.kind.toUpperCase()} — {inspected.segments} segments
+                {inspected.kind.toUpperCase()} —{' '}
+                {formatCount(
+                  inspected.segments,
+                  t('tools.jwt.jweSegmentsOne'),
+                  t('tools.jwt.jweSegments'),
+                )}
               </Badge>
               {'header' in inspected ? (
                 <span className="font-mono text-[11px]" style={{ color: 'var(--muted)' }}>

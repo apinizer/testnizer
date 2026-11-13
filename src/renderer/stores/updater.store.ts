@@ -83,7 +83,7 @@ export const useUpdaterStore = create<UpdaterStore>((set, get) => ({
         .check()
         .then((result: { success: boolean; error?: string } | undefined) => {
           if (result && result.success === false) {
-            set({ status: 'error', errorMessage: result.error || 'Update check failed' })
+            set({ status: 'error', errorMessage: result.error || t('update.error') })
           }
         })
         .catch((err: Error) => {
@@ -111,7 +111,7 @@ export const useUpdaterStore = create<UpdaterStore>((set, get) => ({
         .download()
         .then((result: { success: boolean; error?: string } | undefined) => {
           if (result && result.success === false) {
-            set({ status: 'error', errorMessage: result.error || 'Download failed' })
+            set({ status: 'error', errorMessage: result.error || t('update.downloadFailed') })
           }
         })
         .catch((err: Error) => {
@@ -225,7 +225,7 @@ export function initUpdaterListeners(): (() => void) | undefined {
         store.setDownloadPercent(100)
         break
       case 'error':
-        store.setError(event.error || event.message || 'Unknown error')
+        store.setError(event.error || event.message || t('common.unknownError'))
         break
     }
   })

@@ -87,7 +87,7 @@ export default function SamlTool() {
         // The built document becomes the editor content so Sign / Verify can
         // act on it immediately ("paste XML or use the built one").
         setXml(doc.xml)
-        setStatus(t('tools.saml.built').replace('{id}', doc.id))
+        setStatus(t('tools.saml.built', { id: doc.id }))
       } else if (mode === 'sign') {
         const signed = await signSamlDocument({
           xml,

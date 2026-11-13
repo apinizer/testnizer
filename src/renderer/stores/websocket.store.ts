@@ -35,6 +35,9 @@ import {
 import { wsMetaOf, type WsRequestFields } from '../lib/realtime-meta'
 import { bindConnectionsToProject, releaseConnection } from '../lib/realtime-connections'
 import { patchTabSlice, readTabSlice, updateTabSlice, withoutTab } from '../lib/tab-slice'
+import { pinnedEvents } from '../lib/pinned-events'
+import { t } from '../lib/i18n'
+import { formatCount } from '../lib/plural'
 
 function defaultKv(key = '', value = '', enabled = true): KeyValuePair {
   return { id: makeId(), key, value, enabled }
@@ -45,6 +48,9 @@ type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error'
 function getWsApi() {
   return window.api?.ws
 }
+
+/** One `ws:event` payload, as the bridge types it. */
+type WsEvent = Parameters<Parameters<NonNullable<ReturnType<typeof getWsApi>>['onEvent']>[0]>[0]
 
 /** Snapshot of WebSocket state for per-tab caching. */
 interface TabWsState extends WithheldState, WsRequestFields {
@@ -302,7 +308,10 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
       const ws = getWsApi()
       if (!ws) {
-        set({ connectionState: 'error', errorMessage: 'WebSocket bridge unavailable' })
+        set({
+          connectionState: 'error',
+          errorMessage: t('common.bridgeUnavailable', { name: 'WebSocket' }),
+        })
         return
       }
 
@@ -321,24 +330,32 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
 
       // Subscribe BEFORE awaiting connect — main fires the 'open' event from
       // inside `connect()`, so attaching after would race against the event.
+      // The listener is pinned to the id the connect answers (tester finding
+      // 13): until then events wait, after it only that id's events land, and
+      // the final `close` removes it. Reading the id back from the slice let
+      // every connection's events in once a close had cleared it.
       const prevUnsub = get()._unsubscribe
       if (prevUnsub) prevUnsub()
-      const unsub = ws.onEvent((evt) => {
-        // Look up the expected connectionId from the owning tab's state
-        // (live or cached) — if the user has switched tabs we still want
-        // events to land in the right tab.
-        const live = get()
-        let expected: string | null
-        if (live._currentTabId === ownerTabId) {
-          expected = live.connectionId
-        } else if (ownerTabId !== null) {
-          expected = live._tabStates.get(ownerTabId)?.connectionId ?? null
-        } else {
-          expected = live.connectionId
-        }
-        // Ignore stray events from older connections (rapid reconnect).
-        if (expected && evt.connectionId !== expected) return
-
+      const pinned = pinnedEvents<WsEvent>(
+        (evt) => evt.connectionId,
+        (evt) => onOwnEvent(evt),
+        {
+          isControl: (evt) => evt.type !== 'message',
+          onDropped: (count) =>
+            appendRow(
+              systemRow(
+                'dropped',
+                formatCount(count, t('rt.droppedEarlyOne'), t('rt.droppedEarly')),
+              ),
+            ),
+        },
+      )
+      const offEvent = ws.onEvent((evt) => pinned.receive(evt))
+      const unsub = (): void => {
+        pinned.drop()
+        offEvent()
+      }
+      const onOwnEvent = (evt: WsEvent): void => {
         switch (evt.type) {
           case 'open':
             patchOwner((sl) => ({
@@ -375,9 +392,12 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
             )
             break
           case 'close':
+            // Final (reconnects keep the id and send `reconnecting` instead).
+            unsub()
             patchOwner((sl) => ({
               connectionState: 'disconnected',
               connectionId: null,
+              _unsubscribe: undefined,
               errorMessage:
                 evt.code && evt.code !== 1000
                   ? `Closed (${evt.code}${evt.reason ? `: ${evt.reason}` : ''})`
@@ -408,14 +428,14 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
             break
           }
         }
-      })
+      }
       set({ _unsubscribe: unsub })
 
       try {
         const wsStore = useWorkspaceStore.getState()
         const proxy = await connectionProxy(wsStore.activeProjectId)
         // Given up while the settings loaded (Cancel, the tab closed, its project left).
-        if (ownerSlice()?._pendingConnectId !== pendingConnectId) return
+        if (ownerSlice()?._pendingConnectId !== pendingConnectId) return unsub()
         const result = await ws.connect({
           ...proxy,
           url: resolvedUrl,
@@ -443,19 +463,30 @@ export const useWebSocketStore = create<WebSocketStore>((set, get) => {
           // promise resolves — keep `connected` state if it did, otherwise wait
           // for it. We always set the connectionId so the listener filter
           // accepts subsequent events.
+          // The id goes into the slice first, then the held events (`open`,
+          // or an early `close`) apply on top of it.
           const newId = result.data.connectionId
           patchOwner((sl) => ({
             connectionId: newId,
             connectionState: sl.connectionState === 'connected' ? 'connected' : 'connecting',
             _pendingConnectId: undefined,
           }))
+          pinned.pin(newId)
         } else {
           unsub()
-          patchOwner(() => ({
+          // The handshake's `error` event waited unpinned and is gone with the
+          // listener: its row is written here. A user Cancel cleared the
+          // pending id first and gets no error row.
+          const text = connectErrorText(result, t('connError.unknown.what'))
+          patchOwner((sl) => ({
             _unsubscribe: undefined,
             _pendingConnectId: undefined,
             connectionState: 'error',
-            errorMessage: connectErrorText(result, 'Connection failed'),
+            errorMessage: text,
+            messages:
+              sl._pendingConnectId === pendingConnectId
+                ? [...sl.messages, systemRow('error', text)]
+                : sl.messages,
           }))
         }
       } catch (e) {

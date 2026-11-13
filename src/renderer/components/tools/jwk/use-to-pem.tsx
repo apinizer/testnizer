@@ -114,7 +114,7 @@ export function useToPemMode(onAdd: AddKey): ModePanes {
           className="px-3 pt-3 text-xs font-medium"
           style={{ color: 'var(--green)' }}
         >
-          {t('tools.jwk.validLine').replace('{n}', String(verdict.count))}
+          {t('tools.jwk.validLine', { n: String(verdict.count) })}
         </div>
       ) : null}
       {keys.length === 0 && !pem && !error ? <Hint text={t('tools.jwk.hintToPem')} /> : null}

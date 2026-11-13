@@ -22,8 +22,9 @@ import { displayRunSourceLabel } from '../../lib/runner-source-label'
 import { displayRunEnvironment } from '../../lib/run-environment-label'
 import CriticalBadge from './CriticalBadge'
 import RunReportExportButtons from './RunReportExportButtons'
+import { keyRunResults, type KeyedRunResult } from '../../lib/run-result-key'
 import {
-  filterRunResults,
+  filterKeyedRunResults,
   runResultMethods,
   type RunResultTab,
 } from '../../lib/runner-result-filter'
@@ -118,7 +119,7 @@ interface RunnerResultsProps {
   onNewRun: () => void
   onRunAgain: () => void
   onViewAllRuns: () => void
-  selectedResultId: string | null
+  selectedResultKey: string | null
   onSelectResult: (id: string | null) => void
   /** When provided, the result detail header shows an "Open endpoint" button
    * that navigates the user to the endpoint editor tab so they can fix the
@@ -150,7 +151,7 @@ export default function RunnerResults({
   onNewRun,
   onRunAgain,
   onViewAllRuns,
-  selectedResultId,
+  selectedResultKey,
   onSelectResult,
   onOpenEndpoint,
   onReveal,
@@ -193,9 +194,20 @@ export default function RunnerResults({
       : 0
   const progress = totalCount > 0 ? (currentIndex / totalCount) * 100 : 0
 
+  // Every row's identity (phase + iteration + request + occurrence), computed
+  // over the whole run. Selection, the detail pane and the filtered list all
+  // use it — `endpointId` is shared by every iteration of a request, so keying
+  // by it selected all of them and always opened the first (finding 12).
+  const keyedResults = useMemo(() => keyRunResults(results), [results])
   const selectedResult = useMemo(
-    () => results.find((r) => r.endpointId === selectedResultId),
-    [results, selectedResultId],
+    () => keyedResults.find((row) => row.key === selectedResultKey)?.result,
+    [keyedResults, selectedResultKey],
+  )
+
+  /** More than one iteration ran — over the whole run, not the filtered list. */
+  const multiIteration = useMemo(
+    () => results.some((r) => (r.phase ?? 'main') === 'main' && (r.iteration ?? 1) > 1),
+    [results],
   )
 
   // The outcome tab, the search box and the method chips all narrow the same
@@ -203,8 +215,13 @@ export default function RunnerResults({
   // is unit-tested on its own. Everything downstream — setup/teardown
   // sections, iteration bucketing, the empty state — composes for free.
   const filteredResults = useMemo(
-    () => filterRunResults(results, { tab: activeFilter, text: searchText, methods: methodFilter }),
-    [results, activeFilter, searchText, methodFilter],
+    () =>
+      filterKeyedRunResults(keyedResults, {
+        tab: activeFilter,
+        text: searchText,
+        methods: methodFilter,
+      }),
+    [keyedResults, activeFilter, searchText, methodFilter],
   )
 
   /** Methods this run actually contains — chips that can never match are not offered. */
@@ -220,22 +237,23 @@ export default function RunnerResults({
   // Setup / teardown rows belong to no iteration — they bracket the whole run
   // and render as their own sections (issue #72).
   const setupRows = useMemo(
-    () => filteredResults.filter((r) => r.phase === 'setup'),
+    () => filteredResults.filter((row) => row.result.phase === 'setup'),
     [filteredResults],
   )
   const teardownRows = useMemo(
-    () => filteredResults.filter((r) => r.phase === 'teardown'),
+    () => filteredResults.filter((row) => row.result.phase === 'teardown'),
     [filteredResults],
   )
 
   const iterationGroups = useMemo(() => {
-    const map = new Map<number, EndpointRunResult[]>()
-    for (const r of filteredResults) {
+    const map = new Map<number, KeyedRunResult[]>()
+    for (const row of filteredResults) {
+      const r = row.result
       if (r.phase === 'setup' || r.phase === 'teardown') continue
       const iter = r.iteration && r.iteration > 0 ? r.iteration : 1
       const bucket = map.get(iter)
-      if (bucket) bucket.push(r)
-      else map.set(iter, [r])
+      if (bucket) bucket.push(row)
+      else map.set(iter, [row])
     }
     return Array.from(map.entries()).sort((a, b) => a[0] - b[0])
   }, [filteredResults])
@@ -290,20 +308,20 @@ export default function RunnerResults({
    */
   const ranAtLine = (ts: number | null): string => {
     const time = formatTime(ts)
-    if (!ts) return t('runResults.ranTodayAt').replace('{time}', time)
+    if (!ts) return t('runResults.ranTodayAt', { time })
     const started = new Date(ts)
     const now = new Date()
     const sameDay =
       started.getFullYear() === now.getFullYear() &&
       started.getMonth() === now.getMonth() &&
       started.getDate() === now.getDate()
-    if (sameDay) return t('runResults.ranTodayAt').replace('{time}', time)
+    if (sameDay) return t('runResults.ranTodayAt', { time })
     const date = started.toLocaleDateString(locale === 'tr' ? 'tr-TR' : [], {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
     })
-    return t('runResults.ranOnAt').replace('{date}', date).replace('{time}', time)
+    return t('runResults.ranOnAt', { date, time })
   }
 
   const formatDuration = (ms: number) => {
@@ -330,7 +348,7 @@ export default function RunnerResults({
   }
 
   const progressLine = (key: string): string =>
-    t(key).replace('{current}', String(currentIndex)).replace('{total}', String(totalCount))
+    t(key, { current: String(currentIndex), total: String(totalCount) })
 
   return (
     <div className="flex flex-1 overflow-hidden" lang={locale}>
@@ -503,7 +521,7 @@ export default function RunnerResults({
                     data-testid="runner-stop-critical"
                     style={{ color: '#cc2200', fontWeight: 600 }}
                   >
-                    {t('runLifecycle.stoppedCritical').replace('{name}', criticalStop.endpointName)}
+                    {t('runLifecycle.stoppedCritical', { name: criticalStop.endpointName })}
                   </span>
                 )}
                 {report?.stopReason && report.stopReason !== 'criticalFailed' && (
@@ -712,16 +730,12 @@ export default function RunnerResults({
           )}
           {setupRows.length > 0 && (
             <PhaseSection title={t('runLifecycle.setupSection')} testId="runner-phase-setup">
-              {setupRows.map((result, idx) => (
+              {setupRows.map(({ key, result }) => (
                 <ResultRow
-                  key={`setup-${result.endpointId}-${idx}`}
+                  key={key}
                   result={result}
-                  isSelected={result.endpointId === selectedResultId}
-                  onClick={() =>
-                    onSelectResult(
-                      result.endpointId === selectedResultId ? null : result.endpointId,
-                    )
-                  }
+                  isSelected={key === selectedResultKey}
+                  onClick={() => onSelectResult(key === selectedResultKey ? null : key)}
                   onReveal={onReveal && (() => onReveal(result.endpointId))}
                   revealIn={revealIn}
                 />
@@ -730,8 +744,8 @@ export default function RunnerResults({
           )}
           {iterationGroups.map(([iter, rows]) => {
             const collapsed = collapsedIterations.has(iter)
-            const scored = rows.filter((r) => !isSkippedStep(r))
-            const passed = scored.filter(endpointDidPass).length
+            const scored = rows.filter((row) => !isSkippedStep(row.result))
+            const passed = scored.filter((row) => endpointDidPass(row.result)).length
             const failed = scored.length - passed
             return (
               <div key={iter}>
@@ -744,7 +758,7 @@ export default function RunnerResults({
                     aria-expanded={!collapsed}
                   >
                     {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                    <span>{t('runResults.iteration').replace('{n}', String(iter))}</span>
+                    <span>{t('runResults.iteration', { n: String(iter) })}</span>
                     <span style={{ color: 'var(--hint)', fontWeight: 400, marginLeft: 6 }}>
                       (
                       {formatCount(
@@ -752,27 +766,21 @@ export default function RunnerResults({
                         t('runResults.requestsOne'),
                         t('runResults.requestsOther'),
                       )}
-                      {failed > 0
-                        ? t('runResults.failedSuffix').replace('{count}', String(failed))
-                        : ''}
+                      {failed > 0 ? t('runResults.failedSuffix', { count: String(failed) }) : ''}
                       {passed > 0 && failed === 0
-                        ? t('runResults.passedSuffix').replace('{count}', String(passed))
+                        ? t('runResults.passedSuffix', { count: String(passed) })
                         : ''}
                       )
                     </span>
                   </button>
                 )}
                 {!collapsed &&
-                  rows.map((result, idx) => (
+                  rows.map(({ key, result }) => (
                     <ResultRow
-                      key={`${iter}-${result.endpointId}-${idx}`}
+                      key={key}
                       result={result}
-                      isSelected={result.endpointId === selectedResultId}
-                      onClick={() =>
-                        onSelectResult(
-                          result.endpointId === selectedResultId ? null : result.endpointId,
-                        )
-                      }
+                      isSelected={key === selectedResultKey}
+                      onClick={() => onSelectResult(key === selectedResultKey ? null : key)}
                       onReveal={onReveal && (() => onReveal(result.endpointId))}
                       revealIn={revealIn}
                     />
@@ -786,16 +794,12 @@ export default function RunnerResults({
               note={t('runLifecycle.teardownNote')}
               testId="runner-phase-teardown"
             >
-              {teardownRows.map((result, idx) => (
+              {teardownRows.map(({ key, result }) => (
                 <ResultRow
-                  key={`teardown-${result.endpointId}-${idx}`}
+                  key={key}
                   result={result}
-                  isSelected={result.endpointId === selectedResultId}
-                  onClick={() =>
-                    onSelectResult(
-                      result.endpointId === selectedResultId ? null : result.endpointId,
-                    )
-                  }
+                  isSelected={key === selectedResultKey}
+                  onClick={() => onSelectResult(key === selectedResultKey ? null : key)}
                   onReveal={onReveal && (() => onReveal(result.endpointId))}
                   revealIn={revealIn}
                 />
@@ -816,11 +820,14 @@ export default function RunnerResults({
 
       {/* ═══ Right: Response detail pane ═══ */}
       {selectedResult && (
-        <div className="flex w-[48%] min-w-[360px] flex-col overflow-hidden border-l border-[var(--border)]">
+        <div
+          data-testid="runner-result-detail"
+          className="flex w-[48%] min-w-[360px] flex-col overflow-hidden border-l border-[var(--border)]"
+        >
           {/* Detail header: index + method + endpoint name */}
           <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-4 py-2">
             <span style={{ fontSize: 13, color: 'var(--hint)' }}>
-              {filteredResults.findIndex((r) => r.endpointId === selectedResultId) + 1}
+              {filteredResults.findIndex((row) => row.key === selectedResultKey) + 1}
             </span>
             <MethodLabel method={selectedResult.method} />
             <span
@@ -829,6 +836,22 @@ export default function RunnerResults({
             >
               {selectedResult.endpointName}
             </span>
+            {/* Which run of the request this is: every iteration shares the
+                name, so without it three rows open three identical headers. */}
+            {multiIteration && (selectedResult.phase ?? 'main') === 'main' && (
+              <span
+                data-testid="runner-result-detail-iteration"
+                className="shrink-0 text-xs text-[var(--muted)]"
+              >
+                {t('runResults.iteration', {
+                  n: String(
+                    selectedResult.iteration && selectedResult.iteration > 0
+                      ? selectedResult.iteration
+                      : 1,
+                  ),
+                })}
+              </span>
+            )}
             {onOpenEndpoint && (
               <button
                 type="button"
@@ -1199,6 +1222,8 @@ function ResultRow({
 
   return (
     <div
+      data-testid="runner-result-row"
+      data-selected={isSelected ? 'true' : 'false'}
       className="cursor-pointer border-b border-[var(--border)] px-5 py-3 transition-colors hover:bg-[var(--surface)]"
       style={{ background: isSelected ? 'var(--accent-light)' : undefined }}
       onClick={onClick}

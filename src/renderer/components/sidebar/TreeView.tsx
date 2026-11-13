@@ -47,6 +47,7 @@ import {
   readPathVariablesJson,
   type PathVariableLike,
 } from '../../../shared/path-variables'
+import { copyName } from '../../lib/copy-name'
 
 // Re-alias for flattenTree signature
 type TreeNode = TreeNodeType
@@ -780,7 +781,7 @@ export default function TreeView() {
         if (!result?.success) {
           const reason = result?.error || 'no response'
           console.error('savedRequest.create failed:', reason)
-          toast.error(`Failed to create request: ${reason}`)
+          toast.error(`${t('tree.createRequestFailed')}: ${reason}`)
           return
         }
         await refreshTree()
@@ -802,7 +803,9 @@ export default function TreeView() {
         }
       } catch (err) {
         console.error('Add Request from context menu failed:', err)
-        toast.error(`Failed to create request: ${(err as Error).message || 'unknown error'}`)
+        toast.error(
+          `${t('tree.createRequestFailed')}: ${(err as Error).message || t('tree.unknownError')}`,
+        )
       }
     },
     [activeProjectId, refreshTree],
@@ -831,16 +834,32 @@ export default function TreeView() {
       const target = pendingFolder
       setPendingFolder(null)
       if (!target || !activeProjectId) return
+      // The project and branch the folder is created in, taken BEFORE the
+      // first await: the reveal below must not land in another project the
+      // user switched to meanwhile.
+      const projectId = activeProjectId
+      const branchScope = useBranchStore.getState().getActiveBranchScope()
       try {
-        await window.api?.folder?.create({
-          project_id: activeProjectId,
+        const res = (await window.api?.folder?.create({
+          project_id: projectId,
           parent_id: target.parentFolderId,
           name,
           // Branch-stamp so a folder added on a non-default branch stays on it
           // (#8 — the exact reported repro).
-          branch_id: useBranchStore.getState().getActiveBranchScope(),
-        })
+          branch_id: branchScope,
+        })) as { success?: boolean; data?: { id?: string } } | undefined
         await refreshTree()
+        // The new folder sorts after its siblings — in a long tree that row
+        // is below the virtual window and never rendered, so the folder the
+        // user just named seemed not to appear. Reveal it (select + scroll),
+        // like the draft row it replaces — only while the user is still in
+        // that project and branch: `revealNode` clears the search box and
+        // moves the selection and scroll of whatever tree is active.
+        const id = res?.success ? res.data?.id : undefined
+        const stillHere =
+          useWorkspaceStore.getState().activeProjectId === projectId &&
+          useBranchStore.getState().getActiveBranchScope() === branchScope
+        if (id && stillHere) useWorkspaceStore.getState().revealNode(id)
       } catch {
         /* ignore */
       }
@@ -860,7 +879,7 @@ export default function TreeView() {
             const sr = result.data as Record<string, unknown> & { name: string; url: string }
             await window.api?.savedRequest?.create({
               ...sr,
-              name: `${sr.name} (copy)`,
+              name: copyName(sr.name),
             } as Parameters<typeof window.api.savedRequest.create>[0])
           }
         } else if (node.type === 'endpoint') {
@@ -876,24 +895,24 @@ export default function TreeView() {
             }
             await window.api?.endpoint?.create({
               ...ep,
-              name: `${ep.name} (copy)`,
+              name: copyName(ep.name),
             } as Parameters<typeof window.api.endpoint.create>[0])
           }
         } else if (node.type === 'folder') {
           // Server-side deep clone — single transaction inside
           // project.handler.ts duplicateFolderDeep().
-          const result = (await window.api?.folder?.duplicate(node.id)) as
+          const result = (await window.api?.folder?.duplicate(node.id, copyName(node.label))) as
             | { success: boolean; error?: string; data?: { newFolderId: string } }
             | undefined
           if (!result?.success) {
-            toast.error(result?.error || 'Folder duplication failed')
+            toast.error(result?.error || t('tree.folderDuplicateFailed'))
             return
           }
-          toast.success('Folder duplicated')
+          toast.success(t('tree.folderDuplicated'))
         } else if (node.type === 'module') {
           // Module-level (project root) duplication is handled by the
           // project hub menu (B3), not the tree node.
-          toast.error('Use the project Duplicate action from the Project Hub.')
+          toast.error(t('tree.duplicateProjectFromHub'))
           return
         }
         await refreshTree()
@@ -1049,7 +1068,9 @@ export default function TreeView() {
           name: folderNode.label,
         })) as { success: boolean; data?: { id: string }; error?: string }
         if (!createRes?.success || !createRes.data) {
-          toast.error(`${t('tree.suiteCreateFailed')}: ${createRes?.error || 'unknown error'}`)
+          toast.error(
+            `${t('tree.suiteCreateFailed')}: ${createRes?.error || t('tree.unknownError')}`,
+          )
           return
         }
         const importRes = (await window.api?.testSuite?.importEndpoints({
@@ -1067,7 +1088,9 @@ export default function TreeView() {
         // Done before reporting, so a warning lands next to what it describes.
         setActiveSidebarPage('tests')
         if (!importRes?.success) {
-          toast.error(`${t('tree.suiteCreateFailed')}: ${importRes?.error || 'unknown error'}`)
+          toast.error(
+            `${t('tree.suiteCreateFailed')}: ${importRes?.error || t('tree.unknownError')}`,
+          )
           return
         }
         const added = importRes.data?.added ?? 0
@@ -1078,7 +1101,9 @@ export default function TreeView() {
           toast.success(`${t('tree.suiteCreated')}: ${folderNode.label} (${added})`)
         }
       } catch (err) {
-        toast.error(`${t('tree.suiteCreateFailed')}: ${(err as Error).message || 'unknown error'}`)
+        toast.error(
+          `${t('tree.suiteCreateFailed')}: ${(err as Error).message || t('tree.unknownError')}`,
+        )
       }
     },
     [activeProjectId],
@@ -1184,14 +1209,14 @@ export default function TreeView() {
           ids,
         })
         if (!result.ok) {
-          toast.error(t('mock.fromFolderFailed').replace('{error}', result.error ?? ''))
+          toast.error(t('mock.fromFolderFailed', { error: result.error ?? '' }))
           return
         }
         toastMockImportResult(result)
         setActiveSidebarPage('mocks')
       } catch (err) {
         const error = err instanceof Error ? err.message : String(err)
-        toast.error(t('mock.fromFolderFailed').replace('{error}', error))
+        toast.error(t('mock.fromFolderFailed', { error }))
       }
     },
     [activeProjectId],

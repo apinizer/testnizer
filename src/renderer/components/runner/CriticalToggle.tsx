@@ -22,7 +22,7 @@ export default function CriticalToggle({
       type="button"
       draggable={false}
       aria-pressed={critical}
-      aria-label={t('runSequence.markCritical').replace('{name}', name)}
+      aria-label={t('runSequence.markCritical', { name })}
       title={t('settingsTab.criticalHelp')}
       data-testid="critical-toggle"
       onClick={(e) => {

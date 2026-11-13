@@ -1,4 +1,5 @@
 import { ipcMain } from 'electron'
+import { gitErrorResult } from '../../shared/git-errors'
 import {
   getBranchesByProject,
   getBranchById,
@@ -50,7 +51,7 @@ export function registerBranchHandlers(): void {
   ipcMain.handle('branch:rename', async (_event, id: string, name: string) => {
     try {
       const data = renameBranch(id, name)
-      if (!data) return { success: false, error: 'Branch not found' }
+      if (!data) return gitErrorResult('BRANCH_NOT_FOUND')
       return { success: true, data }
     } catch (e) {
       return { success: false, error: (e as Error).message }
@@ -60,7 +61,7 @@ export function registerBranchHandlers(): void {
   ipcMain.handle('branch:delete', async (_event, id: string) => {
     try {
       const ok = deleteBranch(id)
-      if (!ok) return { success: false, error: 'Cannot delete default branch' }
+      if (!ok) return gitErrorResult('BRANCH_DEFAULT_UNDELETABLE')
       return { success: true, data: true }
     } catch (e) {
       return { success: false, error: (e as Error).message }

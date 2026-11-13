@@ -132,7 +132,7 @@ function ResponseTab({
           }}
         >
           <div className="font-medium" style={{ color: '#cc2200' }}>
-            {t('graphql.errorsTitle').replace('{count}', String(gqlErrors.length))}
+            {t('graphql.errorsTitle', { count: String(gqlErrors.length) })}
           </div>
           <ul className="mt-1 space-y-0.5">
             {gqlErrors.slice(0, 5).map((err, i) => (
@@ -145,7 +145,7 @@ function ResponseTab({
             ))}
             {gqlErrors.length > 5 && (
               <li className="text-[var(--muted)] italic">
-                {t('graphql.moreErrors').replace('{count}', String(gqlErrors.length - 5))}
+                {t('graphql.moreErrors', { count: String(gqlErrors.length - 5) })}
               </li>
             )}
           </ul>
@@ -153,7 +153,7 @@ function ResponseTab({
       )}
 
       {/* Body */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0" data-testid="graphql-response-body">
         <MonacoWrapper value={response.body || ''} readOnly language="json" height="100%" />
       </div>
     </div>

@@ -16,10 +16,7 @@ const RUN_ACTION: Record<SecurityActionId, () => void> = {
 /**
  * The Security left-panel — Testnizer's differentiator, grouping all
  * key-material / PKI / token / identity capabilities in one place:
- *   • Stores — persistent, encrypted managed material (keystore library,
- *     certificates); populated as Keystore Studio (#59) and the Key Material
- *     Provider (#60) land.
- *   • Tools — the security tools (Keystore Studio, JWK, JOSE/JWT, WS-Security,
+ *   • the security tools (Keystore Studio, JWK, JOSE/JWT, WS-Security,
  *     TLS Inspector, OTP, Password Generator), sourced from `SECURITY_TOOLS`,
  *     then the action rows of `SECURITY_ACTIONS` (MCP Security Scan, #229) —
  *     same row, but they run an action instead of opening a tool tab.
@@ -113,10 +110,9 @@ export default function SecurityPanel() {
             nothing ever fulfilled: saving to the library writes a row that only
             Keystore Studio's own start screen reads. Two surfaces for one list
             is worse than one, and an empty section that never fills reads as a
-            lost save. The library lives with the tool that owns it. */}
-
-        {/* Tools section. */}
-        {!q && <SectionHeader label={t('security.tools')} />}
+            lost save. The library lives with the tool that owns it. With one
+            group left there is no group label either: the list starts right
+            under the search, like the Tools panel. */}
         {tools.map((tool) => (
           <SecurityRow
             key={tool.protocol}
@@ -146,23 +142,6 @@ export default function SecurityPanel() {
           <div style={{ padding: 12, fontSize: 12, color: T.ghost, textAlign: 'center' }}>—</div>
         )}
       </div>
-    </div>
-  )
-}
-
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <div
-      style={{
-        padding: '8px 10px 4px',
-        fontSize: 11,
-        fontWeight: 700,
-        letterSpacing: 0.4,
-        textTransform: 'uppercase',
-        color: T.muted,
-      }}
-    >
-      {label}
     </div>
   )
 }

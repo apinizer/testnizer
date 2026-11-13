@@ -106,7 +106,7 @@ export default function SavedMessagesPane({
               <button
                 type="button"
                 onClick={() => onDelete(m.id)}
-                aria-label={t('rt.saved.delete').replace('{name}', m.name)}
+                aria-label={t('rt.saved.delete', { name: m.name })}
                 title={t('common.delete')}
                 data-testid={id('delete')}
                 className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded border-none bg-transparent text-[var(--muted)] opacity-0 hover:text-[var(--red)] focus-visible:opacity-100 group-hover:opacity-100"

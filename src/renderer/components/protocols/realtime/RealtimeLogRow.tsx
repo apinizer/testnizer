@@ -68,9 +68,9 @@ export default function RealtimeLogRow({
         : 'text-[var(--orange)]'
   const id = (s: string): string => `${testIdPrefix}-row-${s}`
   const info = [
-    sizeBytes !== undefined ? t('rt.log.infoSize').replace('{size}', formatBytes(sizeBytes)) : '',
-    t('rt.log.infoTime').replace('{time}', formatDateTime(timestamp, locale)),
-    typeLabel ? t('rt.log.infoType').replace('{type}', typeLabel) : '',
+    sizeBytes !== undefined ? t('rt.log.infoSize', { size: formatBytes(sizeBytes) }) : '',
+    t('rt.log.infoTime', { time: formatDateTime(timestamp, locale) }),
+    typeLabel ? t('rt.log.infoType', { type: typeLabel }) : '',
   ]
     .filter(Boolean)
     .join(' · ')

@@ -15,19 +15,20 @@ import { useAuthStore } from '../../stores/auth.store'
 import { useTranslation } from '../../lib/i18n'
 import { formatDate } from '../../lib/format-datetime'
 import { toast } from '../../lib/toast'
+import { deleteProjectReleasingTabs, projectUnsavedNames } from '../../lib/close-project-tab'
 import { isMac } from '../../lib/platform'
 import { useProjectExportStore } from '../../stores/project-export.store'
 import type { Project } from '../../types'
 import ProjectIcon from '../shared/ProjectIcon'
 import DeleteConfirmDialog from '../modals/DeleteConfirmDialog'
 import appIcon from '../../assets/icon.png'
+import { copyName } from '../../lib/copy-name'
 
 export default function ProjectHome() {
   const projects = useWorkspaceStore((s) => s.projects)
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId)
   const fetchProjects = useWorkspaceStore((s) => s.fetchProjects)
   const setActiveProject = useWorkspaceStore((s) => s.setActiveProject)
-  const deleteProject = useWorkspaceStore((s) => s.deleteProject)
   const renameProject = useWorkspaceStore((s) => s.renameProject)
   const setShowNewProjectModal = useUIStore((s) => s.setShowNewProjectModal)
   const { t, locale } = useTranslation()
@@ -60,6 +61,7 @@ export default function ProjectHome() {
   const [renameValue, setRenameValue] = useState('')
   const renameInputRef = useRef<HTMLInputElement>(null)
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null)
+  const [deleteUnsavedNames, setDeleteUnsavedNames] = useState<string[]>([])
 
   // Close context menu on outside click
   useEffect(() => {
@@ -85,13 +87,16 @@ export default function ProjectHome() {
 
   function handleDeleteProject(project: Project) {
     setContextMenuId(null)
+    // Read now: the delete drops the snapshot these names come from.
+    setDeleteUnsavedNames(projectUnsavedNames(project.id))
     setDeleteTarget(project)
   }
 
   async function confirmDeleteProject() {
     if (!deleteTarget) return
-    await deleteProject(deleteTarget.id)
+    await deleteProjectReleasingTabs(deleteTarget.id)
     setDeleteTarget(null)
+    setDeleteUnsavedNames([])
   }
 
   function handleStartRename(project: Project) {
@@ -112,23 +117,24 @@ export default function ProjectHome() {
     try {
       const wsId = useWorkspaceStore.getState().activeWorkspaceId
       if (!wsId) {
-        toast.error('No active workspace')
+        toast.error(t('home.noActiveWorkspace'))
         return
       }
       const result = (await window.api?.project?.duplicate({
         projectId: project.id,
         workspaceId: wsId,
+        name: copyName(project.display_name || project.name),
       })) as { success: boolean; error?: string; data?: { projectId: string } } | undefined
       if (!result?.success) {
-        toast.error(result?.error || 'Project duplication failed')
+        toast.error(result?.error || t('home.duplicateFailed'))
         return
       }
-      toast.success(`Duplicated "${project.display_name || project.name}"`)
+      toast.success(t('home.duplicated', { name: project.display_name || project.name }))
       // Refresh project list so the new copy appears immediately.
       const wsState = useWorkspaceStore.getState()
       if (wsState.activeWorkspaceId) await wsState.fetchProjects(wsState.activeWorkspaceId)
     } catch (e) {
-      toast.error('Project duplication failed: ' + (e as Error).message)
+      toast.error(`${t('home.duplicateFailed')}: ${(e as Error).message}`)
     }
   }
 
@@ -392,6 +398,7 @@ export default function ProjectHome() {
               <div className="relative">
                 <button
                   type="button"
+                  data-testid="home-card-menu"
                   onClick={(e) => {
                     e.stopPropagation()
                     setContextMenuId(contextMenuId === project.id ? null : project.id)
@@ -468,7 +475,7 @@ export default function ProjectHome() {
                       }}
                     >
                       <Copy size={14} />
-                      {t('home.duplicate') || 'Duplicate'}
+                      {t('home.duplicate')}
                     </button>
                     <button
                       type="button"
@@ -484,6 +491,7 @@ export default function ProjectHome() {
                     </button>
                     <button
                       type="button"
+                      data-testid="home-card-delete"
                       onClick={(e) => {
                         e.stopPropagation()
                         handleDeleteProject(project)
@@ -557,8 +565,12 @@ export default function ProjectHome() {
         itemType={t('home.projectLabel')}
         requireTyping
         description={t('home.deleteProjectDesc')}
+        unsavedNames={deleteUnsavedNames}
         onConfirm={confirmDeleteProject}
-        onCancel={() => setDeleteTarget(null)}
+        onCancel={() => {
+          setDeleteTarget(null)
+          setDeleteUnsavedNames([])
+        }}
       />
     </div>
   )

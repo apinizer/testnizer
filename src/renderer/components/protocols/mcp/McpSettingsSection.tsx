@@ -35,9 +35,7 @@ export default function McpSettingsSection() {
           data-testid="mcp-settings-timeout"
           className="w-28 rounded-[7px] border border-[var(--border)] bg-[var(--white)] px-3 py-1.5 text-[var(--text)] outline-none"
         />
-        <span className="text-[var(--muted)]">
-          {t('mcp.settings.timeoutUnit').replace('{seconds}', seconds)}
-        </span>
+        <span className="text-[var(--muted)]">{t('mcp.settings.timeoutUnit', { seconds })}</span>
       </div>
       <p className="m-0 text-[11px] text-[var(--muted)]">{t('mcp.settings.timeoutHint')}</p>
       {/* Issue #304 — the HTTP Settings tab's switch, same store. */}

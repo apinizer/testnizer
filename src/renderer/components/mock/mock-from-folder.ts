@@ -186,15 +186,11 @@ async function responsesFor(
     const response = exampleToMockResponse(row)
     if (response) out.push(response)
     else {
-      warnings.push(
-        t('mock.fromFolderBinaryExample')
-          .replace('{example}', row.name)
-          .replace('{name}', target.name),
-      )
+      warnings.push(t('mock.fromFolderBinaryExample', { example: row.name, name: target.name }))
     }
   }
   if (out.some(holdsEscapedText)) {
-    warnings.push(t('mock.fromFolderLiteralVariables').replace('{name}', target.name))
+    warnings.push(t('mock.fromFolderLiteralVariables', { name: target.name }))
   }
   if (out.length > 0) return out
   return [{ name: 'default', statusCode: 200, headers: [], bodyType: 'json', body: '' }]
@@ -257,15 +253,13 @@ async function addRequest(
   }
   if (!isHttpMockableProtocol(target.protocol)) {
     result.warnings.push(
-      t('mock.fromFolderOtherProtocol')
-        .replace('{name}', target.name)
-        .replace('{protocol}', String(target.protocol)),
+      t('mock.fromFolderOtherProtocol', { name: target.name, protocol: String(target.protocol) }),
     )
     return
   }
   const mockPath = requestUrlToMockPath(target.url)
   if (!mockPath) {
-    result.warnings.push(t('mock.fromFolderSkipped').replace('{name}', target.name))
+    result.warnings.push(t('mock.fromFolderSkipped', { name: target.name }))
     return
   }
   // Only the first of two rows on one method + path could ever answer: SOAP
@@ -273,12 +267,7 @@ async function addRequest(
   const slot = `${target.method.toUpperCase()} ${mockPath.path}`
   const taken = bound.get(slot)
   if (taken !== undefined) {
-    result.warnings.push(
-      t('mock.fromFolderDuplicate')
-        .replace('{name}', target.name)
-        .replace('{first}', taken)
-        .replace('{slot}', slot),
-    )
+    result.warnings.push(t('mock.fromFolderDuplicate', { name: target.name, first: taken, slot }))
     return
   }
   bound.set(slot, target.name)
@@ -290,9 +279,7 @@ async function addRequest(
   })
   if (!endpoint?.success || !endpoint.data) {
     result.warnings.push(
-      t('mock.fromFolderEndpointFailed')
-        .replace('{name}', target.name)
-        .replace('{error}', endpoint?.error ?? ''),
+      t('mock.fromFolderEndpointFailed', { name: target.name, error: endpoint?.error ?? '' }),
     )
     return
   }
@@ -308,9 +295,7 @@ async function addRequest(
     if (created?.success) result.responsesCreated += 1
     else {
       result.warnings.push(
-        t('mock.fromFolderResponseFailed')
-          .replace('{name}', target.name)
-          .replace('{error}', created?.error ?? ''),
+        t('mock.fromFolderResponseFailed', { name: target.name, error: created?.error ?? '' }),
       )
     }
   }

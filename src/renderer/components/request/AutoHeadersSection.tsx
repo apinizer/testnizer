@@ -89,7 +89,7 @@ export default function AutoHeadersSection() {
         {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         <span>{t('autoHeaders.title')}</span>
         <span data-testid="auto-headers-count" className="text-[var(--hint)]">
-          {t('autoHeaders.hiddenCount').replace('{n}', String(count))}
+          {t('autoHeaders.hiddenCount', { n: String(count) })}
         </span>
       </button>
       {expanded && (

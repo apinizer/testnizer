@@ -68,7 +68,8 @@ export default function MockMcpScenariosTab({
             {tokenLocked && !draft.bearerToken && (
               <SecretLockedNote testId="mock-mcp-token-decrypt-failed" />
             )}
-            {/* Decision (issue #154): the token is project data, like every other mock setting. */}
+            {/* Issue #177: the token is blanked in every exported / committed file
+             *  (`src/main/lib/local-secrets.ts`) and stays on this machine. */}
             <div data-testid="mock-mcp-token-note" className="text-[11px] text-[var(--muted)]">
               {t('mockMcp.scenarios.tokenNote')}
             </div>

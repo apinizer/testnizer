@@ -5,6 +5,7 @@ import KeyMaterialField from '../shared/KeyMaterialField'
 import { SecretStorageUnencryptedNote } from '../shared/SecretStorageNotes'
 import type { KeyMaterialSelection } from '../shared/KeyMaterialPicker'
 import { useTranslation } from '../../lib/i18n'
+import { fillNodes } from '../../lib/i18n-nodes'
 import { formatDate } from '../../lib/format-datetime'
 import { platformLabel } from '../../lib/platform-label'
 import {
@@ -14,13 +15,18 @@ import {
   TOGGLE_CONSOLE_SHORTCUT,
 } from '../../lib/shortcut-format'
 import { useNumberDraft } from '../../lib/number-draft'
-import { isActiveProxy, type ProxySetting } from '../../../shared/request-settings'
+import {
+  isActiveProxy,
+  withProxyCredentials,
+  type ProxySetting,
+} from '../../../shared/request-settings'
 import { AppearanceLinkPane, ProjectTimeoutInput, SettingScopeNote } from './SettingScopeNote'
 import { describeProxy, onOff } from '../../lib/settings-scope'
 import { toast } from '../../lib/toast'
 import { projectDisplayName } from '../../lib/project-export'
 import { useProjectExportStore } from '../../stores/project-export.store'
 import ProjectScriptTrustRow from './ProjectScriptTrustRow'
+import { useHistoryClearConfirm } from '../shared/use-history-clear-confirm'
 
 // ════════════════════════════════════════════════════════════════
 // Shared types & styles
@@ -899,7 +905,7 @@ export function BranchesPane({
                     border: '1px solid var(--border)',
                   }}
                 >
-                  remote
+                  {t('projectSettings.remoteBadge')}
                 </span>
               )}
               {isActive && (
@@ -1189,29 +1195,19 @@ export function DataPane({
   onOpenImport: () => void
 }) {
   const { t } = useTranslation()
-  const [clearing, setClearing] = useState<'cache' | 'history' | null>(null)
+  // The History sidebar's clear flow: same project scope, same confirmation.
+  const historyClear = useHistoryClearConfirm({
+    projectId,
+    onCleared: (res) => {
+      if (res.ok) toast.success(t('data.clearHistorySuccess'))
+      else toast.error(res.error || t('data.clearHistoryFailed'))
+    },
+    onNothingToClear: () => toast.info(t('data.clearHistoryEmpty')),
+  })
 
   // Format picker → shared `exportProjectAs` (issue #208).
   function handleExport() {
     useProjectExportStore.getState().openPicker(projectId, projectDisplayName(projectId))
-  }
-
-  async function handleClearHistory() {
-    setClearing('history')
-    try {
-      const result = (await window.api?.history?.clear?.({ project_id: projectId })) as
-        | { success: boolean; error?: string }
-        | undefined
-      if (result?.success === false) {
-        toast.error(result.error || t('data.clearHistoryFailed'))
-      } else {
-        toast.success(t('data.clearHistorySuccess'))
-      }
-    } catch (err) {
-      console.error(err)
-      toast.error(t('data.clearHistoryFailed'))
-    }
-    setClearing(null)
   }
 
   return (
@@ -1234,11 +1230,13 @@ export function DataPane({
         <DataRow
           title={t('data.clearHistory')}
           description={t('data.clearHistoryDesc')}
-          buttonLabel={clearing === 'history' ? '…' : t('data.clearHistoryBtn')}
+          buttonLabel={historyClear.busy ? '…' : t('data.clearHistoryBtn')}
           destructive
-          onClick={handleClearHistory}
+          testId="data-clear-history-btn"
+          onClick={() => void historyClear.ask()}
         />
       </div>
+      {historyClear.dialog}
     </div>
   )
 }
@@ -1248,12 +1246,14 @@ function DataRow({
   description,
   buttonLabel,
   destructive,
+  testId,
   onClick,
 }: {
   title: string
   description: string
   buttonLabel: string
   destructive?: boolean
+  testId?: string
   onClick: () => void
 }) {
   return (
@@ -1269,6 +1269,7 @@ function DataRow({
       </div>
       <button
         type="button"
+        data-testid={testId}
         onClick={onClick}
         className="cursor-pointer rounded-[7px] px-4 py-2"
         style={{
@@ -1507,15 +1508,13 @@ export function CertificatesPane({
     { id: '', label: t('tls.auto') },
     {
       id: 'TLSv1',
-      label: 'TLS 1.0 (legacy — via system curl)',
-      title:
-        'TLS 1.0 is deprecated (RFC 8996). Selecting it routes this request through the system curl binary, which can still negotiate legacy protocols.',
+      label: t('tls.legacyLabel', { version: '1.0' }),
+      title: t('tls.legacyHint', { version: '1.0' }),
     },
     {
       id: 'TLSv1.1',
-      label: 'TLS 1.1 (legacy — via system curl)',
-      title:
-        'TLS 1.1 is deprecated (RFC 8996). Selecting it routes this request through the system curl binary, which can still negotiate legacy protocols.',
+      label: t('tls.legacyLabel', { version: '1.1' }),
+      title: t('tls.legacyHint', { version: '1.1' }),
     },
     { id: 'TLSv1.2', label: 'TLS 1.2' },
     { id: 'TLSv1.3', label: 'TLS 1.3' },
@@ -1595,19 +1594,20 @@ export function CertificatesPane({
                 lineHeight: 1.5,
               }}
             >
-              <strong>Legacy TLS notice:</strong> TLS 1.0/1.1 are deprecated by RFC 8996. Requests
-              using these versions are routed through the system <code>curl</code> binary (Schannel
-              on Windows, Secure Transport on macOS, OpenSSL on Linux). If <code>curl</code>
-              is missing on this machine the request will fail with a clear error — install it from{' '}
-              <a
-                href="https://curl.se/download.html"
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ color: 'inherit', textDecoration: 'underline' }}
-              >
-                curl.se/download.html
-              </a>
-              .
+              {fillNodes(t('projectSettings.legacyTlsNotice'), {
+                label: <strong>{t('projectSettings.legacyTlsLabel')}</strong>,
+                curl: <code>curl</code>,
+                link: (
+                  <a
+                    href="https://curl.se/download.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: 'inherit', textDecoration: 'underline' }}
+                  >
+                    curl.se/download.html
+                  </a>
+                ),
+              })}
             </div>
           )}
 
@@ -2048,6 +2048,15 @@ export function ProxyPane({
   function update(patch: Partial<ProjectProxy>) {
     onChange({ proxy: { ...proxy, ...patch } })
   }
+  // Both fields cleared = no login (`withProxyCredentials`): an empty
+  // `{username:'', password:''}` made every request fail (tester report 2026-11-11).
+  const setLogin = (username: string, password: string): void =>
+    onChange({
+      proxy: {
+        ...withProxyCredentials({ ...proxy, auth: { username, password } }),
+        mode: proxy.mode,
+      },
+    })
   const followApp = (): void => onChange({ proxy: null })
   // Draft-backed: clearing the box wrote port 0, which is not a port.
   const portDraft = useNumberDraft({
@@ -2101,6 +2110,7 @@ export function ProxyPane({
             <div>
               <Label text={t('proxy.proxyType')} />
               <select
+                data-testid="project-proxy-type"
                 value={proxy.proxyType || 'http'}
                 onChange={(e) => update({ proxyType: e.target.value as ProjectProxy['proxyType'] })}
                 style={{ ...BASE_INP, cursor: 'pointer' }}
@@ -2116,6 +2126,7 @@ export function ProxyPane({
               <div>
                 <Label text={t('proxy.host')} />
                 <input
+                  data-testid="project-proxy-host"
                   value={proxy.host || ''}
                   onChange={(e) => update({ host: e.target.value })}
                   placeholder="127.0.0.1"
@@ -2126,6 +2137,7 @@ export function ProxyPane({
                 <Label text={t('proxy.port')} />
                 <input
                   type="number"
+                  data-testid="project-proxy-port"
                   {...portDraft.inputProps}
                   style={{ ...BASE_INP, fontFamily: 'var(--font-mono)' }}
                 />
@@ -2134,6 +2146,7 @@ export function ProxyPane({
             <div className="mt-3">
               <Label text={t('proxy.bypass')} />
               <input
+                data-testid="project-proxy-bypass"
                 value={proxy.bypass || ''}
                 onChange={(e) => update({ bypass: e.target.value })}
                 placeholder={t('proxy.bypassPlaceholder')}
@@ -2150,12 +2163,9 @@ export function ProxyPane({
               <div>
                 <Label text={t('proxy.username')} />
                 <input
+                  data-testid="project-proxy-username"
                   value={proxy.auth?.username || ''}
-                  onChange={(e) =>
-                    update({
-                      auth: { username: e.target.value, password: proxy.auth?.password || '' },
-                    })
-                  }
+                  onChange={(e) => setLogin(e.target.value, proxy.auth?.password || '')}
                   style={BASE_INP}
                 />
               </div>
@@ -2163,12 +2173,9 @@ export function ProxyPane({
                 <Label text={t('proxy.password')} />
                 <input
                   type="password"
+                  data-testid="project-proxy-password"
                   value={proxy.auth?.password || ''}
-                  onChange={(e) =>
-                    update({
-                      auth: { username: proxy.auth?.username || '', password: e.target.value },
-                    })
-                  }
+                  onChange={(e) => setLogin(proxy.auth?.username || '', e.target.value)}
                   style={BASE_INP}
                 />
               </div>

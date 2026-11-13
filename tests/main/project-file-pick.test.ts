@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { pickProjectFile } from '../../src/main/lib/project-file'
+import { GitCodedError, GIT_ERROR_TEXT } from '../../src/shared/git-errors'
 
 describe('pickProjectFile', () => {
   it('prefers the slug the project would be written as', () => {
@@ -14,7 +15,22 @@ describe('pickProjectFile', () => {
     expect(pickProjectFile(['whatever.json'], 'Acme APIs')).toBe('whatever.json')
   })
   it('refuses to guess between several non-matching files', () => {
-    expect(() => pickProjectFile(['a.json', 'b.json'], 'Acme APIs')).toThrow(/birden fazla/)
-    expect(() => pickProjectFile([], 'x')).toThrow(/bulunamadı/)
+    const codeOf = (fn: () => unknown): unknown => {
+      try {
+        fn()
+      } catch (e) {
+        expect(e).toBeInstanceOf(GitCodedError)
+        return e
+      }
+      return undefined
+    }
+    expect(codeOf(() => pickProjectFile(['a.json', 'b.json'], 'Acme APIs'))).toMatchObject({
+      code: 'GIT_PROJECT_FILE_AMBIGUOUS',
+      params: { files: 'a.json, b.json', name: 'Acme-APIs.json' },
+    })
+    expect(codeOf(() => pickProjectFile([], 'x'))).toMatchObject({
+      code: 'GIT_PROJECT_FILE_MISSING',
+      message: GIT_ERROR_TEXT.GIT_PROJECT_FILE_MISSING,
+    })
   })
 })

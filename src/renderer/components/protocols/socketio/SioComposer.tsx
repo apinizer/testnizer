@@ -1,6 +1,8 @@
 import { Plus, Save, Send } from 'lucide-react'
 import { useSocketIOStore } from '../../../stores/socketio.store'
 import { useTranslation } from '../../../lib/i18n'
+import { isModEnterChord } from '../../../lib/shortcut-chords'
+import { withRunShortcut } from '../../../lib/run-shortcut'
 import { formatCount } from '../../../lib/plural'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { Checkbox, GhostButton, PrimaryButton } from '../../mock-mcp/ui'
@@ -41,7 +43,8 @@ export default function SioComposer() {
             value={emitEvent}
             onChange={setEmitEvent}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && connected) void emit()
+              // Mod+Enter belongs to the global chord (one press, one emit).
+              if (e.key === 'Enter' && !isModEnterChord(e) && connected) void emit()
             }}
             placeholder={t('socketio.eventNamePlaceholder')}
             data-testid="socketio-event-name"
@@ -56,6 +59,8 @@ export default function SioComposer() {
           <PrimaryButton
             onClick={() => void emit()}
             disabled={!connected}
+            // While disconnected the chord connects instead (`run-active-request.ts`).
+            title={connected ? withRunShortcut(t('socketio.emit')) : undefined}
             data-testid="socketio-emit"
             className="h-8"
           >
@@ -105,7 +110,7 @@ export default function SioComposer() {
           onLoad={loadSaved}
           onRename={renameSaved}
           onDelete={deleteSaved}
-          onAdd={() => addSaved(t('rt.saved.defaultName').replace('{n}', String(saved.length + 1)))}
+          onAdd={() => addSaved(t('rt.saved.defaultName', { n: String(saved.length + 1) }))}
           testIdPrefix="socketio"
         />
       </div>

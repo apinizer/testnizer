@@ -36,7 +36,7 @@ export default function UserMenu() {
   async function reportIssue(): Promise<void> {
     const result = await window.api.app.reportIssue()
     if (!result.success) {
-      toast.error(t('userMenu.reportIssueFailed').replace('{error}', result.error ?? ''))
+      toast.error(t('userMenu.reportIssueFailed', { error: result.error ?? '' }))
     }
   }
 
@@ -60,6 +60,7 @@ export default function UserMenu() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        data-testid="user-menu-trigger"
         title={t('userMenu.title')}
         aria-haspopup="menu"
         aria-expanded={open}

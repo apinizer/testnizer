@@ -314,7 +314,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   const live = pastRunOpen ? undefined : liveRun
   /** Why the last run produced nothing (main's error), for the empty results view. */
   const [runError, setRunError] = useState<string | null>(null)
-  // Persist the inspected run snapshot too (not just the selectedResultId).
+  // Persist the inspected run snapshot too (not just the selectedResultKey).
   // Without this, opening an All Runs detail → switching tabs → coming back
   // restored `view='results'` via runner-view-${tabId} but `results`/`report`
   // stayed at their empty initial state, so the user landed on a blank
@@ -382,29 +382,29 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
   // view) does not drop the user back to an unscoped blank state
   // (v1.4.2 T-5.6, T-12.5).
   const resultsStorageKey = runnerKey('results', tabId)
-  const [selectedResultId, setSelectedResultId] = useState<string | null>(() => {
+  const [selectedResultKey, setSelectedResultKey] = useState<string | null>(() => {
     if (!resultsStorageKey) return null
     try {
       const stored = sessionStorage.getItem(resultsStorageKey)
       if (!stored) return null
-      const parsed = JSON.parse(stored) as { selectedResultId?: string | null }
-      return parsed.selectedResultId ?? null
+      const parsed = JSON.parse(stored) as { selectedResultKey?: string | null }
+      return parsed.selectedResultKey ?? null
     } catch {
       return null
     }
   })
-  // Persist `selectedResultId` so the detail panel survives tab switches
+  // Persist `selectedResultKey` so the detail panel survives tab switches
   // (v1.4.2 T-5.6). State that the user does not mind being re-derived
   // (results, report) is rebuilt by the runner-report sessionStorage
   // bridge.
   useEffect(() => {
     if (!resultsStorageKey) return
-    if (selectedResultId) {
-      sessionStorage.setItem(resultsStorageKey, JSON.stringify({ selectedResultId }))
+    if (selectedResultKey) {
+      sessionStorage.setItem(resultsStorageKey, JSON.stringify({ selectedResultKey }))
     } else {
       sessionStorage.removeItem(resultsStorageKey)
     }
-  }, [selectedResultId, resultsStorageKey])
+  }, [selectedResultKey, resultsStorageKey])
 
   // Mirror the full run snapshot (results / report / startedAt) so a tab
   // switch + return doesn't blank the results detail view. Only persists
@@ -670,6 +670,9 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setResults(data.results ?? [])
       setReport(data.report ?? null)
       setRunStartedAt(data.startedAt ?? 0)
+      // A row key names a row of ONE run; a key left from another run would
+      // open an unrelated row of this one.
+      setSelectedResultKey(null)
       setRunSourceLabel(data.sourceLabel || 'Runner')
       setResultsOrigin(asRunOrigin(data.origin) ?? runOriginFromSourceLabel(data.sourceLabel))
       setPastRunOpen(true)
@@ -730,7 +733,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
           setRunError(null)
           setResults([])
           setReport(null)
-          setSelectedResultId(null)
+          setSelectedResultKey(null)
         },
         payload:
           // Quick Run is the THIRD caller of `runner:execute`, and it was still
@@ -1177,7 +1180,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
         setRunError(null)
         setResults([])
         setReport(null)
-        setSelectedResultId(null)
+        setSelectedResultKey(null)
       },
       payload: buildExecutePayload(
         {
@@ -1274,7 +1277,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
     setView('config')
     setResults([])
     setReport(null)
-    setSelectedResultId(null)
+    setSelectedResultKey(null)
     // Reset the suite scope. "New Run" is a fresh start — the user
     // explicitly wants the APIs-tree picker, not the previously-loaded
     // suite. Without this, picking a suite via the ScheduledTasks dropdown
@@ -1306,7 +1309,7 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
       setResults(histResults)
       setReport(histReport)
       setRunStartedAt(startedAt)
-      setSelectedResultId(null)
+      setSelectedResultKey(null)
       setRunSourceLabel(sourceLabel || 'Runner')
       // The run's own origin, not the tab's scope (issue #302).
       setResultsOrigin(origin ?? runOriginFromSourceLabel(sourceLabel))
@@ -1573,8 +1576,8 @@ export default function RunnerTab({ folderId, tabId, sessionKey }: RunnerTabProp
               onNewRun={handleNewRun}
               onRunAgain={handleRun}
               onViewAllRuns={handleViewAllRuns}
-              selectedResultId={selectedResultId}
-              onSelectResult={setSelectedResultId}
+              selectedResultKey={selectedResultKey}
+              onSelectResult={setSelectedResultKey}
               // Suite runs carry test-suite item ids → revealed in the Tests
               // sidebar; APIs / Runner runs → the APIs tree (issue #115).
               // Routed by the results' own origin — a past run opened from All

@@ -1,5 +1,6 @@
 import type { EndpointRunResult } from '../../shared/runner-types'
 import { endpointDidPass, isSkippedStep } from '../../shared/runner-verdict'
+import type { KeyedRunResult } from './run-result-key'
 
 /** The outcome tabs above the results list. */
 export type RunResultTab = 'all' | 'passed' | 'failed' | 'skipped' | 'errors' | 'console'
@@ -82,6 +83,18 @@ export function filterRunResults(
   f: RunResultFilter,
 ): EndpointRunResult[] {
   return results.filter((r) => matchesRunResultFilter(r, f))
+}
+
+/**
+ * The same filter over keyed rows (`lib/run-result-key.ts`), for the results
+ * list: each row keeps the key it got from the whole run, so selection and the
+ * detail pane agree whatever the filter hides.
+ */
+export function filterKeyedRunResults(
+  rows: readonly KeyedRunResult[],
+  f: RunResultFilter,
+): KeyedRunResult[] {
+  return rows.filter((row) => matchesRunResultFilter(row.result, f))
 }
 
 /**

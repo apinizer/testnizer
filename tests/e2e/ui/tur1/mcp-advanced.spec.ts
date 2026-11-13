@@ -436,7 +436,10 @@ uiTest.describe('Tur1 — MCP advanced [MST-147..150]', () => {
   uiTest('issue #152 Mock MCP legacy mode Reject serves 2026-07-28 only', async ({ window }) => {
     const port = await getFreePort()
     await navigateSidebar(window, 'mocks')
-    await window.getByTestId('mock-group-add-mcp').click()
+    // Header "+" → MCP: the MCP group's own "+" is hidden behind the empty
+    // state when the project has no mock server yet.
+    await window.getByTestId('mock-new').click()
+    await window.getByTestId('mock-new-option-mcp').click()
     await expect(window.getByTestId('mock-new-type-mcp')).toHaveAttribute('aria-checked', 'true')
     await window.getByTestId('mock-new-name').fill(`Modern only ${port}`)
     await window.getByTestId('mock-new-port').fill(String(port))

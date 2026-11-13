@@ -4,6 +4,7 @@ import { useMqttStore } from '../../../stores/mqtt.store'
 import MonacoWrapper from '../../shared/MonacoWrapper'
 import VariableAutocompleteInput from '../../shared/VariableAutocompleteInput'
 import { useTranslation } from '../../../lib/i18n'
+import { withRunShortcut } from '../../../lib/run-shortcut'
 import { MQTT_CONTENT_TYPES } from '../../../../shared/mqtt'
 import { isBinaryContentType } from '../../../../shared/realtime'
 import { RT_MONACO_LANGUAGE, beautify, canBeautify } from '../../../lib/realtime-format'
@@ -39,7 +40,7 @@ export default function MqttComposer() {
   const deleteSaved = useMqttStore((s) => s.deleteSavedMessage)
   const [beautifyError, setBeautifyError] = useState<string | null>(null)
   const [showProps, setShowProps] = useState(false)
-  const nextName = t('rt.saved.defaultName').replace('{n}', String(saved.length + 1))
+  const nextName = t('rt.saved.defaultName', { n: String(saved.length + 1) })
 
   const runBeautify = (): void => {
     const res = beautify(c.content, c.contentType)
@@ -116,6 +117,8 @@ export default function MqttComposer() {
             <PrimaryButton
               onClick={() => void publish()}
               disabled={!connected || !c.topic.trim()}
+              // While disconnected the chord connects instead (`run-active-request.ts`).
+              title={connected && c.topic.trim() ? withRunShortcut(t('mqtt.publish')) : undefined}
               data-testid="mqtt-publish"
               className="h-8"
             >
@@ -135,7 +138,7 @@ export default function MqttComposer() {
             data-testid="mqtt-beautify-error"
             className="m-0 text-[12px] text-[var(--red)]"
           >
-            {t('ws.beautifyFailed').replace('{error}', beautifyError)}
+            {t('ws.beautifyFailed', { error: beautifyError })}
           </p>
         )}
         {v5 && showProps && (
@@ -150,6 +153,7 @@ export default function MqttComposer() {
         )}
         <div data-testid="mqtt-composer" className="min-h-0">
           <MonacoWrapper
+            runsActiveRequest
             value={c.content}
             onChange={(content) => setComposer({ content })}
             language={RT_MONACO_LANGUAGE[c.contentType]}

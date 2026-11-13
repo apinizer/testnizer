@@ -329,7 +329,7 @@ describe('issue #304 — Critical badge and stop reason in the Runner', () => {
         onNewRun={noop}
         onRunAgain={noop}
         onViewAllRuns={noop}
-        selectedResultId={null}
+        selectedResultKey={null}
         onSelectResult={noop}
       />,
     )

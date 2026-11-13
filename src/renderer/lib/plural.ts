@@ -1,3 +1,5 @@
+import { fillTemplate } from '../../shared/fill-template'
+
 /**
  * Issue #309 — the ONE way to write "<n> <noun>" ("1 entries" bug class).
  *
@@ -11,5 +13,5 @@
  * Turkish has no plural after a number, so its two strings are usually equal.
  */
 export function formatCount(n: number, one: string, other: string): string {
-  return (n === 1 ? one : other).replace('{count}', String(n))
+  return fillTemplate(n === 1 ? one : other, { count: String(n) })
 }

@@ -63,8 +63,18 @@ interface AutocompleteState {
   rowId: string
   field: 'key' | 'value'
   suggestions: string[]
+  /**
+   * The suggestion the user picked with the arrow keys, or `NO_PICK`. The list
+   * always opens with nothing picked: Tab / Enter accept a suggestion only
+   * after an explicit pick, otherwise they leave the typed text alone and Tab
+   * moves focus on (VS Code / Postman). Preselecting row 0 turned a typed
+   * `Authorization` into `Proxy-Authorization` (the exact match is not listed)
+   * and filled an untouched `Content-Type` value with `application/json`.
+   */
   selectedIndex: number
 }
+
+const NO_PICK = -1
 
 /** Autocomplete dropdown rendered via portal so it's never clipped */
 function AutocompleteDropdown({
@@ -72,13 +82,11 @@ function AutocompleteDropdown({
   suggestions,
   selectedIndex,
   onSelect,
-  onHover,
 }: {
   anchorRef: React.RefObject<HTMLElement | null>
   suggestions: string[]
   selectedIndex: number
   onSelect: (s: string) => void
-  onHover: (i: number) => void
 }) {
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
 
@@ -92,6 +100,7 @@ function AutocompleteDropdown({
   return createPortal(
     <div
       data-testid="kv-autocomplete"
+      role="listbox"
       className="fixed z-[9999] max-h-[200px] overflow-y-auto rounded-md border border-[var(--border)] bg-[var(--white)]"
       style={{
         top: pos.top,
@@ -101,16 +110,19 @@ function AutocompleteDropdown({
       }}
     >
       {suggestions.map((s, i) => (
+        // Hover only paints the row: a list that opens under a resting pointer
+        // must not turn the next Tab into a pick. A click (mousedown) accepts.
         <div
           key={s}
           data-testid="kv-autocomplete-item"
-          className="cursor-pointer px-2.5 py-1"
-          style={{
-            background: i === selectedIndex ? 'var(--accent-light)' : 'transparent',
-            color: i === selectedIndex ? 'var(--accent-text)' : 'var(--text)',
-          }}
+          role="option"
+          aria-selected={i === selectedIndex}
+          className={
+            i === selectedIndex
+              ? 'cursor-pointer bg-[var(--accent-light)] px-2.5 py-1 text-[var(--accent-text)]'
+              : 'cursor-pointer px-2.5 py-1 text-[var(--text)] hover:bg-[var(--item-hover)]'
+          }
           onMouseDown={() => onSelect(s)}
-          onMouseEnter={() => onHover(i)}
         >
           {s}
         </div>
@@ -218,7 +230,7 @@ export default function KeyValueTable({
       }
       const filtered = filterHeaderSuggestions(value, keyAutocompleteEntries)
       if (filtered.length > 0) {
-        setAutocomplete({ rowId, field: 'key', suggestions: filtered, selectedIndex: 0 })
+        setAutocomplete({ rowId, field: 'key', suggestions: filtered, selectedIndex: NO_PICK })
       } else {
         setAutocomplete(null)
       }
@@ -236,7 +248,7 @@ export default function KeyValueTable({
       }
       const filtered = filterHeaderValueSuggestions(key, value)
       if (filtered.length > 0) {
-        setAutocomplete({ rowId, field: 'value', suggestions: filtered, selectedIndex: 0 })
+        setAutocomplete({ rowId, field: 'value', suggestions: filtered, selectedIndex: NO_PICK })
       } else {
         setAutocomplete(null)
       }
@@ -259,19 +271,30 @@ export default function KeyValueTable({
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
       setAutocomplete((prev) =>
-        prev ? { ...prev, selectedIndex: Math.max(prev.selectedIndex - 1, 0) } : null,
+        prev
+          ? {
+              ...prev,
+              // From "no pick", ArrowUp picks the last row (VS Code).
+              selectedIndex:
+                prev.selectedIndex === NO_PICK
+                  ? prev.suggestions.length - 1
+                  : Math.max(prev.selectedIndex - 1, 0),
+            }
+          : null,
       )
     } else if (e.key === 'Enter' || e.key === 'Tab') {
-      if (autocomplete.suggestions.length > 0) {
-        e.preventDefault()
-        const selected = autocomplete.suggestions[autocomplete.selectedIndex]
-        if (autocomplete.field === 'key') {
-          onUpdate(autocomplete.rowId, { key: selected })
-        } else {
-          onUpdate(autocomplete.rowId, { value: selected })
-        }
+      const selected: string | undefined =
+        autocomplete.selectedIndex === NO_PICK
+          ? undefined
+          : autocomplete.suggestions[autocomplete.selectedIndex]
+      if (selected === undefined) {
+        // No explicit pick: keep what was typed and let Tab move focus. Close
+        // the list so it does not follow focus into the next cell.
         setAutocomplete(null)
+        return
       }
+      e.preventDefault()
+      selectSuggestion(selected)
     } else if (e.key === 'Escape') {
       setAutocomplete(null)
     }
@@ -511,7 +534,7 @@ export default function KeyValueTable({
                           rowId: row.id,
                           field: 'key',
                           suggestions: filtered,
-                          selectedIndex: 0,
+                          selectedIndex: NO_PICK,
                         })
                       }
                     }
@@ -565,7 +588,7 @@ export default function KeyValueTable({
                       rowId: row.id,
                       field: 'value',
                       suggestions: filtered,
-                      selectedIndex: 0,
+                      selectedIndex: NO_PICK,
                     })
                   }
                 }}
@@ -617,6 +640,7 @@ export default function KeyValueTable({
               {/* Description */}
               <div>
                 <input
+                  data-testid="kv-description"
                   value={row.description || ''}
                   onChange={(e) => onUpdate(row.id, { description: e.target.value })}
                   className="w-full border-none bg-transparent px-2.5 py-[5px] text-[var(--muted)] outline-none"
@@ -688,7 +712,6 @@ export default function KeyValueTable({
           suggestions={autocomplete.suggestions}
           selectedIndex={autocomplete.selectedIndex}
           onSelect={selectSuggestion}
-          onHover={(i) => setAutocomplete((prev) => (prev ? { ...prev, selectedIndex: i } : null))}
         />
       )}
     </div>

@@ -24,3 +24,13 @@ export function isBlankScratchTab(
   // Any locale's scratch name (issue #261), via the one rule.
   return isScratchTabName(tab.name)
 }
+
+/**
+ * The protocol whose editor a tab shows: a tab without one (older data) opens
+ * the HTTP editor. The Workbench, the Ctrl/Cmd+Enter dispatch and the Send
+ * tooltip read this ONE rule — they used to disagree (the Workbench showed the
+ * HTTP URL bar, the chord did nothing).
+ */
+export function editorProtocol(tab: Pick<Tab, 'protocol'>): string {
+  return tab.protocol || 'http'
+}

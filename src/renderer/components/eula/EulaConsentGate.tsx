@@ -76,7 +76,7 @@ export default function EulaConsentGate({ children }: Props) {
 
   // While we're waiting for the very first IPC reply, show a bare loader —
   // never the app itself, to avoid flashing the workbench before the gate.
-  if (!loaded) return <FullScreenLoader label="Loading…" />
+  if (!loaded) return <FullScreenLoader label={t('eula.loading')} />
 
   if (consentValid) return <>{children}</>
 
@@ -84,7 +84,7 @@ export default function EulaConsentGate({ children }: Props) {
     <Modal
       open={true}
       onOpenChange={() => {}}
-      title="EULA Consent"
+      title={t('eula.dialogTitle')}
       testId="eula-gate"
       zIndex={Z.GATE}
       preventClose={true}

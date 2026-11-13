@@ -8,6 +8,7 @@
 // before having consented.
 
 import { create } from 'zustand'
+import { t } from '../lib/i18n'
 
 interface ConsentRecord {
   accepted: boolean
@@ -59,7 +60,7 @@ export const useEulaStore = create<EulaState>((set) => ({
         state: { ...EMPTY },
         currentDocsHash: '',
         currentVersion: '',
-        loadError: 'EULA bridge unavailable',
+        loadError: t('common.bridgeUnavailable', { name: 'EULA' }),
       })
       return
     }
@@ -79,7 +80,7 @@ export const useEulaStore = create<EulaState>((set) => ({
           loaded: true,
           consentValid: false,
           state: { ...EMPTY },
-          loadError: res?.error ?? 'Failed to read consent state',
+          loadError: res?.error ?? t('eula.error.readFailed'),
         })
       }
     } catch (e) {
@@ -94,7 +95,7 @@ export const useEulaStore = create<EulaState>((set) => ({
 
   accept: async () => {
     const eula = api()
-    if (!eula) return { success: false, error: 'EULA bridge unavailable' }
+    if (!eula) return { success: false, error: t('common.bridgeUnavailable', { name: 'EULA' }) }
     try {
       const res = await eula.accept()
       if (res?.success) {
@@ -102,7 +103,7 @@ export const useEulaStore = create<EulaState>((set) => ({
         await useEulaStore.getState().refresh()
         return { success: true }
       }
-      return { success: false, error: res?.error ?? 'Failed to record consent' }
+      return { success: false, error: res?.error ?? t('eula.error.recordFailed') }
     } catch (e) {
       return { success: false, error: (e as Error).message }
     }

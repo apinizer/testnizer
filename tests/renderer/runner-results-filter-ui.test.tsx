@@ -53,7 +53,7 @@ function renderResults(over: Partial<React.ComponentProps<typeof RunnerResults>>
       onNewRun={() => {}}
       onRunAgain={() => {}}
       onViewAllRuns={() => {}}
-      selectedResultId={null}
+      selectedResultKey={null}
       onSelectResult={() => {}}
       {...over}
     />,

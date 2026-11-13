@@ -313,7 +313,7 @@ export default function EndpointSaveModal() {
     <Modal
       open={show}
       onOpenChange={(o) => !o && handleClose()}
-      title="Save endpoint"
+      title={t('modal.saveEndpointTitle')}
       testId="endpoint-save-modal"
     >
       <div

@@ -109,7 +109,7 @@ export default function McpOAuthStepRow({ step }: { step: McpOAuthStep }) {
           )}
           {attempts.length > 1 && (
             <Block
-              label={t('mcp.oauth.attempts').replace('{n}', String(attempts.length))}
+              label={t('mcp.oauth.attempts', { n: String(attempts.length) })}
               text={attempts
                 .map(
                   (a) =>

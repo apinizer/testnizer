@@ -6,11 +6,9 @@ import { useResponseStore } from '../../stores/response.store'
 import { useTabsStore } from '../../stores/tabs.store'
 import { useSoapStore } from '../../stores/soap.store'
 import { useUIStore } from '../../stores/ui.store'
-import {
-  mcpHistoryRestore,
-  mcpHistoryRowLabel,
-  mcpHistorySearchText,
-} from '../protocols/mcp/history-restore'
+import { mcpHistoryRestore, mcpHistorySearchText } from '../protocols/mcp/history-restore'
+import { historyRowLabel, shortHistoryUrl as shortUrl } from '../shared/history-row-label'
+import HistoryClearButton from './HistoryClearButton'
 import { openMcpHistoryRestore } from '../protocols/mcp/history-open'
 import { openHistoryEntryInTab } from '../../lib/history-open'
 import { historyTabUrl, unmaskHistoryValue } from '../../lib/history-restore'
@@ -32,7 +30,6 @@ export default function HistoryListPanel() {
   const { t, locale } = useTranslation()
   const entries = useHistoryStore((s) => s.entries)
   const fetch = useHistoryStore((s) => s.fetch)
-  const clear = useHistoryStore((s) => s.clear)
   const deleteEntry = useHistoryStore((s) => s.deleteEntry)
   const searchTerm = useHistoryStore((s) => s.searchTerm)
   const setSearchTerm = useHistoryStore((s) => s.setSearchTerm)
@@ -261,20 +258,12 @@ export default function HistoryListPanel() {
         </span>
         <span style={{ fontSize: 13, color: 'var(--muted)' }}>{entries.length}</span>
         <div className="flex-1" />
-        <button
-          type="button"
-          onClick={() => clear(activeWorkspaceId || undefined)}
-          className="cursor-pointer rounded px-1.5 py-0.5"
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            color: 'var(--muted)',
-            fontSize: 13,
-          }}
-          title={t('history.clearAllTitle')}
-        >
-          {t('history.clear')}
-        </button>
+        {/* Clears the active project (what this list shows); disabled off the
+            unfiltered list, since Clear ignores the search filter. */}
+        <HistoryClearButton
+          projectId={activeProjectId || undefined}
+          listEmpty={entries.length === 0}
+        />
       </div>
 
       {/* Search */}
@@ -342,31 +331,32 @@ export default function HistoryListPanel() {
                 }}
               >
                 <RequestBadge protocol={entry.protocol} method={entry.method} small />
-                {entry.protocol === 'mcp' ? (
-                  // The call (tool / prompt / resource), the server in the tooltip.
-                  <span
-                    className="flex-1 truncate"
-                    style={{ fontSize: 13 }}
-                    title={mcpHistoryRowLabel(entry).title}
-                  >
-                    {mcpHistoryRowLabel(entry).label}
-                  </span>
-                ) : (
-                  <span className="flex-1 truncate" style={{ fontSize: 13 }}>
-                    {shortUrl(entry.url)}
-                  </span>
-                )}
+                {/* MCP: the call, the server in the tooltip; the rest: host+path,
+                    the full (stored, masked) URL in the tooltip. */}
+                <span
+                  data-testid="history-entry-label"
+                  className="flex-1 truncate"
+                  style={{ fontSize: 13 }}
+                  title={historyRowLabel(entry).title}
+                >
+                  {historyRowLabel(entry).label}
+                </span>
                 <HistoryStatus entry={entry} t={t} />
                 <span className="shrink-0" style={{ color: 'var(--hint)', fontSize: 13 }}>
                   {formatTime(entry.executed_at, locale)}
                 </span>
                 <button
                   type="button"
+                  data-testid="history-entry-delete"
+                  aria-label={t('common.delete')}
+                  title={t('common.delete')}
                   onClick={(e) => {
                     e.stopPropagation()
                     setDeleteTargetId(entry.id)
                   }}
-                  className="hidden shrink-0 cursor-pointer group-hover:block"
+                  // Hidden by opacity, not display:none, so Tab reaches it; shown
+                  // on row hover and on keyboard focus.
+                  className="shrink-0 cursor-pointer opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
                   style={{
                     background: 'transparent',
                     border: 'none',
@@ -374,7 +364,7 @@ export default function HistoryListPanel() {
                     padding: 1,
                   }}
                 >
-                  <Trash2 size={10} />
+                  <Trash2 size={10} aria-hidden="true" />
                 </button>
               </div>
             ))}
@@ -444,15 +434,6 @@ function formatTime(ts: number, locale: string): string {
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-function shortUrl(url: string): string {
-  try {
-    const u = new URL(url)
-    return u.host + u.pathname
-  } catch {
-    return url
-  }
 }
 
 /** Status badge — the shared rule with the Recent endpoints list (G-15). */

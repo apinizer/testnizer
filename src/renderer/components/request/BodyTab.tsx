@@ -19,18 +19,25 @@ const BODY_TYPE_TEST_IDS: Record<string, string> = {
   binary: 'binary',
 }
 
-const BODY_OPTIONS: { value: BodyType; label: string }[] = [
-  { value: 'none', label: 'none' },
+/**
+ * An option's text: `labelKey` is translated where it renders (module scope
+ * would freeze the import-time locale); `label` is a wire-format / language
+ * name shown as-is in every locale.
+ */
+type BodyChoice = { value: BodyType } & ({ labelKey: string } | { label: string })
+
+const BODY_OPTIONS: BodyChoice[] = [
+  { value: 'none', labelKey: 'body.none' },
   { value: 'form-data', label: 'form-data' },
   { value: 'urlencoded', label: 'x-www-form-urlencoded' },
-  { value: 'json', label: 'raw' },
-  { value: 'binary', label: 'binary' },
+  { value: 'json', labelKey: 'body.raw' },
+  { value: 'binary', labelKey: 'body.binary' },
 ]
 
-const RAW_FORMATS: { value: BodyType; label: string; lang: string }[] = [
+const RAW_FORMATS: Array<BodyChoice & { lang: string }> = [
   { value: 'json', label: 'JSON', lang: 'json' },
   { value: 'xml', label: 'XML', lang: 'xml' },
-  { value: 'text', label: 'Text', lang: 'plaintext' },
+  { value: 'text', labelKey: 'body.text', lang: 'plaintext' },
   { value: 'html', label: 'HTML', lang: 'html' },
   { value: 'javascript', label: 'JavaScript', lang: 'javascript' },
 ]
@@ -197,7 +204,7 @@ export default function BodyTab() {
                 data-testid={`body-type-${BODY_TYPE_TEST_IDS[opt.value]}`}
                 style={{ accentColor: 'var(--accent)', width: 13, height: 13, margin: 0 }}
               />
-              {opt.label}
+              {'labelKey' in opt ? t(opt.labelKey) : opt.label}
             </label>
           )
         })}
@@ -214,7 +221,7 @@ export default function BodyTab() {
             >
               {RAW_FORMATS.map((f) => (
                 <option key={f.value} value={f.value}>
-                  {f.label}
+                  {'labelKey' in f ? t(f.labelKey) : f.label}
                 </option>
               ))}
             </select>
@@ -245,6 +252,7 @@ export default function BodyTab() {
       {isRawType(body.type) && (
         <div className="flex-1 overflow-hidden pt-1" data-testid="body-raw-editor">
           <MonacoWrapper
+            runsActiveRequest
             value={body.content || ''}
             onChange={handleContentChange}
             language={monacoLanguage}

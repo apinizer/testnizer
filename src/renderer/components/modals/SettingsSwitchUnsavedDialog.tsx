@@ -57,7 +57,7 @@ export default function SettingsSwitchUnsavedDialog({
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold text-[var(--text)]">{title}</h3>
             <p className="mt-0.5 text-[var(--muted)]">
-              {t('settingsScope.unsavedBody').replace('{target}', target)}
+              {t('settingsScope.unsavedBody', { target })}
             </p>
           </div>
         </div>

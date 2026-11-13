@@ -10,6 +10,7 @@ import { formatCount } from '../../../lib/plural'
 import type { TlsCertificateInfo, TlsInspectResult, TlsProbeSuccess } from '../../../types'
 import { resultVisibility } from '../../../lib/tools/tls-inspect'
 import { Badge, Caption, Meta, AMBER, AMBER_BG, GREEN, GREEN_BG, RED, RED_BG } from './atoms'
+import { fillTemplate } from '../../../../shared/fill-template'
 
 export default function ResultPane({
   result,
@@ -71,10 +72,12 @@ export default function ResultPane({
               bg={probe.hostnameValid ? GREEN_BG : RED_BG}
               color={probe.hostnameValid ? GREEN : RED}
             >
-              {(probe.hostnameValid
-                ? t('tools.tlsInspect.hostnameOkFor')
-                : t('tools.tlsInspect.hostnameBadFor')
-              ).replace('{name}', probe.servername || probe.host)}
+              {fillTemplate(
+                probe.hostnameValid
+                  ? t('tools.tlsInspect.hostnameOkFor')
+                  : t('tools.tlsInspect.hostnameBadFor'),
+                { name: probe.servername || probe.host },
+              )}
             </Badge>
             <ValidityBadge result={probe} />
             {probe.selfSigned && (
@@ -201,9 +204,7 @@ export default function ResultPane({
           </p>
           {probe.servername && probe.servername !== probe.host && (
             <p className="text-[10px]" style={{ color: AMBER }}>
-              {t('tools.tlsInspect.sniDiffers')
-                .replace('{host}', probe.host)
-                .replace('{sni}', probe.servername)}
+              {t('tools.tlsInspect.sniDiffers', { host: probe.host, sni: probe.servername })}
             </p>
           )}
         </>

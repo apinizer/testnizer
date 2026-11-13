@@ -1,7 +1,9 @@
 import { useSoapStore } from '../../stores/soap.store'
+import { useTranslation } from '../../lib/i18n'
 import MonacoWrapper from '../shared/MonacoWrapper'
 
 export default function SoapBodyEditor() {
+  const { t } = useTranslation()
   const bodyMode = useSoapStore((s) => s.bodyMode)
   const setBodyMode = useSoapStore((s) => s.setBodyMode)
   const rawXml = useSoapStore((s) => s.rawXml)
@@ -18,7 +20,7 @@ export default function SoapBodyEditor() {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <label className="font-medium uppercase tracking-widest text-[var(--muted)]">
-          Request Body
+          {t('soap.requestBody')}
         </label>
         <div className="flex rounded-lg border border-[var(--border)]">
           <button
@@ -32,7 +34,7 @@ export default function SoapBodyEditor() {
               borderRadius: bodyMode === 'form' ? '7px' : '0',
             }}
           >
-            Form
+            {t('soap.bodyForm')}
           </button>
           <button
             type="button"
@@ -45,7 +47,7 @@ export default function SoapBodyEditor() {
               borderRadius: bodyMode === 'raw' ? '7px' : '0',
             }}
           >
-            Raw XML
+            {t('soap.bodyRaw')}
           </button>
         </div>
       </div>
@@ -57,8 +59,10 @@ export default function SoapBodyEditor() {
             className="grid border-b border-[var(--border)]"
             style={{ gridTemplateColumns: '1fr 1fr', background: 'var(--surface)' }}
           >
-            <div className="p-1.5 px-3 font-medium text-[var(--muted)]">Parameter</div>
-            <div className="p-1.5 px-3 font-medium text-[var(--muted)]">Value</div>
+            <div className="p-1.5 px-3 font-medium text-[var(--muted)]">
+              {t('soap.colParameter')}
+            </div>
+            <div className="p-1.5 px-3 font-medium text-[var(--muted)]">{t('soap.colValue')}</div>
           </div>
           {/* Rows */}
           {formKeys.map((key, idx) => (
@@ -77,18 +81,24 @@ export default function SoapBodyEditor() {
                 value={formValues[key]}
                 onChange={(e) => setFormValue(key, e.target.value)}
                 className="border-none bg-transparent px-3 py-1.5 font-mono text-[var(--blue)] outline-none"
-                placeholder={`Enter ${key}...`}
+                placeholder={t('soap.paramPlaceholder', { name: key })}
               />
             </div>
           ))}
           {formKeys.length === 0 && (
             <div className="px-3 py-4 text-center text-[var(--hint)]">
-              No input parameters for this operation
+              {t('soap.noInputParams')}
             </div>
           )}
         </div>
       ) : (
-        <MonacoWrapper value={rawXml} onChange={setRawXml} language="xml" height={280} />
+        <MonacoWrapper
+          runsActiveRequest
+          value={rawXml}
+          onChange={setRawXml}
+          language="xml"
+          height={280}
+        />
       )}
     </div>
   )

@@ -99,7 +99,7 @@ function UnaryView({
       <div className="flex h-full flex-col items-center justify-center gap-2 bg-[var(--white)] p-4">
         <span className="font-medium text-red-500">
           {typeof response.status === 'number'
-            ? t('grpc.response.errorCode').replace('{code}', String(response.status))
+            ? t('grpc.response.errorCode', { code: String(response.status) })
             : t('grpc.response.error')}
         </span>
         <span className="max-w-[600px] text-center text-[var(--muted)]">{response.error}</span>
@@ -130,7 +130,7 @@ function UnaryView({
           >
             {response.status === 0
               ? 'OK'
-              : t('grpc.response.code').replace('{code}', String(response.status))}
+              : t('grpc.response.code', { code: String(response.status) })}
           </span>
         )}
         <span className="text-[var(--muted)]">{response.timing.total}ms</span>
@@ -157,6 +157,7 @@ function StreamView() {
   const { t, locale } = useTranslation()
   const streamEvents = useGrpcStore((s) => s.streamEvents)
   const isStreaming = useGrpcStore((s) => s.isStreaming)
+  const droppedEarly = useGrpcStore((s) => s.droppedEarly)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [autoScroll, setAutoScroll] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -226,6 +227,11 @@ function StreamView() {
       <div className="flex shrink-0 items-center justify-between border-t border-[var(--border)] bg-[var(--surface)] px-3 py-1.5">
         <span className="text-[var(--muted)]">
           {formatCount(streamEvents.length, t('sse.eventCountOne'), t('sse.eventCount'))}
+          {droppedEarly > 0 && (
+            <span data-testid="grpc-dropped-early">
+              {` · ${formatCount(droppedEarly, t('rt.droppedEarlyOne'), t('rt.droppedEarly'))}`}
+            </span>
+          )}
         </span>
         <label className="flex cursor-pointer items-center gap-1.5">
           <input

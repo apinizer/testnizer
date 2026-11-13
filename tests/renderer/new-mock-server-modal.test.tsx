@@ -380,20 +380,21 @@ describe('Mocks panel — SSE and AI sections (issue #221)', () => {
     ).toBeTruthy()
   })
 
-  it('an empty SSE section says so; its "+" opens the dialog on SSE', async () => {
+  it('an empty SSE section is just its header line; its "+" opens the dialog on SSE', async () => {
     render(<MockServersPanel />)
     await screen.findByTestId('mock-http-row-h1')
-    expect(screen.getByTestId('mock-sse-section')).toHaveTextContent('No SSE mock servers yet')
+    expect(screen.getByTestId('mock-sse-section-title-count')).toHaveTextContent('0')
+    expect(screen.getByTestId('mock-sse-section')).not.toHaveTextContent('No SSE mock servers yet')
     fireEvent.click(screen.getByTestId('mock-group-add-sse'))
     await screen.findByTestId('mock-new-dialog')
     expect(screen.getByTestId('mock-new-type-sse')).toHaveAttribute('aria-checked', 'true')
   })
 
-  it('the AI section is always shown after SSE; empty state, its "+" opens the dialog on AI', async () => {
+  it('the AI section is always shown after SSE, even empty; its "+" opens the dialog on AI', async () => {
     render(<MockServersPanel />)
     await screen.findByTestId('mock-http-row-h1')
     const ai = screen.getByTestId('mock-ai-section')
-    expect(ai).toHaveTextContent('No AI mock servers yet')
+    expect(screen.getByTestId('mock-ai-section-title-count')).toHaveTextContent('0')
     expect(
       screen.getByTestId('mock-sse-section').compareDocumentPosition(ai) &
         Node.DOCUMENT_POSITION_FOLLOWING,
@@ -461,7 +462,81 @@ describe('Mocks panel — both groups, one row design', () => {
     }
     await openWith('mock-group-add-mcp', 'mcp')
     await openWith('mock-group-add-http', 'http')
-    await openWith('mock-new', 'http')
+  })
+
+  it('header "+" opens a type menu; each entry opens the dialog on that type', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-a')
+    for (const kind of ['http', 'mcp', 'sse', 'ai'] as const) {
+      fireEvent.click(screen.getByTestId('mock-new'))
+      expect(screen.queryByTestId('mock-new-dialog')).toBeNull()
+      fireEvent.click(
+        within(screen.getByTestId('mock-new-menu')).getByTestId(`mock-new-option-${kind}`),
+      )
+      expect(screen.queryByTestId('mock-new-menu')).toBeNull()
+      await screen.findByTestId('mock-new-dialog')
+      expect(screen.getByTestId(`mock-new-type-${kind}`)).toHaveAttribute('aria-checked', 'true')
+      fireEvent.click(screen.getByTestId('mock-new-cancel'))
+      await waitFor(() => expect(screen.queryByTestId('mock-new-dialog')).toBeNull())
+    }
+  })
+
+  it('the type menu closes on Escape without opening the dialog', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-a')
+    fireEvent.click(screen.getByTestId('mock-new'))
+    expect(screen.getByTestId('mock-new-menu')).toBeInTheDocument()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByTestId('mock-new-menu')).toBeNull()
+    expect(screen.queryByTestId('mock-new-dialog')).toBeNull()
+  })
+
+  it('the type menu is keyboard usable: focus moves in, arrows wrap, Enter picks', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-a')
+    const option = (k: string): HTMLElement => screen.getByTestId(`mock-new-option-${k}`)
+    fireEvent.click(screen.getByTestId('mock-new'))
+    const menu = screen.getByTestId('mock-new-menu')
+    await waitFor(() => expect(option('http')).toHaveFocus())
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(option('mcp')).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    expect(option('ai')).toHaveFocus() // wrapped past the first entry
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(option('http')).toHaveFocus() // and back past the last
+    fireEvent.keyDown(menu, { key: 'End' })
+    expect(option('ai')).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'Home' })
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(option('sse')).toHaveFocus()
+    fireEvent.keyDown(menu, { key: 'Enter' })
+    expect(screen.queryByTestId('mock-new-menu')).toBeNull()
+    await screen.findByTestId('mock-new-dialog')
+    expect(screen.getByTestId('mock-new-type-sse')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('ArrowDown on the "+" opens the menu; Escape closes it and returns focus to the "+"', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-a')
+    const plus = screen.getByTestId('mock-new')
+    plus.focus()
+    fireEvent.keyDown(plus, { key: 'ArrowDown' })
+    await waitFor(() => expect(screen.getByTestId('mock-new-option-http')).toHaveFocus())
+    fireEvent.keyDown(screen.getByTestId('mock-new-option-http'), { key: 'Escape' })
+    expect(screen.queryByTestId('mock-new-menu')).toBeNull()
+    expect(plus).toHaveFocus()
+    expect(screen.queryByTestId('mock-new-dialog')).toBeNull()
+  })
+
+  it('a search that matches nothing shows one "No matches." for the whole panel', async () => {
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-a')
+    expect(screen.queryByTestId('mock-no-matches')).toBeNull()
+    fireEvent.change(screen.getByTestId('mock-search'), { target: { value: 'zzz-nothing' } })
+    expect(screen.getAllByText('No matches.')).toHaveLength(1)
+    expect(screen.getByTestId('mock-no-matches')).toBeInTheDocument()
   })
 
   it('HTTP row: Start/Stop hit that server only; clicking the row opens its editor tab', async () => {
@@ -492,5 +567,82 @@ describe('Mocks panel — both groups, one row design', () => {
     await waitFor(() => expect(httpBridge.server.delete).toHaveBeenCalledWith('h1'))
     await waitFor(() => expect(screen.queryByTestId('mock-http-row-h1')).toBeNull())
     expect(useTabsStore.getState().tabs).toHaveLength(0)
+  })
+})
+
+describe('Mocks panel — no server at all', () => {
+  beforeEach(async () => {
+    await setupWith([])
+    mcp = installBridge([])
+    useMockMcpStore.setState({ servers: [], projectId: null })
+    await act(async () => {
+      await useMockMcpStore.getState().loadServers('p-1')
+    })
+  })
+
+  it('shows one empty state instead of four empty groups; its link opens the dialog', async () => {
+    render(<MockServersPanel />)
+    const empty = await screen.findByTestId('mock-panel-empty')
+    expect(empty).toHaveTextContent('No mock servers yet')
+    expect(screen.getByTestId('mock-http-section').closest('[hidden]')).not.toBeNull()
+    fireEvent.click(screen.getByTestId('mock-panel-empty-create'))
+    await screen.findByTestId('mock-new-dialog')
+    expect(screen.getByTestId('mock-new-type-http')).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('an MCP-only project shows its groups, not the empty state', async () => {
+    mcp = installBridge([sampleServer({ id: 'only', name: 'Only MCP', port: 3100 })])
+    useMockMcpStore.setState({ servers: [], projectId: null })
+    render(<MockServersPanel />)
+    await screen.findByTestId('mock-mcp-row-only')
+    expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
+    expect(screen.getByTestId('mock-http-section').closest('[hidden]')).toBeNull()
+  })
+
+  /** Holds the next HTTP `server.list` answer until `resolve` is called. */
+  type ListAnswer = { success: true; data: ReturnType<typeof httpServer>[] }
+  function holdHttpList(): (servers: ReturnType<typeof httpServer>[]) => Promise<void> {
+    let release: (v: ListAnswer) => void = () => {}
+    httpBridge.server.list.mockImplementationOnce(
+      () =>
+        new Promise<ListAnswer>((r) => {
+          release = r
+        }),
+    )
+    return async (servers) => {
+      await act(async () => {
+        release({ success: true, data: servers })
+      })
+    }
+  }
+
+  it('no "No mock servers yet" flash while the lists load; the hidden MCP group still loads', async () => {
+    useMockStore.setState({ servers: [], projectId: null })
+    useMockMcpStore.setState({ servers: [], projectId: null })
+    mcp.bridge.server.list.mockClear()
+    const resolveHttp = holdHttpList()
+    render(<MockServersPanel />)
+    // MCP lands, HTTP is still pending: not "empty" yet, and no groups either.
+    await waitFor(() => expect(useMockMcpStore.getState().projectId).toBe('p-1'))
+    expect(mcp.bridge.server.list).toHaveBeenCalledWith('p-1')
+    expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
+    expect(screen.getByTestId('mock-http-section').closest('[hidden]')).not.toBeNull()
+    await resolveHttp([])
+    expect(await screen.findByTestId('mock-panel-empty')).toBeInTheDocument()
+  })
+
+  it("never decides \"empty\" from the previous project's lists", async () => {
+    // Both stores still hold project p-0's (empty) lists; p-1's HTTP list is pending.
+    useMockStore.setState({ servers: [], projectId: 'p-0' })
+    useMockMcpStore.setState({ servers: [], projectId: 'p-0' })
+    resetHttpBridge([httpServer({ id: 'p1-http', name: 'P1 API', port: 3001 })])
+    const resolveHttp = holdHttpList()
+    render(<MockServersPanel />)
+    await waitFor(() => expect(useMockMcpStore.getState().projectId).toBe('p-1'))
+    expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
+    await resolveHttp([httpServer({ id: 'p1-http', name: 'P1 API', port: 3001 })])
+    await screen.findByTestId('mock-http-row-p1-http')
+    expect(screen.queryByTestId('mock-panel-empty')).toBeNull()
+    expect(screen.getByTestId('mock-http-section').closest('[hidden]')).toBeNull()
   })
 })

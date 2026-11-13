@@ -116,7 +116,7 @@ function exportedToast(path: string | null | undefined): void {
     toast.success(translate('toast.exported'))
     return
   }
-  toast.success(translate('projectExport.successFile').replace('{file}', exportedFileName(path)), {
+  toast.success(translate('projectExport.successFile', { file: exportedFileName(path) }), {
     description: path,
     classNames: { content: 'min-w-0', description: 'truncate' },
   })
@@ -137,7 +137,7 @@ type CollectionExportCall = (projectId: string) => Promise<{
 /** The title of an export's notes. Postman v3 names itself; the others share one. */
 export function exportNotesTitle(format: ProjectExportFormat, count: number): string {
   return format.startsWith('postman-v3')
-    ? translate('export.v3Notes').replace('{count}', String(count))
+    ? translate('export.v3Notes', { count: String(count) })
     : formatCount(count, translate('export.notesOne'), translate('export.notes'))
 }
 

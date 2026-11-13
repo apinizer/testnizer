@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useRequestStore } from '../../stores/request.store'
 import { useEnvironmentStore } from '../../stores/environment.store'
 import { resolveVariables } from '../../lib/variable-resolver'
+import { useTranslation } from '../../lib/i18n'
 
 /**
  * Postman/Insomnia-style "URL PREVIEW" strip rendered just below the URL bar.
@@ -24,6 +25,7 @@ export default function UrlPreview() {
   const environments = useEnvironmentStore((s) => s.environments)
   const activeEnvironmentId = useEnvironmentStore((s) => s.activeEnvironmentId)
   const globalVariables = useEnvironmentStore((s) => s.globalVariables)
+  const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
 
   const { resolved, hasVars, hasUnresolved } = useMemo(() => {
@@ -93,7 +95,7 @@ export default function UrlPreview() {
           fontSize: 10,
         }}
       >
-        URL PREVIEW
+        {t('urlPreview.label')}
       </span>
       <span
         style={{
@@ -120,7 +122,7 @@ export default function UrlPreview() {
       <button
         type="button"
         onClick={copy}
-        title={copied ? 'Copied!' : 'Copy resolved URL'}
+        title={copied ? t('urlPreview.copied') : t('urlPreview.copy')}
         style={{
           flexShrink: 0,
           height: 22,

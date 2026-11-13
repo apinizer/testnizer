@@ -1,0 +1,240 @@
+/**
+ * Tester findings 2 + 3 on the request tab strip (`Workbench.tsx` `EndpointTabBar`).
+ *
+ * 2 — renaming a request to a 100+ character name made its tab as wide as the
+ *     name and pushed the other tabs off the strip. The label is now capped and
+ *     ends in "…"; the full name is the tooltip and stays in `data-tab-name`.
+ * 3 — the × was hover-only and keyboard-unreachable. It is now a named button,
+ *     always shown on the active clean tab, reachable with Tab, closing on
+ *     Enter; a dirty tab still asks first. Tabs are a tablist (arrows + Enter).
+ *     A modified key (Mod+Enter) is not the strip's: with focus on a background
+ *     tab it runs the ACTIVE tab's request, once (fe83094).
+ *
+ * jsdom cannot measure, so the pixel proof (scrollWidth > clientWidth, bounded
+ * tab width, computed opacity) lives here; the renderer test pins the rest
+ * (`tests/renderer/tab-strip-name-close.test.tsx`).
+ */
+import { expect, type Locator, type Page } from '@playwright/test'
+import { uiTest } from './_setup'
+import {
+  closeAllTabs,
+  dismissOverlays,
+  ensureCanonicalProject,
+  navigateSidebar,
+  openHttpRequestTab,
+} from '../helpers/ui/bootstrap'
+import { fillUrl, saveRequestToTree } from '../helpers/ui/request-flow'
+import { localHttpBin } from '../helpers/test-servers'
+import { getActiveProjectId } from '../helpers/ui/assert-ipc'
+import { pressModShortcut } from '../helpers/ui/keyboard'
+
+const uid = (): string => `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+const SCREENS = 'test-results/screens'
+
+const activeTab = (page: Page): Locator =>
+  page.locator('[data-testid="endpoint-tab"][data-active="true"]')
+const tabNamed = (page: Page, name: string): Locator =>
+  page.locator(`[data-testid="endpoint-tab"][data-tab-name="${name}"]`)
+
+/** The URLs this project's History holds (each Send writes one row). */
+async function historyUrls(page: Page, projectId: string): Promise<string[]> {
+  return page.evaluate(async (pid) => {
+    const w = window as unknown as Window & {
+      api: {
+        history: {
+          list: (o: { project_id: string }) => Promise<{ data?: Array<{ url: string }> }>
+        }
+      }
+    }
+    return ((await w.api.history.list({ project_id: pid })).data ?? []).map((r) => r.url)
+  }, projectId)
+}
+
+/** Park the pointer over the URL bar so no tab is hovered. */
+async function pointerAway(page: Page): Promise<void> {
+  const box = await page.getByTestId('url-input').boundingBox()
+  if (box) await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+}
+
+async function savedRequest(page: Page, name: string, path: string): Promise<void> {
+  await openHttpRequestTab(page)
+  await fillUrl(page, `${localHttpBin()}${path}`)
+  await saveRequestToTree(page, name)
+  await expect(activeTab(page)).toHaveAttribute('data-dirty', 'false', { timeout: 8_000 })
+}
+
+uiTest.describe('72 — tab strip: long names are cut off, × is a keyboard button', () => {
+  uiTest.beforeEach(async ({ window }) => {
+    await dismissOverlays(window)
+    await ensureCanonicalProject(window)
+    await navigateSidebar(window, 'apis')
+    await closeAllTabs(window)
+  })
+
+  uiTest.afterEach(async ({ window }) => {
+    await closeAllTabs(window)
+  })
+
+  uiTest('a 100+ character name is truncated with the full name as tooltip', async ({ window }) => {
+    const id = uid()
+    const longName = `Get every customer account with the full transaction history for the last fiscal year grouped by branch ${id}`
+    expect(longName.length).toBeGreaterThan(100)
+
+    // Renamed through the tab itself (double-click the label), as the tester did.
+    await savedRequest(window, `Long ${id}`, '/get?n=long')
+    await activeTab(window).getByTestId('tab-name').dblclick()
+    const rename = activeTab(window).locator('input')
+    await expect(rename).toBeVisible()
+    await rename.fill(longName)
+    await rename.press('Enter')
+    await expect(activeTab(window)).toHaveAttribute('data-tab-name', longName, { timeout: 8_000 })
+
+    await savedRequest(window, `Users ${id}`, '/get?n=users')
+    await savedRequest(window, `Orders ${id}`, '/get?n=orders')
+    await openHttpRequestTab(window)
+    await pointerAway(window)
+
+    const long = tabNamed(window, longName)
+    const label = long.getByTestId('tab-name')
+    // Tooltip over the whole tab (badge and chip included).
+    await expect(long).toHaveAttribute('title', longName)
+    // The text is cut by CSS only — the DOM still holds the whole name.
+    await expect(label).toHaveText(longName)
+    const overflow = await label.evaluate((el) => ({
+      scroll: el.scrollWidth,
+      client: el.clientWidth,
+      textOverflow: getComputedStyle(el).textOverflow,
+    }))
+    expect(overflow.scroll).toBeGreaterThan(overflow.client)
+    expect(overflow.textOverflow).toBe('ellipsis')
+    const tabBox = await long.boundingBox()
+    expect(tabBox?.width ?? Infinity).toBeLessThan(300)
+
+    // The other three tabs are still on the strip next to it.
+    for (const other of [`Users ${id}`, `Orders ${id}`]) {
+      await expect(tabNamed(window, other)).toBeInViewport()
+    }
+    await window.screenshot({ path: `${SCREENS}/72-long-name.png` })
+
+    await long.hover()
+    await window.screenshot({ path: `${SCREENS}/72-long-name-hover.png` })
+  })
+
+  uiTest(
+    'the active clean tab always shows its ×; other tabs show it on hover',
+    async ({ window }) => {
+      const id = uid()
+      await savedRequest(window, `Alpha ${id}`, '/get?n=a')
+      await savedRequest(window, `Beta ${id}`, '/get?n=b')
+      await savedRequest(window, `Gamma ${id}`, '/get?n=c')
+      await pointerAway(window)
+
+      const activeClose = activeTab(window).getByTestId('tab-close')
+      await expect(activeClose).toHaveCSS('opacity', '1')
+      await expect(activeClose).toHaveAttribute('aria-label', `Close tab Gamma ${id}`)
+      const otherClose = tabNamed(window, `Alpha ${id}`).getByTestId('tab-close')
+      await expect(otherClose).toHaveCSS('opacity', '0')
+      await window.screenshot({ path: `${SCREENS}/72-active-close.png` })
+
+      await tabNamed(window, `Alpha ${id}`).hover()
+      await expect(otherClose).toHaveCSS('opacity', '1')
+      await window.screenshot({ path: `${SCREENS}/72-hover-close.png` })
+
+      // Closing a background tab does not activate it.
+      await otherClose.click()
+      await expect(tabNamed(window, `Alpha ${id}`)).toHaveCount(0)
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', `Gamma ${id}`)
+    },
+  )
+
+  uiTest(
+    'keyboard: Tab reaches the ×, Enter closes; arrows + Enter switch tabs',
+    async ({ window }) => {
+      const id = uid()
+      await savedRequest(window, `One ${id}`, '/get?n=1')
+      await savedRequest(window, `Two ${id}`, '/get?n=2')
+
+      // The active tab is the strip's one tab stop; arrows move, Enter activates.
+      await activeTab(window).focus()
+      await window.keyboard.press('ArrowLeft')
+      await expect(tabNamed(window, `One ${id}`)).toBeFocused()
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', `Two ${id}`)
+      await window.keyboard.press('Enter')
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', `One ${id}`)
+
+      // Tab moves from the tab to its × (focus ring visible), Enter closes it.
+      await activeTab(window).focus()
+      await window.keyboard.press('Tab')
+      const close = activeTab(window).getByTestId('tab-close')
+      await expect(close).toBeFocused()
+      const outline = await close.evaluate((el) => getComputedStyle(el).outlineStyle)
+      expect(outline).toBe('solid')
+      await window.screenshot({ path: `${SCREENS}/72-keyboard-focus.png` })
+      await window.keyboard.press('Enter')
+      await expect(tabNamed(window, `One ${id}`)).toHaveCount(0)
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', `Two ${id}`)
+    },
+  )
+
+  uiTest(
+    'Mod+Enter with focus on a background tab sends the ACTIVE tab once, activates nothing',
+    async ({ window }) => {
+      // The strip's own Enter used to ignore modifiers: it activated the
+      // focused tab, then the window's Mod+Enter ran that tab's request.
+      const id = uid()
+      const a = `Active ${id}`
+      const b = `Focused ${id}`
+      await savedRequest(window, a, `/get?mod=a-${id}`)
+      await savedRequest(window, b, `/get?mod=b-${id}`)
+      await tabNamed(window, a).click()
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', a)
+      const projectId = await getActiveProjectId(window)
+      const sentTo = async (tag: string): Promise<number> =>
+        (await historyUrls(window, projectId)).filter((u) => u.includes(tag)).length
+
+      // Arrow moves focus only: A stays active, B holds the focus.
+      await activeTab(window).focus()
+      await window.keyboard.press('ArrowRight')
+      await expect(tabNamed(window, b)).toBeFocused()
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', a)
+
+      await pressModShortcut(window, 'Enter')
+      await expect.poll(() => sentTo(`a-${id}`), { timeout: 30_000 }).toBe(1)
+      await expect(window.getByTestId('response-status')).toContainText('200')
+      await expect(activeTab(window)).toHaveAttribute('data-tab-name', a)
+      // Still exactly one send of A and none of B once things have settled.
+      await window.waitForTimeout(1_000)
+      expect(await sentTo(`a-${id}`)).toBe(1)
+      expect(await sentTo(`b-${id}`)).toBe(0)
+      await window.screenshot({ path: `${SCREENS}/72-mod-enter-background-focus.png` })
+    },
+  )
+
+  uiTest(
+    'the active dirty tab shows its dot AND its ×, which still asks before closing',
+    async ({ window }) => {
+      const id = uid()
+      const name = `Dirty ${id}`
+      await savedRequest(window, name, '/get?n=d')
+      await fillUrl(window, `${localHttpBin()}/get?n=d&edited=1`)
+      await expect(activeTab(window)).toHaveAttribute('data-dirty', 'true', { timeout: 8_000 })
+      await pointerAway(window)
+
+      await expect(activeTab(window).getByTestId('tab-dirty')).toHaveCSS('opacity', '1')
+      // The active tab always shows its × — dirty or not — with the dot beside it.
+      await expect(activeTab(window).getByTestId('tab-dirty')).toBeVisible()
+      await expect(activeTab(window).getByTestId('tab-close')).toHaveCSS('opacity', '1')
+      await window.screenshot({ path: `${SCREENS}/72-dirty-dot.png` })
+
+      await activeTab(window).focus()
+      await window.keyboard.press('Tab')
+      await expect(activeTab(window).getByTestId('tab-close')).toBeFocused()
+      await expect(activeTab(window).getByTestId('tab-close')).toHaveCSS('opacity', '1')
+      await window.screenshot({ path: `${SCREENS}/72-dirty-focus-close.png` })
+      await window.keyboard.press('Enter')
+      await expect(window.getByTestId('unsaved-cancel-btn')).toBeVisible({ timeout: 8_000 })
+      await window.getByTestId('unsaved-cancel-btn').click()
+      await expect(tabNamed(window, name)).toHaveCount(1)
+    },
+  )
+})

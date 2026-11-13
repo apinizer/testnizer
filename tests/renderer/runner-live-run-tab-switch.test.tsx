@@ -386,3 +386,40 @@ describe('the live-run store hands a run to the tab only once it has ended', () 
     expect(takeFinishedRun('k')).toBeNull()
   })
 })
+
+describe('the selected iteration row survives leaving the tab mid-run (finding 12)', () => {
+  const iterationRow = (n: number): EndpointRunResult =>
+    ({
+      ...row('item-1', 'First request'),
+      iteration: n,
+      responseBody: `{"hit":${n}}`,
+    }) as EndpointRunResult
+  const rows = () => screen.getAllByTestId('runner-result-row')
+  const selected = () => rows().filter((r) => r.getAttribute('data-selected') === 'true')
+
+  it('the third iteration stays selected, and its detail stays open, while the run goes on', async () => {
+    const bridge = runnerBridge()
+    render(<Workbench />)
+    await startRunFromConfig()
+    for (const n of [1, 2, 3]) await bridge.emit(n, iterationRow(n))
+
+    fireEvent.click(rows()[2])
+    expect(selected()).toEqual([rows()[2]])
+    expect(screen.getByTestId('monaco').textContent).toContain('"hit": 3')
+
+    // Still running: execute has not resolved.
+    await leaveAndReturn()
+
+    expect(screen.getByTestId('runner-stop')).toBeTruthy()
+    expect(rows()).toHaveLength(3)
+    expect(selected()).toEqual([rows()[2]])
+    expect(screen.getByTestId('runner-result-detail-iteration').textContent).toBe('Iteration 3')
+    expect(screen.getByTestId('monaco').textContent).toContain('"hit": 3')
+
+    // The live list is swapped for the report at the end: same row, same detail.
+    await bridge.finish(report([1, 2, 3].map(iterationRow)))
+    await waitFor(() => expect(screen.queryByTestId('runner-stop')).toBeNull())
+    expect(selected()).toEqual([rows()[2]])
+    expect(screen.getByTestId('monaco').textContent).toContain('"hit": 3')
+  })
+})
