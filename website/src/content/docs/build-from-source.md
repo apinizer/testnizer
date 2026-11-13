@@ -56,7 +56,7 @@ For fully isolated networks:
 4. Install normally
 
 After installation, disable the auto-update check on the isolated machine:
-**Settings → Updates → Automatic update check → off**.
+**Project Settings → Update → Automatically check for updates → off**. (Automatic update checks follow the project that is open.)
 
 ## Release integrity
 
@@ -64,11 +64,16 @@ Releases are built by GitHub Actions on isolated per-OS runners. The workflow
 logs and artifact upload steps are publicly visible at
 [github.com/apinizer/testnizer](https://github.com/apinizer/testnizer/actions)
 so you can trace each artifact back to the exact build run that produced it.
+The build pipeline pins every GitHub Action to a fixed version and runs with
+read-only permissions.
 
 ## Reporting issues
 
 Open an issue at
-[github.com/apinizer/testnizer/issues](https://github.com/apinizer/testnizer/issues).
+[github.com/apinizer/testnizer/issues](https://github.com/apinizer/testnizer/issues),
+or use **Report an issue or request a feature** in the Help and user menus: it
+opens a new GitHub issue in your browser with the version, build and operating
+system filled in, and nothing else is sent.
 
 Security issues — use GitHub's private security advisory channel
 ([Report a vulnerability privately](https://github.com/apinizer/testnizer/security/advisories/new))

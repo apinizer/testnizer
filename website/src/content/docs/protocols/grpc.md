@@ -26,13 +26,15 @@ file (including any local imports from the same directory tree) and populates
 the **Service** and **Method** dropdowns.
 
 If your proto imports other proto files by relative path, Testnizer resolves
-them from the same root directory — you don't need to flatten the file.
+them from the same root directory — you don't need to flatten the file. An import
+must point to a regular `.proto` file; anything else is refused.
 
 ### 2. URL
 
 Paste a URL pointing to a `.proto` file. Testnizer fetches the file at send
 time and parses it exactly as if you had loaded it from disk. Useful for
-proto files hosted on a schema registry or internal artifact server.
+proto files hosted on a schema registry or internal artifact server. Imports of a
+downloaded proto are resolved inside its own folder and cannot reach outside it.
 
 ### 3. Server reflection
 
@@ -66,6 +68,8 @@ TLS is enabled and `:80` when it is not.
 
 For server TLS without a valid CA, you can add a self-signed CA certificate
 in **Settings → Certificates** and Testnizer will trust it for that hostname.
+gRPC always verifies the server certificate (there is no switch to turn that off) and
+does not use the proxy setting.
 
 ## Service and method
 

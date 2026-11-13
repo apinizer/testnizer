@@ -5,11 +5,10 @@ order: 4
 section: Protocols
 ---
 
-Testnizer's GraphQL editor understands the difference between HTTP-only
-endpoints and servers that support the `graphql-ws` subscription transport,
-and routes each operation type accordingly.
+Testnizer's GraphQL editor sends queries and mutations over HTTP and opens a
+WebSocket connection for subscriptions.
 
-> **Multi-tab:** URL, query, variables, headers, and response are stored per-tab. The introspected schema is **shared** across all tabs pointing at the same endpoint — introspect once, use everywhere.
+> **Multi-tab:** URL, query, variables, headers, response and the introspected schema are stored per tab. Introspect in each tab that needs the schema; restart clears it.
 
 ## Creating a GraphQL request
 
@@ -56,7 +55,7 @@ query GetUser($id: ID!) {
 Hit **Send** (or `Ctrl+Enter`). Testnizer detects the operation type:
 
 - `query` / `mutation` → sent as HTTP POST (standard JSON body)
-- `subscription` → connection upgraded to `graphql-ws` WebSocket transport
+- `subscription` → opened over a WebSocket connection (see [Subscriptions](#subscriptions))
 
 You can have multiple operations in the editor. Use the operation name dropdown
 in the toolbar to pick which one runs.
@@ -104,19 +103,18 @@ schema SDL file directly:
 
 ## Subscriptions
 
-Testnizer automatically upgrades to a WebSocket connection when the operation
-is a `subscription`. The connection uses the `graphql-ws` protocol
-(`Sec-WebSocket-Protocol: graphql-ws`).
+Testnizer opens a WebSocket connection when the operation is a `subscription`. It uses
+the `graphql-transport-ws` protocol and, when a server refuses that, tries the older
+`graphql-ws` once. **Connection init payload** sets what is sent when the connection
+opens, which is where many servers expect a token. Use a `{{variable}}` for it.
 
-The subscription timeline behaves the same as the WebSocket editor — events
-appear as they arrive, you can pause, filter, and inspect individual payloads.
+Events appear as they arrive. The log keeps the latest 1000 and shows how many it dropped.
 
-A **Stop** button appears while the subscription is active. Clicking it sends a
-`complete` message and closes the WebSocket. The connection also closes when you
-close the tab.
+A **Stop** button appears while the subscription is active. It ends the subscription and
+closes the connection. The connection also closes when you close the tab or leave the
+project.
 
-For servers that use the older `subscriptions-transport-ws` protocol, toggle
-the **Legacy WS** option in the request settings (gear icon).
+A subscription uses the proxy setting, like the other requests. If a document holds several named operations, an **Operation** select appears and the chosen one runs.
 
 ## HTTP details
 
@@ -132,6 +130,13 @@ For queries and mutations, the request is a POST with:
 
 The **Console** tab shows the raw HTTP request and response so you can verify
 exactly what was sent.
+
+Queries and mutations use the same **SSL verification** and **Follow redirects**
+settings as HTTP (request, then project, then app) and the configured proxy; see
+[Request settings](/docs/protocols/http#request-settings). When the document holds
+several named operations, Send, Run, Subscribe and Generate Code all use the one chosen
+in the **Operation** select. Exports to Postman and Insomnia say so when they cannot
+carry a connection init payload.
 
 ## Persisted queries (APQ)
 

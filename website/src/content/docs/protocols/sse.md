@@ -1,226 +1,119 @@
 ---
-title: SSE & AI Chat
-description: Monitor Server-Sent Event streams and chat with 14 AI providers — both backed by Testnizer's local SSE engine.
+title: SSE (Server-Sent Events)
+description: Connect to a Server-Sent Events stream, watch events as they arrive, filter by event type, resume with Last-Event-ID, and test against the built-in SSE mock server.
 order: 7
 section: Protocols
 ---
 
-Testnizer's SSE editor and AI Chat editor share the same `eventsource`-based
-engine running in the Node main process. The renderer receives parsed events
-over IPC and never holds an open socket itself.
+Testnizer's SSE editor opens a long-lived `text/event-stream` connection from the
+Node main process and shows each event in a log. The renderer receives parsed
+events over IPC and never holds a socket itself.
 
----
+Looking for the chat editor? AI Chat has its own page: [AI Chat](/docs/protocols/ai-chat).
 
-## Server-Sent Events
+## Opening an SSE tab
 
-### Opening an SSE tab
+Click **+ New** → **SSE**. The editor has a connection bar (status, method, URL,
+**Connect**), collapsible **Last-Event-ID**, **Body** and **Custom Headers**
+sections, and the event log. A new tab starts with an empty URL.
 
-Click **+ New** → **SSE**. The editor opens with a URL field, a headers table,
-and an empty event timeline.
+## URL, method and headers
 
-### URL and headers
-
-Enter the SSE endpoint URL. Variables resolve in real time:
+Enter the endpoint URL. `{{variables}}` resolve when you press Connect, in the
+URL, the headers, the body and the Last-Event-ID field:
 
 ```
 {{apiBaseUrl}}/events/stream?topic={{topicId}}
 ```
 
-Add HTTP headers in the table below the URL bar. Common headers for SSE
-endpoints:
+Add request headers under **Custom Headers**, for example
+`Authorization: Bearer {{accessToken}}`. If you do not set `Accept`, Testnizer
+sends `Accept: text/event-stream`.
 
-- `Authorization: Bearer {{accessToken}}`
-- `Accept: text/event-stream` (added automatically — override only if the
-  server requires a different value)
-- `Cache-Control: no-cache` (added automatically)
+The method list next to the status pill offers **GET**, **POST**, **PUT**,
+**PATCH** and **DELETE**, because some servers open a stream in answer to a POST.
+For anything other than GET the **Body** section opens up, with a **JSON** or
+**Text** type; if you add a body and no `Content-Type` header, Testnizer sets
+`application/json` or `text/plain` to match.
 
-### Connect and Disconnect
+A GET without a body uses the browser-style `EventSource` behaviour, including
+automatic reconnects. A request with another method, or with a body, is read as a
+plain streaming response and **does not reconnect on its own**: when the stream
+ends, the connection ends.
 
-Click **Connect** to open the connection. Testnizer sends the HTTP request with
-`Accept: text/event-stream` and holds the socket open. The status indicator
-shows **Connecting** → **Open**.
+If a custom proxy is configured in Project Settings or Settings, the connection
+goes through it (see **Bypass for hosts** there to skip it for some hosts).
 
-Click **Disconnect** to close the connection. The timeline is preserved so you
-can scroll through the events received before disconnecting.
+## Connect, Cancel, Disconnect, Reconnect
 
-### Event timeline
+- **Connect** opens the stream. The status pill goes **Connecting** → **Connected**.
+  The handshake gives up after 15 seconds.
+- While connecting, the button becomes **Cancel**. Once connected it becomes
+  **Disconnect**, and the log stays so you can scroll through what arrived.
+- **Reconnect** (shown while connected) disconnects and connects again with the
+  settings currently in the editor, and starts a fresh log.
 
-Each parsed event appears in the timeline as it arrives:
+Ctrl/Cmd+Enter connects when you are in the SSE tab.
 
-| Column | Description |
+If the connection drops while it is open, the status pill reads
+**Reconnecting…** until the next successful open. When the server ends the
+stream for good, for example by answering HTTP 204 to the reconnect, the tab
+shows **The server closed the stream** (with the HTTP status when there is one)
+and goes to disconnected; a stream that simply ended is not logged as an error.
+Connection failures say what went wrong and where (refused, timed out, DNS, TLS,
+HTTP status), and tokens in the URL never appear in the message.
+
+## Last-Event-ID and resume
+
+Open the **Last-Event-ID** section and type an event id to resume from it.
+Testnizer sends it as the `Last-Event-ID` request header on connect, so a
+compliant server replays what you missed.
+
+When the stream drops and the client reconnects by itself (GET without a body),
+it sends the id of the last event it received. The field in the editor is not
+filled in for you: it holds only the value you typed, and **Reconnect** reads
+that value, not the last id seen.
+
+## The event log
+
+Each event is one row:
+
+| Part | Shows |
 |---|---|
-| **Time** | Timestamp when the event was received (local clock) |
-| **Event** | The `event:` field value, or `message` if omitted |
-| **ID** | The `id:` field value, if present |
-| **Data** | The `data:` payload, truncated to the first 256 characters |
+| Type badge | The `event:` name, or `message` when the event has none |
+| Preview | The `data:` text on one line, shortened to 80 characters |
+| **JSON** badge | Shown when the data parses as JSON |
+| `id:` | The event's `id:` field, when present |
+| Time | When the event arrived (local clock, with milliseconds) |
 
-Click any row to expand the full payload in the detail panel on the right. JSON
-payloads are automatically pretty-printed.
+Click a row to expand it. JSON data is pretty-printed; other data is shown as
+received, with line breaks.
 
-### SSE field parsing
+- **Filter.** Once the stream has produced more than one event type, a filter
+  appears above the log with **All events** and one entry per type, plus a
+  `shown of total` count. Filtering only hides rows; choose **All events** to
+  see everything again.
+- **Footer.** The footer shows the event count, the time connected, an
+  **Auto-scroll** checkbox and **Clear**.
+- **Comment lines** (those starting with `:`) are not shown. A `retry:` value is
+  used for automatic reconnects and is not displayed.
 
-Testnizer parses all four standard SSE fields:
+Events are kept in memory for the session. They are not written to disk, and
+what an older build saved is cleaned at start.
 
-| Field | What Testnizer does |
-|---|---|
-| `event:` | Labels the event type; drives the event-type filter |
-| `data:` | Accumulates multi-line data blocks and renders them together |
-| `id:` | Stores the last event ID; sent automatically on reconnect |
-| `retry:` | Updates the reconnect interval displayed in the status bar |
+## Saving and History
 
-Comment lines (starting with `:`) are shown in the timeline in muted text, not
-discarded — useful for debugging keep-alive comments from the server.
+Ctrl+S saves the tab with the request: URL, method, body, headers, Last-Event-ID
+and the filter. A credential typed as a literal header value is not kept after a
+restart unless it is a `{{variable}}`. Connections appear in History, with
+credentials masked, and reopen in the SSE editor.
 
-### Last-Event-ID and resume
+SSE requests are not run by the Collection Runner, Test Suites or the Scheduler;
+they are listed as unsupported and skipped.
 
-When the connection drops and you click **Reconnect**, Testnizer sets the
-`Last-Event-ID` request header to the last `id:` value it received. A
-compliant SSE server uses this to replay missed events from the correct
-position.
+## Testing against a mock
 
-The last known ID is shown in the connection panel so you can inspect or clear
-it before reconnecting.
-
-### Filter by event type
-
-Use the **Filter** field above the timeline to show only events of a specific
-type. Type `payment.confirmed` and the timeline hides all other event types in
-real time. The filter does not drop events — clearing the filter restores the
-full timeline.
-
----
-
-## AI Chat
-
-### Opening an AI Chat tab
-
-Click **+ New** → **AI Chat**. The editor opens with a provider picker, a
-model selector, and a chat interface.
-
-### Supported providers
-
-| Provider | Notes |
-|---|---|
-| **OpenAI** | GPT-4o, o1, o3 and other OpenAI models |
-| **Anthropic** | Claude 3.5, 3.7, and current model series |
-| **Google** | Gemini 1.5 / 2.0 family |
-| **xAI** | Grok models |
-| **DeepSeek** | DeepSeek-V3 and reasoning models |
-| **Mistral** | Mistral Large, Nemo, Codestral |
-| **Groq** | Fast-inference hosting for open models |
-| **Perplexity** | Sonar online models |
-| **Cerebras** | Wafer-scale inference |
-| **Cohere** | Command R+ |
-| **Fireworks** | Open-model hosting (Llama, Mixtral, etc.) |
-| **DeepInfra** | Open-model hosting |
-| **Together** | Together AI open-model hosting |
-| **OpenRouter** | Unified router to many providers |
-
-Select a provider from the dropdown. Testnizer loads the model list for that
-provider into the **Model** dropdown.
-
-### Custom URL (self-hosted models)
-
-Select **Custom URL** in the provider dropdown to target a self-hosted
-OpenAI-compatible endpoint. This works with:
-
-- **vLLM** — `http://localhost:8000/v1`
-- **LM Studio** — `http://localhost:1234/v1`
-- **Ollama** — `http://localhost:11434/v1`
-- **TGI (Text Generation Inference)** — `http://localhost:8080/v1`
-
-Enter the base URL. The model name must be entered manually when using a custom
-URL, as there is no remote model list to fetch.
-
-No API key is required for local endpoints — leave the key field blank.
-
-### Model parameters
-
-| Parameter | Description |
-|---|---|
-| **Model** | The model identifier (e.g. `gpt-4o`, `claude-3-5-sonnet-20241022`) |
-| **Temperature** | Sampling temperature — 0.0 for deterministic, higher for more varied output |
-| **Max tokens** | Maximum number of tokens in the response |
-| **Top-p** | Nucleus sampling cutoff (leave at 1.0 unless you have a specific reason to change it) |
-
-Parameters are saved per chat tab. A single project can hold multiple AI Chat
-tabs with different providers and model configurations for comparison.
-
-Each AI Chat tab is fully isolated — provider, model, API key, system prompt,
-conversation history, and streaming state are all per-tab. Open multiple tabs
-to run parallel conversations with different providers without any state
-bleeding between them.
-
-### System prompt
-
-The **System** field at the top of the chat accepts a free-text system prompt.
-Variables resolve here:
-
-```
-You are a helpful assistant for {{projectName}}.
-Only answer questions about {{productDomain}}.
-```
-
-The system prompt is sent as the first message in every request, regardless of
-how many turns the conversation has.
-
-### Multi-turn conversation
-
-Messages accumulate in the conversation window. Each **Send** adds the user
-message and the model's reply to the history. The full history is included in
-every subsequent request so the model has context.
-
-**History window**: by default, all messages in the current tab are included.
-For long conversations, set a **History limit** (number of turns) in the chat
-settings to truncate older messages and stay within the model's context window.
-
-### Storing API keys safely
-
-API keys should never be pasted into the chat editor directly. Use environment
-variables instead:
-
-1. Open **Environments** for the current project.
-2. Add a variable: `apiKey` → `sk-...` (set as the **value**, not
-   the initial value, so it is not exported with the project).
-3. In the AI Chat editor's **API Key** field, enter `{{apiKey}}`.
-
-The key is stored in the local SQLite database on your machine, encrypted by
-the project environment. It never leaves the device.
-
-```
-API Key field:  {{openaiApiKey}}
-                   ↓
-          resolved at send time from the active environment
-          → main process sends the request
-          → renderer sees only the response stream
-```
-
-### Streaming vs. non-streaming
-
-The **Streaming** toggle in the chat toolbar controls how responses are
-delivered:
-
-- **Off** (default): Testnizer waits for the full response before rendering
-  it. Useful when you need to post-process the response in a test script or
-  when the endpoint doesn't support streaming.
-- **On**: the model's response appears token by token as the API streams the
-  `text/event-stream` response. Latency to first token is lower. While a
-  streaming response is in progress, a **Cancel** button appears in the
-  toolbar — clicking it stops the stream immediately and preserves whatever
-  text was already received.
-
-### Saving and exporting a conversation
-
-Click the **Save** button in the chat toolbar to persist the current
-conversation to the project history. Saved conversations appear in the
-**History** panel on the left sidebar under the AI Chat tab.
-
-To export:
-
-- **JSON** — the raw messages array in the format `[{role, content}, ...]`,
-  suitable for replaying or passing to another system
-- **Markdown** — a human-readable transcript with user/assistant labels and
-  timestamps
-
-Exports are written to disk via a native save dialog — the renderer initiates
-the export via IPC and the main process writes the file.
+You do not need a real backend to try the editor. The Mocks panel has an **SSE**
+mock server that streams events you define, with an interval, heartbeats, loops,
+`Last-Event-ID` resume and deliberate mid-stream errors. **Start & open in SSE
+tab** points this editor at it. See [SSE mock server](/docs/mock-server/sse).

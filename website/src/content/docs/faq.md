@@ -8,14 +8,29 @@ section: Reference
 ## How do I migrate from Postman?
 
 Open the **Import** dialog (`File → Import` or drag a file onto the left
-sidebar) and select your Postman export file. Testnizer supports Postman
-Collection v2 and v2.1 format. Environments exported from Postman as JSON are
-also importable — use the same Import dialog and choose the environment file.
+sidebar), pick the **Postman** card and select your Postman file. Testnizer
+reads Postman Collection **v1, v2.0, v2.1 and v3** (a single JSON file, or a
+Postman 12 *Native Git* folder through **Import folder…**), Postman
+environments and globals files, a Postman data export, and `.zip` archives of
+those. It detects the version from the file, so you do not choose one.
 
-Folder hierarchy, request descriptions, pre-request scripts, test scripts, and
-authorization settings are all preserved. A small number of Postman-specific
-collection runner options (such as `postman.setNextRequest`) are treated as
-no-ops and logged to the console during import.
+Folder hierarchy, request descriptions, pre-request scripts, test scripts,
+saved examples and authorization settings are preserved. Collection variables
+become the project's **Globals**, and collection-level auth and scripts move to
+the import folder instead of being copied into every request. When something
+cannot be carried over (an auth type Testnizer does not have, a Kafka request,
+a `pm.require` call), the **Import finished** panel lists it. See
+[Import & export](/docs/import-formats#postman) for the details, and
+[Environments & variables](/docs/environments#globals) for Globals.
+
+---
+
+## Which protocols does Testnizer support?
+
+HTTP / REST, SOAP, WebSocket, GraphQL (queries, mutations and subscriptions),
+gRPC, SSE, Socket.IO, MQTT, MCP and AI Chat, each with its own editor. Mock
+servers come in four kinds (HTTP, SSE, AI and MCP). See the
+[Protocols overview](/docs/protocols) and [Mock servers](/docs/mock-server).
 
 ---
 
@@ -46,7 +61,11 @@ There are two approaches.
 **Git repository (recommended).** Initialize a Git repository inside the
 project folder from the branch panel in the left sidebar. Commit and push
 changes as you would with any codebase. Team members clone the repository and
-open it in Testnizer. Branches map directly to Testnizer branches.
+open it in Testnizer. Branches map directly to Testnizer branches. A pull brings the whole project,
+including project-level authentication, scripts and request settings. Secret
+variable values, mock tokens and certificate passphrases are never written to
+the file, so each teammate enters their own; a pull tells you how many secret
+values are still empty on your machine. See [Git integration](/docs/git-branches).
 
 **Database copy.** For one-time transfers, you can copy the `testnizer.db` file
 from one machine to another. The file is located in `~/Library/Application
@@ -60,19 +79,21 @@ so use it only for initial setup or migration scenarios.
 
 Most scripts work without changes. Testnizer implements the `pm` scripting API
 including `pm.request`, `pm.response`, `pm.environment`, `pm.globals`,
-`pm.collectionVariables`, `pm.variables`, `pm.test`, `pm.expect`, and
-`pm.sendRequest`.
+`pm.collectionVariables`, `pm.variables`, `pm.vault`, `pm.test` (including the
+`done` callback form), `pm.expect`, and `pm.sendRequest`.
 
 The following Postman-specific features are not supported:
 
-- `postman.setNextRequest()` — collection runner uses sequential execution only
 - Visualizer (`pm.visualizer.set()`) — no equivalent; output is ignored
+- `pm.require()` (Postman package libraries) — throws a clear "not supported"
+  error; the built-in `require()` libraries cover the common cases
 - `pm.info.iteration` and `pm.info.iterationCount` — available only inside the
   collection runner context, not in single-request runs
 - References to the built-in Postman cloud or monitor APIs
 
-If a script calls an unsupported method, Testnizer logs a warning to the
-console and continues execution rather than failing the request.
+A script that calls `pm.require()` fails with a clear "not supported" error,
+and the import report names scripts that use it. A project that arrives from Git
+or a project file runs no scripts until you allow it on this computer.
 
 ---
 
@@ -89,13 +110,34 @@ local file and lists all available operations without making a network request.
 
 ---
 
+## Are my secrets encrypted?
+
+Variables marked **secret** (current and initial value), mock server
+authentication, the Mock MCP bearer token, certificate passphrases and AI Chat
+API keys are encrypted with the operating system's keychain (Keychain on macOS,
+DPAPI on Windows, libsecret on Linux) in the local database. They are written as
+empty values to every file that leaves the app: Git, project files and exports.
+History, the Console, run reports and mock logs mask credentials and the values
+of your secret variables before anything is stored or shown.
+
+Where no keychain exists (some Linux setups), these values are stored without
+encryption, and the environment editor and Settings say so. If a value can no
+longer be decrypted (for example after the keychain changed), the field asks you
+to enter it again. Credentials you type straight into a request's Auth tab are
+stored as typed in the request: keep the real value in a secret variable and
+reference it as `{{secretVar}}`.
+
+The optional **app password** is a lock on launch, not database encryption.
+
+---
+
 ## How are certificates and private keys stored?
 
 Client certificate files (PEM / P12) are referenced by their file path. The
-private key passphrase, if any, is stored through `electron-store` using the OS
-keychain on macOS (Keychain Access) and the Windows Credential Manager on
-Windows. On Linux, the passphrase is stored in an encrypted file in the
-application data directory using a machine-specific key.
+private key passphrase, if any, is encrypted with Electron `safeStorage` — the OS
+keychain: Keychain on macOS, DPAPI on Windows, libsecret on Linux. Where no keychain
+is available on Linux, the passphrase is stored without encryption on your computer.
+It is never written to project files, Git or exports.
 
 The certificate files themselves are never copied into the application data
 directory — Testnizer reads them from the path you specify at the time each
@@ -108,8 +150,8 @@ request is made.
 Yes. Testnizer contains no telemetry, crash reporting, or usage analytics
 library. The application does not make any background network requests other
 than checking for software updates (see "How do updates work in an air-gapped
-environment?" below). Update checks can also be disabled from **Settings →
-General → Check for updates automatically**.
+environment?" below). Update checks can also be disabled from **Project Settings →
+Update → Automatically check for updates**.
 
 ---
 
@@ -126,11 +168,17 @@ effect.
 ## How do updates work in an air-gapped environment?
 
 In an air-gapped environment, disable automatic update checks in
-**Settings → General**. When a new version is available, download the
+**Project Settings → Update**. When a new version is available, download the
 appropriate installer from the official releases page on a machine with
 internet access, transfer the file to the air-gapped machine, and run the
 installer manually. The installer replaces the existing installation while
 preserving the application data directory.
+
+By default Testnizer downloads an update in the background and asks when it is
+ready: **Restart & install**, install when you quit, or **Skip this version**.
+The first start of a new version copies your database to a `backups` folder
+first; see [Getting started](/docs/getting-started#restoring-a-backup-after-an-update).
+Testnizer 1.6.0 needs macOS 13 (Ventura) or later.
 
 On macOS, drag the new `.app` bundle into the Applications folder. On Windows,
 run the `.exe` installer. On Linux, replace the `.AppImage` file or install the
@@ -150,72 +198,36 @@ built-in Git integration.
 
 ---
 
-## How do I send test results to a CI pipeline?
+## Is there a command-line runner for CI?
 
-Use the Testnizer CLI runner. Run a collection from the command line with:
-
-```bash
-testnizer run --collection ./my-project.db \
-              --environment staging \
-              --reporter junit \
-              --output ./results/report.xml
-```
-
-The JUnit XML output is compatible with Jenkins, GitLab CI, GitHub Actions, and
-most other CI systems. A JSON reporter is also available with `--reporter json`.
-Set the `--bail` flag to stop execution on the first failed test and exit with a
-non-zero code.
-
-For details on all CLI options, see [CLI and automation](/docs/cli-and-automation).
+Not in 1.6.0. A standalone CLI is on the roadmap but has not shipped. For
+unattended runs today, use the in-app **Scheduler**, and save the **HTML** or
+**JSON** report of any run. See [Collection runner & automation](/docs/cli-and-automation).
 
 ---
 
 ## Does Testnizer support proxy servers?
 
-Yes. Configure a proxy from **Settings → Network → Proxy**. You can set an
-HTTP or SOCKS5 proxy address that applies to all requests made by Testnizer.
-Per-request proxy overrides are not currently supported; the proxy setting is
-global.
+Yes. Set an HTTP proxy in **Settings → Network → Proxy**, or for one project in its
+**Project Settings**. It applies to HTTP, SOAP, GraphQL (subscriptions included),
+WebSocket, Socket.IO, MQTT and SSE. Hosts in **Bypass for hosts** go out directly.
+SOCKS proxies are not supported yet, and a request set to use one fails with a message.
+gRPC, MCP and AI Chat do not use this setting.
 
-Proxy authentication (username and password) is supported. The credentials are
-stored in `electron-store` and are not written to collection or environment
-files.
+Proxy authentication (username and password) is supported. The password is
+encrypted with the OS keychain (`safeStorage`) and is not written to collection or
+environment files.
 
-The system proxy configured in macOS Network Preferences or Windows Internet
-Options is respected by default unless you set a custom proxy in Testnizer
-settings.
-
----
-
-## How do I disable TLS certificate verification for gRPC?
-
-In the gRPC request editor, open the **Connection** tab and set
-**TLS mode** to `Insecure`. This disables server certificate verification for
-that request only and is equivalent to passing `grpc.ssl_target_name_override`
-and using an insecure channel credential.
-
-Do not use insecure mode against production endpoints. For self-signed
-certificates, the better approach is to upload the root CA certificate in
-**Settings → Certificates → Trusted CA** and keep TLS verification enabled.
+With **Use system proxy**, HTTP requests read the `HTTP_PROXY`, `HTTPS_PROXY` and
+`NO_PROXY` environment variables, not the macOS or Windows network settings. WebSocket,
+Socket.IO, MQTT, SSE and GraphQL subscriptions use only a custom proxy.
 
 ---
 
-## What is planned for v1.1?
+## Can I turn off TLS certificate verification for gRPC?
 
-The v1.1 roadmap includes the following items, in rough priority order:
-
-- **Team workspace sync over self-hosted Git server** — first-class UI for
-  configuring a remote origin without leaving the app
-- **Environment variable groups** — organize variables into named groups within
-  a single environment for large projects with many services
-- **Collection runner improvements** — data-driven runs from CSV/JSON files,
-  parallel execution option, and an improved HTML report template
-- **Response comparison** — side-by-side diff between two saved responses or
-  between a baseline and a live response
-- **WSDL code generation** — generate typed client stubs from a loaded WSDL
-  in TypeScript and Java
-- **Plugin API (beta)** — allow third-party extensions to add request editors,
-  response viewers, and sidebar panels
-
-The roadmap is subject to change. Follow the release notes on the official
-website for confirmed delivery dates.
+No. gRPC does not follow the **SSL verification** setting that HTTP, SOAP and
+GraphQL use: with TLS on, it always verifies the server certificate. For a server
+with a self-signed certificate, add its CA certificate as described in the
+[gRPC page](/docs/protocols/grpc), or use **Plaintext** for a local server that
+does not use TLS.

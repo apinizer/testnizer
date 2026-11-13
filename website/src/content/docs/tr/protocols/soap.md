@@ -122,6 +122,8 @@ URL alanında değişkenler çözülür:
 ### Özel Header'lar
 
 SOAP isteğiyle birlikte gönderilen HTTP header'larını ekleyin veya geçersiz kılın.
+**Headers** sekmesi ve **Auth** sekmesi (klasörden ya da projeden devralınan yetkilendirme
+dahil) Çalıştır'da olduğu gibi Gönder'de de gönderilir; Kod Oluştur de aynı isteği gösterir.
 Yaygın kullanımlar:
 
 - `Authorization: Bearer {{accessToken}}` (servis bir OAuth gateway'inin arkasındaysa)
@@ -138,11 +140,19 @@ farklı bir SOAPAction dizesi gerektirir.
 
 ## WS-Security
 
-Mesaj düzeyinde güvenlik header'ları eklemek için istek editöründeki **WS-Security**
-sekmesini açın: UsernameToken (Text ve Digest), Timestamp, XML İmzası ve XML
+Mesaj düzeyinde güvenlik header'ları eklemek için istek editöründe **Auth** sekmesini açıp
+**WS-Security**'yi seçin: UsernameToken (Text ve Digest), Timestamp, XML İmzası ve XML
 Şifreleme.
 
+Yapılandırma, Gönder'de ve Runner'da envelope'a uygulanır; Kod Oluştur bunu dışarıda bırakır ve
+bunu söyler. UsernameToken parolası History, Console ve çalıştırma raporlarında maskelenir.
 Tam kılavuz için [/tr/docs/ws-security](/tr/docs/ws-security) adresine bakın.
+
+## Ağ ayarları
+
+SOAP istekleri, HTTP ile aynı **SSL doğrulaması** ve **yönlendirmeleri izle** ayarlarını
+(istek, sonra proje, sonra uygulama) ve Proje Ayarları'nda ya da Ayarlar'da tanımlı proxy'yi
+kullanır. Bkz. [HTTP / REST](/tr/docs/protocols/http#ayarlar-sekmesi).
 
 ## Yanıt görünümü
 

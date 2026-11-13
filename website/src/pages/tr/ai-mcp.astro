@@ -1,0 +1,298 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro'
+import { icons } from '../../components/icons'
+
+/**
+ * Yapay zeka, MCP ve akışlar — 1.6.0 yetenek sayfası. Yapısı /tr/security-tools
+ * ile aynıdır. Buradaki istemciler tasarım gereği dışarı bağlanır (bir AI
+ * sağlayıcısı, bir MCP sunucusu, bir olay akışı); her biri TLS denetçisindeki
+ * gibi açık bir not taşır. Mock sunucular ise kablo çekiliyken de çalışan
+ * kısımdır ve sayfa bunu söyler.
+ */
+
+const clients = [
+  {
+    id: 'mcp',
+    icon: icons.plug,
+    name: 'MCP istemcisi',
+    tagline: 'Bir Model Context Protocol sunucusunun sunduğu her şey, tek sekmede.',
+    body: "Streamable HTTP, eski SSE veya stdio ile bağlanın (yerel sunucuyu Testnizer sizin için başlatır). Testnizer 2024-10-07'den 2026-07-28'e kadar protokol sürümlerini müzakere eder — Otomatik'te bırakın, Legacy'ye zorlayın ya da sekme başına bir sürüm sabitleyin — ve sunucu çağrının ortasında ek girdi istediğinde bunun için bir form gösterir.",
+    points: [
+      "Her aracın JSON Schema'sından üretilen form (ve JSON görünümü) ile araçlar, şablonlu kaynaklar, prompt'lar ve bildirimler",
+      'El sıkışma dahil hattaki her şeyin ham JSON-RPC çerçeve görünümü; müzakere edilen sürüm ve sunucu talimatları',
+      'No Auth, Basic, Bearer, API Key veya OAuth 2.1 — adım adım OAuth 2.1 hata ayıklayıcıyla: metadata, dinamik istemci kaydı, PKCE, oturum açma, token değişimi',
+      "{{değişken}} destekli özel HTTP başlıkları ve stdio ortam değişkenleri; VS Code, Cursor ve Claude Desktop için yapılandırmayı yapıştırın ya da dışa aktarın",
+      "Ctrl+S ile kaydedin, Tests ve Scripts ekleyin (pm.test, pm.expect, pm.mcp), MCP isteklerini Runner'da, bir Test Paketinde ya da zamanlanmış görevde çalıştırın",
+    ],
+    docs: '/tr/docs/protocols/mcp',
+    note: "Bu özellik sizin gösterdiğiniz MCP sunucusuna bağlanır. OAuth token'ları, PKCE doğrulayıcısı ve istemci sırrı uygulamanın ana sürecinde kalır ve asla kaydedilmez. Bir koşu, yalnızca bu bilgisayarda aynı komutla bir kez bağlandığınız stdio sunucusunu başlatır.",
+  },
+  {
+    id: 'mcp-scan',
+    icon: icons.shieldCheck,
+    name: 'MCP güvenlik taraması',
+    tagline: 'Bir MCP sunucusu için A–F notlu rapor; her bulgu kanıtıyla birlikte.',
+    body: 'Taramayı bir HTTP veya SSE MCP sunucusuna yöneltin; sunucuya nasıl ulaşıldığını, nasıl kimlik doğruladığını, protokol düzeyinde nasıl davrandığını ve araç açıklamalarının ne söylediğini denetler. Her kategori kendi puanını alır, her bulgu kanıtını taşır ve raporun tamamı tek, kendi kendine yeten bir HTML dosyası olarak dışa aktarılır.',
+    points: [
+      'Taşıma: HTTPS ve TLS, sürüm düşürme, farklı kaynağa yönlendirme',
+      "Kimlik doğrulama: kimliksiz initialize, WWW-Authenticate, korunan kaynak ve yetkilendirme sunucusu metadata'sı, sorgu dizesindeki token'lar",
+      "Araç açıklamalarında prompt injection sezgileri — talimat ezme, gizli Unicode, gömülü URL'ler, araç gölgeleme, sır gibi görünen şema alanları",
+      'Protokol davranışı, bilgi ifşası, CORS ve güvenlik başlıkları, isteğe bağlı hız sınırı denemesi; 2026-07-28 sunucuları için başlık ve önbellek kapsamı kontrolleri',
+      'Kimlik bilgileri, gösterilmeden ya da dışa aktarılmadan önce her bulgudan temizlenir',
+    ],
+    docs: '/tr/docs/protocols/mcp',
+    note: 'Tarama sunucuya gerçek istekler gönderir. Yalnızca test etmeye yetkili olduğunuz sunucularda çalıştırın — tarama ekranı da bunu söyler.',
+  },
+  {
+    id: 'ai-chat',
+    icon: icons.bot,
+    name: 'AI Chat',
+    tagline: 'Bir modelle konuşun ve MCP sunucularınızı kullanmasına izin verin — her çağrıyı siz onaylayarak.',
+    body: 'On dört sağlayıcı — OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together ve OpenRouter — artı kendi uç noktanız için özel URL. Yanıtlar akışlı gelir; sistem istemi, sıcaklık (temperature) ve en fazla token sizin denetiminizde.',
+    points: [
+      'Araç olarak MCP sunucuları: kayıtlı bir MCP isteği ya da anlık bir URL veya stdio komutu; sunucu ve araç başına açma/kapama',
+      'Her araç çağrısı önce sorar: Bir kez izin ver, Bu konuşma boyunca bu araca izin ver ya da Reddet. "Araçları sormadan çalıştır" yalnızca açık sekme için geçerlidir ve asla kaydedilmez',
+      'Her yanıt durumunu, ilk token süresini, toplam süreyi ve token kullanımını gösterir — sağlayıcı bildirmiyorsa uydurulmuş bir sıfır değil, "bildirilmedi" yazar',
+      'Sağlayıcı yanıtın ortasında hata verirse kısmi metin korunur ve hata altında gösterilir',
+      'Sohbetler yerelde saklanır, yazılırken maskelenir, asla dışa aktarılmaz ya da commit edilmez; API anahtarları sağlayıcı başına işletim sistemi anahtarlığıyla şifrelenir',
+    ],
+    docs: '/tr/docs/protocols/ai-chat',
+    note: "AI Chat çevrimdışı değildir: mesajlarınız makinenizden doğrudan yapılandırdığınız sağlayıcıya, araç çağrıları da etkinleştirdiğiniz MCP sunucularına gider. Hiçbir şey Testnizer'dan ya da Apinizer'dan geçmez.",
+  },
+  {
+    id: 'sse',
+    icon: icons.zap,
+    name: 'Server-Sent Events istemcisi',
+    tagline: 'Uzun ömürlü bir olay akışı açın ve gelişini izleyin.',
+    body: "Bir SSE uç noktasına kendi başlıklarınızla bağlanın, bir Last-Event-ID'den devam edin, günlüğü olay türüne göre süzün ve JSON yükleri biçimlendirilmiş okuyun. Sunucu akışı bitirip yeniden bağlanmayı reddettiğinde sekme bunu hata olarak kaydetmek yerine açıkça söyler.",
+    points: [
+      "Özel başlıklar ve devam edilecek bir Last-Event-ID",
+      'Olay türü filtresi; JSON veri algılanır ve biçimlendirilir',
+      "Cmd/Ctrl+Enter bağlanır; özel bir proxy HTTP'de olduğu gibi uygulanır",
+      'Gelen olaylar oturum boyunca bellekte yaşar — diske yazılmaz',
+    ],
+    docs: '/tr/docs/protocols/sse',
+    note: 'Bu özellik yalnızca girdiğiniz uç noktaya bağlanır, başka hiçbir yere değil.',
+  },
+]
+
+const mocks = [
+  {
+    id: 'mock-sse',
+    icon: icons.activity,
+    name: 'Mock SSE sunucusu',
+    tagline: 'Tam olarak yazdığınız gibi davranan bir olay akışı.',
+    points: [
+      'Çerçeve başına {{stream.seq}}, {{stream.iteration}} ve {{stream.now}} ile tanımladığınız olaylar',
+      'Aralık, heartbeat, döngü, açık tutma ve Last-Event-ID ile devam',
+      'Bilerek hata: N olaydan sonra bir event: error',
+      'Hazır ayarlar: Ticker, Finite replay, Notifications feed, Slow / heartbeat',
+    ],
+    docs: '/tr/docs/mock-server/sse',
+  },
+  {
+    id: 'mock-ai',
+    icon: icons.bot,
+    name: 'Mock AI (LLM) sunucusu',
+    tagline: "OpenAI ve Anthropic API'leri, yerelde yanıtlanır.",
+    points: [
+      "OpenAI chat completions (ve /v1/models) ile Anthropic messages API — istemci isterse akışlı, istemezse JSON; token kullanımı son parçada",
+      'Sabit boyutlu parçalar ya da tek seferde gönderim; seçtiğiniz durma nedeniyle bitiş',
+      'Hata enjeksiyonu: 401, 429 ve 500 yanıtları, Anthropic 529 overloaded_error ya da N parçadan sonra hata',
+      "Mock MCP Echo sunucusuyla eşleşen bir araç çağrısı gidiş-dönüş hazır ayarı; editör bir SDK'nın kullanması gereken temel URL'yi gösterir",
+    ],
+    docs: '/tr/docs/mock-server/ai',
+  },
+  {
+    id: 'mock-mcp',
+    icon: icons.plug,
+    name: 'Mock MCP sunucusu',
+    tagline: "Araçlarını, kaynaklarını ve prompt'larını sizin tanımladığınız yerel bir MCP sunucusu.",
+    points: [
+      'Streamable HTTP ve eski SSE; tek uç nokta hem 2025 hem 2026-07-28 istemcilerine hizmet verir',
+      "JSON Schema'lı araçlar, kaynaklar, prompt'lar ve gerçek bir korumalı sunucu gibi davranan bearer kimlik doğrulama",
+      'Gecikme ve hata senaryoları: JSON-RPC hatası, isError, zaman aşımı, HTTP durumu, her N. çağrı — ve çağrı ortasında girdi isteme',
+      "Hazır ayarlar: Echo, Auth required, Error server, Complex schemas, Slow; canlı günlükler ve MCP sekmesinde aç",
+    ],
+    docs: '/tr/docs/mock-server/mcp',
+  },
+]
+
+const reasons = [
+  {
+    title: 'Sağlayıcı hesabı yok, token faturası yok',
+    body: 'Bir ajanı, bir SDK entegrasyonunu ya da bir sohbet arayüzünü anında yanıt veren ve çağrı başına hiçbir maliyeti olmayan bir modele karşı geliştirin ve test edin.',
+  },
+  {
+    title: 'İstediğiniz anda hata',
+    body: 'Üçüncü istekte 429, beşinci parçadan sonra hata, her iki çağrıda bir zaman aşımına uğrayan bir araç — gerçek sağlayıcıların tam ihtiyacınız olduğunda asla üretmediği durumlar.',
+  },
+  {
+    title: 'Belirlenimci ve çevrimdışı',
+    body: "Mock'lar varsayılan olarak 127.0.0.1'e bağlanır ve ağ gerektirmez; aynı koşu dizüstü bilgisayarda, laboratuvarda ya da hava boşluklu bir makinede aynı yanıtı verir.",
+  },
+]
+---
+
+<BaseLayout
+  lang="tr"
+  title="Yapay zeka, MCP ve akışlar — MCP istemcisi, MCP güvenlik taraması, AI Chat, mock LLM ve MCP sunucuları | Testnizer"
+  description="OAuth 2.1 hata ayıklayıcılı ve A–F güvenlik taramalı tam bir MCP istemcisi, MCP araçlarını onayınızla çağıran AI Chat, bir SSE istemcisi — ve yerel mock SSE, LLM ve MCP sunucuları; ücretsiz bir masaüstü API istemcisinde."
+>
+  <section class="border-b border-border bg-bg-soft">
+    <div class="mx-auto max-w-4xl px-6 py-20 text-center md:py-24">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1 text-xs font-medium text-accent-text shadow-sm">
+        <Fragment set:html={icons.sparkles} />
+        Yapay zeka, MCP ve akışlar
+      </div>
+      <h1 class="mx-auto max-w-3xl text-balance text-4xl font-semibold tracking-tight text-text md:text-5xl">
+        Ajanlarınızın konuştuğu sunucuları test edin — sonra mock'layın.
+      </h1>
+      <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
+        Her çerçeveyi gösteren bir MCP istemcisi, MCP sunucuları için bir güvenlik taraması, onların araçlarını kullanabilen bir AI sohbeti ve bir SSE istemcisi — yanında da makinenizde çalışan mock SSE, LLM ve MCP sunucuları.
+      </p>
+      <div class="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <a
+          href="/tr/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          İndir — ücretsiz, hesapsız
+        </a>
+        <a
+          href="#mocks"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          Üçünü de mock'layın
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <div class="space-y-5">
+        {clients.map((c) => (
+          <article id={c.id} class="scroll-mt-20 rounded-card border border-border bg-bg p-7">
+            <div class="flex items-start gap-4">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={c.icon} />
+              </span>
+              <div class="min-w-0 flex-1">
+                <h2 class="text-lg font-semibold text-text">{c.name}</h2>
+                <p class="mt-1 text-sm font-medium text-accent-text">{c.tagline}</p>
+                <p class="mt-3 text-sm leading-relaxed text-text-muted">{c.body}</p>
+                <ul class="mt-4 space-y-2">
+                  {c.points.map((p) => (
+                    <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                      <span class="mt-0.5 flex-shrink-0 text-accent-text">
+                        <Fragment set:html={icons.check} />
+                      </span>
+                      <span>{p}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p class="mt-4 rounded-lg border border-border bg-bg-soft px-3.5 py-2.5 text-xs leading-relaxed text-text-soft">
+                  {c.note}
+                </p>
+                <a href={c.docs} class="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-accent-text hover:text-text">
+                  Dokümanları okuyun
+                  <Fragment set:html={icons.arrowRight} />
+                </a>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <section id="mocks" class="scroll-mt-14 border-y border-border bg-bg-soft py-20">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Üçünü de mock'layın</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          Sahte bir model, sahte araçlar ve sahte bir akış — makinenizde.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-text-muted">
+          Yukarıdaki istemcilerin gerçek bir sunucuya ihtiyacı var. Bunların yok. Mocks panelinden bir mock oluşturun, bir hazır ayar seçin ve <strong class="text-text">Başlat ve aç</strong> ile Testnizer'ın kendi istemcisini ona yöneltin — bir mock'tan açılan sohbet sekmesi kayıtlı sağlayıcı anahtarınızı asla göndermez. Bu sayfanın kablo çekiliyken de çalışan kısmı burası.
+        </p>
+      </div>
+
+      <div class="mt-12 grid grid-cols-1 gap-4 md:grid-cols-3">
+        {reasons.map((r) => (
+          <div class="rounded-card border border-border bg-bg p-6">
+            <h3 class="text-base font-semibold text-text">{r.title}</h3>
+            <p class="mt-2 text-sm leading-relaxed text-text-muted">{r.body}</p>
+          </div>
+        ))}
+      </div>
+
+      <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {mocks.map((m) => (
+          <article id={m.id} class="flex scroll-mt-20 flex-col rounded-card border border-border bg-bg p-7">
+            <div class="flex items-center gap-3">
+              <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={m.icon} />
+              </span>
+              <h3 class="text-lg font-semibold text-text">{m.name}</h3>
+            </div>
+            <p class="mt-3 text-sm font-medium text-accent-text">{m.tagline}</p>
+            <ul class="mt-4 flex-1 space-y-2">
+              {m.points.map((p) => (
+                <li class="flex items-start gap-2.5 text-sm leading-relaxed text-text-muted">
+                  <span class="mt-0.5 flex-shrink-0 text-accent-text">
+                    <Fragment set:html={icons.check} />
+                  </span>
+                  <span>{p}</span>
+                </li>
+              ))}
+            </ul>
+            <a href={m.docs} class="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-accent-text hover:text-text">
+              Dokümanları okuyun
+              <Fragment set:html={icons.arrowRight} />
+            </a>
+          </article>
+        ))}
+      </div>
+
+      <p class="mx-auto mt-8 max-w-3xl text-center text-sm leading-relaxed text-text-muted">
+        Hepsini birleştirin, bir ajanın tüm döngüsü tek makinede koşar: AI Chat mock LLM ile konuşur, mock LLM bir araç çağrısı ister, Mock MCP Echo sunucusu da yanıtlar. HTTP mock'ları aynı panelde durur — <a href="/tr/docs/mock-server" class="text-accent-text underline decoration-dotted underline-offset-2 hover:text-text">mock sunucu dokümanlarına bakın</a>.
+      </p>
+    </div>
+  </section>
+
+  <section class="py-20">
+    <div class="mx-auto max-w-4xl px-6">
+      <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Ne, nereye bağlanır?</p>
+      <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">
+        Siz nereye yöneltirseniz orası dışında çevrimdışı.
+      </h2>
+      <div class="mt-6 space-y-5 text-base leading-relaxed text-text-muted">
+        <p>
+          Testnizer'ın konuşacağı kendine ait bir sunucusu yoktur. AI Chat mesajlarınızı yapılandırdığınız sağlayıcıya gönderir, MCP istemcisi ve güvenlik taraması girdiğiniz MCP sunucusuna bağlanır, SSE istemcisi de istediğiniz akışı açar. Bu bağlantılar makinenizden doğrudan o adrese gider — gönderdiğiniz her HTTP isteğiyle aynı kural.
+        </p>
+        <p>
+          Yerelde kalanlar: sohbetler, bir MCP oturumunun OAuth durumu, sağlayıcı API anahtarları (işletim sistemi anahtarlığıyla şifreli), alınan akış olayları ve bu sayfadaki tüm mock sunucular.
+        </p>
+      </div>
+      <div class="mt-9 flex flex-col gap-3 sm:flex-row">
+        <a
+          href="/tr/download"
+          class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
+        >
+          <Fragment set:html={icons.download} />
+          macOS, Windows, Linux için İndir
+        </a>
+        <a
+          href="/tr/security"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          Çevrimdışı model nasıl uygulanıyor?
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+      </div>
+    </div>
+  </section>
+</BaseLayout>

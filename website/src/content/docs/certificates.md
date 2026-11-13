@@ -146,6 +146,19 @@ Certificates are stored in the project's local SQLite database. Moving or
 copying the database does not expose the private keys; the keys are in the
 OS keychain and only decrypted in the main process at connection time.
 
+## Certificates in Git and project files
+
+Certificate entries are part of the project, so they travel with Git and project files,
+but secrets do not: a certificate **passphrase** or keystore key password is written as an
+empty value and a pull or import never overwrites the one you have locally. A certificate
+whose files (`.crt`, `.key`, `.pfx`), keystore entry or passphrase are not on this
+computer arrives **disabled**, so a certificate that cannot load does not fail every
+request to its host. Enable it after you add the files. A pull keeps the enabled or
+disabled state you already have for a certificate.
+
+On macOS the file pickers open folders whose names end in `.jks`, `.p12`, `.pfx` or
+`.keystore` so you can browse into them.
+
 ## gRPC certificates
 
 gRPC TLS uses the same project certificate store. In the gRPC editor's

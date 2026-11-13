@@ -119,7 +119,9 @@ Variables resolve in the URL field:
 
 ### Custom Headers
 
-Add or override HTTP headers sent with the SOAP request. Common uses:
+Add or override HTTP headers sent with the SOAP request. The **Headers** tab and the
+**Auth** tab (including auth inherited from the folder or the project) are sent on
+Send as well as on Run, and Generate Code shows the same request. Common uses:
 
 - `Authorization: Bearer {{accessToken}}` (when the service sits behind an OAuth gateway)
 - `X-Correlation-ID: {{$randomUUID}}`
@@ -136,11 +138,19 @@ WSDL specifies — particularly older Microsoft WCF services.
 
 ## WS-Security
 
-Open the **WS-Security** tab in the request editor to add message-level
+Open the **Auth** tab in the request editor and choose **WS-Security** to add message-level
 security headers: UsernameToken (Text and Digest), Timestamp, XML Signature,
 and XML Encryption.
 
-See the full guide at [/docs/ws-security](/docs/ws-security).
+The configuration is applied to the envelope on Send and in the Runner, and Generate
+Code leaves it out and says so. A UsernameToken password is masked in History, the
+Console and run reports. See the full guide at [/docs/ws-security](/docs/ws-security).
+
+## Network settings
+
+SOAP requests follow the same **SSL verification** and **Follow redirects**
+settings as HTTP (request, then project, then app), and use the proxy configured in
+Project Settings or Settings. See [HTTP / REST](/docs/protocols/http#request-settings).
 
 ## Response view
 

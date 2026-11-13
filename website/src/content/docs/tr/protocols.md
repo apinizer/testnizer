@@ -1,6 +1,6 @@
 ---
 title: Protokollere genel bakış
-description: Testnizer'da HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MCP ve AI Chat için hızlı referans.
+description: Testnizer'da HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MQTT, MCP ve AI Chat için hızlı referans.
 order: 1
 section: Protokoller
 ---
@@ -15,13 +15,14 @@ Node ana sürecinde kendine ait bir motoru vardır.
 |---|---|---|---|
 | HTTP / REST | tam | `axios` | Metodlar, gövde modları, mTLS, scriptler, assertion'lar |
 | SOAP | tam | `soap` kütüphanesi + `wsse` | WSDL import, manuel envelope, WS-Security |
-| WebSocket | tam | `ws` | wss + özel header'lar + JSON composer |
+| WebSocket | tam | `ws` | wss + parametreler + özel header'lar, Metin / JSON / XML / HTML / ikili composer, kayıtlı mesajlar |
 | GraphQL | tam | `graphql` + `graphql-ws` | Sorgu + mutasyon + abonelik |
 | gRPC | tam | `@grpc/grpc-js` + `@grpc/proto-loader` | Dört streaming modu |
 | SSE | tam | `eventsource` | Uzun süreli akışlar, Last-Event-ID ile devam |
-| Socket.IO | tam | `socket.io-client` | Namespace'ler, auth, emit + subscribe, çift yönlü zaman çizelgesi |
-| MCP | tam | `@modelcontextprotocol/sdk` | Streamable HTTP / SSE / stdio; araçları listele ve çağır |
-| AI Chat | tam | sağlayıcıya özgü HTTP | 14 sağlayıcı + özel URL, streaming |
+| Socket.IO | tam | `socket.io-client` (v4 ve v2) | İstemci v2 / v3 / v4, namespace'ler, auth, dinleyiciler, Onay (Ack), çok argümanlı emit, çift yönlü zaman çizelgesi |
+| MQTT | tam | `mqtt` (MQTT.js) | 3.1.1 ve 5.0, TLS, Son Vasiyet, konular, kayıtlı mesajlar |
+| MCP | tam | `@modelcontextprotocol/client` (SDK v2) | Streamable HTTP / SSE / stdio; araçlar, kaynaklar, istemler, bildirimler, OAuth 2.1, güvenlik taraması |
+| AI Chat | tam | sağlayıcıya özgü HTTP | 14 sağlayıcı + özel URL, streaming, araç olarak MCP sunucuları |
 
 ## HTTP
 
@@ -51,20 +52,23 @@ Hawk, AWS Signature v4, OAuth 1.0, OAuth 2.0 (tam akış), Üst koleksiyondan au
   servisler için kullanışlıdır
 
 WS-Security yerleşik olarak gelir (UsernameToken, Timestamp, XML İmzası, XML
-Şifreleme). [WS-Security kılavuzu →](/tr/docs/ws-security)
+Şifreleme) ve zarfa hem Send'de hem Runner'da uygulanır.
+[WS-Security kılavuzu →](/tr/docs/ws-security)
 
 ## WebSocket
 
-`ws://` veya `wss://` adreslerine özel header'larla bağlanın. Mesajlar bir
-zaman çizelgesinde görünür (zaman damgalarıyla birlikte gönderilen + alınan). Mesajları JSON veya metin olarak oluşturun.
+`ws://` veya `wss://` adreslerine sorgu parametreleri ve özel header'larla bağlanın.
+Mesajlar bir zaman çizelgesinde görünür (zaman damgalarıyla birlikte gönderilen +
+alınan; aranabilir ve filtrelenebilir). Mesajları metin, JSON, XML, HTML ya da gerçek
+ikili çerçeveler (Base64 / hex) olarak oluşturun ve yeniden kullandıklarınızı kayıtlı
+mesaj olarak saklayın.
 
 [Tam referans →](/tr/docs/protocols/websocket)
 
 ## GraphQL
 
-Sorgu, mutasyon ve abonelik desteği. Testnizer, uç noktanızın yalnızca HTTP mi
-yoksa `graphql-ws` (abonelik transport) destekleyip desteklemediğini algılar
-ve buna göre yönlendirir.
+Query, mutation ve subscription desteği. Sorgu ve mutasyonlar HTTP ile, abonelikler
+WebSocket bağlantısıyla (`graphql-transport-ws` ya da eski `graphql-ws`) gider.
 
 Şema içgözlemi isteğe bağlı olarak çalıştırılır ve istek editörünün sağ tarafında
 aranabilir bir tür tarayıcısını doldurur.
@@ -94,6 +98,8 @@ Bir SSE uç noktasında Gönder'e tıklayın; Testnizer bağlantıyı açık tut
 gelen olayları ayrıştırır. Last-Event-ID header'ı yeniden bağlanmada otomatik olarak ayarlanır,
 böylece sunucu kaldığı yerden devam edebilir.
 
+[Tam referans →](/tr/docs/protocols/sse)
+
 ## Socket.IO
 
 Bir Socket.IO sunucusuna namespace ve isteğe bağlı bir bearer token ile bağlanın.
@@ -103,21 +109,37 @@ HTTP long-polling fallback ile müzakere eder, renderer yalnızca event'leri gö
 Akış:
 
 - URL'yi (örn. `http://localhost:3000`), namespace'i (`/` veya `/admin`) ve
-  isteğe bağlı bearer token'ı girin
-- **Connect**'e tıklayın — Testnizer `connect` ack'ını bekler, el sıkışma
+  isteğe bağlı bearer token'ı girin; istemci sürümünü (v4, v3 ya da Socket.IO 2
+  sunucuları için **v2**) Ayarlar'dan seçin
+- **Bağlan**'a tıklayın — Testnizer `connect` ack'ını bekler, el sıkışma
   başarısız olursa `connect_error` mesajını gösterir
-- Herhangi bir event'i JSON yüküyle **Emit** edin (event adı + gövde)
-- Herhangi bir event adına **Subscribe** olun; gelen event'ler zaman çizelgesine akar
+- Herhangi bir event'i bir veya daha fazla argümanla (metin, JSON veya ikili),
+  isteğe bağlı **Onay (ack)** ile **Gönder**in
+- **Olaylar** sekmesinde hangi olayların dinleneceğini seçin ya da **Tüm olayları
+  dinle**; gelen event'ler zaman çizelgesine akar
 - Çift yönlü zaman çizelgesi giden emit'ler için `↑`, gelen event'ler için `↓`
   ve zaman damgaları gösterir
 
 [Tam referans →](/tr/docs/protocols/socketio)
 
+## MQTT
+
+Bir MQTT 3.1.1 veya 5.0 aracısına (broker) `mqtt://`, `mqtts://`, `ws://` ya da
+`wss://` üzerinden bağlanın. Bağlanınca abone olunacak konuları ekleyin (ya da
+canlı açıp kapatın), QoS, retain bayrağı ve yük biçimiyle mesaj yayınlayın, bir Son
+Vasiyet tanımlayın ve her şeyi WebSocket ve Socket.IO editörlerinin kullandığı aynı
+aranabilir günlükte okuyun. MQTT 5.0, CONNECT özellikleri, mesaj özellikleri ve
+abonelik seçenekleri ekler. Postman v3 MQTT istekleri içe ve dışa aktarılır.
+Postman'in Görselleştirme (konu başına grafik) özelliği yoktur.
+
+[Tam referans →](/tr/docs/protocols/mqtt)
+
 ## MCP (Model Context Protocol)
 
-Testnizer bir MCP **istemcisidir**. MCP sunucularına bağlanır, araçlarını keşfeder
-ve onları argümanlarla çağırır — Claude Desktop'un bir aracı çağırırken üstlendiği
-rolün aynısı. Resmi `@modelcontextprotocol/sdk` üzerine kuruludur.
+Testnizer bir MCP **istemcisidir**. MCP sunucularına bağlanır, araçlarını,
+kaynaklarını ve istemlerini keşfeder ve onları argümanlarla çağırır — Claude
+Desktop'un bir aracı çağırırken üstlendiği rolün aynısı. Resmi MCP SDK'sı (v2)
+üzerine kuruludur.
 
 Üç transport:
 
@@ -127,9 +149,16 @@ rolün aynısı. Resmi `@modelcontextprotocol/sdk` üzerine kuruludur.
 - **stdio** — Testnizer sunucuyu yerel bir alt süreç olarak başlatır. Tam komutu
   girin (örn. `npx @modelcontextprotocol/server-everything`)
 
-Bağlandıktan sonra **Tools** paneli sunucunun yayınladığı her aracı input
-şemasıyla birlikte listeler. Bir aracı seçin, JSON argümanları doldurun,
-**Invoke**'a tıklayın ve yapılandırılmış sonucu inceleyin.
+Bağlandıktan sonra **Araçlar**, **Kaynaklar** ve **İstemler** listeleri
+sunucunun yayınladıklarını gösterir. Bir araç seçin, argümanları doldurun
+(girdi şemasından üretilen bir form ya da ham JSON), **Çalıştır**'a tıklayın ve
+sonucu inceleyin. **Messages** paneli sunucu bildirimlerini ve ham JSON-RPC
+çerçevelerini gösterir.
+
+İstemcinin ötesinde bir OAuth 2.1 hata ayıklayıcısı, notlandırılan bir güvenlik
+taraması ve Runner'da, Test Suite'lerde ve Scheduler'da koşan MCP istekleri vardır.
+Kendi istemcinizi sahte bir sunucuya karşı denemek için bir
+[MCP mock sunucusu](/tr/docs/mock-server/mcp) kullanın.
 
 [Tam referans →](/tr/docs/protocols/mcp)
 
@@ -139,6 +168,12 @@ Bir sağlayıcı seçin (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq
 Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter) veya
 kendi barındırdığınız vLLM / LM Studio / Ollama / TGI için **Özel URL** seçin.
 
-Konuşmalar sistem prompt'u ile birlikte çok turludur. Yanıtlar varsayılan olarak
-akıtılır. Değişkenler (`{{apiKey}}`) URL, header'lar ve gövdede çözülür — API
-anahtarlarını isteğin içinde değil, proje ortamında saklamak için kullanışlıdır.
+Konuşmalar sistem prompt'u ile birlikte çok turludur ve geldikçe akıtılır.
+Asistan MCP sunucularının araçlarını çağırabilir; her araç çağrısı varsayılan
+olarak onayınızı ister. Konuşmalar yerelde saklanır, dışa aktarılmaz ve commit
+edilmez.
+
+Sohbeti sağlayıcı hesabı olmadan ve token harcamadan denemek için bir
+[AI mock sunucusuna](/tr/docs/mock-server/ai) yöneltin.
+
+[Tam referans →](/tr/docs/protocols/ai-chat)

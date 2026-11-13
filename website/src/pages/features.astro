@@ -10,10 +10,12 @@ const sections = [
       'Full method coverage including TRACE and CONNECT',
       'Body modes: raw / JSON / XML / urlencoded / form-data with file upload / binary',
       'mTLS with project-scoped client certificates and OS-keychain-encrypted passphrases',
-      'HTTP / SOCKS proxy with auth, follow / no-follow redirects, custom timeouts',
+      'HTTP proxy with auth and a host bypass list; redirects, SSL verification and timeouts inherit from project, then app settings',
+      'Paste a cURL command (bash, Windows CMD or PowerShell) into the URL bar and it becomes the request — with an Undo',
+      'Path variables (:id) in their own table, filled in on Send and Run',
       'Pre-request and post-response scripts with a Postman-compatible pm API',
       'Test assertions on status, headers, body, response time, JSON path, XML path',
-      'Cookie jar per workspace with manual edit',
+      'Cookie jar per project; the Headers tab lists every auto-generated header and where it comes from',
     ],
   },
   {
@@ -28,6 +30,7 @@ const sections = [
       'XML Signature (RSA-SHA1 / RSA-SHA256), envelope or specific elements',
       'XML Encryption (AES-128/256-CBC, AES-128/256-GCM, RSA-OAEP key wrapping)',
       'SOAPAction extraction and header negotiation',
+      'WS-Security applied to the envelope on Send and in the Runner, whatever the envelope prefix',
     ],
   },
   {
@@ -35,19 +38,19 @@ const sections = [
     icon: icons.radio,
     bullets: [
       'ws + wss with custom headers and subprotocol negotiation',
-      'JSON / text composer with template variable substitution',
-      'Message timeline (sent + received) with timestamps and direction',
-      'Reconnection control with manual disconnect',
+      'Message formats: text, JSON, XML, HTML, Base64 and hex, with {{variable}} substitution',
+      'Saved messages, log search and filters, per-message details and the time between messages',
+      'Received messages stay in memory for the session — never written to disk',
     ],
   },
   {
     title: 'GraphQL',
     icon: icons.network,
     bullets: [
-      'Query, mutation, and subscription support over HTTP and WebSocket transports',
+      'Queries and mutations over HTTP; subscriptions over WebSocket with graphql-transport-ws, falling back to graphql-ws',
       'Schema introspection with searchable type browser',
-      'Variables JSON editor synced with the operation',
-      'graphql-ws for live subscriptions, no SaaS proxy',
+      'Variables JSON editor and a connection init payload for subscriptions',
+      'An Operation select when a document has several named operations — Send, Run and Generate Code use the chosen one',
     ],
   },
   {
@@ -65,33 +68,44 @@ const sections = [
     title: 'Server-Sent Events',
     icon: icons.zap,
     bullets: [
-      'Long-lived event streams with automatic Last-Event-ID resume',
-      'Per-event filtering, JSON parsing of data payloads',
-      'Reconnect-with-backoff (configurable)',
+      'Long-lived event streams with custom headers and Last-Event-ID resume',
+      'Event-type filter, with JSON data payloads detected and formatted',
+      'A clear "the server closed the stream" state when a server ends the stream and refuses the reconnect',
     ],
   },
   {
     title: 'Socket.IO',
     icon: icons.arrowsLeftRight,
     bullets: [
-      'WebSocket and HTTP long-polling transports via the official socket.io-client',
-      'Namespaces and connection-time auth (bearer token via the auth payload)',
-      'Custom HTTP headers on the WebSocket upgrade handshake',
-      'Emit any event with a JSON payload — outgoing events appear in the timeline',
-      'Subscribe to any event name; incoming events stream into the same timeline',
+      'WebSocket and HTTP long-polling transports, with a choice of client v2, v3 or v4',
+      'Namespaces and connection-time auth (v2 sends the token as a token query parameter)',
+      'Custom HTTP headers on the handshake',
+      'Emit with several arguments and acknowledgements; event descriptions with a listen switch',
       'Bidirectional event timeline with direction arrows and timestamps',
+    ],
+  },
+  {
+    title: 'MQTT',
+    icon: icons.repeat,
+    bullets: [
+      'MQTT 3.1.1 and 5.0 — client id, clean session, keep-alive, username and password, last will',
+      'TLS with your certificates',
+      'Subscriptions with QoS; publish with QoS, retain and MQTT 5 properties',
+      'Saved messages and a searchable message log; the password is masked in History and the Console',
+      'Saves with Ctrl+S and round-trips through Postman v3',
     ],
   },
   {
     title: 'MCP (Model Context Protocol)',
     icon: icons.plug,
     bullets: [
-      'Built on the official @modelcontextprotocol/sdk — same wire protocol Claude Desktop and other MCP hosts speak',
-      'Three transports: Streamable HTTP, SSE (legacy), stdio for locally-spawned servers',
-      'For stdio, Testnizer launches the server as a subprocess (e.g. `npx @modelcontextprotocol/server-everything`)',
-      'Server identity (name + version) shown after handshake',
-      'Tool catalog with input-schema preview',
-      'Invoke any tool with a JSON arguments object; inspect the structured result',
+      'Built on the official MCP TypeScript SDK (v2) — Streamable HTTP, legacy SSE, and stdio for locally-spawned servers',
+      'Protocol 2024-10-07 through 2026-07-28: Auto, Legacy, or a pinned version per tab',
+      'Tools (with a form built from the schema), Resources with templates, Prompts and Notifications',
+      'Raw JSON-RPC frame view of everything on the wire, the handshake included',
+      'No Auth, Basic, Bearer, API Key and OAuth 2.1, with a step-by-step OAuth 2.1 debugger',
+      'A graded A–F security scan for HTTP and SSE MCP servers',
+      'Tests and Scripts (pm.mcp), and MCP requests in the Runner, Test Suites and the Scheduler',
     ],
   },
   {
@@ -100,16 +114,18 @@ const sections = [
     bullets: [
       '14 providers: OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq, Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter',
       'Custom URL provider for self-hosted vLLM / LM Studio / Ollama / TGI endpoints',
-      'Streaming responses with abort support',
-      'Multi-turn conversations with system prompt control',
-      'Environment variable resolution in URL, headers, and body',
+      'Streaming responses with abort support; temperature and max tokens',
+      'Multi-turn conversations with system prompt control, stored locally and masked when written',
+      'MCP servers as tools — every tool call asks for your approval by default',
+      'Per reply: status, time to first token, duration and token usage',
     ],
   },
   {
     title: 'Mock Server',
     icon: icons.server,
     bullets: [
-      'Multiple HTTP server instances on custom ports — bound to 127.0.0.1 by default, 0.0.0.0 with explicit opt-in',
+      'Multiple server instances on custom ports — bound to 127.0.0.1 by default, 0.0.0.0 with explicit opt-in',
+      'Four kinds: HTTP, SSE (scripted event streams), AI (OpenAI- and Anthropic-compatible LLM) and MCP',
       'Endpoint matching: exact, :param placeholders, * / ** wildcards, full-regex with named capture',
       'Per-response conditions: header / query / path-param / body-JSONPath / body-XPath / method / and / or — first match wins',
       'Templating with Handlebars + dynamic values (e.g. {{request.body.x}}, {{$timestamp}}, {{$randomUUID}})',
@@ -121,7 +137,8 @@ const sections = [
       'Configurable CORS (origins / methods / headers / credentials / max-age) with auto preflight responses',
       'Echo endpoint at /__echo for quick reflection of inbound requests',
       'Proxy passthrough for unmatched paths with optional recording — captured upstream responses persist as new mock endpoints for offline replay',
-      'Import endpoints from OpenAPI 3 (JSON / YAML, $ref dereferencing, examples + schema-derived bodies) or Postman v2 collections',
+      'Import endpoints from OpenAPI 3 or Swagger 2.0 (JSON / YAML, examples + schema-derived bodies) or Postman v1, v2.x and v3 collections — a spec\'s $ref never reads a local file or calls a URL',
+      'Create a mock from an APIs folder: saved examples become its responses',
       'Live request log per server with replay-friendly request / response capture and matched-rule attribution',
     ],
   },
@@ -161,8 +178,21 @@ const tools = [
         Everything in one app. Everything on-device.
       </h1>
       <p class="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-text-muted">
-        Testnizer covers the full enterprise API surface — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO and MCP, plus an AI client and a complete security workbench: keystores, certificates, JWT/JOSE, JWK/JWKS, SAML and TLS inspection. The work that usually means keytool, openssl, jwt.io and a folder of scripts happens here, offline. None of it phones home.
+        Testnizer covers the full enterprise API surface — REST, SOAP, gRPC, GraphQL, WebSocket, SSE, Socket.IO, MQTT and MCP, plus an AI client and a complete security workbench: keystores, certificates, JWT/JOSE, JWK/JWKS, SAML and TLS inspection. The work that usually means keytool, openssl, jwt.io and a folder of scripts happens here, offline. None of it phones home.
       </p>
+      <a
+        href="/ai-mcp"
+        class="mx-auto mt-7 flex max-w-2xl items-center gap-3 rounded-card border border-border bg-bg p-4 text-left transition-colors hover:border-border-strong hover:bg-bg-muted"
+      >
+        <span class="grid h-9 w-9 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+          <Fragment set:html={icons.sparkles} />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-semibold text-text">New in 1.6.0: AI, MCP and streaming</span>
+          <span class="mt-0.5 block text-xs leading-relaxed text-text-muted">MCP client and security scan, AI Chat with MCP tools, and mock SSE, LLM and MCP servers.</span>
+        </span>
+        <span class="text-accent-text"><Fragment set:html={icons.arrowRight} /></span>
+      </a>
     </div>
   </section>
 
@@ -201,7 +231,7 @@ const tools = [
       <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">Mock Server</p>
       <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text">A real HTTP server, configured in the same UI.</h2>
       <p class="mt-4 max-w-3xl text-base leading-relaxed text-text-muted">
-        Define endpoints with path params, wildcards, or regex. Pick a response with declarative conditions on headers, query, body (JSONPath/XPath), or method. Sign and encrypt the responses with templating, in-memory state, and a Node-vm sandbox that runs your JavaScript before each reply. Plus auth, schema validation, failure injection, rate limit, CORS, OpenAPI/Postman import, and a recording proxy — all on 127.0.0.1.
+        Define endpoints with path params, wildcards, or regex. Pick a response with declarative conditions on headers, query, body (JSONPath/XPath), or method. Sign and encrypt the responses with templating, in-memory state, and a Node-vm sandbox that runs your JavaScript before each reply. Plus auth, schema validation, failure injection, rate limit, CORS, OpenAPI/Postman import, and a recording proxy — on 127.0.0.1 by default. The same panel runs SSE, AI (LLM) and MCP mocks too — see <a href="/ai-mcp#mocks" class="text-accent-text underline decoration-dotted underline-offset-2 hover:text-text">AI, MCP &amp; streaming</a>.
       </p>
 
       <figure class="mt-10 overflow-hidden rounded-card border border-border bg-bg shadow-sm">
@@ -255,7 +285,7 @@ const tools = [
         <div class="rounded-card border border-border bg-bg p-6">
           <h3 class="text-base font-semibold text-text">Collection runner</h3>
           <p class="mt-2 text-sm leading-relaxed text-text-muted">
-            Sequential or parallel execution of multiple endpoints with HTML report output. Iterate over data files for parameterised runs.
+            Sequential execution of multiple endpoints with HTML and JSON reports. Iterate over data files, mark critical requests that stop the run, and give a test suite a fail script.
           </p>
         </div>
         <div class="rounded-card border border-border bg-bg p-6">
@@ -285,7 +315,7 @@ const tools = [
         <div class="rounded-card border border-border bg-bg p-6">
           <h3 class="text-base font-semibold text-text">Code generation</h3>
           <p class="mt-2 text-sm leading-relaxed text-text-muted">
-            Export any request as cURL, JavaScript fetch, Python requests — useful for sharing without sharing tokens.
+            36 variants across 20 languages, cURL for bash, CMD and PowerShell included. Secret variables stay as {"{{name}}"} and typed credentials show as *** unless you opt in.
           </p>
         </div>
       </div>

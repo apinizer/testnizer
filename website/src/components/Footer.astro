@@ -11,6 +11,7 @@ const t = isTr
   ? {
       product: 'Ürün',
       features: 'Özellikler',
+      aiMcp: 'Yapay zeka & MCP',
       tools: 'Güvenlik araçları',
       security: 'Güvenlik',
       download: 'İndir',
@@ -32,6 +33,7 @@ const t = isTr
   : {
       product: 'Product',
       features: 'Features',
+      aiMcp: 'AI & MCP',
       tools: 'Security tools',
       security: 'Security',
       download: 'Download',
@@ -56,6 +58,7 @@ const cols = [
     title: t.product,
     links: [
       { href: p('/features'), label: t.features },
+      { href: p('/ai-mcp'), label: t.aiMcp },
       { href: p('/security-tools'), label: t.tools },
       { href: p('/security'), label: t.security },
       { href: p('/download'), label: t.download },

@@ -5,8 +5,9 @@ order: 3
 section: Guides
 ---
 
-> **CLI status:** The standalone `testnizer-cli` package is in active
-> development for v1.1. The in-app collection runner and scheduler ship today.
+> **CLI status:** there is no standalone command-line runner yet. The in-app
+> collection runner and scheduler are what ship today, and a run's report
+> exports as HTML or JSON.
 
 ## Collection runner
 
@@ -21,14 +22,25 @@ clicking Send on each one.
    folder and choose **Run folder**)
 3. Configure the run:
    - **Requests** — check or uncheck individual requests to include
-   - **Environment** — pick which environment's variables to use
+   - **Environment** — the run uses the project's active environment, and the
+     results, run history and reports name it ("No environment" when none)
    - **Iterations** — number of times to run the entire sequence (useful for
      load-sampling or data-driven testing)
    - **Delay between requests** — ms pause between each request
    - **Delay between iterations** — ms pause between whole passes, which is a
      different gap and often the one you actually want
-   - **Stop on first failure** — halt the run if any test assertion fails
+   - **Stop run if an error occurs** — halt the run at the first failure
 4. Click **Start**
+
+### Critical requests
+
+Tick **Critical request** in a request's Settings tab (or use the toggle next to
+the **Critical** badge on a Flow row of the run sequence) and the run stops when
+that request fails or cannot run, whatever *Stop run if an error occurs* says.
+Other requests keep going past failures as before, and teardown still runs.
+The results, run history and HTML / JSON reports name the critical request that
+stopped the run, and critical rows carry a badge. Setup and Teardown rows do
+not offer the toggle.
 
 ### Setup, Flow and Teardown
 
@@ -61,7 +73,20 @@ has a **Run setup script** and a **Run teardown script**. They execute once per
 run — not once per iteration — and the teardown script is guaranteed the same
 way teardown requests are: it still runs when the flow stops early. In the
 results, script rows carry a **SCRIPT** chip rather than a status code, and a
-script that threw is reported as an error.
+script that threw is reported as an error. A third slot, **Run fail script**,
+runs once after teardown only when the run is red — use it to post the report
+(`pm.run.exportHtml()`) to a mail or chat webhook; see
+[Run fail script](/docs/scripts#run-fail-script--alert-on-a-red-run).
+
+The **Export HTML** / **Export JSON** buttons on the run results, on every
+**All Runs** row and in a scheduled task's history save the run report to a
+file — secrets masked, headline counts identical to the screen. A stored run
+re-exports without re-running. With several iterations, each result row opens
+its own iteration and the HTML report labels every row with its iteration.
+
+A run also keeps its screen when you leave the Runner tab: coming back shows the
+progress, the rows so far and **Stop**, and a run that ends while you are
+elsewhere shows its results.
 
 ### Stopping a run
 
@@ -105,6 +130,21 @@ are added to the environment scope for that iteration:
 
 The URL can then reference `{{userId}}` and the test can assert `{{expectedName}}`.
 
+### What a run can contain
+
+- **MCP requests** run with the same pass / fail rules and the same `pm.*`
+  scripting as Send. A run cannot answer an interactive prompt (a sign-in, a
+  question from the server), so such a row fails with a plain message. A stdio
+  server starts only if you connected to that exact command from the MCP tab on
+  this computer once, so a project pulled from Git cannot make your next run
+  execute an unknown program.
+- **Scripts** run only in a project you have allowed on this computer. A project
+  that arrived from Git, a project file or a script-adding import is blocked until
+  you allow it; **Scheduled runs never ask**, their scripted steps fail with a
+  message until you allow the project.
+- The run uses the same proxy (bypass list and type included), SSL and redirect
+  settings as Send.
+
 ### Run results
 
 While the run is in progress, each request shows a green ✓ or red ✗ badge
@@ -116,7 +156,8 @@ as it completes. After the run:
 
 ### HTML report export
 
-Click **Export report** after a run to save a standalone HTML file. The report:
+Click **Export HTML** after a run to save a standalone HTML file (**Export
+JSON** saves the same run as JSON). The HTML report:
 
 - Contains one row per assertion (pass / fail / message)
 - Includes request URL, method, response code, response time
@@ -129,21 +170,28 @@ so you can review past runs without re-running.
 
 ## Scheduler
 
-The scheduler fires a collection run on a cron schedule while Testnizer is
-open.
+The scheduler fires a run on a schedule while Testnizer is open.
 
-Open **Tools → Scheduler** (or the Scheduler tab in the footer bar). Click
-**Add schedule** and configure:
+In the Runner configuration choose **Schedule runs** instead of **Run
+manually**, pick how often it repeats and click **Schedule run**:
 
-- **Collection / folder** — what to run
-- **Environment** — which variable set to use
-- **Cron expression** — standard five-field cron (`0 */6 * * *` = every 6 hours)
-- **Enabled / disabled** toggle
+- **Interval** — run every N minutes or hours
+- **Daily** — every day at a time you pick
+- **Weekly** — chosen weekdays at a time you pick
+- **Cron** — a five-field expression (`m h dom mon dow`, for example
+  `0 9 * * 1-5`)
 
-The scheduler uses the system clock. If Testnizer is not running when a
-scheduled trigger fires, the run is skipped (there is no catch-up execution).
+All times are your local time. The **Scheduled Tasks** view lists every task with
+its upcoming run, schedule, environment and number of endpoints, and lets you
+**Run now**, **Pause** / **Resume** or **Delete** it and show its run history.
+The environment column names the environment the task uses; if it was deleted
+the row says so. A suite and its schedule can both carry a **Run fail script**.
 
-Results appear in History just like manual runs.
+If Testnizer is not running when a scheduled trigger fires, the run is skipped
+(there is no catch-up execution). Scheduled runs never ask whether to trust a
+project's scripts: a scripted step fails with a message until you have allowed
+the project. Results appear in run history just like manual runs, and every row
+exports as HTML or JSON.
 
 ## Test suites
 
@@ -151,40 +199,21 @@ Test suites group multiple collections together for a single "integration
 suite" run — useful when you want to test a flow that spans multiple
 collections (e.g. auth collection → orders collection → billing collection).
 
-Open **Tools → Test Suites** → **New suite** and add collections in the order
-you want them to run. Each suite run is recorded as a single history entry
+Add a suite in the **Tests** panel and add requests or collections in the order
+you want them to run. A suite runs module by module: for each folder, its own
+requests first, then its sub-folders, in the same order as running that folder
+from the APIs panel. Run, Quick Run, the Scheduler and the suite exports all use
+this order. Folder authentication and pre / post scripts are carried into a suite
+built from the APIs panel. Each suite run is recorded as a single history entry
 with a combined report.
 
 Supported import formats for test data files: JSON array and CSV (comma
 or semicolon separated, UTF-8, with header row).
 
-## CI / unattended runs (v1.1 preview)
+## Unattended runs and CI
 
-`testnizer-cli` will be a separate npm package with a headless runner:
-
-```sh
-npx testnizer-cli run ./collections/payments.tns \
-  --env staging \
-  --iterations 1 \
-  --report ./out/payments.html \
-  --exit-code-on-failure
-```
-
-`--exit-code-on-failure` exits with code 1 when any test assertion fails,
-making it usable directly in CI pass/fail logic.
-
-The CLI shares the same engines (HTTP, SOAP, gRPC, WebSocket, SSE) and the
-same `pm` API as the desktop app. No UI dependency. No telemetry.
-
-Track progress on the
-[releases page](https://github.com/apinizer/testnizer/releases).
-
-## Why not Newman?
-
-Newman runs Postman collections in CI. It works, but it does not speak SOAP,
-gRPC, GraphQL subscriptions, SSE, or SoapUI XML collections. And it uses
-Postman's hosted scripting model — when scripts call `pm.sendRequest`, the
-request goes through Postman's analytics pipeline, not direct to your endpoint.
-
-The Testnizer CLI is built on the same offline-first principle as the app —
-no analytics endpoint, no remote config, all crypto and test execution on-device.
+There is no headless command-line runner in 1.6.0. To run without clicking, use
+the Scheduler above; to hand results to another system, export the run as JSON
+or HTML, or use a **Run fail script** to post the report to a webhook when a
+run is red (see [Scripts](/docs/scripts#run-fail-script--alert-on-a-red-run)).
+A CLI is on the roadmap but has not shipped.

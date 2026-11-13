@@ -193,6 +193,10 @@ headers. Same engine as the SOAP editor's WS-Security tab.
   certificate + RSA or EC key
 - **XML Encryption** — encrypts an element with AES-128/256-CBC or AES-GCM
 
+The `wsse:Security` header goes into envelopes with any prefix (`soapenv:`, `soap:` or
+a default namespace). Text that is not a SOAP envelope is refused with a message
+instead of coming back unchanged.
+
 See the [WS-Security guide](/docs/ws-security) for step-by-step walkthroughs.
 
 ## Hash Calculator
@@ -234,6 +238,9 @@ Searchable, category-filtered reference for 60+ HTTP status codes from RFC
 - Free-text search across code, name, and description
 - Category badges color-coded for quick scanning
 - Sticky category headers when scrolling
+
+With the interface in Turkish, codes show Turkish names and descriptions, and search
+works in both languages.
 
 Includes legacy/oddities like 418 ("I'm a teapot"), 451 ("Unavailable for
 Legal Reasons"), 425 Too Early, 511 Network Authentication Required.
@@ -295,6 +302,29 @@ Bidirectional converter with a pill switch (YAML → JSON / JSON → YAML).
 Useful when working with OpenAPI specs (often YAML on disk, JSON in tooling),
 Kubernetes manifests, GitHub Actions workflows, Helm chart values, and
 docker-compose files.
+
+## Password Generator, OTP Authenticator and QR Code
+
+- **Password Generator** — **Characters** mode (length, how many, uppercase, lowercase,
+  numbers, symbols, look-alike and custom exclusions, minimum numbers and symbols, no
+  repeated characters) or **Passphrase** mode (word count, separator, word case, an
+  optional digit). Shows an entropy estimate and a strength label; click a result to
+  copy it.
+- **OTP Authenticator** — register a TOTP or HOTP secret from an `otpauth://` URI, a
+  QR image or by hand (issuer, account, Base32 secret, algorithm, digits, period or
+  counter) and see the live code. Secrets can be revealed or hidden, and the QR shown
+  again for another authenticator.
+- **QR Code** — encode text or a URL as a QR code with a chosen error-correction
+  level and download it, or decode a QR image.
+
+## Where the tools live
+
+The Tools page lists the general-purpose tools above. Key-material and identity tools
+(JWT Debugger, [JWK & JWKS](/docs/jwk-jwks), WS-Security, [SAML](/docs/saml),
+Password Generator, OTP Authenticator, [Keystore Studio](/docs/keystore-studio)
+and [TLS Inspector](/docs/tls-inspector)) sit on the **Security** page,
+which also has an entry that opens the MCP Security Scan (see
+[MCP](/docs/protocols/mcp#security-scan)). Every tool is also found by the command palette.
 
 ## Why offline matters here
 

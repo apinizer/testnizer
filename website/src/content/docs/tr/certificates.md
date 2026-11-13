@@ -143,6 +143,19 @@ Sertifikalar projenin yerel SQLite veritabanında saklanır. Veritabanını taş
 veya kopyalamak özel anahtarları açığa çıkarmaz; anahtarlar işletim sistemi
 anahtarlığındadır ve yalnızca bağlantı zamanında ana süreçte şifresi çözülür.
 
+## Git ve proje dosyalarında sertifikalar
+
+Sertifika kayıtları projenin parçasıdır; Git ve proje dosyalarıyla taşınırlar ama sırlar
+taşınmaz: bir sertifika **parolası** ya da keystore anahtar parolası boş değer olarak yazılır ve
+bir çekme ya da içe aktarma yerel değerinizin üzerine yazmaz. Dosyaları (`.crt`, `.key`,
+`.pfx`), keystore girdisi veya parolası bu bilgisayarda bulunmayan sertifika **devre dışı**
+gelir; böylece yüklenemeyen bir sertifika o host'a giden her isteği başarısız kılmaz. Dosyaları
+ekledikten sonra etkinleştirin. Bir çekme, bir sertifika için zaten sahip olduğunuz etkin ya da
+devre dışı durumunu korur.
+
+macOS'ta dosya seçiciler adı `.jks`, `.p12`, `.pfx` veya `.keystore` ile biten klasörleri
+dosya gibi değil, içine göz atabileceğiniz klasör olarak açar.
+
 ## gRPC sertifikaları
 
 gRPC TLS, aynı proje sertifika deposunu kullanır. gRPC düzenleyicisinin **Bağlantı**

@@ -16,7 +16,7 @@ ve metod seçicide yazdığınız herhangi bir özel metod dizesi.
 **QUERY**, istek gövdesi taşıyan güvenli ve idempotent metoddur — parametreleri
 bir URL'ye sığmayan okumalar için "GET'e gövde mi, yoksa POST mu?" sorusunun
 standart yanıtı. Kendi rozetine sahiptir ve
-[mock sunucularda](/tr/docs/mock-server) da seçilebilir.
+[mock sunucularda](/tr/docs/mock-server/http) da seçilebilir.
 
 ## URL çubuğu
 
@@ -31,6 +31,20 @@ Sorgu parametreleri şu şekillerde girilebilir:
   parametreyi silmeden kapatır)
 
 URL'deki kodlanmış karakterler Params tablosunda otomatik olarak çözülür.
+
+**Yol değişkenleri.** URL yolundaki bir `:ad` bölümü (`/users/:id`), Parametreler
+sekmesinin altındaki **Yol Değişkenleri** tablosuna bir satır ekler. Değeri girin;
+Gönder, Çalıştır, Kod Oluştur ve cURL dışa aktarma bunu, ön istek scriptinden sonra
+ve `{{değişkenler}}` çözülmeden önce yerine koyar. Değeri olmayan bir `:ad`
+eskisi gibi olduğu gibi gönderilir. Postman dışa aktarması bunları `url.variable[]`
+olarak geri yazar.
+
+**cURL komutu yapıştırma.** Bir `curl` komutunu (bash, Windows CMD veya
+PowerShell) doğrudan URL çubuğuna yapıştırın; Testnizer isteğin tamamını doldurur
+— metod, URL, parametreler, header'lar, gövde, auth ve ayarlar. Bir toast algılanan
+kabuğu gösterir, aktarılamayanları listeler ve **Geri al** sunar. Düz bir URL metin
+olarak yapıştırılır. Ayrıştırıcının neleri anladığı için bkz.
+[cURL](/tr/docs/import-formats#curl).
 
 ## Auth sekmesi
 
@@ -55,7 +69,17 @@ Değişkenler her auth alanında çalışır. Token'ları bir ortamda saklayın 
 
 Yaygın header adlarında otomatik tamamlamalı anahtar-değer tablosu. Satırlar tek tek
 devre dışı bırakılabilir. Testnizer, eklediğiniz header'ları `Host`, `Content-Length`
-veya `User-Agent` dahil hiçbirini kaldırmaz.
+veya `User-Agent` dahil hiçbirini kaldırmaz. Otomatik tamamlama listesinde Tab veya Enter, bir
+öneriyi yalnızca ok tuşlarıyla seçtikten sonra alır; `Authorization` yazıp Tab'a basmak
+yazdığınızı korur.
+
+Satırlarınızın altında **Otomatik oluşturulan başlıklar**, Testnizer'ın kendisinin ekleyeceği
+header'ları ve her birinin kaynağını listeler: **Yetkilendirme** (geçerli yetkilendirmenin
+Authorization header'ı ya da API anahtarı, devralınan dahil), **Motor** (`Accept`, `User-Agent`,
+`Host`, gövdenin gerektirdiği `Content-Type`, `Content-Length`) ve **Çerez** (çerez
+deposundaki çerezler). Değeri yalnızca gönderimde bilinenler "gönderimde hesaplanır" der,
+yetkilendirme değerleri maskelenir. Aynı adla (herhangi bir harf büyüklüğüyle) eklediğiniz
+bir header otomatik olanı geçersiz kılar ve satır **Geçersiz kılındı** diye işaretlenir.
 
 ## Body sekmesi
 
@@ -80,6 +104,19 @@ Araç çubuğunda content-type seçici bulunan Monaco editörü:
 Dosya satırları yerel işletim sistemi dosya seçiciyi açar; dosya adı ve MIME türü
 parça header'larında gönderilir.
 
+**Göreli** bir dosya yolu (örneğin içe aktarılmış bir Postman koleksiyonundaki
+`data/upload.json`) projenin **Çalışma dizini**nden okunur: bunu **Proje Ayarları →
+Genel → Çalışma dizini** altında bu bilgisayardaki mutlak bir klasöre ayarlayın.
+Bu klasörün dışındaki bir dosya (mutlak yol dahil) yalnız onu Body sekmesinde kendiniz
+seçtiyseniz ya da aynı sayfada **Çalışma dizini dışındaki dosyaları oku** açıksa okunur;
+böylece import edilen bir proje bilgisayarınızdaki herhangi bir dosyayı yükleyemez.
+İstekte göreli bir yol varsa ve çalışma dizini
+ayarlı değilse Gönder, ayarın adını veren bir mesajla başarısız olur. Çalışma
+dizini bilgisayara özgü bir ayardır: projeyle birlikte kaydedilmez ve Git'e
+gönderilmez, çünkü bir makinedeki klasör başka bir makinede anlam taşımaz. Diğer ayar da
+bu bilgisayarda kalır. İkisi de Gönder, Collection Runner, Test Suite'ler ve zamanlanmış
+çalıştırmaların hepsi için geçerlidir.
+
 ### x-www-form-urlencoded
 
 URL-encoded anahtar-değer tablosu. Değerler gönderilmeden önce yüzde olarak kodlanır.
@@ -87,7 +124,8 @@ URL-encoded anahtar-değer tablosu. Değerler gönderilmeden önce yüzde olarak
 ### binary
 
 Tüm istek gövdesi diskten tek bir dosyadır. Testnizer, dosya uzantısına göre
-`Content-Type` ayarlar (gerekirse Headers sekmesinde geçersiz kılın).
+`Content-Type` ayarlar (gerekirse Headers sekmesinde geçersiz kılın). Göreli yol,
+yukarıda anlatıldığı gibi projenin [Çalışma dizini](#form-data)ne göre çözülür.
 
 ## Ön istek scripti
 
@@ -137,7 +175,7 @@ geçmişe kaydedilir.
 
 | Sekme | İçerik |
 |---|---|
-| **Body** | Monaco editörü — JSON otomatik biçimlendirilir, XML güzel basılır, görüntüler satır içinde önizlenir |
+| **Body** | Monaco editörü — JSON otomatik biçimlendirilir, XML güzel basılır, görüntüler satır içinde önizlenir; PDF, ses ve video satır içi bir çerçevede oynatılır |
 | **Headers** | Arama özellikli yanıt header tablosu |
 | **Cookies** | Yanıt tarafından ayarlanan cookie'ler, domain/path/bayraklarıyla birlikte |
 | **Console** | Ham istek + ham yanıt (yönlendirmeleri veya beklenmeyen header'ları hata ayıklarken kullanışlı) |
@@ -171,22 +209,102 @@ token'lar) kendi sütunlarında sarılır ve kopyalamak için seçilebilir kalı
 
 ## Kod snippet oluşturma
 
-Yapıştırmaya hazır snippet oluşturmak için istek araç çubuğundaki `</>` simgesine tıklayın:
+Etkin sekmedeki istek için yapıştırmaya hazır bir snippet oluşturmak üzere yanıt
+çubuğundaki **Kod**'a tıklayın (ya da sağ panelin **Kod** bölmesini açın).
 
-- **cURL**
-- **JavaScript (fetch)**
-- **JavaScript (axios)**
-- **Python (requests)**
-- **Go (net/http)**
-- **Java (OkHttp)**
+Bir **Dil** seçin, ardından onun **Varyant**larından birini seçin ve o varyantın
+dikkate aldığı ayarlar için **Seçenekler**'i açın. 20 dil ve 36 varyant vardır:
 
-Snippet'ler mevcut header'ları, auth'u ve gövdeyi içerir — değişkenler oluşturma
-anındaki mevcut değerlerine çözülür.
+| Dil | Varyantlar |
+|---|---|
+| cURL | bash, CMD, PowerShell |
+| C | libcurl |
+| C# | HttpClient, RestSharp |
+| Dart | http, dio |
+| Go | net/http |
+| HTTP | HTTP/1.1 |
+| Java | OkHttp, Unirest |
+| JavaScript | Fetch, XHR, jQuery |
+| Kotlin | OkHttp |
+| NodeJS | Axios, Native, Request, Unirest |
+| Objective-C | NSURLSession |
+| OCaml | Cohttp |
+| PHP | cURL, Guzzle, HTTP_Request2, pecl_http |
+| PowerShell | Invoke-RestMethod |
+| Python | Requests, http.client |
+| R | httr, RCurl |
+| Ruby | Net::HTTP |
+| Rust | reqwest |
+| Shell | wget, HTTPie |
+| Swift | URLSession |
 
-## Yönlendirmeleri takip et
+**Seçenekler** varyanta göre değişir; girinti boyutu ve karakteri, **İstek
+gövdesini kırp**, **Yönlendirmeleri izle**, **İstek zaman aşımı**, **async/await
+kullan** ve **İskelet kodu ekle** bunlar arasındadır. cURL varyantlarında
+**Çok satırlı**, **Uzun seçenek adları** (`--header`) ve **Sessiz mod** (`-s`)
+vardır. Yönlendirmeyi kapatmış ya da kendi zaman aşımı olan bir istek bunu
+snippet'e taşır. **Varsayılanlara dön** seçenekleri sıfırlar. Seçim oturum boyunca
+kalır.
 
-Varsayılan olarak etkin. Bir yönlendirme yanıtını incelemek için URL çubuğundaki istek
-ayarları panelinde (dişli simgesi) **Yönlendirmeleri takip et** seçeneğini kapatın.
+Snippet'in içeriği:
+
+- Mevcut header'lar, sorgu parametreleri (varsa `#fragment`'ten önce URL'ye
+  eklenir), yol değişkenleri ve gövde; form-data metin ve dosya parçaları, binary
+  gövdeler ve GraphQL `{query, variables}` JSON gövdesi dahil
+- Gerçekte gönderilecek auth; bir klasörden ya da projeden **miras alınan auth**
+  dahil, header olarak ya da dilin kendi API'si ile
+- Gövdenin ima ettiği `Content-Type`, siz bir tane ayarlamadıysanız
+- `{{değişkenler}}` mevcut değerlerine çözülür. **Sır** bir değişken `{{ad}}`
+  yer tutucusu olarak kalır; kopyalanan metin o zaman gerçek değerleri
+  içereceğinden **Gizli değerleri dahil et**'i yalnızca doğrudan çalışan bir komut
+  için işaretleyin. Panel, çözülemeyen değişkenleri listeler
+- **Gizli değerleri dahil et** kapalıyken header'lara, sorgu parametrelerine, form
+  gövdelerine ve auth'a (devralınan dahil) yazdığınız parolalar, token'lar ve API
+  anahtarları snippet'te `***` olarak görünür; `{{değişkenler}}` okunur kalır
+
+Kod Oluştur **HTTP, GraphQL ve SOAP** sekmelerini kapsar: bir GraphQL sekmesi JSON
+gövdeli POST'u, bir SOAP sekmesi ise zarf ve `SOAPAction` ya da SOAP 1.2
+`Content-Type` ile POST'u üretir. WebSocket, Socket.IO, MQTT, MCP, gRPC, SSE veya
+AI Chat sekmesinde bölme, eski bir HTTP isteği göstermek yerine kod oluşturmanın
+kullanılamadığını söyler.
+
+## Ayarlar sekmesi
+
+İsteğin **Ayarlar** sekmesi **İstek zaman aşımı**, **Yönlendirmeleri izle**, **En fazla
+yönlendirme**, **SSL sertifika doğrulamasını etkinleştir** ve **Kritik istek** ayarlarını
+taşır. İstekle birlikte kaydedilirler (Ctrl+S) ve Gönder'de de Çalıştır'da da aynı davranır.
+
+Zaman aşımı, SSL doğrulaması ve yönlendirmeler **devralınır**: istek, sonra **Proje
+Ayarları**, sonra uygulama **Ayarlar**'ı. Bir anahtarı hiç değiştirmemiş istek projeyi izler;
+sekme geçerli değerin nereden geldiğini gösterir ("Proje ayarından devralındı: açık") ve
+geri dönmek için "Proje ayarını kullan" seçeneğini sunar. İstekte açıkça ayarladığınız değer
+seçiminizi korur. Boş zaman aşımı devralır, `0` zaman aşımı yok demektir. Bir yönlendirme
+yanıtını incelemek için **Yönlendirmeleri izle**'yi kapatın.
+
+**Kritik istek.** İşaretlerseniz bir çalıştırma (Runner, Test Suite, Scheduler) bu istek
+başarısız olduğunda ya da çalışamadığında, "Hata olursa çalıştırmayı durdur" ayarından bağımsız
+olarak durur. Sonuçlar, çalıştırma geçmişi ve HTML / JSON raporları çalıştırmayı durduran
+kritik isteği adıyla belirtir. Çalıştırma planlarken çalıştırma sırasından da
+açıp kapatabilirsiniz.
+
+## Proxy
+
+Proje Ayarları'nda ya da uygulama **Ayarlar → Ağ**'da tanımlı özel bir proxy HTTP isteklerine
+uygulanır; kendi proxy'si olmayan proje uygulamanınkini kullanır. **Bu host'lar için bypass**
+doğrudan çıkan host'ları listeler. **Sistem proxy'sini kullan** `HTTP_PROXY`, `HTTPS_PROXY`
+ve `NO_PROXY` ortam değişkenlerini okur. SOCKS desteklenmez: SOCKS kullanacak şekilde
+ayarlı bir istek doğrudan çıkmak yerine bir mesajla başarısız olur. Bkz.
+[SSS](/tr/docs/faq#testnizer-proxy-sunucuları-destekliyor-mu).
+
+## Kaydetme ve sekmeler
+
+Ctrl+S açık isteği yerinde kaydeder ve "İstek kaydedildi" bildirimini gösterir; yeni bir istek ilk
+kaydedildiğinde varsayılan ad yerine URL'sinin adını alır (örneğin "users"). APIs ağacında tek
+tıklama isteği önizleme sekmesinde, çift tıklama sabit sekmede açar (ya da zaten gösterilen
+önizlemeyi sabitler). Açık her sekme kendi istek alt sekmesini hatırlar. Yazdığınız parolalar,
+token'lar ve kimlik bilgisi header'ları, istek kaydedilmedikçe yeniden başlatmadan sonra
+uygulamanın tarayıcı depolamasında tutulmaz; kaydetmeden korumak için bir `{{değişken}}`
+kullanın.
 
 ## TLS / mTLS
 

@@ -1,79 +1,88 @@
 ---
 title: Request history
-description: Browse, replay, and export past requests from Testnizer's local history panel.
+description: Browse, replay, and clear past requests from Testnizer's local history panel.
 order: 4
 section: Reference
 ---
 
 ## What's recorded
 
-Every request you send is recorded automatically. If you prefer not to log a session, disable recording under **Settings → History → Don't record**.
+Every request you send is recorded automatically, for every protocol, with a
+snapshot of the request and the response. History is stored in the local SQLite
+database on your machine (`testnizer.db`), and nothing is transmitted over the
+network.
 
 Each history entry captures:
 
-- **Timestamp** — exact date and time the request was sent.
-- **Method and URL** — with all environment variables already resolved.
-- **Status code, response time, and response size.**
-- **Request headers and body** — secrets matched against environment variables are masked before storage.
-- **Response headers and body.**
-- **Test assertion results** — which assertions passed and which failed.
-- **Project and branch** — so you can filter history by context, not just by URL.
+- **Method and URL**
+- **Status, response time and size**
+- **The request and the response**, as a snapshot you can reopen
+- **The project** it belongs to; the list shows the active project's entries
+
+### Credentials are masked before they are stored
+
+Credentials never reach the History database in clear text. Before a row is
+written, Testnizer masks:
+
+- credential headers (`Authorization`, `Cookie`, API-key headers and similar)
+- query and body fields that carry credentials, at any depth, including JSON, form
+  and XML / SOAP bodies
+- `user:pass@` in a URL
+- the values of your **secret** variables, and token fields in responses
+  (`access_token`, `refresh_token` and similar)
+- the password of the app-level and project proxies
+
+A credential you sent in a request body is masked wherever a server echoes it
+back, even under another name. WebSocket, Socket.IO, SSE, GraphQL and gRPC tabs do
+not write the messages they receive to disk; those live in memory for the
+session. Rows written by older builds are masked once, the first time 1.6.0
+starts.
+
+History keeps the `{{variable}}` template of a request, so a request can be sent
+again with the current values of your variables. When a credential was masked, the
+reopened request shows a note ("Credentials were not stored in History — enter
+them again") and leaves that field empty.
 
 ---
 
 ## Browsing history
 
-Open the **History** tab in the left sidebar, or press `Ctrl+H` (Windows/Linux) / `Cmd+H` (macOS).
+Open the **History** tab in the left sidebar. It has two lists:
 
-The list is sorted with the most recent entry at the top.
+- **Requests** — the requests you sent, grouped by day (Today, Yesterday and
+  earlier). Hover a row to see the full URL.
+- **Commits** — the commit history of the active project's Git branch.
 
-Filtering options:
-
-- **Search** — match against URL fragment or status code.
-- **Filter by project** — show only requests made within a specific project.
-- **Filter by date range** — narrow down to a time window.
-
-Click any entry to load the full request and response detail in the right panel.
+Type in the **Filter history** field to narrow the list by URL or method. For MCP
+rows the tool, prompt or resource name is searched too.
 
 ---
 
 ## Replaying a request
 
-Click a history entry, then click **Open in editor**. The request editor opens with the original method, URL, headers, and body pre-filled.
+Click a history entry. It opens in a request tab with the original method, URL,
+headers and body filled in, in the editor of its own protocol: HTTP, SOAP, MCP,
+WebSocket, Socket.IO, GraphQL, gRPC and SSE entries each reopen in their own
+editor.
 
-You can send it as-is or modify any field before sending. The replay behaves identically to a manually constructed request — pre-request scripts run, tests execute, and the result is saved as a new history entry.
+You can send it as-is or modify any field before sending. The replay behaves like a
+manually constructed request — pre-request scripts run, tests execute, and the
+result is saved as a new history entry.
 
-**Collection runner results** also appear in history. Each runner execution is stored as a single top-level entry. Expand it to see the individual request results for every endpoint that was part of the run.
-
----
-
-## Exporting history
-
-Select one entry or a range of entries, then choose **Export** from the context menu.
-
-Available formats:
-
-| Format | Use case |
-|---|---|
-| **HAR (HTTP Archive)** | Compatible with browser DevTools and performance analysis tools such as WebPageTest and Charles Proxy. |
-| **Testnizer JSON** | Import the entries into another Testnizer instance. Useful for sharing reproduction cases with teammates. |
-| **cURL commands** | Paste directly into a terminal to replay requests without opening the application. |
+Runner and test suite results are not listed here. They live on the **Tests**
+page, under run history, where each run can be reopened and exported as HTML or
+JSON. See [Collection runner & automation](/docs/cli-and-automation).
 
 ---
 
-## Privacy and retention
+## Removing entries
 
-History is stored exclusively in the local SQLite database (`data.db`) on your machine. Nothing is transmitted over the network.
+- The trash button on a row deletes that entry.
+- **Clear** in the History sidebar deletes the history of the **active project
+  only**. It asks for confirmation first, says how many entries it will delete,
+  and is disabled when the list is empty.
+- **Settings → Data → Clear history** does the same for the project from the
+  Settings dialog.
 
-**Default retention:** the last 1,000 entries. Older entries are pruned automatically.
-
-To adjust retention, go to **Settings → History → Retention**. The range is 100 entries to unlimited.
-
-If you select **Unlimited**, `data.db` will grow over time. Projects that send large response bodies — binary files, bulk data exports — can produce a notably large database. Monitor disk usage if this applies to your workflow.
-
-**Manual purge options:**
-
-- **Settings → History → Clear all** — deletes the entire history log.
-- **Settings → History → Delete before date** — removes entries older than a date you specify, leaving recent history intact.
-
-Neither action affects your saved endpoints, environments, or collection structure.
+Neither action affects your saved endpoints, environments, or collection
+structure.

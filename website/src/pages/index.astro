@@ -33,16 +33,84 @@ const guarantees = [
   },
 ]
 
+// The four things the hero used to say in two long paragraphs, as scannable
+// cards. Each one links to the page that backs it up.
+const pillars = [
+  {
+    icon: icons.globe,
+    title: 'API protocols',
+    body: 'HTTP · SOAP · GraphQL · gRPC · WebSocket · Socket.IO · MQTT · SSE',
+    href: '/features',
+  },
+  {
+    icon: icons.sparkles,
+    title: 'AI & MCP',
+    body: 'MCP client · MCP security scan · AI Chat that can call MCP tools',
+    href: '/ai-mcp',
+  },
+  {
+    icon: icons.server,
+    title: 'Mock servers',
+    body: 'HTTP · SSE · AI (LLM) · MCP mocks, on 127.0.0.1 by default',
+    href: '/docs/mock-server',
+  },
+  {
+    icon: icons.key,
+    title: 'Security toolbox',
+    body: 'Keystores · mTLS · JWT / JOSE · JWK / JWKS · WS-Security · SAML · TLS — the private key never leaves the app',
+    href: '/security-tools',
+  },
+]
+
+const newIn160 = [
+  {
+    icon: icons.plug,
+    title: 'A full MCP client',
+    body: 'Streamable HTTP, legacy SSE and stdio. Protocol 2024-10-07 through 2026-07-28 — Auto, Legacy or a pinned version. Tools, resources, prompts, notifications and the raw JSON-RPC frames, plus an OAuth 2.1 debugger.',
+  },
+  {
+    icon: icons.shieldCheck,
+    title: 'MCP security scan',
+    body: 'A graded A–F report across transport, authentication, protocol behaviour, prompt-injection heuristics, information disclosure, CORS, security headers and an opt-in rate-limit probe. Exports as one HTML file.',
+  },
+  {
+    icon: icons.bot,
+    title: 'AI Chat with MCP tools',
+    body: 'The assistant can call tools from your MCP servers — and every call asks for your approval by default. Each reply shows time to first token, duration and token usage. Conversations stay on this machine.',
+  },
+  {
+    icon: icons.activity,
+    title: 'Mock SSE, LLM and MCP servers',
+    body: 'Stream events, answer the OpenAI and Anthropic APIs, or serve MCP tools — with latency and errors you choose. Develop an agent without a provider account, and without spending a token.',
+  },
+]
+
 const protocols = [
-  { icon: icons.globe, name: 'HTTP / REST', body: 'Methods, params, headers, body, cookies, mTLS, proxy, redirects, multipart with file upload, scripts, assertions.' },
-  { icon: icons.fileCode, name: 'SOAP / WSDL', body: 'WSDL import (URL or file), manual envelope mode, SOAP 1.1 + 1.2, multi-service, multi-port.' },
+  { icon: icons.globe, name: 'HTTP / REST', body: 'Params, path variables, headers, every body mode, cookies, mTLS, proxy, redirects, scripts and assertions. Paste a cURL command into the URL bar.' },
+  { icon: icons.fileCode, name: 'SOAP / WSDL', body: 'WSDL import, SOAP 1.1 + 1.2, manual envelopes, and WS-Security applied on Send and in the Runner.' },
   { icon: icons.cpu, name: 'gRPC', body: '.proto import, all four streaming modes, metadata, JSON skeleton from message fields.' },
-  { icon: icons.radio, name: 'WebSocket', body: 'ws + wss, custom headers, JSON / text composer, message timeline.' },
-  { icon: icons.arrowsLeftRight, name: 'Socket.IO', body: 'Connect with namespace + auth, emit events with a JSON payload, subscribe to any event name, watch the bidirectional timeline.' },
-  { icon: icons.network, name: 'GraphQL', body: 'Query, mutation, subscription, schema introspection, variables JSON.' },
-  { icon: icons.bot, name: 'AI Chat', body: '14 providers (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq…) plus Custom URL — streaming, multi-turn. Requests go directly to the provider you configure; this is the only feature that contacts an external server.' },
-  { icon: icons.zap, name: 'Server-Sent Events', body: 'Long-lived streams with Last-Event-ID resume.' },
-  { icon: icons.plug, name: 'MCP', body: 'Model Context Protocol client. Streamable HTTP, SSE, and stdio (local subprocess) transports. List tools advertised by the server, invoke them with JSON arguments, inspect results.' },
+  { icon: icons.network, name: 'GraphQL', body: 'Queries, mutations, schema explorer, and subscriptions over WebSocket (graphql-transport-ws, with graphql-ws fallback).' },
+  { icon: icons.radio, name: 'WebSocket', body: 'Text, JSON, XML, HTML, Base64 and hex messages, saved messages, a searchable log with filters.' },
+  { icon: icons.arrowsLeftRight, name: 'Socket.IO', body: 'Client v2, v3 or v4, namespaces, auth, acknowledgements, several arguments per emit, per-event listen switches.' },
+  { icon: icons.repeat, name: 'MQTT', body: 'MQTT 3.1.1 and 5.0 — QoS, retain, last will, TLS with your certificates, MQTT 5 properties, saved messages.' },
+  { icon: icons.zap, name: 'Server-Sent Events', body: 'Long-lived streams with custom headers, Last-Event-ID resume and an event-type filter.' },
+  { icon: icons.plug, name: 'MCP', body: 'Streamable HTTP, SSE and stdio. Tools, resources, prompts, raw JSON-RPC frames, OAuth 2.1 and a security scan.' },
+  { icon: icons.bot, name: 'AI Chat', body: '14 providers plus a Custom URL, streaming, MCP tools with approval. Requests go directly to the provider you configure.' },
+]
+
+const migrationFormats = [
+  'OpenAPI 3.x',
+  'Swagger 2.0',
+  'Postman v1 / v2.0 / v2.1',
+  'Postman v3 (JSON or Native Git folder)',
+  'Postman .zip & data dump',
+  'Insomnia v4 / v5',
+  'cURL (bash, CMD, PowerShell)',
+  'WSDL',
+  '.proto',
+  'RAML 1.0',
+  'SoapUI / ReadyAPI',
+  'HAR',
 ]
 
 const tools = [
@@ -61,26 +129,26 @@ const tools = [
   <!-- Hero -->
   <section class="hero-glow relative overflow-hidden border-b border-border">
     <div class="dot-grid absolute inset-0"></div>
-    <div class="relative mx-auto max-w-6xl px-6 pt-20 pb-24 text-center md:pt-28 md:pb-32">
-      <div class="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-bg-soft px-3 py-1 text-xs font-medium text-text-muted">
+    <!-- The fold is budgeted: pill → Product Hunt badge must fit under the
+         sticky nav at 1366×768, so the vertical rhythm here is deliberately
+         tighter than the sections below. The capability pillars follow the
+         CTA block instead of a paragraph above it. -->
+    <div class="relative mx-auto max-w-6xl px-6 pt-10 pb-12 text-center md:pt-14 md:pb-14">
+      <div class="mb-5 inline-flex items-center gap-2 rounded-full border border-border bg-bg-soft px-3 py-1 text-xs font-medium text-text-muted">
         <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
         {release.tag} — free forever · a project by Apinizer
       </div>
 
-      <h1 class="mx-auto max-w-4xl text-4xl font-semibold tracking-tight text-text md:text-6xl md:leading-[1.1]">
-        The offline API client that also does
+      <h1 class="mx-auto max-w-5xl text-balance text-4xl font-semibold tracking-tight text-text md:text-5xl md:leading-[1.1] lg:text-6xl">
+        The offline API and AI client that also does
         <span class="text-gradient">your security work.</span>
       </h1>
 
-      <p class="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-text-muted">
-        Test HTTP, SOAP, WebSocket, GraphQL, gRPC and SSE — then sign a JWT, open a JKS keystore, build a SAML assertion or inspect a live TLS chain without leaving the app, and without a key or a token ever being uploaded anywhere. Free, and built by <a href="https://apinizer.com" target="_blank" rel="noopener" class="underline decoration-dotted underline-offset-2 hover:text-text">Apinizer</a> for teams in banking, government, insurance and healthcare where production credentials and payloads <em>must never</em> leave the machine.
+      <p class="mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-text-muted">
+        Test APIs, MCP servers and LLMs, mock all of them locally, and do the cryptography on your own machine — free, no account, no telemetry.
       </p>
 
-      <p class="mx-auto mt-4 max-w-2xl text-base leading-relaxed text-text-muted">
-        The cryptography runs where the app runs: <strong class="text-text">keystores</strong> (JKS / PKCS#12, no keytool), <strong class="text-text">certificates and mTLS</strong>, <strong class="text-text">JWT / JOSE</strong>, <strong class="text-text">JWK / JWKS</strong>, <strong class="text-text">WS-Security</strong>, <strong class="text-text">SAML</strong> and <strong class="text-text">live TLS inspection</strong> — with the private key never leaving the app core. <a href="/security-tools" class="text-accent-text underline decoration-dotted underline-offset-2 hover:text-text">See the toolbox →</a>
-      </p>
-
-      <div class="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+      <div class="mt-7 flex flex-col items-center justify-center gap-3 sm:flex-row">
         <a
           href="/download"
           class="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent-hover"
@@ -97,20 +165,48 @@ const tools = [
         </a>
       </div>
 
-      <p class="mt-5 text-xs text-text-soft">
+      <p class="mt-4 text-xs text-text-soft">
         macOS (arm64 / x64) · Windows (x64 / arm64) · Linux (deb / AppImage)
       </p>
 
-      <div class="mt-5 flex flex-wrap items-center justify-center gap-2">
+      <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
         <StatBadge label="latest release" value={release.tag} href={releasesUrl} />
         {stats && stats.downloads > 0 && <StatBadge label="downloads" value={formatCount(stats.downloads)} href={releasesUrl} />}
         {stats && stats.stars > 0 && <StatBadge label="stars" value={formatCount(stats.stars)} href="https://github.com/apinizer/testnizer" />}
         <StatBadge label="telemetry" value="none" />
       </div>
 
-      <div class="mt-4 flex justify-center">
+      <div class="mt-3 flex justify-center" data-fold="ph">
         <ProductHuntBadge label="Upvote on Product Hunt" />
       </div>
+
+      <ul class="mx-auto mt-8 grid max-w-6xl grid-cols-1 gap-3 text-left sm:grid-cols-2 lg:grid-cols-4" data-fold="pillars">
+        {pillars.map((pl) => (
+          <li>
+            <a
+              href={pl.href}
+              class="group flex h-full items-start gap-3 rounded-card border border-border bg-bg/70 p-4 transition-colors hover:border-border-strong hover:bg-bg-muted"
+            >
+              <span class="grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg bg-accent-light text-accent-text">
+                <Fragment set:html={pl.icon} />
+              </span>
+              <span class="min-w-0">
+                <span class="flex items-center gap-1.5 text-sm font-semibold text-text">
+                  {pl.title}
+                  <span class="text-text-soft transition-colors group-hover:text-accent-text">
+                    <Fragment set:html={icons.arrowRight} />
+                  </span>
+                </span>
+                <span class="mt-1 block text-xs leading-relaxed text-text-muted">{pl.body}</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+
+      <p class="mx-auto mt-5 max-w-3xl text-xs leading-relaxed text-text-soft">
+        Built by <a href="https://apinizer.com" target="_blank" rel="noopener" class="underline decoration-dotted underline-offset-2 hover:text-text-muted">Apinizer</a> for banking, government, insurance and healthcare — teams whose production credentials must never leave the machine.
+      </p>
     </div>
   </section>
 
@@ -131,6 +227,46 @@ const tools = [
       <p class="mt-4 text-center text-sm text-text-soft">
         Imported a Swagger spec, ran a POST, got a 200. No account, no cloud sync, no telemetry.
       </p>
+    </div>
+  </section>
+
+  <!-- New in 1.6.0 -->
+  <section class="border-b border-border py-24">
+    <div class="mx-auto max-w-6xl px-6">
+      <div class="mx-auto max-w-2xl text-center">
+        <p class="text-xs font-semibold uppercase tracking-wider text-accent-text">New in 1.6.0</p>
+        <h2 class="mt-3 text-3xl font-semibold tracking-tight text-text md:text-4xl">
+          AI, MCP and streaming.
+        </h2>
+        <p class="mt-4 text-base leading-relaxed text-text-muted">
+          Test the servers your agents talk to, check them for security problems, and mock the model, the tools and the event stream when you would rather not call the real ones.
+        </p>
+      </div>
+
+      <div class="mt-12 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {newIn160.map((n) => (
+          <a href="/ai-mcp" class="group flex flex-col rounded-card border border-border bg-bg-soft p-6 transition-colors hover:border-border-strong">
+            <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-light text-accent-text">
+              <Fragment set:html={n.icon} />
+            </span>
+            <h3 class="mt-4 text-base font-semibold text-text">{n.title}</h3>
+            <p class="mt-1.5 flex-1 text-sm leading-relaxed text-text-muted">{n.body}</p>
+          </a>
+        ))}
+      </div>
+
+      <div class="mt-8 flex flex-col items-center gap-3">
+        <a
+          href="/ai-mcp"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-bg px-5 py-3 text-sm font-medium text-text transition-colors hover:bg-bg-muted"
+        >
+          See AI, MCP &amp; streaming
+          <Fragment set:html={icons.arrowRight} />
+        </a>
+        <p class="max-w-2xl text-center text-xs leading-relaxed text-text-soft">
+          AI Chat sends your messages straight to the provider you configure, and the MCP client connects to the server you point it at — nothing goes through us. The mock servers need no network at all.
+        </p>
+      </div>
     </div>
   </section>
 
@@ -220,11 +356,11 @@ const tools = [
           Test what enterprise systems actually run on.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-text-muted">
-          Not just REST. SOAP envelopes, gRPC streams, WebSocket sessions, and event streams — first-class, on-device.
+          Not just REST. SOAP envelopes, gRPC streams, WebSocket and MQTT sessions, event streams and MCP servers — first-class, on-device.
         </p>
       </div>
 
-      <div class="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border md:grid-cols-2 lg:grid-cols-3">
+      <div class="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-card border border-border bg-border md:grid-cols-2 lg:grid-cols-5">
         {protocols.map((p) => (
           <div class="bg-bg p-6">
             <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent-light text-accent-text">
@@ -274,23 +410,12 @@ const tools = [
           Bring your existing collections.
         </h2>
         <p class="mt-4 text-base leading-relaxed text-text-muted">
-          Lossless round-trips for the documented surface — including scripts and variables.
+          Drop in any Postman file and Testnizer works out what it is — scripts, variables and saved examples included — and ends the import with a report of what was converted or skipped. A project exports back to Postman v2.1 or v3, OpenAPI 3 and Insomnia.
         </p>
       </div>
 
       <div class="mx-auto mt-10 flex max-w-3xl flex-wrap items-center justify-center gap-2">
-        {[
-          'OpenAPI 3.x',
-          'Swagger 2.0',
-          'Postman v2.1',
-          'Insomnia v4',
-          'cURL',
-          'WSDL',
-          '.proto',
-          'RAML 1.0',
-          'SoapUI / ReadyAPI',
-          'HAR',
-        ].map((fmt) => (
+        {migrationFormats.map((fmt) => (
           <span class="rounded-full border border-border bg-bg px-3.5 py-1.5 text-xs font-medium text-text-muted">
             {fmt}
           </span>

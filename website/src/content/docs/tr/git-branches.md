@@ -40,6 +40,11 @@ Testnizer dahili olarak [`simple-git`](https://github.com/steveukx/git-js) npm
 paketini kullanır. Tüm git işlemleri ana süreçte çalışır — bir terminale
 düşürülmezsiniz.
 
+Mevcut bir depodan başlamak için proje oluştururken **Clone from Git**'i seçin ve depo URL'sini,
+dalı, kullanıcı adını, kişisel erişim token'ını (şifreli saklanır) ve yerel bir dizini girin. Bu
+şekilde dışarıdan gelen bir proje, bu bilgisayarda izin verene kadar hiçbir script çalıştırmaz;
+bkz. [Betikler](/tr/docs/scripts#betik-çalışma-zamanı).
+
 Kutu dışı desteklenen uzak sunucular: GitHub, GitLab, Bitbucket, kendi barındırılan
 Gitea ve HTTPS veya SSH üzerinden herhangi bir standart Git sunucusu.
 
@@ -63,21 +68,45 @@ seçilen dalı check out eder ve ilgili koleksiyon durumunu otomatik olarak yük
 
 ---
 
-## Koleksiyon değişikliklerini taahhüt etme
+## Dal menüsü: commit, çekme, gönderme, birleştirme
 
-Testnizer içinde yaptığınız değişiklikler — uç nokta ekleme veya kaldırma,
-parametre güncelleme, istek gövdelerini düzenleme — otomatik olarak izlenir.
+Dal seçici; **Commit et…**, **Çek**, **Gönder**, **Birleştir** ve **Tüm değişiklikleri at**
+seçeneklerini içeren bir menü açar ve dalınızın uzak depoya göre kaç commit **geride** ve
+**ileride** olduğunu (son fetch itibarıyla) gösterir. Henüz uzak depoda olmayan dal bunu söyler.
 
-Kenar çubuğunun üstündeki **git rozeti** taahhüt edilmemiş değişikliklerin sayısını
-gösterir. Kaydetmeye hazır olduğunuzda:
+### Commit
 
-1. Rozete tıklayın veya **Git → Taahhüt et**'i açın.
-2. Fark özetini inceleyin.
-3. Bir taahhüt mesajı yazın (örneğin: `add invoice status endpoint`).
-4. **Taahhüt et**'e tıklayın.
+**Commit et…**, **Değişiklikleri commit et** panelini açar. Son commit'ten bu yana değişen
+her şeyi türe göre gruplayarak (klasörler, uç noktalar, kayıtlı istekler, örnekler,
+ortamlar, test süitleri, mock sunucular, sertifikalar vb.) ve her birini **Eklendi**,
+**Değiştirildi** ya da **Silindi** olarak işaretleyerek listeler.
 
-Taahhüt yerel depoda oluşturulur. Paylaşmaya hazır olduğunuzda aynı panelden
-uzak sunucuya push edin.
+1. Bir değişikliği bu commit dışında bırakmak için işaretini kaldırın; kalanlar projenizde
+   commit edilmemiş değişiklik olarak durur (dal değiştirmek ya da birleştirmek onları otomatik
+   commit eder; Gönder önce sorar). Başka bir değişikliğe ihtiyaç duyan değişiklik (yeni
+   klasördeki bir istek) onu da birlikte seçer; böylece bir commit eksik bir şeye işaret
+   etmez. Panel hangilerinin birlikte commit edildiğini söyler.
+2. Bir commit mesajı yazın.
+3. **Commit et** (yalnızca yerel) ya da **Commit et ve gönder**'i seçin.
+
+Uzak depo yalnızca gönderdiğinizde güncellenir. **Tüm değişiklikleri at**, kaç değişikliğin
+kaybolacağını onayladıktan sonra projeyi son commit'e döndürür; bu geri alınamaz. Devam eden
+bir birleştirme varken panel, önce dal menüsünden çözmenizi ya da iptal etmenizi ister.
+
+### Gönderme ve çekme
+
+**Gönder** önce bir commit mesajı sorar ve kaç commit edilmemiş değişikliği içereceğini
+söyler. Yalnızca mevcut commit'leri gönderip commit edilmemiş değişiklikleri olduğu yerde
+bırakabilirsiniz. Sunucunun kısa süreliğine 5xx hatasıyla reddettiği bir push otomatik
+yeniden denenir; yine de başarısız olursa mesaj hiçbir şeyin kaybolmadığını söyler ve tekrar
+göndermek ikinci bir commit oluşturmaz.
+
+**Çek** yalnızca istekleri değil **tüm projeyi** getirir: proje düzeyindeki yetkilendirme,
+ön istek ve test scriptleri, zaman aşımı, SSL, yönlendirme ve TLS ayarları da onunla
+gelir; böylece projenin auth'unu devralan istekler takım arkadaşınızın makinesinde de
+çalışır. Bir çekme, bu bilgisayarda kaç sır değerinin hâlâ boş olduğunu söyler.
+
+Git hata mesajları arayüz diline uyar.
 
 ---
 
@@ -103,6 +132,14 @@ Bu, API değişikliklerini yalnızca birisinin yerel Testnizer örneğinde yaşa
 Kimlik bilgileri — API token'ları, parolalar, istemci sırrları — koleksiyonun
 kendisinde değil **ortam değişkenleri** olarak saklanır. Testnizer, `{{MY_TOKEN}}`'ı
 aktif ortamı kullanarak istek zamanında çözümler.
+
+Sır değerleri makinenizde kalır. **Sır** işaretli değişkenler, mock sunucu kimlik doğrulaması,
+bir Mock MCP bearer token'ı, sertifika parolaları ve projenin Auth ayarlarındaki düz metin
+kimlik bilgileri, Git'e giden her dosyada (commit, push, proje dosyası) **boş değer** olarak
+yazılır ve bir çekme yerel değerinizin üzerine yazmaz. Yalnızca `{{değişken}}` başvuruları
+taşınır. Dosyaları ya da parolası çekilen bilgisayarda bulunmayan bir sertifika **devre dışı**
+gelir; böylece yüklenemeyen bir sertifika o host'a giden her isteği bozmaz. Eski bir Testnizer
+sırları bir depoya zaten gönderdiyse bunlar geçmişte kalır: döndürün (rotate edin).
 
 Yine de, hassas dosyaların git'ten tamamen dışlanmasını sağlamak önemlidir.
 Projenizin `.gitignore`'una aşağıdakini ekleyin:
@@ -133,5 +170,12 @@ Testnizer çakışmayı Workbench içinde bir **JSON farkı** olarak sunar. Her 
 sürümü yan yana görebilir, hangi değişikliklerin korunacağını seçebilir ve sonucu
 doğrudan düzenleyebilirsiniz. Çözümlendikten sonra Testnizer birleştirilmiş durumu
 kaydeder ve çakışmayı git'te çözümlendi olarak işaretler.
+
+Proje dosyasında bir birleştirme ya da çekme çakışırsa Testnizer önce satır satır birleştirir:
+iki tarafın eklemeleri korunur, yalnızca bir tarafın değiştirdiği satır o değişikliği alır,
+iki tarafın da değiştirdiği satır daha yeni olanı alır, bir tarafın sildiği ve diğerinin
+değiştirdiği satırda değişiklik korunur. Ardından birleştirmeyi commit eder. Bu şekilde
+birleştiremediği bir dosya için, o dosyada **Mine** (bu dal) ya da **Theirs** (uzak) seçtiğiniz
+bir diyalog açılır; birleştirmeyi iptal de edebilirsiniz.
 
 Çakışmaları ele almak için uygulamayı terk etmeniz gerekmez.

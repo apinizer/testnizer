@@ -1,6 +1,6 @@
 ---
 title: Protocols overview
-description: Quick reference for HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MCP and AI Chat in Testnizer.
+description: Quick reference for HTTP, SOAP, WebSocket, GraphQL, gRPC, SSE, Socket.IO, MQTT, MCP and AI Chat in Testnizer.
 order: 1
 section: Protocols
 ---
@@ -15,13 +15,14 @@ dedicated engine in the Node main process.
 |---|---|---|---|
 | HTTP / REST | full | `axios` | Methods, body modes, mTLS, scripts, assertions |
 | SOAP | full | `soap` library + `wsse` | WSDL import, manual envelope, WS-Security |
-| WebSocket | full | `ws` | wss + custom headers + JSON composer |
+| WebSocket | full | `ws` | wss + params + custom headers, Text / JSON / XML / HTML / binary composer, saved messages |
 | GraphQL | full | `graphql` + `graphql-ws` | Query + mutation + subscription |
 | gRPC | full | `@grpc/grpc-js` + `@grpc/proto-loader` | All four streaming modes |
 | SSE | full | `eventsource` | Long-lived streams, Last-Event-ID resume |
-| Socket.IO | full | `socket.io-client` | Namespaces, auth, emit + subscribe, bidirectional timeline |
-| MCP | full | `@modelcontextprotocol/sdk` | Streamable HTTP / SSE / stdio; list and invoke tools |
-| AI Chat | full | provider-specific HTTP | 14 providers + custom URL, streaming |
+| Socket.IO | full | `socket.io-client` (v4 and v2) | Client v2 / v3 / v4, namespaces, auth, listeners, Ack, multi-argument emit, bidirectional timeline |
+| MQTT | full | `mqtt` (MQTT.js) | 3.1.1 and 5.0, TLS, Last Will, topics, saved messages |
+| MCP | full | `@modelcontextprotocol/client` (SDK v2) | Streamable HTTP / SSE / stdio; tools, resources, prompts, notifications, OAuth 2.1, security scan |
+| AI Chat | full | provider-specific HTTP | 14 providers + custom URL, streaming, MCP servers as tools |
 
 ## HTTP
 
@@ -52,20 +53,23 @@ Two starting points:
   services without a WSDL
 
 WS-Security is built in (UsernameToken, Timestamp, XML Signature, XML
-Encryption). [WS-Security guide →](/docs/ws-security)
+Encryption) and is applied to the envelope both on Send and in the Runner.
+[WS-Security guide →](/docs/ws-security)
 
 ## WebSocket
 
-Connect to `ws://` or `wss://` with custom headers. Messages appear in a
-timeline (sent + received with timestamps). Compose messages as JSON or text.
+Connect to `ws://` or `wss://` with query params and custom headers. Messages
+appear in a timeline (sent + received with timestamps, searchable and
+filterable). Compose messages as text, JSON, XML, HTML or real binary frames
+(Base64 / hex), and keep the ones you reuse as saved messages.
 
 [Full reference →](/docs/protocols/websocket)
 
 ## GraphQL
 
-Query, mutation, and subscription support. Testnizer detects whether your
-endpoint speaks HTTP-only or supports `graphql-ws` (subscription transport)
-and routes accordingly.
+Query, mutation, and subscription support. Queries and mutations go over HTTP,
+subscriptions over a WebSocket connection (`graphql-transport-ws`, or the older
+`graphql-ws`).
 
 Schema introspection runs on demand and populates a searchable type browser
 on the right of the request editor.
@@ -95,6 +99,8 @@ Hit Send on an SSE endpoint and Testnizer holds the connection open, parsing
 events as they arrive. The Last-Event-ID header is set automatically on
 reconnect, so the server can resume from where it left off.
 
+[Full reference →](/docs/protocols/sse)
+
 ## Socket.IO
 
 Connect to a Socket.IO server with a namespace and an optional bearer token.
@@ -105,21 +111,36 @@ displays events.
 Workflow:
 
 - Set the URL (e.g. `http://localhost:3000`), namespace (`/` or `/admin`), and
-  optional bearer token
+  optional bearer token; pick the client version (v4, v3 or **v2** for Socket.IO 2
+  servers) in Settings
 - Click **Connect** — Testnizer waits for the `connect` ack, surfaces
   `connect_error` if the handshake fails
-- **Emit** any event with a JSON payload (event name + body)
-- **Subscribe** to any event name; incoming events stream into the timeline
+- **Emit** any event with one or more arguments (text, JSON or binary), with an
+  optional **Ack**
+- On the **Events** tab choose which events to listen to, or **Listen to all
+  events**; incoming events stream into the timeline
 - Bidirectional timeline shows `↑` for outgoing emits and `↓` for incoming
   events, with timestamps
 
 [Full reference →](/docs/protocols/socketio)
 
+## MQTT
+
+Connect to an MQTT 3.1.1 or 5.0 broker over `mqtt://`, `mqtts://`, `ws://` or
+`wss://`. Add topics to subscribe to on Connect (or toggle them live), publish
+messages with a QoS, retain flag and payload format, set a Last Will, and read
+everything in the same searchable log the WebSocket and Socket.IO editors use.
+MQTT 5.0 adds CONNECT properties, message properties and subscription options.
+Postman v3 MQTT requests import and export. Postman's Visualization (per-topic
+charts) is not available.
+
+[Full reference →](/docs/protocols/mqtt)
+
 ## MCP (Model Context Protocol)
 
 Testnizer is an MCP **client**. It connects to MCP servers, discovers their
-tools, and invokes them with arguments — the same role Claude Desktop plays
-when it calls a tool. Built on the official `@modelcontextprotocol/sdk`.
+tools, resources and prompts, and calls them with arguments — the same role
+Claude Desktop plays when it calls a tool. Built on the official MCP SDK (v2).
 
 Three transports:
 
@@ -129,9 +150,15 @@ Three transports:
 - **stdio** — Testnizer launches the server as a local subprocess. Enter the
   full command (e.g. `npx @modelcontextprotocol/server-everything`)
 
-After connecting, the **Tools** panel lists every tool the server advertises
-along with its input schema. Pick a tool, fill in the JSON arguments, click
-**Invoke**, and inspect the structured result.
+After connecting, the **Tools**, **Resources** and **Prompts** lists show what
+the server advertises. Pick a tool, fill in the arguments (a form built from
+the input schema, or raw JSON), click **Run**, and inspect the result. The
+**Messages** pane shows server notifications and the raw JSON-RPC frames.
+
+Beyond the client itself there is an OAuth 2.1 debugger, a graded security
+scan, and MCP requests that run in the Runner, Test Suites and the Scheduler.
+To test your own client against a stand-in server, use an
+[MCP mock server](/docs/mock-server/mcp).
 
 [Full reference →](/docs/protocols/mcp)
 
@@ -141,6 +168,12 @@ Pick a provider (OpenAI, Anthropic, Google, xAI, DeepSeek, Mistral, Groq,
 Perplexity, Cerebras, Cohere, Fireworks, DeepInfra, Together, OpenRouter) or
 choose **Custom URL** for self-hosted vLLM / LM Studio / Ollama / TGI.
 
-Conversations are multi-turn with a system prompt. Responses stream by default.
-Variables (`{{apiKey}}`) resolve in URL, headers, and body — useful for
-keeping API keys in a project environment rather than the request itself.
+Conversations are multi-turn with a system prompt and stream as they arrive.
+The assistant can call tools from MCP servers; every tool call asks for your
+approval by default. Conversations are stored locally and never exported or
+committed.
+
+To try the chat without a provider account or spending tokens, point it at an
+[AI mock server](/docs/mock-server/ai).
+
+[Full reference →](/docs/protocols/ai-chat)

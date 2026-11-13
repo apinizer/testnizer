@@ -42,7 +42,7 @@ is a real configuration bug you want to see now.
 
 ## Serving a JWKS
 
-A key set can be served from the built-in **[mock server](/docs/mock-server)**
+A key set can be served from the built-in **[mock server](/docs/mock-server/http)**
 as a JWKS endpoint. That closes the loop for an offline identity test:
 
 1. Generate a key pair in the JWK tool.

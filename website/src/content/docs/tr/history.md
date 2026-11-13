@@ -1,97 +1,85 @@
 ---
 title: İstek geçmişi
-description: Testnizer'ın yerel geçmiş panelinden geçmiş isteklere göz atın, tekrar oynatın ve dışa aktarın.
+description: Testnizer'ın yerel geçmiş panelinden geçmiş isteklere göz atın, tekrar oynatın ve temizleyin.
 order: 4
 section: Referans
 ---
 
 ## Neler kaydedilir
 
-Gönderdiğiniz her istek otomatik olarak kaydedilir. Bir oturumu kaydetmemeyi
-tercih ederseniz **Ayarlar → Geçmiş → Kaydetme** bölümünden kaydetmeyi
-devre dışı bırakın.
+Gönderdiğiniz her istek, her protokol için, isteğin ve yanıtın bir anlık
+görüntüsüyle otomatik olarak kaydedilir. Geçmiş makinenizdeki yerel SQLite
+veritabanında (`testnizer.db`) saklanır ve ağ üzerinden hiçbir şey iletilmez.
 
-Her geçmiş girişi şunları yakalar:
+Her geçmiş girdisi şunları içerir:
 
-- **Zaman damgası** — isteğin gönderildiği tam tarih ve saat.
-- **Metod ve URL** — tüm ortam değişkenleri zaten çözülmüş olarak.
-- **Durum kodu, yanıt süresi ve yanıt boyutu.**
-- **İstek header'ları ve gövdesi** — ortam değişkenleriyle eşleşen gizli bilgiler
-  depolanmadan önce maskelenir.
-- **Yanıt header'ları ve gövdesi.**
-- **Test assertion sonuçları** — hangi assertion'ların geçtiği ve hangilerinin başarısız olduğu.
-- **Proje ve branch** — yalnızca URL'ye göre değil, bağlama göre geçmişi
-  filtreleyebilmeniz için.
+- **Method ve URL**
+- **Durum, yanıt süresi ve boyutu**
+- **İstek ve yanıt**, yeniden açabileceğiniz bir anlık görüntü olarak
+- Ait olduğu **proje**; liste etkin projenin girdilerini gösterir
+
+### Kimlik bilgileri saklanmadan önce maskelenir
+
+Kimlik bilgileri Geçmiş veritabanına asla düz metin olarak ulaşmaz. Bir satır
+yazılmadan önce Testnizer şunları maskeler:
+
+- kimlik bilgisi taşıyan header'lar (`Authorization`, `Cookie`, API anahtarı
+  header'ları ve benzerleri)
+- kimlik bilgisi taşıyan query ve gövde alanları, her derinlikte; JSON, form ve
+  XML / SOAP gövdeleri dahil
+- URL içindeki `user:pass@`
+- **secret** değişkenlerinizin değerleri ve yanıtlardaki token alanları
+  (`access_token`, `refresh_token` ve benzerleri)
+- uygulama düzeyi ve proje proxy'lerinin parolası
+
+Bir istek gövdesinde gönderdiğiniz kimlik bilgisi, sunucu onu başka bir adla geri
+yankılasa bile her yerde maskelenir. WebSocket, Socket.IO, SSE, GraphQL ve gRPC
+sekmeleri aldıkları mesajları diske yazmaz; bunlar oturum boyunca bellekte kalır.
+Eski sürümlerin yazdığı satırlar, 1.6.0'ın ilk açılışında bir kez maskelenir.
+
+Geçmiş, bir isteğin `{{değişken}}` şablonunu korur; böylece istek, değişkenlerinizin
+güncel değerleriyle yeniden gönderilebilir. Bir kimlik bilgisi maskelendiyse yeniden
+açılan istek bir not gösterir ("Kimlik bilgileri Geçmiş'te saklanmadı — yeniden
+girin") ve o alanı boş bırakır.
 
 ---
 
 ## Geçmişe göz atma
 
-Sol kenar çubuğundaki **Geçmiş** sekmesini açın veya `Ctrl+H` (Windows/Linux)
-/ `Cmd+H` (macOS) tuşlarına basın.
+Sol kenar çubuğundaki **Geçmiş** sekmesini açın. İki liste vardır:
 
-Liste en son giriş en üstte olacak şekilde sıralanır.
+- **İstekler** — gönderdiğiniz istekler, güne göre gruplanmış (Bugün, Dün ve daha
+  eskiler). Tam URL'yi görmek için bir satırın üzerine gelin.
+- **Commit'ler** — etkin projenin Git branch'inin commit geçmişi.
 
-Filtreleme seçenekleri:
-
-- **Ara** — URL parçasına veya durum koduna göre eşleştir.
-- **Projeye göre filtrele** — yalnızca belirli bir proje içinde yapılan istekleri göster.
-- **Tarih aralığına göre filtrele** — bir zaman penceresini daralt.
-
-Sağ panelde tam istek ve yanıt ayrıntısını yüklemek için herhangi bir girişe tıklayın.
+Listeyi URL'ye ya da method'a göre daraltmak için **Geçmişte ara** alanına yazın.
+MCP satırlarında araç, istem veya kaynak adı da aranır.
 
 ---
 
-## Bir isteği tekrar oynatma
+## Bir isteği yeniden oynatma
 
-Bir geçmiş girişine tıklayın, ardından **Editörde aç**'a tıklayın. İstek editörü
-orijinal metod, URL, header'lar ve gövde önceden doldurulmuş olarak açılır.
+Bir geçmiş girdisine tıklayın. Girdi, özgün method, URL, header ve gövde dolu olarak
+bir istek sekmesinde açılır ve kendi protokolünün editöründe görünür: HTTP, SOAP,
+MCP, WebSocket, Socket.IO, GraphQL, gRPC ve SSE girdileri kendi editörlerinde yeniden
+açılır.
 
-Olduğu gibi gönderebilir veya göndermeden önce herhangi bir alanı değiştirebilirsiniz.
-Tekrar oynatma, manuel olarak oluşturulan bir istekle aynı şekilde davranır —
-ön istek scriptleri çalışır, testler çalışır ve sonuç yeni bir geçmiş girişi
-olarak kaydedilir.
+Olduğu gibi gönderebilir ya da göndermeden önce herhangi bir alanı değiştirebilirsiniz.
+Yeniden oynatma, elle kurulmuş bir istek gibi davranır — pre-request script'leri
+çalışır, testler yürütülür ve sonuç yeni bir geçmiş girdisi olarak kaydedilir.
 
-**Koleksiyon çalıştırıcı sonuçları** da geçmişte görünür. Her çalıştırıcı
-çalışması tek bir üst düzey giriş olarak saklanır. Çalıştırmanın parçası olan
-her uç nokta için bireysel istek sonuçlarını görmek amacıyla genişletin.
-
----
-
-## Geçmişi dışa aktarma
-
-Bir veya birden fazla giriş seçin, ardından bağlam menüsünden **Dışa Aktar**'ı seçin.
-
-Kullanılabilir biçimler:
-
-| Biçim | Kullanım durumu |
-|---|---|
-| **HAR (HTTP Archive)** | Tarayıcı DevTools ve WebPageTest ile Charles Proxy gibi performans analizi araçlarıyla uyumlu. |
-| **Testnizer JSON** | Girişleri başka bir Testnizer örneğine aktarın. Takım arkadaşlarıyla yeniden üretim durumlarını paylaşmak için kullanışlı. |
-| **cURL komutları** | Uygulamayı açmadan istekleri tekrar oynatmak için doğrudan terminale yapıştırın. |
+Runner ve test paketi sonuçları burada listelenmez. Onlar **Testler** sayfasında,
+koşu geçmişinin altında durur; her koşu yeniden açılabilir ve HTML ya da JSON olarak
+dışa aktarılabilir. Bkz. [Collection runner & otomasyon](/tr/docs/cli-and-automation).
 
 ---
 
-## Gizlilik ve saklama
+## Girdileri kaldırma
 
-Geçmiş, makinenizdeki yerel SQLite veritabanında (`data.db`) özel olarak saklanır.
-Ağ üzerinden hiçbir şey iletilmez.
+- Bir satırdaki çöp kutusu düğmesi o girdiyi siler.
+- Geçmiş kenar çubuğundaki **Temizle**, **yalnızca etkin projenin** geçmişini siler.
+  Önce onay ister, kaç girdinin silineceğini söyler ve liste boşken devre dışıdır.
+- **Ayarlar → Veri → Geçmişi temizle**, aynı işi Ayarlar penceresinden o proje için
+  yapar.
 
-**Varsayılan saklama:** son 1.000 giriş. Eski girişler otomatik olarak silinir.
-
-Saklama ayarını değiştirmek için **Ayarlar → Geçmiş → Saklama** bölümüne gidin.
-Aralık 100 girişten sınırsıza kadardır.
-
-**Sınırsız** seçeneğini belirlerseniz `data.db` zaman içinde büyür. Büyük yanıt
-gövdeleri — ikili dosyalar, toplu veri dışa aktarmaları — gönderen projeler önemli
-ölçüde büyük bir veritabanı üretebilir. Bu durum iş akışınız için geçerliyse
-disk kullanımını izleyin.
-
-**Manuel temizleme seçenekleri:**
-
-- **Ayarlar → Geçmiş → Tümünü temizle** — tüm geçmiş günlüğünü siler.
-- **Ayarlar → Geçmiş → Tarihten öncekileri sil** — belirttiğiniz tarihten eski
-  girişleri kaldırır, yakın geçmişi korur.
-
-Her iki eylem de kaydedilmiş uç noktalarınızı, ortamlarınızı veya koleksiyon
-yapınızı etkilemez.
+Hiçbiri kayıtlı uç noktalarınızı, ortamlarınızı veya koleksiyon yapınızı etkilemez.

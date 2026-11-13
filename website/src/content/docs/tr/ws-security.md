@@ -1,7 +1,7 @@
 ---
 title: WS-Security
 description: SOAP envelope'larını yerel olarak imzalayın, şifreleyin, doğrulayın ve şifresini çözün — çevrimiçi araç gerekmez.
-order: 8
+order: 12
 section: Protokoller
 ---
 
@@ -29,6 +29,15 @@ diskten belleğe yüklenir, işlem için kullanılır ve istek tamamlandığınd
 
 SOAP isteği açın → **Auth** sekmesi → **WS-Security**.
 
+WS-Security, envelope'a ana süreçte uygulanır: **Gönder**'de, **Collection Runner**'da,
+Test Suite'lerde ve Scheduler'da aynı şekilde. (1.6.0'dan önce Gönder bunu bir HTTP Basic
+header'ına çeviriyor, Çalıştır ise hiç eklemiyordu. Sunucu isteklerinizi yalnızca o Basic
+header'ı sayesinde kabul ediyorsa, Auth sekmesinde **Basic**'i seçin.) WS-Security
+alanlarındaki `{{değişkenler}}` önce çözülür, sonra envelope imzalanır; yani imza gönderilen
+baytları kapsar. `wsse:Security` header'ı her önekli envelope'a (SoapUI'nin yazdığı
+`soapenv:`, `soap:` ya da varsayılan ad alanı) eklenir; Araçlar panelinde de böyle.
+SOAP envelope'u olmayan metin, olduğu gibi geri dönmek yerine açık bir mesajla reddedilir.
+
 Yapılandırma koleksiyon başına değil, istek başınadır. Bu, pratikte WS-Security
 header'larının çoğunun çalışma şekliyle örtüşür — aynı uç noktadaki farklı
 operasyonlar genellikle farklı güvenlik öğelerine ihtiyaç duyar.
@@ -48,8 +57,10 @@ WS-Security panelinde:
 
 - **Kullanıcı adı**: `alice`
 - **Parola türü**: `PasswordText`
-- **Parola**: `secret` (işletim sistemi anahtarlık üzerinden geçer — diskte asla
-  düz metin olarak saklanmaz)
+- **Parola**: `secret`, daha iyisi gizli bir değişkenle `{{soapPassword}}`. Buraya yazılan
+  parola, diğer Auth alanları gibi istekle birlikte kaydedilir; gerçek değeri bir
+  [gizli değişkende](/tr/docs/variables#sırlar-ve-hassas-değişkenler) tutun. History,
+  Console ve çalıştırma raporlarında maskelenir
 
 ### UsernameToken (Password Digest)
 
