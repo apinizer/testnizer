@@ -714,12 +714,20 @@ export default function TestsPanel() {
         />
       </div>
 
-      {/* Suites section label */}
-      <div
-        className="flex shrink-0 items-center justify-between px-3 pb-1 pt-2"
-        style={{ color: 'var(--muted)' }}
-      >
-        <span style={{ fontSize: 13, fontWeight: 600 }}>{t('tests.testSuites')}</span>
+      {/* Suites group label — same style as the Mocks panel's group headers */}
+      <div className="flex h-9 shrink-0 items-center gap-2 px-3">
+        <span
+          data-testid="tests-suites-title"
+          className="text-[11px] font-semibold uppercase tracking-wider text-[var(--muted)]"
+        >
+          {t('tests.testSuites')}
+        </span>
+        <span
+          data-testid="tests-suites-title-count"
+          className="rounded-full bg-[var(--surface)] px-1.5 text-[10px] font-semibold leading-4 text-[var(--muted)]"
+        >
+          {suites.length}
+        </span>
       </div>
 
       {/* Content */}

@@ -96,32 +96,28 @@ export default function MockKindServersSection({
         testId={`${section.prefix}-section-title`}
         addTestId={`mock-group-add-${kind}`}
       />
-      {filtered.length === 0 ? (
-        <div className="px-4 pb-4 pt-1 text-center text-[12px] text-[var(--muted)]">
-          {servers.length === 0 ? t(section.emptyKey) : t('mock.noMatches')}
-        </div>
-      ) : (
-        filtered.map((s) => {
-          const url = mockServerUrl(s)
-          return (
-            <MockServerRow
-              key={s.id}
-              kind={kind}
-              testIdPrefix={section.prefix}
-              id={s.id}
-              name={s.name}
-              status={statusByServer[s.id] ?? 'stopped'}
-              address={`${s.host}:${s.port}`}
-              copyText={url}
-              errorMessage={errorByServer[s.id]}
-              onOpen={() => openMockServerTab(s)}
-              onStart={() => void start(s.id)}
-              onStop={() => void stopServer(s.id)}
-              onDelete={() => setDeleteTarget(s)}
-            />
-          )
-        })
-      )}
+      {/* An empty group (or one the search empties) is just its header line:
+       *  the panel shows one empty state / one "No matches" for all groups. */}
+      {filtered.map((s) => {
+        const url = mockServerUrl(s)
+        return (
+          <MockServerRow
+            key={s.id}
+            kind={kind}
+            testIdPrefix={section.prefix}
+            id={s.id}
+            name={s.name}
+            status={statusByServer[s.id] ?? 'stopped'}
+            address={`${s.host}:${s.port}`}
+            copyText={url}
+            errorMessage={errorByServer[s.id]}
+            onOpen={() => openMockServerTab(s)}
+            onStart={() => void start(s.id)}
+            onStop={() => void stopServer(s.id)}
+            onDelete={() => setDeleteTarget(s)}
+          />
+        )
+      })}
       <DeleteConfirmDialog
         open={deleteTarget !== null}
         itemName={deleteTarget?.name ?? ''}
