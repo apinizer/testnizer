@@ -142,6 +142,7 @@ test('variables-right-panel', async ({ window: page }) => {
   await openRequest(page, 'Create order')
   await page.getByTestId('req-tab-body').click()
   const panel = page.getByTestId('right-panel')
+  // optional: the panel may already be open from an earlier shot
   if (!(await panel.isVisible().catch(() => false))) {
     await page.getByTestId('right-panel-rail-variables').click()
   }
@@ -211,6 +212,7 @@ test('sse-event-log', async ({ window: page }) => {
   await page.getByTestId('mock-open-in-sse').click()
   await expect(page.getByTestId('sse-url')).toBeVisible({ timeout: 10_000 })
   const connect = page.getByTestId('sse-connect')
+  // optional: the stream may already be connected; the event count below is the check
   if (await connect.isVisible().catch(() => false)) await connect.click()
   await expect(page.getByTestId('sse-event-row')).toHaveCount(5, { timeout: 20_000 })
   await page.getByTestId('sse-event-row').nth(1).click()
