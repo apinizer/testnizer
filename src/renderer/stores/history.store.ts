@@ -21,10 +21,54 @@ async function deleted(call: Promise<unknown> | undefined): Promise<boolean> {
     return false
   }
 }
+export type HistoryRange = 'all' | 'today' | '7d' | '30d'
+/**
+ * Status filter. `ok` / `failed` work for every protocol (the row colour's
+ * rule); the HTTP classes only for protocols that answer with an HTTP code.
+ */
+export type HistoryStatusClass = '' | 'ok' | 'failed' | '2xx' | '3xx' | '4xx' | '5xx'
+/** '' = every request; `mock` = sent to one of the project's mock servers. */
+export type HistoryTarget = '' | 'mock' | 'notMock'
+
+/** Protocols whose History status is an HTTP code (gRPC, WS, MQTT… are not). */
+export const HTTP_STATUS_PROTOCOLS: readonly string[] = ['http', 'graphql', 'soap']
+
+const HTTP_CLASSES: readonly HistoryStatusClass[] = ['2xx', '3xx', '4xx', '5xx']
+
+/** HTTP status classes are offered only with an HTTP-like protocol picked. */
+export function httpStatusClassesApply(protocol: string | null): boolean {
+  return protocol !== null && HTTP_STATUS_PROTOCOLS.includes(protocol)
+}
+
+/**
+ * The History page's filters — ONE set shared by the sidebar list and the
+ * workbench overview (HistoryHome), so both always show the same rows. The
+ * rules that apply them live in `components/history/history-overview.ts`.
+ */
+export interface HistoryFilters {
+  /** null = every protocol ("All" card). */
+  protocol: string | null
+  range: HistoryRange
+  /** '' = every method (overview only; the sidebar search matches methods). */
+  method: string
+  status: HistoryStatusClass
+  target: HistoryTarget
+  query: string
+}
+
+export const EMPTY_FILTERS: HistoryFilters = {
+  protocol: null,
+  range: 'all',
+  method: '',
+  status: '',
+  target: '',
+  query: '',
+}
+
 interface HistoryStore {
   entries: HistoryEntry[]
   isLoading: boolean
-  searchTerm: string
+  filters: HistoryFilters
 
   fetch: (options?: { workspaceId?: string; projectId?: string; limit?: number }) => Promise<void>
   /**
@@ -39,7 +83,8 @@ interface HistoryStore {
    */
   count: (projectId: string) => Promise<number | null>
   deleteEntry: (id: string) => Promise<void>
-  setSearchTerm: (term: string) => void
+  setFilters: (patch: Partial<HistoryFilters>) => void
+  resetFilters: () => void
 }
 
 interface HistoryRow {
@@ -74,10 +119,17 @@ function rowToEntry(row: HistoryRow): HistoryEntry {
   }
 }
 
+/**
+ * How many rows the History page loads: the sidebar list and the page's
+ * overview (cards, filters, table) both work on these. Matches the default
+ * `historyLimit` setting (500).
+ */
+export const HISTORY_LIST_LIMIT = 500
+
 export const useHistoryStore = create<HistoryStore>((set) => ({
   entries: [],
   isLoading: false,
-  searchTerm: '',
+  filters: EMPTY_FILTERS,
 
   fetch: async (options = {}) => {
     set({ isLoading: true })
@@ -128,5 +180,14 @@ export const useHistoryStore = create<HistoryStore>((set) => ({
     set((state) => ({ entries: state.entries.filter((e) => e.id !== id) }))
   },
 
-  setSearchTerm: (term) => set({ searchTerm: term }),
+  setFilters: (patch) =>
+    set((s) => {
+      const next = { ...s.filters, ...patch }
+      // "4xx" means nothing once the protocol is gRPC / WebSocket / All.
+      if (HTTP_CLASSES.includes(next.status) && !httpStatusClassesApply(next.protocol)) {
+        next.status = ''
+      }
+      return { filters: next }
+    }),
+  resetFilters: () => set({ filters: EMPTY_FILTERS }),
 }))

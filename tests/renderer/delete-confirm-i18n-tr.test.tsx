@@ -25,7 +25,7 @@ import DeleteConfirmDialog from '../../src/renderer/components/modals/DeleteConf
 import HistoryListPanel from '../../src/renderer/components/sidebar/HistoryListPanel'
 import RunnerHistory from '../../src/renderer/components/runner/RunnerHistory'
 import { useUIStore } from '../../src/renderer/stores/ui.store'
-import { useHistoryStore } from '../../src/renderer/stores/history.store'
+import { EMPTY_FILTERS, useHistoryStore } from '../../src/renderer/stores/history.store'
 import { useWorkspaceStore } from '../../src/renderer/stores/workspace.store'
 import { setLocale } from '../../src/renderer/lib/i18n'
 import type { HistoryEntry } from '../../src/renderer/types'
@@ -100,7 +100,7 @@ describe('issue #248 — delete confirmation headings in Turkish', () => {
   it('History panel: "Geçmiş kaydı silinsin mi?" with a Turkish body', () => {
     useHistoryStore.setState({
       entries: [HISTORY_ENTRY],
-      searchTerm: '',
+      filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
     render(<HistoryListPanel />)

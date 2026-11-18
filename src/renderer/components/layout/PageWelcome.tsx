@@ -4,6 +4,7 @@ import ProjectWelcome from './ProjectWelcome'
 import TestsHome from '../runner/TestsHome'
 import EmptyState from '../shared/EmptyState'
 import MocksWelcome from '../mock/MocksWelcome'
+import HistoryHome from '../history/HistoryHome'
 import { openOrReuseRunnerTab } from '../../lib/open-runner-tab'
 import { useTranslation } from '../../lib/i18n'
 import type { SidebarPage } from '../../lib/sidebar-pages'
@@ -15,7 +16,6 @@ interface PageWelcomeProps {
 }
 
 const SECONDARY: Partial<Record<SidebarPage, { icon: typeof Clock; key: string }>> = {
-  history: { icon: Clock, key: 'welcome.history' },
   tools: { icon: Wrench, key: 'welcome.tools' },
   docs: { icon: FileText, key: 'welcome.docs' },
   settings: { icon: Settings, key: 'welcome.settings' },
@@ -32,6 +32,8 @@ export default function PageWelcome({ page }: PageWelcomeProps) {
   if (page === 'apis') return <ProjectWelcome />
   // No servers yet → "New mock server"; otherwise "select one on the left" (issue #226).
   if (page === 'mocks') return <MocksWelcome />
+  // Cards per protocol, filters and a paged table of the loaded history.
+  if (page === 'history') return <HistoryHome />
 
   if (page === 'tests') {
     return (

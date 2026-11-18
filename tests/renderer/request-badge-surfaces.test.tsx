@@ -12,7 +12,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import RequestBadge from '../../src/renderer/components/shared/RequestBadge'
 import RunnerSequence from '../../src/renderer/components/runner/RunnerSequence'
 import HistoryListPanel from '../../src/renderer/components/sidebar/HistoryListPanel'
-import { useHistoryStore } from '../../src/renderer/stores/history.store'
+import { EMPTY_FILTERS, useHistoryStore } from '../../src/renderer/stores/history.store'
 import type { HistoryEntry } from '../../src/renderer/types'
 import type { RunnerEndpointItem } from '../../src/renderer/components/runner/RunnerTab'
 ;(globalThis as unknown as { React: typeof React }).React = React
@@ -54,7 +54,7 @@ describe('History row', () => {
         entry({}),
         entry({ id: 'h2', protocol: 'http', method: 'DELETE', url: 'http://x/a' }),
       ],
-      searchTerm: '',
+      filters: EMPTY_FILTERS,
       fetch: vi.fn(async () => undefined),
     } as never)
     render(<HistoryListPanel />)

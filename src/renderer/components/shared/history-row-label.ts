@@ -12,18 +12,11 @@
  */
 import type { HistoryEntry } from '../../types'
 import { mcpHistoryRowLabel } from '../protocols/mcp/history-restore'
+import { shortHistoryUrl } from '../../lib/history-restore'
+
+export { shortHistoryUrl }
 
 type Row = Pick<HistoryEntry, 'protocol' | 'url' | 'method' | 'request_snapshot'>
-
-/** `host + path` of a URL; anything that does not parse stays as it is. */
-export function shortHistoryUrl(url: string): string {
-  try {
-    const u = new URL(url)
-    return u.host + u.pathname
-  } catch {
-    return url
-  }
-}
 
 export function historyRowLabel(entry: Row): { label: string; title: string } {
   if (entry.protocol === 'mcp') return mcpHistoryRowLabel(entry)
